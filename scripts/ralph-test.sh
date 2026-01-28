@@ -133,7 +133,7 @@ EVALEOF
 
 # Find the Ralph Loop Status section and replace it
 # First, create a temp file with everything before Ralph Loop Status
-sed -n '1,/## Ralph Loop Status/p' "$ROADMAP_FILE" | head -n -1 > /tmp/roadmap_before.md
+sed -n '1,/## Ralph Loop Status/p' "$ROADMAP_FILE" | sed '$d' > /tmp/roadmap_before.md
 
 # Then get everything after the first --- following Ralph Loop Status
 sed -n '/## Ralph Loop Status/,/^---$/p' "$ROADMAP_FILE" | tail -n +1 > /dev/null
