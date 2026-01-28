@@ -334,8 +334,13 @@ static Expr* parse_primary_internal(Parser* parser) {
             Pattern* pattern;
             if (match(parser, TOKEN_UNDERSCORE)) {
                 pattern = pattern_wildcard(parser->arena, parser->previous.loc);
+            } else if (check(parser, TOKEN_IDENT)) {
+                // Identifier pattern: binding pattern that captures the matched value
+                Token ident_tok = parser->current;
+                advance(parser);
+                pattern = pattern_ident(parser->arena, ident_tok.text, ident_tok.loc);
             } else {
-                // For now, just parse literal patterns
+                // Literal patterns: integers, strings, booleans
                 Expr* pattern_expr = parse_primary_internal(parser);
                 pattern = arena_alloc(parser->arena, sizeof(Pattern));
                 pattern->type = PATTERN_LIT;

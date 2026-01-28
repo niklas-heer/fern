@@ -814,6 +814,124 @@ void test_parse_function_with_body(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse match with integer literal pattern */
+void test_parse_pattern_int_literal(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "match x: 42 -> \"found\"");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_MATCH);
+    ASSERT_EQ(expr->data.match_expr.arms->len, 1);
+
+    // The pattern should be a literal pattern wrapping an int literal
+    MatchArm arm = MatchArmVec_get(expr->data.match_expr.arms, 0);
+    ASSERT_NOT_NULL(arm.pattern);
+    ASSERT_EQ(arm.pattern->type, PATTERN_LIT);
+    ASSERT_NOT_NULL(arm.pattern->data.literal);
+    ASSERT_EQ(arm.pattern->data.literal->type, EXPR_INT_LIT);
+    ASSERT_EQ(arm.pattern->data.literal->data.int_lit.value, 42);
+
+    // Body should be a string literal
+    ASSERT_EQ(arm.body->type, EXPR_STRING_LIT);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse match with string literal pattern */
+void test_parse_pattern_string_literal(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "match x: \"test\" -> \"found\"");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_MATCH);
+    ASSERT_EQ(expr->data.match_expr.arms->len, 1);
+
+    // The pattern should be a literal pattern wrapping a string literal
+    MatchArm arm = MatchArmVec_get(expr->data.match_expr.arms, 0);
+    ASSERT_NOT_NULL(arm.pattern);
+    ASSERT_EQ(arm.pattern->type, PATTERN_LIT);
+    ASSERT_NOT_NULL(arm.pattern->data.literal);
+    ASSERT_EQ(arm.pattern->data.literal->type, EXPR_STRING_LIT);
+    ASSERT_STR_EQ(string_cstr(arm.pattern->data.literal->data.string_lit.value), "test");
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse match with boolean literal patterns */
+void test_parse_pattern_bool_literal(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "match x: true -> \"yes\", false -> \"no\"");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_MATCH);
+    ASSERT_EQ(expr->data.match_expr.arms->len, 2);
+
+    // First arm: true -> "yes"
+    MatchArm arm1 = MatchArmVec_get(expr->data.match_expr.arms, 0);
+    ASSERT_NOT_NULL(arm1.pattern);
+    ASSERT_EQ(arm1.pattern->type, PATTERN_LIT);
+    ASSERT_NOT_NULL(arm1.pattern->data.literal);
+    ASSERT_EQ(arm1.pattern->data.literal->type, EXPR_BOOL_LIT);
+    ASSERT_TRUE(arm1.pattern->data.literal->data.bool_lit.value);
+
+    // Second arm: false -> "no"
+    MatchArm arm2 = MatchArmVec_get(expr->data.match_expr.arms, 1);
+    ASSERT_NOT_NULL(arm2.pattern);
+    ASSERT_EQ(arm2.pattern->type, PATTERN_LIT);
+    ASSERT_NOT_NULL(arm2.pattern->data.literal);
+    ASSERT_EQ(arm2.pattern->data.literal->type, EXPR_BOOL_LIT);
+    ASSERT_FALSE(arm2.pattern->data.literal->data.bool_lit.value);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse match with wildcard pattern (verify existing support) */
+void test_parse_pattern_wildcard(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "match x: _ -> \"anything\"");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_MATCH);
+    ASSERT_EQ(expr->data.match_expr.arms->len, 1);
+
+    // The pattern should be a wildcard
+    MatchArm arm = MatchArmVec_get(expr->data.match_expr.arms, 0);
+    ASSERT_NOT_NULL(arm.pattern);
+    ASSERT_EQ(arm.pattern->type, PATTERN_WILDCARD);
+
+    // Body should be a string literal
+    ASSERT_EQ(arm.body->type, EXPR_STRING_LIT);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse match with identifier pattern (binding pattern) */
+void test_parse_pattern_identifier(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "match x: value -> value");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_MATCH);
+    ASSERT_EQ(expr->data.match_expr.arms->len, 1);
+
+    // The pattern should be an identifier pattern (binding), NOT a literal pattern
+    MatchArm arm = MatchArmVec_get(expr->data.match_expr.arms, 0);
+    ASSERT_NOT_NULL(arm.pattern);
+    ASSERT_EQ(arm.pattern->type, PATTERN_IDENT);
+    ASSERT_STR_EQ(string_cstr(arm.pattern->data.ident), "value");
+
+    // Body should be an identifier expression
+    ASSERT_EQ(arm.body->type, EXPR_IDENT);
+    ASSERT_STR_EQ(string_cstr(arm.body->data.ident.name), "value");
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -857,4 +975,9 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_function_no_params);
     TEST_RUN(test_parse_function_with_params);
     TEST_RUN(test_parse_function_with_body);
+    TEST_RUN(test_parse_pattern_int_literal);
+    TEST_RUN(test_parse_pattern_string_literal);
+    TEST_RUN(test_parse_pattern_bool_literal);
+    TEST_RUN(test_parse_pattern_wildcard);
+    TEST_RUN(test_parse_pattern_identifier);
 }
