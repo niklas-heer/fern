@@ -224,6 +224,7 @@ Stmt* stmt_fn(Arena* arena, String* name, ParameterVec* params, TypeExpr* return
     stmt->data.fn.params = params;
     stmt->data.fn.return_type = return_type;
     stmt->data.fn.body = body;
+    stmt->data.fn.clauses = NULL;
 
     return stmt;
 }

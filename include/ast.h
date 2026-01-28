@@ -184,12 +184,38 @@ typedef struct {
 
 VEC_TYPE(ParameterVec, Parameter)
 
-/* Function definition */
+/* Pattern vector (for multi-clause function parameters) */
+VEC_TYPE(PatternVec, Pattern*)
+
+/* Function clause: a single clause in a multi-clause function definition.
+ * Each clause has pattern parameters and a body expression.
+ * Example: fn factorial(0) -> 1
+ *          fn factorial(n) -> n * factorial(n - 1)
+ */
+typedef struct {
+    PatternVec* params;       // Pattern parameters for this clause
+    TypeExpr* return_type;    // NULL if no return type annotation
+    Expr* body;               // Body expression
+} FunctionClause;
+
+VEC_TYPE(FunctionClauseVec, FunctionClause)
+
+/* Function definition.
+ * Supports both single-clause (with typed parameters) and multi-clause
+ * (with pattern parameters) function definitions.
+ *
+ * Single-clause: fn add(x: Int, y: Int) -> Int: x + y
+ *   - params is set, clauses is NULL
+ *
+ * Multi-clause: fn fact(0) -> 1 / fn fact(n) -> n * fact(n - 1)
+ *   - clauses is set, params may be NULL
+ */
 typedef struct {
     String* name;
-    ParameterVec* params;
-    TypeExpr* return_type;  // NULL if no return type annotation
-    Expr* body;
+    ParameterVec* params;            // Typed params (single-clause)
+    TypeExpr* return_type;           // NULL if no return type annotation
+    Expr* body;                      // Body (single-clause)
+    FunctionClauseVec* clauses;      // NULL for single-clause functions
 } FunctionDef;
 
 /* Statement types */

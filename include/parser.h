@@ -28,6 +28,9 @@ TypeExpr* parse_type(Parser* parser);
 // Statement parsing
 Stmt* parse_stmt(Parser* parser);
 
+// Parse multiple statements (groups adjacent fn clauses with same name)
+StmtVec* parse_stmts(Parser* parser);
+
 // Helper functions
 bool parser_had_error(Parser* parser);
 

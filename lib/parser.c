@@ -573,3 +573,16 @@ Stmt* parse_stmt(Parser* parser) {
     Expr* expr = parse_expression(parser);
     return stmt_expr(parser->arena, expr, expr->loc);
 }
+
+// Parse multiple statements until EOF.
+// Groups adjacent fn definitions with the same name into multi-clause functions.
+StmtVec* parse_stmts(Parser* parser) {
+    StmtVec* stmts = StmtVec_new(parser->arena);
+
+    while (!check(parser, TOKEN_EOF)) {
+        Stmt* stmt = parse_stmt(parser);
+        StmtVec_push(parser->arena, stmts, stmt);
+    }
+
+    return stmts;
+}

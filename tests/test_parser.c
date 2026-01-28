@@ -1051,6 +1051,119 @@ void test_parse_let_without_type(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse multi-clause function (simple factorial) */
+void test_parse_function_multi_clause_simple(void) {
+    Arena* arena = arena_create(4096);
+    /* Parse two adjacent clauses for the same function name:
+     *   fn fact(0) -> 1
+     *   fn fact(n) -> n * fact(n - 1)
+     */
+    Parser* parser = parser_new(arena, "fn fact(0) -> 1\nfn fact(n) -> n * fact(n - 1)");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    /* Adjacent fn clauses with same name should be grouped into a single STMT_FN */
+    ASSERT_EQ(stmts->len, 1);
+
+    Stmt* fn_stmt = StmtVec_get(stmts, 0);
+    ASSERT_EQ(fn_stmt->type, STMT_FN);
+    ASSERT_STR_EQ(string_cstr(fn_stmt->data.fn.name), "fact");
+
+    /* Should have 2 clauses */
+    ASSERT_NOT_NULL(fn_stmt->data.fn.clauses);
+    ASSERT_EQ(fn_stmt->data.fn.clauses->len, 2);
+
+    /* First clause: fact(0) -> 1 */
+    FunctionClause c1 = FunctionClauseVec_get(fn_stmt->data.fn.clauses, 0);
+    ASSERT_EQ(c1.params->len, 1);
+    ASSERT_EQ(PatternVec_get(c1.params, 0)->type, PATTERN_LIT);
+    ASSERT_EQ(c1.body->type, EXPR_INT_LIT);
+    ASSERT_EQ(c1.body->data.int_lit.value, 1);
+
+    /* Second clause: fact(n) -> n * fact(n - 1) */
+    FunctionClause c2 = FunctionClauseVec_get(fn_stmt->data.fn.clauses, 1);
+    ASSERT_EQ(c2.params->len, 1);
+    ASSERT_EQ(PatternVec_get(c2.params, 0)->type, PATTERN_IDENT);
+    ASSERT_EQ(c2.body->type, EXPR_BINARY);
+    ASSERT_EQ(c2.body->data.binary.op, BINOP_MUL);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse multi-clause function (fibonacci with 3 clauses) */
+void test_parse_function_multi_clause_fibonacci(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena,
+        "fn fib(0) -> 0\n"
+        "fn fib(1) -> 1\n"
+        "fn fib(n) -> fib(n - 1) + fib(n - 2)");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    ASSERT_EQ(stmts->len, 1);
+
+    Stmt* fn_stmt = StmtVec_get(stmts, 0);
+    ASSERT_EQ(fn_stmt->type, STMT_FN);
+    ASSERT_STR_EQ(string_cstr(fn_stmt->data.fn.name), "fib");
+    ASSERT_EQ(fn_stmt->data.fn.clauses->len, 3);
+
+    /* Third clause body: fib(n - 1) + fib(n - 2) */
+    FunctionClause c3 = FunctionClauseVec_get(fn_stmt->data.fn.clauses, 2);
+    ASSERT_EQ(c3.body->type, EXPR_BINARY);
+    ASSERT_EQ(c3.body->data.binary.op, BINOP_ADD);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse function clauses must be adjacent (error on separation) */
+void test_parse_function_clauses_must_be_adjacent(void) {
+    Arena* arena = arena_create(4096);
+    /* Clauses of factorial are separated by another function definition */
+    Parser* parser = parser_new(arena,
+        "fn fact(0) -> 1\n"
+        "fn other() -> Int: 42\n"
+        "fn fact(n) -> n * fact(n - 1)");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+
+    /* The parser should report an error when it encounters a second set of
+     * clauses for 'fact' after a different function was defined in between. */
+    ASSERT_TRUE(parser_had_error(parser));
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse function with string pattern parameters */
+void test_parse_function_pattern_params(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena,
+        "fn greet(\"Alice\") -> \"Hi Alice\"\n"
+        "fn greet(name) -> \"Hello\"");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    ASSERT_EQ(stmts->len, 1);
+
+    Stmt* fn_stmt = StmtVec_get(stmts, 0);
+    ASSERT_EQ(fn_stmt->type, STMT_FN);
+    ASSERT_STR_EQ(string_cstr(fn_stmt->data.fn.name), "greet");
+    ASSERT_EQ(fn_stmt->data.fn.clauses->len, 2);
+
+    /* First clause: greet("Alice") -> "Hi Alice" */
+    FunctionClause c1 = FunctionClauseVec_get(fn_stmt->data.fn.clauses, 0);
+    ASSERT_EQ(c1.params->len, 1);
+    ASSERT_EQ(PatternVec_get(c1.params, 0)->type, PATTERN_LIT);
+    ASSERT_EQ(PatternVec_get(c1.params, 0)->data.literal->type, EXPR_STRING_LIT);
+
+    /* Second clause: greet(name) -> "Hello" */
+    FunctionClause c2 = FunctionClauseVec_get(fn_stmt->data.fn.clauses, 1);
+    ASSERT_EQ(c2.params->len, 1);
+    ASSERT_EQ(PatternVec_get(c2.params, 0)->type, PATTERN_IDENT);
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -1104,4 +1217,8 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_let_with_type_parameterized);
     TEST_RUN(test_parse_let_with_type_function);
     TEST_RUN(test_parse_let_without_type);
+    TEST_RUN(test_parse_function_multi_clause_simple);
+    TEST_RUN(test_parse_function_multi_clause_fibonacci);
+    TEST_RUN(test_parse_function_clauses_must_be_adjacent);
+    TEST_RUN(test_parse_function_pattern_params);
 }
