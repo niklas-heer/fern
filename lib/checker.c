@@ -71,6 +71,31 @@ static Type* error_type(Checker* checker, const char* fmt, ...) {
     return type_error(checker->arena, string_new(checker->arena, buf));
 }
 
+/* Error with source location */
+static Type* error_type_at(Checker* checker, SourceLoc loc, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    
+    char msg_buf[1024];
+    vsnprintf(msg_buf, sizeof(msg_buf), fmt, args);
+    va_end(args);
+    
+    /* Format with location: "file:line:col: error message" */
+    char full_buf[1280];
+    if (loc.filename && loc.line > 0) {
+        snprintf(full_buf, sizeof(full_buf), "%s:%zu:%zu: %s",
+            string_cstr(loc.filename), loc.line, loc.column, msg_buf);
+    } else if (loc.line > 0) {
+        snprintf(full_buf, sizeof(full_buf), "%zu:%zu: %s",
+            loc.line, loc.column, msg_buf);
+    } else {
+        snprintf(full_buf, sizeof(full_buf), "%s", msg_buf);
+    }
+    
+    add_error(checker, "%s", full_buf);
+    return type_error(checker->arena, string_new(checker->arena, full_buf));
+}
+
 /* ========== Checker Creation ========== */
 
 Checker* checker_new(Arena* arena) {
@@ -843,7 +868,7 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
         case EXPR_IDENT: {
             Type* t = type_env_lookup(checker->env, expr->data.ident.name);
             if (!t) {
-                return error_type(checker, "Undefined variable: %s",
+                return error_type_at(checker, expr->loc, "Undefined variable: %s",
                     string_cstr(expr->data.ident.name));
             }
             return t;
@@ -884,7 +909,7 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
             
             /* Value must be a Result type */
             if (!type_is_result(value_type)) {
-                return error_type(checker, "The <- operator requires a Result type, got %s",
+                return error_type_at(checker, expr->loc, "The <- operator requires a Result type, got %s",
                     string_cstr(type_to_string(checker->arena, value_type)));
             }
             
@@ -984,7 +1009,7 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
             /* Iterable must be a List (for now) */
             if (iter_type->kind != TYPE_CON || 
                 strcmp(string_cstr(iter_type->data.con.name), "List") != 0) {
-                return error_type(checker, "for loop requires List, got %s",
+                return error_type_at(checker, expr->loc, "for loop requires List, got %s",
                     string_cstr(type_to_string(checker->arena, iter_type)));
             }
             
@@ -1023,7 +1048,7 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
                 strcmp(string_cstr(obj_type->data.con.name), "List") == 0) {
                 /* Index must be Int */
                 if (idx_type->kind != TYPE_INT) {
-                    return error_type(checker, "List index must be Int, got %s",
+                    return error_type_at(checker, expr->loc, "List index must be Int, got %s",
                         string_cstr(type_to_string(checker->arena, idx_type)));
                 }
                 /* Return element type */
@@ -1036,7 +1061,7 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
                 /* Index must match key type */
                 Type* key_type = obj_type->data.con.args->data[0];
                 if (!type_equals(idx_type, key_type)) {
-                    return error_type(checker, "Map key must be %s, got %s",
+                    return error_type_at(checker, expr->loc, "Map key must be %s, got %s",
                         string_cstr(type_to_string(checker->arena, key_type)),
                         string_cstr(type_to_string(checker->arena, idx_type)));
                 }
@@ -1044,7 +1069,7 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
                 return obj_type->data.con.args->data[1];
             }
             
-            return error_type(checker, "Cannot index type %s",
+            return error_type_at(checker, expr->loc, "Cannot index type %s",
                 string_cstr(type_to_string(checker->arena, obj_type)));
         }
             
@@ -1062,7 +1087,7 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
             
             /* Operand must be Result(ok, err) */
             if (!type_is_result(operand_type)) {
-                return error_type(checker, "The ? operator requires a Result type, got %s",
+                return error_type_at(checker, expr->loc, "The ? operator requires a Result type, got %s",
                     string_cstr(type_to_string(checker->arena, operand_type)));
             }
             
