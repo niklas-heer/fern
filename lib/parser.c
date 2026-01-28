@@ -279,7 +279,14 @@ static Expr* parse_unary(Parser* parser) {
 static Expr* parse_call(Parser* parser) {
     Expr* expr = parse_primary_internal(parser);
     
-    while (check(parser, TOKEN_LPAREN) || check(parser, TOKEN_DOT)) {
+    while (check(parser, TOKEN_LPAREN) || check(parser, TOKEN_DOT) || check(parser, TOKEN_LBRACKET)) {
+    if (match(parser, TOKEN_LBRACKET)) {
+        SourceLoc loc = parser->previous.loc;
+        Expr* index = parse_expression(parser);
+        consume(parser, TOKEN_RBRACKET, "Expected ']' after index expression");
+        expr = expr_index(parser->arena, expr, index, loc);
+        continue;
+    }
     if (match(parser, TOKEN_DOT)) {
         SourceLoc loc = parser->previous.loc;
         if (match(parser, TOKEN_INT)) {

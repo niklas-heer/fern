@@ -50,6 +50,7 @@ typedef enum {
     EXPR_TUPLE,         // (a, b, c)
     EXPR_RECORD_UPDATE, // { user | age: 31 }
     EXPR_LIST_COMP,     // [expr for var in iterable if condition]
+    EXPR_INDEX,         // items[0]
     EXPR_SPAWN,         // spawn(expr)
     EXPR_SEND,          // send(pid, msg)
     EXPR_RECEIVE,       // receive: pattern -> body ...
@@ -262,6 +263,12 @@ typedef struct {
     Expr* condition;    // Optional filter condition (NULL if no 'if')
 } ListCompExpr;
 
+/* Index expression: items[0] */
+typedef struct {
+    Expr* object;
+    Expr* index;
+} IndexExpr;
+
 /* Spawn expression: spawn(expr) */
 typedef struct {
     Expr* func;
@@ -323,6 +330,7 @@ struct Expr {
         TupleExpr tuple;
         RecordUpdateExpr record_update;
         ListCompExpr list_comp;
+        IndexExpr index_expr;
         SpawnExpr spawn_expr;
         SendExpr send_expr;
         ReceiveExpr receive_expr;
@@ -584,6 +592,7 @@ Expr* expr_map(Arena* arena, MapEntryVec* entries, SourceLoc loc);
 Expr* expr_tuple(Arena* arena, ExprVec* elements, SourceLoc loc);
 Expr* expr_record_update(Arena* arena, Expr* base, RecordFieldVec* fields, SourceLoc loc);
 Expr* expr_list_comp(Arena* arena, Expr* body, String* var_name, Expr* iterable, Expr* condition, SourceLoc loc);
+Expr* expr_index(Arena* arena, Expr* object, Expr* index, SourceLoc loc);
 Expr* expr_spawn(Arena* arena, Expr* func, SourceLoc loc);
 Expr* expr_send(Arena* arena, Expr* pid, Expr* message, SourceLoc loc);
 Expr* expr_receive(Arena* arena, MatchArmVec* arms, Expr* after_timeout, Expr* after_body, SourceLoc loc);

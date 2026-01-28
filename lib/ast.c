@@ -341,6 +341,20 @@ Expr* expr_list_comp(Arena* arena, Expr* body, String* var_name, Expr* iterable,
     return expr;
 }
 
+Expr* expr_index(Arena* arena, Expr* object, Expr* index, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(object != NULL);
+    assert(index != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_INDEX;
+    expr->loc = loc;
+    expr->data.index_expr.object = object;
+    expr->data.index_expr.index = index;
+
+    return expr;
+}
+
 Expr* expr_spawn(Arena* arena, Expr* func, SourceLoc loc) {
     assert(arena != NULL);
     assert(func != NULL);

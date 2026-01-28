@@ -2557,6 +2557,32 @@ void test_parse_fn_no_where(void) {
     arena_destroy(arena);
 }
 
+void test_parse_index_access(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "items[0]");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_INDEX);
+    ASSERT_EQ(expr->data.index_expr.object->type, EXPR_IDENT);
+    ASSERT_EQ(expr->data.index_expr.index->type, EXPR_INT_LIT);
+
+    arena_destroy(arena);
+}
+
+void test_parse_index_chain(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "matrix[i][j]");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_INDEX);
+    ASSERT_EQ(expr->data.index_expr.object->type, EXPR_INDEX);
+    ASSERT_EQ(expr->data.index_expr.index->type, EXPR_IDENT);
+
+    arena_destroy(arena);
+}
+
 void test_parse_module_simple(void) {
     Arena* arena = arena_create(4096);
     Parser* parser = parser_new(arena, "module main");
@@ -2880,6 +2906,8 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_fn_no_where);
     TEST_RUN(test_parse_newtype);
     TEST_RUN(test_parse_pub_newtype);
+    TEST_RUN(test_parse_index_access);
+    TEST_RUN(test_parse_index_chain);
     TEST_RUN(test_parse_module_simple);
     TEST_RUN(test_parse_module_dotted);
     TEST_RUN(test_parse_trait_with_constraint);
