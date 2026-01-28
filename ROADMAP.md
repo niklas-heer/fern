@@ -1744,18 +1744,87 @@ Passed: 96
 
 ---
 
+## Iteration 17: Type Definition Parsing
+
+**Agent Turn**: CONTROLLER + IMPLEMENTER
+**Status**: COMPLETE ✅ VERIFIED
+**Task**: Implement type definition parsing (sum types, record types, parameterized types)
+
+### Completed Task
+
+- [x] Implement type definition parsing ✅ VERIFIED
+
+**Tests Written**:
+- test_parse_type_def_simple() - Parse: `type Status: Active, Inactive` ✓
+- test_parse_type_def_with_fields() - Parse: `type Shape: Circle(radius: Float), Rect(w: Int, h: Int)` ✓
+- test_parse_type_def_parameterized() - Parse: `type Option(a): Some(a), None` ✓
+- test_parse_type_def_record() - Parse: `type User: name: String, age: Int` ✓
+- test_parse_type_def_pub() - Parse: `pub type Color: Red, Green, Blue` ✓
+
+**Files Modified**:
+- tests/test_parser.c (added 5 new tests)
+- include/ast.h (added TypeField, TypeFieldVec, TypeVariant, TypeVariantVec, TypeDef, STMT_TYPE_DEF)
+- lib/ast.c (added stmt_type_def helper)
+- lib/parser.c (added type definition parsing, extended pub to accept type)
+
+**Success Criteria Met**:
+- [x] All 5 new tests pass
+- [x] No regression in existing tests (96 → 101 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows TDD workflow (RED → GREEN)
+
+### Implementation Notes
+
+**Written by**: IMPLEMENTER (Opus 4.5)
+**Time**: 2026-01-28
+
+Implementation completed with TDD workflow:
+1. RED phase: Added 5 failing tests for type definitions (dc0ffbf)
+2. GREEN phase: Implemented type definition AST and parser (658fb3b)
+
+**AST Changes:**
+- Added `TypeField` struct (name: String*, type_ann: TypeExpr*) and `TypeFieldVec`
+- Added `TypeVariant` struct (name: String*, fields: TypeFieldVec*) and `TypeVariantVec`
+- Added `TypeDef` struct (name, is_public, type_params, variants, record_fields)
+- Added `STMT_TYPE_DEF` statement type with `type_def` in Stmt union
+- Added `stmt_type_def()` helper function
+
+**Parser Changes:**
+- Extended `pub` keyword handling to accept both `fn` and `type`
+- Added type definition parsing in `parse_stmt()`, triggered by `TOKEN_TYPE`
+- Uses heuristic to distinguish sum types from record types:
+  - First identifier lowercase + followed by colon → record type
+  - Otherwise → sum type with uppercase variant constructors
+- Sum type variants support optional fields (named or positional)
+- Type parameters parsed as comma-separated identifiers in parentheses
+
+**Key Design Decision:**
+Sum types vs record types are distinguished by checking the case of the first
+member identifier and whether it's followed by a colon. Uppercase = variant
+constructor (sum type), lowercase + colon = field (record type). This matches
+Fern's convention from DESIGN.md where constructors are PascalCase and fields
+are snake_case.
+
+Test Results:
+```
+Total:  101
+Passed: 101
+```
+
+---
+
 ## Ralph Loop Status
 
 **Current Milestone**: 2 - Parser (+ Lexer enhancements)
-**Current Iteration**: 16
-**Agent Turn**: CONTROLLER
-**Status**: COMPLETE - awaiting verification
+**Current Iteration**: 17
+**Agent Turn**: COMPLETE
+**Status**: COMPLETE ✅
 **Started**: 2026-01-28
 **Last Updated**: 2026-01-28
 
 ### Previous Task
 
-- [x] Implement if expression parsing ✅ VERIFIED
+- [x] Implement float literal lexing and parsing ✅ VERIFIED
 
 ### Completed Task
 
