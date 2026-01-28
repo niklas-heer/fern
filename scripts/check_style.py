@@ -1,4 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "rich>=13.0",
+# ]
+# ///
 """
 FERN_STYLE Checker - Enforces TigerBeetle-inspired coding standards.
 
@@ -8,17 +14,33 @@ Checks:
 3. No direct malloc/free usage (use arena)
 4. No unbounded loops (must have explicit limit)
 
+Inline Exceptions:
+    Add a comment in your function to suppress specific rules:
+
+    // FERN_STYLE: allow(assertion-density) reason here
+    // FERN_STYLE: allow(function-length) complex but cohesive logic
+    // FERN_STYLE: allow(no-malloc) this IS the allocator
+    // FERN_STYLE: allow(bounded-loops) loop bounded by input length
+
 Usage:
-    python3 scripts/check_style.py src/ lib/
-    python3 scripts/check_style.py --fix src/ lib/  # Add TODO comments
+    uv run scripts/check_style.py src/ lib/
+    uv run scripts/check_style.py --strict src/ lib/  # Treat warnings as errors
 """
 
 import argparse
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
+
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
+console = Console()
 
 
 @dataclass
@@ -44,6 +66,7 @@ class Function:
     has_unbounded_loop: bool
     has_malloc: bool
     has_free: bool
+    allowed_rules: set = field(default_factory=set)  # Rules to skip via inline comments
 
 
 def strip_string_literals(line: str) -> str:
@@ -95,6 +118,13 @@ def find_c_files(directories: list[str]) -> Iterator[Path]:
             yield from path.rglob("*.c")
 
 
+# Pattern to match FERN_STYLE inline exception comments
+# Examples:
+#   // FERN_STYLE: allow(assertion-density) reason here
+#   /* FERN_STYLE: allow(no-malloc, no-free) this is the allocator */
+ALLOW_PATTERN = re.compile(r"(?://|/\*)\s*FERN_STYLE:\s*allow\(([^)]+)\)")
+
+
 def extract_functions(content: str, filepath: Path) -> list[Function]:
     """Extract function definitions from C source code."""
     functions = []
@@ -131,12 +161,20 @@ def extract_functions(content: str, filepath: Path) -> list[Function]:
             has_unbounded_loop = False
             has_malloc = False
             has_free = False
+            allowed_rules = set()
 
             while j < len(lines) and brace_count > 0:
                 current_line = lines[j]
                 # Strip string literals to avoid counting braces inside strings
                 stripped_line = strip_string_literals(current_line)
                 brace_count += stripped_line.count("{") - stripped_line.count("}")
+
+                # Check for FERN_STYLE allow comments
+                allow_match = ALLOW_PATTERN.search(current_line)
+                if allow_match:
+                    rules = allow_match.group(1)
+                    for rule in rules.split(","):
+                        allowed_rules.add(rule.strip())
 
                 # Count assertions
                 if re.search(r"\bassert\s*\(", current_line):
@@ -170,6 +208,13 @@ def extract_functions(content: str, filepath: Path) -> list[Function]:
 
             end_line = j  # 1-indexed
 
+            # Also check the function signature line for allow comments
+            allow_match = ALLOW_PATTERN.search(line)
+            if allow_match:
+                rules = allow_match.group(1)
+                for rule in rules.split(","):
+                    allowed_rules.add(rule.strip())
+
             functions.append(
                 Function(
                     name=func_name,
@@ -179,6 +224,7 @@ def extract_functions(content: str, filepath: Path) -> list[Function]:
                     has_unbounded_loop=has_unbounded_loop,
                     has_malloc=has_malloc,
                     has_free=has_free,
+                    allowed_rules=allowed_rules,
                 )
             )
 
@@ -213,7 +259,7 @@ def check_file(filepath: Path) -> list[Violation]:
         line_count = func.end_line - func.start_line
 
         # Rule 1: Minimum 2 assertions per function
-        if func.assertion_count < 2:
+        if func.assertion_count < 2 and "assertion-density" not in func.allowed_rules:
             violations.append(
                 Violation(
                     file=filepath,
@@ -225,7 +271,7 @@ def check_file(filepath: Path) -> list[Violation]:
             )
 
         # Rule 2: Maximum 70 lines per function
-        if line_count > 70:
+        if line_count > 70 and "function-length" not in func.allowed_rules:
             violations.append(
                 Violation(
                     file=filepath,
@@ -237,7 +283,7 @@ def check_file(filepath: Path) -> list[Violation]:
             )
 
         # Rule 3: No malloc/free (use arena)
-        if func.has_malloc:
+        if func.has_malloc and "no-malloc" not in func.allowed_rules:
             violations.append(
                 Violation(
                     file=filepath,
@@ -248,7 +294,7 @@ def check_file(filepath: Path) -> list[Violation]:
                 )
             )
 
-        if func.has_free:
+        if func.has_free and "no-free" not in func.allowed_rules:
             violations.append(
                 Violation(
                     file=filepath,
@@ -260,7 +306,7 @@ def check_file(filepath: Path) -> list[Violation]:
             )
 
         # Rule 4: No unbounded loops
-        if func.has_unbounded_loop:
+        if func.has_unbounded_loop and "bounded-loops" not in func.allowed_rules:
             violations.append(
                 Violation(
                     file=filepath,
@@ -276,9 +322,15 @@ def check_file(filepath: Path) -> list[Violation]:
 
 
 def print_violations(violations: list[Violation], by_file: bool = True) -> None:
-    """Print violations in a readable format."""
+    """Print violations in a readable format using rich."""
     if not violations:
-        print("\033[32m✓ All files pass FERN_STYLE checks\033[0m")
+        console.print(
+            Panel(
+                "[bold green]All files pass FERN_STYLE checks[/]",
+                border_style="green",
+                box=box.ROUNDED,
+            )
+        )
         return
 
     if by_file:
@@ -288,22 +340,65 @@ def print_violations(violations: list[Violation], by_file: bool = True) -> None:
             files.setdefault(v.file, []).append(v)
 
         for filepath, file_violations in sorted(files.items()):
-            print(f"\n\033[1m{filepath}:\033[0m")
+            table = Table(
+                title=str(filepath),
+                title_style="bold white",
+                box=box.SIMPLE,
+                show_header=True,
+                header_style="bold cyan",
+                padding=(0, 1),
+            )
+            table.add_column("", width=2)  # Status icon
+            table.add_column("Function", style="yellow")
+            table.add_column("Line", justify="right", style="dim")
+            table.add_column("Rule", style="magenta")
+            table.add_column("Message")
+
             for v in file_violations:
-                color = "\033[31m" if v.severity == "error" else "\033[33m"
-                symbol = "✗" if v.severity == "error" else "⚠"
-                func_str = f"{v.function}()" if v.function else "file"
-                print(
-                    f"  {color}{symbol}\033[0m {func_str} line {v.line} - {v.message}"
+                if v.severity == "error":
+                    icon = "[bold red]X[/]"
+                    msg_style = "red"
+                else:
+                    icon = "[bold yellow]![/]"
+                    msg_style = "yellow"
+
+                func_name = f"{v.function}()" if v.function else "file"
+                table.add_row(
+                    icon,
+                    func_name,
+                    str(v.line),
+                    v.rule,
+                    Text(v.message, style=msg_style),
                 )
+
+            console.print(table)
+            console.print()
 
     # Summary
     errors = sum(1 for v in violations if v.severity == "error")
     warnings = sum(1 for v in violations if v.severity == "warning")
     files_affected = len(set(v.file for v in violations))
 
-    print(
-        f"\n\033[1mSummary:\033[0m {errors} errors, {warnings} warnings in {files_affected} files"
+    summary_parts = []
+    if errors > 0:
+        summary_parts.append(f"[bold red]{errors} error{'s' if errors != 1 else ''}[/]")
+    if warnings > 0:
+        summary_parts.append(
+            f"[bold yellow]{warnings} warning{'s' if warnings != 1 else ''}[/]"
+        )
+
+    summary_text = (
+        ", ".join(summary_parts)
+        + f" in [bold]{files_affected}[/] file{'s' if files_affected != 1 else ''}"
+    )
+
+    console.print(
+        Panel(
+            summary_text,
+            title="Summary",
+            border_style="red" if errors > 0 else "yellow",
+            box=box.ROUNDED,
+        )
     )
 
 
@@ -318,10 +413,15 @@ FERN_STYLE Rules (TigerBeetle-inspired):
   3. No malloc/free (use arena allocation)
   4. No unbounded loops (add explicit limits)
 
+Inline Exceptions:
+  Add a comment inside the function to suppress specific rules:
+    // FERN_STYLE: allow(assertion-density) simple helper
+    // FERN_STYLE: allow(no-malloc, no-free) this IS the allocator
+
 Examples:
-  %(prog)s src/ lib/           Check all .c files
-  %(prog)s src/lexer.c         Check specific file
-  %(prog)s --summary src/      Show only summary
+  uv run %(prog)s src/ lib/           Check all .c files
+  uv run %(prog)s src/lexer.c         Check specific file
+  uv run %(prog)s --summary src/      Show only summary
         """,
     )
     parser.add_argument(
@@ -345,7 +445,7 @@ Examples:
     all_violations: list[Violation] = []
     files_checked = 0
 
-    print("Checking FERN_STYLE compliance...\n")
+    console.print("[bold]Checking FERN_STYLE compliance...[/]\n")
 
     for filepath in find_c_files(args.paths):
         files_checked += 1
@@ -353,10 +453,10 @@ Examples:
         all_violations.extend(violations)
 
     if files_checked == 0:
-        print("\033[33mNo .c files found to check\033[0m")
+        console.print("[yellow]No .c files found to check[/]")
         return 0
 
-    print(f"Checked {files_checked} files")
+    console.print(f"Checked [bold]{files_checked}[/] files\n")
 
     if not args.summary:
         print_violations(all_violations)
@@ -366,11 +466,11 @@ Examples:
         files_affected = len(set(v.file for v in all_violations))
 
         if all_violations:
-            print(
-                f"\033[31m{errors} errors, {warnings} warnings in {files_affected} files\033[0m"
+            console.print(
+                f"[red]{errors} errors, {warnings} warnings in {files_affected} files[/]"
             )
         else:
-            print("\033[32m✓ All files pass FERN_STYLE checks\033[0m")
+            console.print("[green]All files pass FERN_STYLE checks[/]")
 
     # Exit code
     errors = sum(1 for v in all_violations if v.severity == "error")
