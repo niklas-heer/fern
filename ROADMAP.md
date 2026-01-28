@@ -1191,31 +1191,60 @@ result <- fetch_data()
 
 The bind operator should be parsed as a binary expression with specific precedence (lower than most operators, but higher than assignment).
 
-### Success Criteria
+### Completed Task
 
-- [ ] Write tests for bind operator parsing (TDD - RED phase)
-- [ ] Implement bind operator parsing (GREEN phase)
-- [ ] All new tests pass
-- [ ] No regression in existing tests (48 tests should remain passing)
-- [ ] No compiler warnings
-- [ ] Follows existing parser patterns
+- [x] Implement <- (bind) operator parsing ✅ COMPLETE
 
-### Next Steps for IMPLEMENTER
+**Tests Written**:
+- test_parse_bind_simple() - Parse: `x <- f()` ✓
+- test_parse_bind_with_call() - Parse: `result <- read_file("test.txt")` ✓
+- test_parse_bind_in_block() - Parse: `{ content <- load(), process(content) }` ✓
 
-1. Write failing tests in `tests/test_parser.c`:
-   - `test_parse_bind_simple()` - Parse: `x <- f()`
-   - `test_parse_bind_with_call()` - Parse: `result <- read_file("test.txt")`
-   - `test_parse_bind_in_block()` - Parse: `{ content <- load(), process(content) }`
+**Files Modified**:
+- tests/test_parser.c (added 3 new tests)
+- lib/parser.c (added bind parsing in identifier branch)
+- lib/ast.c (added expr_bind helper)
+- include/ast.h (added expr_bind declaration)
 
-2. Run `make test` to verify tests fail (RED)
+**Success Criteria Met**:
+- [x] All three new tests pass
+- [x] No regression in existing tests (48 → 51 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows existing parser patterns
 
-3. Implement bind operator parsing in `lib/parser.c`
+### Implementation Notes
 
-4. Run `make test` to verify tests pass (GREEN)
+**Written by**: IMPLEMENTER (Opus 4.5)
+**Time**: 2026-01-28
 
-5. Update ROADMAP.md with implementation notes
+Implementation completed with TDD workflow:
+1. RED phase: Added 3 failing tests for bind expressions
+2. GREEN phase: Implemented bind parsing
 
-6. Commit changes
+Bind Expression Implementation:
+- Parses syntax: `name <- expression`
+- When an identifier is parsed, the parser looks ahead for TOKEN_BIND (`<-`)
+- If found, parses the right-hand side as a full expression
+- Creates an EXPR_BIND node with the identifier name and value expression
+- Integrated into parse_primary_internal() identifier branch
+
+Key Design Decision:
+The bind operator is parsed at the primary expression level rather than as a binary operator. This is because the left-hand side must be a bare identifier (not an arbitrary expression), making it a special form rather than a true binary operator. Parsing it during identifier handling keeps the precedence simple and ensures only valid bind forms are accepted.
+
+Added `expr_bind()` helper function following the existing pattern used by other expression constructors (arena allocation, assertions, field assignment).
+
+Test Results:
+```
+=== Parser Tests ===
+Running test_parse_bind_simple... ✓ PASS
+Running test_parse_bind_with_call... ✓ PASS
+Running test_parse_bind_in_block... ✓ PASS
+
+Total:  51
+Passed: 51
+```
+
+Ready for CONTROLLER verification.
 
 ---
 

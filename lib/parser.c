@@ -306,9 +306,16 @@ static Expr* parse_primary_internal(Parser* parser) {
         return expr_bool_lit(parser->arena, false, parser->previous.loc);
     }
     
-    // Identifier
+    // Identifier (or bind expression: name <- expr)
     if (match(parser, TOKEN_IDENT)) {
         Token tok = parser->previous;
+
+        // Check for bind operator: name <- expression
+        if (match(parser, TOKEN_BIND)) {
+            Expr* value = parse_expression(parser);
+            return expr_bind(parser->arena, tok.text, value, tok.loc);
+        }
+
         return expr_ident(parser->arena, tok.text, tok.loc);
     }
     

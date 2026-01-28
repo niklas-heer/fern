@@ -247,6 +247,7 @@ Expr* expr_if(Arena* arena, Expr* condition, Expr* then_branch, Expr* else_branc
 Expr* expr_match(Arena* arena, Expr* value, MatchArmVec* arms, SourceLoc loc);
 Expr* expr_block(Arena* arena, StmtVec* stmts, Expr* final_expr, SourceLoc loc);
 Expr* expr_list(Arena* arena, ExprVec* elements, SourceLoc loc);
+Expr* expr_bind(Arena* arena, String* name, Expr* value, SourceLoc loc);
 
 /* Create statements */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc);

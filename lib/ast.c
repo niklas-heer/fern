@@ -166,6 +166,21 @@ Expr* expr_list(Arena* arena, ExprVec* elements, SourceLoc loc) {
     return expr;
 }
 
+/* Create bind expression (name <- value) */
+Expr* expr_bind(Arena* arena, String* name, Expr* value, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(name != NULL);
+    assert(value != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_BIND;
+    expr->loc = loc;
+    expr->data.bind.name = name;
+    expr->data.bind.value = value;
+
+    return expr;
+}
+
 /* Create let statement */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc) {
     assert(arena != NULL);
