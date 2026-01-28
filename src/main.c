@@ -6,6 +6,7 @@
 #include "fern_string.h"
 
 int main(int argc, char** argv) {
+    // FERN_STYLE: allow(assertion-density) main entry point - handles args and setup
     printf("Fern Compiler v0.0.1\n");
     
     if (argc < 2) {

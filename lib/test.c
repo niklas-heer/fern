@@ -1,16 +1,21 @@
 /* Test Framework Implementation */
 
 #include "test.h"
+#include <assert.h>
 
 TestStats g_test_stats = {0, 0, 0};
 
 void test_init(void) {
+    assert(g_test_stats.total >= 0);
+    assert(g_test_stats.failed >= 0);
     g_test_stats.total = 0;
     g_test_stats.passed = 0;
     g_test_stats.failed = 0;
 }
 
 int test_finish(void) {
+    assert(g_test_stats.total >= 0);
+    assert(g_test_stats.passed + g_test_stats.failed == g_test_stats.total);
     printf("\n");
     printf("================================================================================\n");
     printf("Test Results:\n");

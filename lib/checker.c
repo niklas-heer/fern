@@ -214,6 +214,7 @@ static Type* check_logical_op(Checker* checker, Type* left, Type* right,
 /* ========== Pipe Operator Type Checking ========== */
 
 static Type* check_pipe_expr(Checker* checker, BinaryExpr* expr) {
+    // FERN_STYLE: allow(function-length) pipe checking requires handling multiple cases cohesively
     assert(checker != NULL);
     assert(expr != NULL);
     /* Pipe: left |> right
@@ -474,6 +475,7 @@ static bool type_contains_var(Type* type, int var_id) {
 /* Unify two types, binding type variables as needed
  * Returns true if unification succeeded */
 static bool unify(Type* a, Type* b) {
+    // FERN_STYLE: allow(function-length) type unification requires handling all type combinations
     /* NULL types are equal only to each other. */
     if (!a || !b) return a == b;
     assert(a->kind >= TYPE_INT && a->kind <= TYPE_ERROR);
@@ -816,6 +818,7 @@ static Type* check_block_expr(Checker* checker, BlockExpr* expr) {
 /* ========== Match Expression Type Checking ========== */
 
 static Type* check_match_expr(Checker* checker, MatchExpr* expr) {
+    // FERN_STYLE: allow(function-length) match expression checking requires handling all pattern types
     assert(checker != NULL);
     assert(expr != NULL);
     /* Infer type of the scrutinee */
@@ -892,6 +895,7 @@ static Type* check_match_expr(Checker* checker, MatchExpr* expr) {
 /* ========== Main Type Inference ========== */
 
 Type* checker_infer_expr(Checker* checker, Expr* expr) {
+    // FERN_STYLE: allow(function-length) main type inference handles all expression types in one switch
     assert(checker != NULL);
     assert(expr != NULL);
     switch (expr->type) {
@@ -1327,6 +1331,7 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
 
 /* Convert a TypeExpr (AST type annotation) to a Type */
 static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
+    // FERN_STYLE: allow(function-length) type expression resolution handles all type forms
     assert(checker != NULL);
     if (!type_expr) return NULL;
     assert(type_expr->kind == TYPE_NAMED || type_expr->kind == TYPE_FUNCTION);
@@ -1464,6 +1469,7 @@ static Type* resolve_type_expr_strict(Checker* checker, TypeExpr* type_expr) {
 
 /* Bind a pattern to a type in the environment */
 static bool bind_pattern(Checker* checker, Pattern* pattern, Type* type) {
+    // FERN_STYLE: allow(function-length) pattern binding handles all pattern types recursively
     assert(checker != NULL);
     assert(pattern != NULL);
     switch (pattern->type) {
@@ -1587,6 +1593,7 @@ static bool check_let_stmt(Checker* checker, LetStmt* stmt) {
 }
 
 bool checker_check_stmt(Checker* checker, Stmt* stmt) {
+    // FERN_STYLE: allow(function-length) statement checking handles all statement types
     assert(checker != NULL);
     assert(stmt != NULL);
     switch (stmt->type) {

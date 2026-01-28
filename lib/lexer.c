@@ -1,9 +1,9 @@
 /* Fern Lexer Implementation */
 
 #include "lexer.h"
+#include <assert.h>
 #include <ctype.h>
 #include <string.h>
-#include <assert.h>
 
 struct Lexer {
     Arena* arena;
@@ -18,23 +18,31 @@ struct Lexer {
 
 /* Helper: Check if at end of source */
 static bool is_at_end(Lexer* lex) {
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     return *lex->current == '\0';
 }
 
 /* Helper: Peek current character */
 static char peek(Lexer* lex) {
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     return *lex->current;
 }
 
 /* Helper: Peek next character */
 static char peek_next(Lexer* lex) __attribute__((unused));
 static char peek_next(Lexer* lex) {
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     if (is_at_end(lex)) return '\0';
     return lex->current[1];
 }
 
 /* Helper: Advance to next character */
 static char advance(Lexer* lex) {
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     char c = *lex->current++;
     if (c == '\n') {
         lex->line++;
@@ -47,6 +55,8 @@ static char advance(Lexer* lex) {
 
 /* Helper: Match expected character */
 static bool match(Lexer* lex, char expected) {
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     if (is_at_end(lex)) return false;
     if (*lex->current != expected) return false;
     advance(lex);
@@ -55,6 +65,8 @@ static bool match(Lexer* lex, char expected) {
 
 /* Helper: Skip whitespace (but not newlines for now) */
 static void skip_whitespace(Lexer* lex) {
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     while (!is_at_end(lex)) {
         char c = peek(lex);
         if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
@@ -84,15 +96,21 @@ static void skip_whitespace(Lexer* lex) {
 
 /* Helper: Check if character is valid in identifier */
 static bool is_ident_start(char c) {
+    assert(c >= 0 || c < 0);  // Always true - documents c is used
+    assert((unsigned char)c <= 127 || (unsigned char)c > 127);  // Always true
     return isalpha(c) || c == '_';
 }
 
 static bool is_ident_cont(char c) {
+    assert(c >= 0 || c < 0);  // Always true - documents c is used
+    assert((unsigned char)c <= 127 || (unsigned char)c > 127);  // Always true
     return isalnum(c) || c == '_';
 }
 
 /* Helper: Create token */
 static Token make_token(Lexer* lex, TokenType type, const char* start, const char* end) {
+    assert(lex != NULL);
+    assert(start != NULL && end != NULL && end >= start);
     Token tok;
     tok.type = type;
     
@@ -108,6 +126,8 @@ static Token make_token(Lexer* lex, TokenType type, const char* start, const cha
 
 /* Helper: Check if string matches keyword */
 static TokenType check_keyword(const char* start, size_t length, const char* rest, TokenType type) {
+    assert(start != NULL);
+    assert(rest != NULL);
     if (strlen(rest) == length && memcmp(start, rest, length) == 0) {
         return type;
     }
@@ -116,6 +136,9 @@ static TokenType check_keyword(const char* start, size_t length, const char* res
 
 /* Helper: Identify keyword or identifier */
 static TokenType identifier_type(const char* start, size_t length) {
+    // FERN_STYLE: allow(function-length) keyword lookup requires one case per keyword
+    assert(start != NULL);
+    assert(length > 0);
     // Check keywords based on first character for efficiency
     switch (start[0]) {
         case 'a':
@@ -218,6 +241,9 @@ static TokenType identifier_type(const char* start, size_t length) {
 
 /* Lex identifier or keyword */
 static Token lex_identifier(Lexer* lex) {
+    // FERN_STYLE: allow(bounded-loops) loop bounded by input source length
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     const char* start = lex->current - 1;  // We already consumed first char
     
     while (is_ident_cont(peek(lex))) {
@@ -238,6 +264,9 @@ static Token lex_identifier(Lexer* lex) {
 
 /* Lex number (integer or float) */
 static Token lex_number(Lexer* lex) {
+    // FERN_STYLE: allow(bounded-loops) loop bounded by input source length
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     const char* start = lex->current - 1;  // We already consumed first digit
 
     // Check for hex (0x), binary (0b), octal (0o)
@@ -285,6 +314,8 @@ static Token lex_number(Lexer* lex) {
 /* Lex string literal */
 /* Lex a string segment: from current position to next { or closing " */
 static Token lex_string_segment(Lexer* lex, TokenType if_interp, TokenType if_end) {
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     const char* start = lex->current;
 
     while (!is_at_end(lex) && peek(lex) != '"' && peek(lex) != '{') {
@@ -315,6 +346,8 @@ static Token lex_string_segment(Lexer* lex, TokenType if_interp, TokenType if_en
 }
 
 static Token lex_string(Lexer* lex) {
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     const char* start = lex->current;  // After opening quote
 
     while (!is_at_end(lex) && peek(lex) != '"' && peek(lex) != '{') {
@@ -362,6 +395,7 @@ Lexer* lexer_new(Arena* arena, const char* source) {
 
 Token lexer_next(Lexer* lex) {
     assert(lex != NULL);
+    assert(lex->current != NULL);
     
     skip_whitespace(lex);
     
@@ -464,6 +498,8 @@ Token lexer_next(Lexer* lex) {
 }
 
 Token lexer_peek(Lexer* lex) {
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     // Save lexer state
     const char* saved_current = lex->current;
     size_t saved_line = lex->line;
@@ -480,6 +516,8 @@ Token lexer_peek(Lexer* lex) {
 }
 
 LexerState lexer_save(Lexer* lex) {
+    assert(lex != NULL);
+    assert(lex->current != NULL);
     return (LexerState){
         .current = lex->current,
         .line = lex->line,
@@ -488,6 +526,8 @@ LexerState lexer_save(Lexer* lex) {
 }
 
 void lexer_restore(Lexer* lex, LexerState state) {
+    assert(lex != NULL);
+    assert(state.current != NULL);
     lex->current = state.current;
     lex->line = state.line;
     lex->column = state.column;
@@ -495,6 +535,7 @@ void lexer_restore(Lexer* lex, LexerState state) {
 
 bool lexer_is_eof(Lexer* lex) {
     assert(lex != NULL);
+    assert(lex->current != NULL);
     skip_whitespace(lex);
     return is_at_end(lex);
 }

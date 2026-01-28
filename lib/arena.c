@@ -35,6 +35,7 @@ static size_t align_up(size_t n, size_t alignment) {
 }
 
 static ArenaBlock* arena_block_create(size_t size) {
+    // FERN_STYLE: allow(no-malloc) this IS the arena allocator implementation
     assert(size > 0);
     assert(size <= SIZE_MAX - sizeof(ArenaBlock));  /* Prevent overflow. */
     
@@ -52,6 +53,7 @@ static ArenaBlock* arena_block_create(size_t size) {
 }
 
 Arena* arena_create(size_t block_size) {
+    // FERN_STYLE: allow(no-malloc, no-free) this IS the arena allocator implementation
     assert(block_size > 0);
     assert(block_size <= SIZE_MAX / 2);  /* Reasonable upper bound. */
     
@@ -148,6 +150,7 @@ void arena_reset(Arena* arena) {
 }
 
 void arena_destroy(Arena* arena) {
+    // FERN_STYLE: allow(no-free) this IS the arena allocator implementation
     if (!arena) {
         return;
     }

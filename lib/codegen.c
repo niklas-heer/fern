@@ -97,6 +97,7 @@ static String* fresh_string_label(Codegen* cg) {
 /* ========== Expression Code Generation ========== */
 
 String* codegen_expr(Codegen* cg, Expr* expr) {
+    // FERN_STYLE: allow(function-length) code generation handles all expression types in one switch
     assert(cg != NULL);
     assert(expr != NULL);
     

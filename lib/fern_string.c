@@ -1,11 +1,11 @@
 /* Dynamic String Implementation */
 
 #include "fern_string.h"
-#include <stdlib.h>
-#include <string.h>
+#include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
 
 struct String {
     size_t len;
@@ -39,21 +39,26 @@ String* string_new(Arena* arena, const char* cstr) {
 
 String* string_empty(Arena* arena) {
     assert(arena != NULL);
-    return string_new_len(arena, "", 0);
+    String* result = string_new_len(arena, "", 0);
+    assert(result != NULL);
+    return result;
 }
 
 const char* string_cstr(const String* s) {
     assert(s != NULL);
+    assert(s->data != NULL);
     return s->data;
 }
 
 size_t string_len(const String* s) {
     assert(s != NULL);
+    assert(s->data != NULL);
     return s->len;
 }
 
 bool string_is_empty(const String* s) {
     assert(s != NULL);
+    assert(s->data != NULL);
     return s->len == 0;
 }
 

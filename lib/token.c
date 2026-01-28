@@ -1,9 +1,13 @@
 /* Token Utility Functions */
 
 #include "token.h"
+#include <assert.h>
 #include <string.h>
 
 const char* token_type_name(TokenType type) {
+    // FERN_STYLE: allow(function-length) one case per token type
+    assert(type >= TOKEN_EOF);
+    assert(type <= TOKEN_DOC_COMMENT || type == TOKEN_IDENT);
     switch (type) {
         case TOKEN_EOF: return "EOF";
         case TOKEN_ERROR: return "ERROR";
@@ -102,13 +106,19 @@ const char* token_type_name(TokenType type) {
 }
 
 bool token_is_keyword(TokenType type) {
+    assert(type >= TOKEN_EOF);
+    assert(type <= TOKEN_DOC_COMMENT || type == TOKEN_IDENT);
     return type >= TOKEN_LET && type <= TOKEN_AFTER;
 }
 
 bool token_is_operator(TokenType type) {
+    assert(type >= TOKEN_EOF);
+    assert(type <= TOKEN_DOC_COMMENT || type == TOKEN_IDENT);
     return type >= TOKEN_PLUS && type <= TOKEN_FAT_ARROW;
 }
 
 bool token_is_literal(TokenType type) {
+    assert(type >= TOKEN_EOF);
+    assert(type <= TOKEN_DOC_COMMENT || type == TOKEN_IDENT);
     return type >= TOKEN_INT && type <= TOKEN_FALSE;
 }
