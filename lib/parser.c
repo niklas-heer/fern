@@ -499,21 +499,50 @@ static Expr* parse_primary_internal(Parser* parser) {
         return expr_bool_lit(parser->arena, false, parser->previous.loc);
     }
 
-    // Map literal: %{ key: value, ... }
+    // Map literal or record update: %{ ... }
+    // Map: %{ key: value, ... }
+    // Record update: %{ record | field: value, ... }
     if (check(parser, TOKEN_PERCENT) && lexer_peek(parser->lexer).type == TOKEN_LBRACE) {
         advance(parser); // consume %
         advance(parser); // consume {
         SourceLoc loc = parser->previous.loc;
-        MapEntryVec* entries = MapEntryVec_new(parser->arena);
 
-        if (!check(parser, TOKEN_RBRACE)) {
+        if (check(parser, TOKEN_RBRACE)) {
+            // Empty map: %{ }
+            advance(parser);
+            return expr_map(parser->arena, MapEntryVec_new(parser->arena), loc);
+        }
+
+        // Parse first expression — could be map key or record base
+        Expr* first = parse_expression(parser);
+
+        if (match(parser, TOKEN_BAR)) {
+            // Record update: %{ record | field: value, ... }
+            RecordFieldVec* fields = RecordFieldVec_new(parser->arena);
             do {
-                Expr* key = parse_expression(parser);
-                consume(parser, TOKEN_COLON, "Expected ':' after map key");
+                Token name_tok = consume(parser, TOKEN_IDENT, "Expected field name in record update");
+                consume(parser, TOKEN_COLON, "Expected ':' after field name");
                 Expr* value = parse_expression(parser);
-                MapEntry entry = { .key = key, .value = value };
-                MapEntryVec_push(parser->arena, entries, entry);
+                RecordField field = { .name = name_tok.text, .value = value };
+                RecordFieldVec_push(parser->arena, fields, field);
             } while (match(parser, TOKEN_COMMA));
+            consume(parser, TOKEN_RBRACE, "Expected '}' after record update");
+            return expr_record_update(parser->arena, first, fields, loc);
+        }
+
+        // Map literal: first was a key, expect colon and value
+        consume(parser, TOKEN_COLON, "Expected ':' after map key");
+        Expr* first_value = parse_expression(parser);
+        MapEntryVec* entries = MapEntryVec_new(parser->arena);
+        MapEntry first_entry = { .key = first, .value = first_value };
+        MapEntryVec_push(parser->arena, entries, first_entry);
+
+        while (match(parser, TOKEN_COMMA)) {
+            Expr* key = parse_expression(parser);
+            consume(parser, TOKEN_COLON, "Expected ':' after map key");
+            Expr* value = parse_expression(parser);
+            MapEntry entry = { .key = key, .value = value };
+            MapEntryVec_push(parser->arena, entries, entry);
         }
 
         consume(parser, TOKEN_RBRACE, "Expected '}' after map entries");
@@ -694,50 +723,9 @@ static Expr* parse_primary_internal(Parser* parser) {
         return expr_if(parser->arena, condition, then_branch, else_branch, loc);
     }
     
-    // Block expression or record update
+    // Block expression: { stmt, stmt, expr }
     if (match(parser, TOKEN_LBRACE)) {
         SourceLoc loc = parser->previous.loc;
-        
-        // Try record update: { expr | field: value, ... }
-        // Save state and try parsing expr followed by |
-        LexerState saved_lex = lexer_save(parser->lexer);
-        Token saved_current = parser->current;
-        Token saved_previous = parser->previous;
-        
-        // Only attempt if not obviously a statement or empty block
-        if (!check(parser, TOKEN_LET) && !check(parser, TOKEN_RETURN) &&
-            !check(parser, TOKEN_DEFER) && !check(parser, TOKEN_BREAK) &&
-            !check(parser, TOKEN_CONTINUE) && !check(parser, TOKEN_RBRACE)) {
-            
-            Expr* maybe_base = parse_expression(parser);
-            
-            if (check(parser, TOKEN_BAR)) {
-                advance(parser); // consume |
-                
-                // Parse field updates: name: value, name: value, ...
-                RecordFieldVec* fields = RecordFieldVec_new(parser->arena);
-                do {
-                    Token name_tok = parser->current;
-                    consume(parser, TOKEN_IDENT, "Expected field name in record update");
-                    consume(parser, TOKEN_COLON, "Expected ':' after field name");
-                    Expr* value = parse_expression(parser);
-                    
-                    RecordField field;
-                    field.name = name_tok.text;
-                    field.value = value;
-                    RecordFieldVec_push(parser->arena, fields, field);
-                } while (match(parser, TOKEN_COMMA));
-                
-                consume(parser, TOKEN_RBRACE, "Expected '}' after record update");
-                return expr_record_update(parser->arena, maybe_base, fields, loc);
-            }
-            
-            // Not a record update — restore and parse as block
-            lexer_restore(parser->lexer, saved_lex);
-            parser->current = saved_current;
-            parser->previous = saved_previous;
-        }
-        
         StmtVec* stmts = StmtVec_new(parser->arena);
         Expr* final_expr = NULL;
         

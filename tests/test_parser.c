@@ -2309,10 +2309,10 @@ void test_parse_match_condition_complex(void) {
     arena_destroy(arena);
 }
 
-/* Test: { user | age: 31 } — record update single field */
+/* Test: %{ user | age: 31 } — record update single field */
 void test_parse_record_update(void) {
     Arena* arena = arena_create(4096);
-    Parser* parser = parser_new(arena, "{ user | age: 31 }");
+    Parser* parser = parser_new(arena, "%{ user | age: 31 }");
 
     Expr* expr = parse_expr(parser);
     ASSERT_NOT_NULL(expr);
@@ -2328,10 +2328,10 @@ void test_parse_record_update(void) {
     arena_destroy(arena);
 }
 
-/* Test: { user | age: 31, name: "Nik" } — record update multiple fields */
+/* Test: %{ user | age: 31, name: "Nik" } — record update multiple fields */
 void test_parse_record_update_multi(void) {
     Arena* arena = arena_create(4096);
-    Parser* parser = parser_new(arena, "{ user | age: 31, name: \"Nik\" }");
+    Parser* parser = parser_new(arena, "%{ user | age: 31, name: \"Nik\" }");
 
     Expr* expr = parse_expr(parser);
     ASSERT_NOT_NULL(expr);
