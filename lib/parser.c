@@ -357,6 +357,39 @@ static Expr* parse_primary_internal(Parser* parser) {
         Token tok = parser->previous;
         return expr_string_lit(parser->arena, tok.text, tok.loc);
     }
+
+    // Interpolated string: "Hello, {name}!"
+    if (match(parser, TOKEN_STRING_BEGIN)) {
+        SourceLoc loc = parser->previous.loc;
+        ExprVec* parts = ExprVec_new(parser->arena);
+
+        // Add the initial string segment (may be empty)
+        ExprVec_push(parser->arena, parts,
+            expr_string_lit(parser->arena, parser->previous.text, parser->previous.loc));
+
+        // Parse: expression (STRING_MID expression)* STRING_END
+        while (true) {
+            // Parse the interpolated expression
+            Expr* interp_expr = parse_expression(parser);
+            ExprVec_push(parser->arena, parts, interp_expr);
+
+            if (match(parser, TOKEN_STRING_MID)) {
+                // More interpolation segments: add mid string, continue
+                ExprVec_push(parser->arena, parts,
+                    expr_string_lit(parser->arena, parser->previous.text, parser->previous.loc));
+            } else if (match(parser, TOKEN_STRING_END)) {
+                // Final segment
+                ExprVec_push(parser->arena, parts,
+                    expr_string_lit(parser->arena, parser->previous.text, parser->previous.loc));
+                break;
+            } else {
+                error_at_current(parser, "Expected string continuation or end after interpolation");
+                break;
+            }
+        }
+
+        return expr_interp_string(parser->arena, parts, loc);
+    }
     
     // Boolean literals
     if (match(parser, TOKEN_TRUE)) {

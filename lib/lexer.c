@@ -12,6 +12,8 @@ struct Lexer {
     String* filename;
     size_t line;
     size_t column;
+    int interp_depth;       // > 0 when inside string interpolation {expr}
+    int interp_brace_depth; // tracks nested {} inside interpolation expr
 };
 
 /* Helper: Check if at end of source */
@@ -238,21 +240,55 @@ static Token lex_number(Lexer* lex) {
 }
 
 /* Lex string literal */
-static Token lex_string(Lexer* lex) {
-    const char* start = lex->current;  // After opening quote
-    
-    while (!is_at_end(lex) && peek(lex) != '"') {
+/* Lex a string segment: from current position to next { or closing " */
+static Token lex_string_segment(Lexer* lex, TokenType if_interp, TokenType if_end) {
+    const char* start = lex->current;
+
+    while (!is_at_end(lex) && peek(lex) != '"' && peek(lex) != '{') {
         advance(lex);
     }
-    
+
     if (is_at_end(lex)) {
-        // TODO: Better error handling
         return make_token(lex, TOKEN_ERROR, start, lex->current);
     }
-    
+
     const char* end = lex->current;
+
+    if (peek(lex) == '{') {
+        advance(lex); // consume '{'
+        lex->interp_depth++;
+        lex->interp_brace_depth = 0;
+        return make_token(lex, if_interp, start, end);
+    }
+
+    // peek is '"'
+    advance(lex); // consume closing quote
+    return make_token(lex, if_end, start, end);
+}
+
+static Token lex_string(Lexer* lex) {
+    const char* start = lex->current;  // After opening quote
+
+    while (!is_at_end(lex) && peek(lex) != '"' && peek(lex) != '{') {
+        advance(lex);
+    }
+
+    if (is_at_end(lex)) {
+        return make_token(lex, TOKEN_ERROR, start, lex->current);
+    }
+
+    const char* end = lex->current;
+
+    if (peek(lex) == '{') {
+        // String with interpolation: "Hello, {
+        advance(lex); // consume '{'
+        lex->interp_depth++;
+        lex->interp_brace_depth = 0;
+        return make_token(lex, TOKEN_STRING_BEGIN, start, end);
+    }
+
+    // Regular string (no interpolation)
     advance(lex);  // Closing quote
-    
     return make_token(lex, TOKEN_STRING, start, end);
 }
 
@@ -281,7 +317,20 @@ Token lexer_next(Lexer* lex) {
     }
     
     char c = advance(lex);
-    
+
+    // Handle string interpolation: } closes interpolation, resume string
+    if (c == '}' && lex->interp_depth > 0 && lex->interp_brace_depth == 0) {
+        lex->interp_depth--;
+        // Continue lexing the rest of the string after }
+        return lex_string_segment(lex, TOKEN_STRING_MID, TOKEN_STRING_END);
+    }
+
+    // Track brace nesting inside interpolation expressions
+    if (lex->interp_depth > 0) {
+        if (c == '{') lex->interp_brace_depth++;
+        if (c == '}') lex->interp_brace_depth--;
+    }
+
     // Identifiers and keywords
     if (is_ident_start(c)) {
         return lex_identifier(lex);

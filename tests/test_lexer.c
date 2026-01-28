@@ -298,6 +298,38 @@ void test_lex_loop_keywords(void) {
     arena_destroy(arena);
 }
 
+/* Test: String interpolation produces BEGIN, expr tokens, END */
+void test_lex_string_interpolation(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "\"Hello, {name}!\"");
+
+    Token t1 = lexer_next(lex);
+    ASSERT_EQ(t1.type, TOKEN_STRING_BEGIN);
+    ASSERT_STR_EQ(string_cstr(t1.text), "Hello, ");
+
+    Token t2 = lexer_next(lex);
+    ASSERT_EQ(t2.type, TOKEN_IDENT);
+    ASSERT_STR_EQ(string_cstr(t2.text), "name");
+
+    Token t3 = lexer_next(lex);
+    ASSERT_EQ(t3.type, TOKEN_STRING_END);
+    ASSERT_STR_EQ(string_cstr(t3.text), "!");
+
+    arena_destroy(arena);
+}
+
+/* Test: String without interpolation stays TOKEN_STRING */
+void test_lex_string_no_interpolation(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "\"hello world\"");
+
+    Token t1 = lexer_next(lex);
+    ASSERT_EQ(t1.type, TOKEN_STRING);
+    ASSERT_STR_EQ(string_cstr(t1.text), "hello world");
+
+    arena_destroy(arena);
+}
+
 void run_lexer_tests(void) {
     printf("\n=== Lexer Tests ===\n");
     TEST_RUN(test_lex_integer);
@@ -315,4 +347,6 @@ void run_lexer_tests(void) {
     TEST_RUN(test_lex_float_leading_zero);
     TEST_RUN(test_lex_float_trailing_zero);
     TEST_RUN(test_lex_loop_keywords);
+    TEST_RUN(test_lex_string_interpolation);
+    TEST_RUN(test_lex_string_no_interpolation);
 }

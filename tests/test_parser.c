@@ -1905,6 +1905,57 @@ void test_parse_method_call(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse interpolated string */
+void test_parse_interp_string(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "\"Hello, {name}!\"");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_INTERP_STRING);
+    // Parts: "Hello, ", name, "!"
+    ASSERT_EQ(expr->data.interp_string.parts->len, 3);
+    ASSERT_EQ(expr->data.interp_string.parts->data[0]->type, EXPR_STRING_LIT);
+    ASSERT_EQ(expr->data.interp_string.parts->data[1]->type, EXPR_IDENT);
+    ASSERT_EQ(expr->data.interp_string.parts->data[2]->type, EXPR_STRING_LIT);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse interpolated string with expression */
+void test_parse_interp_string_expr(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "\"result: {1 + 2}\"");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_INTERP_STRING);
+    // Parts: "result: ", (1 + 2), ""
+    ASSERT_EQ(expr->data.interp_string.parts->len, 3);
+    ASSERT_EQ(expr->data.interp_string.parts->data[1]->type, EXPR_BINARY);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse interpolated string with multiple interpolations */
+void test_parse_interp_string_multi(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "\"{a} and {b}\"");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_INTERP_STRING);
+    // Parts: "", a, " and ", b, ""
+    ASSERT_EQ(expr->data.interp_string.parts->len, 5);
+    ASSERT_EQ(expr->data.interp_string.parts->data[0]->type, EXPR_STRING_LIT);
+    ASSERT_EQ(expr->data.interp_string.parts->data[1]->type, EXPR_IDENT);
+    ASSERT_EQ(expr->data.interp_string.parts->data[2]->type, EXPR_STRING_LIT);
+    ASSERT_EQ(expr->data.interp_string.parts->data[3]->type, EXPR_IDENT);
+    ASSERT_EQ(expr->data.interp_string.parts->data[4]->type, EXPR_STRING_LIT);
+
+    arena_destroy(arena);
+}
+
 /* Test: Parse modulo operator */
 void test_parse_modulo(void) {
     Arena* arena = arena_create(4096);
@@ -2104,6 +2155,9 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_dot_access);
     TEST_RUN(test_parse_dot_chain);
     TEST_RUN(test_parse_method_call);
+    TEST_RUN(test_parse_interp_string);
+    TEST_RUN(test_parse_interp_string_expr);
+    TEST_RUN(test_parse_interp_string_multi);
     TEST_RUN(test_parse_modulo);
     TEST_RUN(test_parse_power);
     TEST_RUN(test_parse_power_right_assoc);

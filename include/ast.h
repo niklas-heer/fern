@@ -45,6 +45,7 @@ typedef enum {
     EXPR_WHILE,         // while condition: body
     EXPR_LOOP,          // loop: body
     EXPR_LAMBDA,        // (x, y) -> expr
+    EXPR_INTERP_STRING, // "Hello, {name}!"
 } ExprType;
 
 /* Binary operators */
@@ -218,6 +219,14 @@ typedef struct {
     Expr* body;
 } LambdaExpr;
 
+/* Interpolated string: "Hello, {name}! You are {age} years old."
+ * Parts alternate between string literals and expressions.
+ * E.g. ["Hello, ", name, "! You are ", age, " years old."]
+ */
+typedef struct {
+    ExprVec* parts;  // Mix of EXPR_STRING_LIT and other expressions
+} InterpStringExpr;
+
 /* Expression node */
 struct Expr {
     ExprType type;
@@ -243,6 +252,7 @@ struct Expr {
         WhileExpr while_loop;
         LoopExpr loop;
         LambdaExpr lambda;
+        InterpStringExpr interp_string;
     } data;
 };
 
@@ -462,6 +472,7 @@ Expr* expr_for(Arena* arena, String* var_name, Expr* iterable, Expr* body, Sourc
 Expr* expr_while(Arena* arena, Expr* condition, Expr* body, SourceLoc loc);
 Expr* expr_loop(Arena* arena, Expr* body, SourceLoc loc);
 Expr* expr_lambda(Arena* arena, StringVec* params, Expr* body, SourceLoc loc);
+Expr* expr_interp_string(Arena* arena, ExprVec* parts, SourceLoc loc);
 
 /* Create statements */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc);

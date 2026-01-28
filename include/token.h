@@ -96,6 +96,11 @@ typedef enum {
     TOKEN_UNDERSCORE,   // _
     TOKEN_AT,           // @
     
+    /* String interpolation tokens */
+    TOKEN_STRING_BEGIN, // "Hello, {     (text before first interpolation)
+    TOKEN_STRING_MID,   // } world {    (text between interpolations)
+    TOKEN_STRING_END,   // } end"       (text after last interpolation)
+    
     /* Comments (usually skipped, but tracked for doc comments) */
     TOKEN_COMMENT,      // # comment
     TOKEN_BLOCK_COMMENT,  // /* comment */

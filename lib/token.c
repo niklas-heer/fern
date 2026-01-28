@@ -80,6 +80,9 @@ const char* token_type_name(TokenType type) {
         case TOKEN_DOT: return "DOT";
         case TOKEN_DOTDOT: return "DOTDOT";
         case TOKEN_DOTDOTEQ: return "DOTDOTEQ";
+        case TOKEN_STRING_BEGIN: return "STRING_BEGIN";
+        case TOKEN_STRING_MID: return "STRING_MID";
+        case TOKEN_STRING_END: return "STRING_END";
         case TOKEN_ELLIPSIS: return "ELLIPSIS";
         case TOKEN_UNDERSCORE: return "UNDERSCORE";
         case TOKEN_AT: return "AT";

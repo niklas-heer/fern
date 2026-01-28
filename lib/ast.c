@@ -299,6 +299,18 @@ Expr* expr_lambda(Arena* arena, StringVec* params, Expr* body, SourceLoc loc) {
     return expr;
 }
 
+Expr* expr_interp_string(Arena* arena, ExprVec* parts, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(parts != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_INTERP_STRING;
+    expr->loc = loc;
+    expr->data.interp_string.parts = parts;
+
+    return expr;
+}
+
 /* Create named type expression */
 TypeExpr* type_named(Arena* arena, String* name, TypeExprVec* args, SourceLoc loc) {
     assert(arena != NULL);
