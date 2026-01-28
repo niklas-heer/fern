@@ -2,7 +2,7 @@
 
 > A statically-typed, functional language with Python aesthetics that compiles to single binaries.
 
-**Status:** 🚧 In active development - Milestone 0 complete, implementing lexer next
+**Status:** 🚧 In active development - Milestone 1 (Lexer) core complete, 23/23 tests passing
 
 ## What is Fern?
 
@@ -40,12 +40,18 @@ We're implementing the compiler using test-driven development. See [DESIGN.md](D
 
 **Completed:**
 - ✅ Language specification (DESIGN.md)
-- ✅ Build system and test infrastructure
+- ✅ Build system and test infrastructure  
 - ✅ Safety libraries (arena, strings, collections)
 - ✅ Development workflow and pre-commit hooks
+- ✅ Lexer implementation (Milestone 1 - core features)
+  - All keywords, operators, literals
+  - 23/23 tests passing
+  - Critical `<-` operator working
+
+**In Progress:**
+- 🚧 Lexer enhancements (indentation, floats, string interpolation)
 
 **Next:**
-- Lexer implementation (Milestone 1)
 - Parser implementation (Milestone 2)
 - See [ROADMAP.md](ROADMAP.md) for full plan
 
@@ -95,7 +101,9 @@ fn main() -> Result((), Error):
 
 ## License
 
-[License to be determined]
+MIT License - see [LICENSE](LICENSE) for details.
+
+**What this means:** You can use Fern for anything (personal, commercial, proprietary) without restrictions. We want Fern to be as widely useful as possible.
 
 ## Contributing
 
