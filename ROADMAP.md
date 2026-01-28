@@ -599,7 +599,7 @@ void test_codegen_defer() {
 
 ## Milestone 5: Standard Library Core
 
-**Status:** 🚧 In Progress - Runtime library complete, stdlib modules pending
+**Status:** 🚧 In Progress - Runtime library complete, built-ins registered
 **Tests:** 346 total
 
 **Goal:** Implement core stdlib modules
@@ -607,12 +607,26 @@ void test_codegen_defer() {
 ### Completed Work
 
 **Runtime Library** (runtime/fern_runtime.c, runtime/fern_runtime.h):
-- [x] I/O functions: fern_print_int, fern_println_int, fern_print_str, fern_println_str
-- [x] String functions: fern_str_len, fern_str_concat, fern_str_eq
-- [x] List functions: fern_list_new, fern_list_push, fern_list_get, fern_list_len
-- [x] Built-in print/println registered in type checker
-- [x] Code generator emits calls to runtime functions
-- [x] Makefile builds libfern_runtime.a and links it automatically
+- [x] I/O functions: fern_print_int, fern_println_int, fern_print_str, fern_println_str, fern_print_bool, fern_println_bool
+- [x] String functions (16 total): len, concat, eq, starts_with, ends_with, contains, index_of, slice, trim, trim_start, trim_end, to_upper, to_lower, replace, split, join, repeat, char_at, is_empty
+- [x] List functions (14 total): new, push, push_mut, get, len, map, fold, filter, find, reverse, concat, head, tail, is_empty, any, all
+- [x] Result functions (8 total): ok, err, is_ok, unwrap, map, and_then, unwrap_or, unwrap_or_else
+- [x] Option functions (6 total): some, none, is_some, unwrap, map, unwrap_or
+- [x] Memory functions: alloc, free
+
+**Built-in Functions** (registered in checker.c, codegen in codegen.c):
+- [x] print(Int) -> Int, println(Int) -> Int
+- [x] str_len(String) -> Int
+- [x] str_concat(String, String) -> String
+- [x] str_eq(String, String) -> Bool
+- [x] list_len(List(a)) -> Int
+- [x] list_get(List(a), Int) -> a
+
+**Codegen Improvements** (lib/codegen.c):
+- [x] Wide variable tracking for pointer types (lists, strings)
+- [x] qbe_type_for_expr() returns correct QBE type specifier
+- [x] Data section properly emitted with code section
+- [x] fern_list_push_mut for list literal construction
 
 **Parser Indentation Support** (lib/parser.c):
 - [x] parse_indented_block() for multi-statement function bodies
@@ -621,6 +635,13 @@ void test_codegen_defer() {
 - [x] for loop bodies use indented blocks
 - [x] with expression bodies use indented blocks
 - [x] Fixed advance() to preserve token values when skipping layout tokens
+
+### Remaining Work
+
+- [ ] Register more built-in functions (str_trim, str_replace, list_filter, etc.)
+- [ ] Fix string variable type tracking in codegen (currently only lists tracked as wide)
+- [ ] Implement Fern stdlib modules (result.fn, option.fn, list.fn, string.fn)
+- [ ] Add file I/O functions to runtime
 
 ### Priority Modules
 
