@@ -282,8 +282,25 @@ static Expr* parse_call(Parser* parser) {
     while (check(parser, TOKEN_LPAREN) || check(parser, TOKEN_DOT)) {
     if (match(parser, TOKEN_DOT)) {
         SourceLoc loc = parser->previous.loc;
-        Token field_tok = consume(parser, TOKEN_IDENT, "Expected field name after '.'");
-        expr = expr_dot(parser->arena, expr, field_tok.text, loc);
+        if (match(parser, TOKEN_INT)) {
+            // Tuple field access: expr.0, expr.1
+            expr = expr_dot(parser->arena, expr, parser->previous.text, loc);
+        } else if (match(parser, TOKEN_FLOAT)) {
+            // Handle expr.0.1 which lexes as dot + float "0.1"
+            // Split float text "0.1" into two dot accesses
+            const char* text = string_cstr(parser->previous.text);
+            const char* dot_pos = strchr(text, '.');
+            if (dot_pos) {
+                size_t first_len = (size_t)(dot_pos - text);
+                String* first_field = string_new_len(parser->arena, text, first_len);
+                String* second_field = string_new(parser->arena, dot_pos + 1);
+                expr = expr_dot(parser->arena, expr, first_field, loc);
+                expr = expr_dot(parser->arena, expr, second_field, loc);
+            }
+        } else {
+            Token field_tok = consume(parser, TOKEN_IDENT, "Expected field name after '.'");
+            expr = expr_dot(parser->arena, expr, field_tok.text, loc);
+        }
         continue;
     }
     match(parser, TOKEN_LPAREN); // consume '('

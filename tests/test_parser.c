@@ -2391,6 +2391,35 @@ void test_parse_return_postfix_unless(void) {
     arena_destroy(arena);
 }
 
+/* Test: tuple.0 — numeric tuple field access */
+void test_parse_tuple_field_access(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "point.0");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_DOT);
+    ASSERT_EQ(expr->data.dot.object->type, EXPR_IDENT);
+    ASSERT_STR_EQ(string_cstr(expr->data.dot.field), "0");
+
+    arena_destroy(arena);
+}
+
+/* Test: tuple.1 chained — pair.0.1 */
+void test_parse_tuple_field_chain(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "matrix.0.1");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_DOT);
+    ASSERT_STR_EQ(string_cstr(expr->data.dot.field), "1");
+    ASSERT_EQ(expr->data.dot.object->type, EXPR_DOT);
+    ASSERT_STR_EQ(string_cstr(expr->data.dot.object->data.dot.field), "0");
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -2513,4 +2542,6 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_record_update);
     TEST_RUN(test_parse_record_update_multi);
     TEST_RUN(test_parse_return_postfix_unless);
+    TEST_RUN(test_parse_tuple_field_access);
+    TEST_RUN(test_parse_tuple_field_chain);
 }
