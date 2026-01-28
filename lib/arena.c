@@ -86,20 +86,22 @@ void* arena_alloc_aligned(Arena* arena, size_t size, size_t alignment) {
     assert(alignment > 0 && (alignment & (alignment - 1)) == 0); // Power of 2
     
     ArenaBlock* block = arena->current;
+    size_t aligned_size = align_up(size, ARENA_ALIGNMENT);
     
     // Calculate the aligned pointer from current position
     uintptr_t current_addr = (uintptr_t)(block->data + block->used);
     uintptr_t aligned_addr = (current_addr + alignment - 1) & ~(alignment - 1);
     size_t padding = aligned_addr - current_addr;
     size_t aligned_used = block->used + padding;
-    size_t aligned_size = align_up(size, ARENA_ALIGNMENT);
     
     // Check if current block has enough space
     if (aligned_used + aligned_size > block->size) {
-        // Need a new block
+        // Need a new block - ensure it has space for alignment padding + data
         size_t new_block_size = arena->block_size;
-        if (aligned_size > new_block_size) {
-            new_block_size = aligned_size;
+        // Add extra space for worst-case alignment padding
+        size_t required_size = aligned_size + alignment;
+        if (required_size > new_block_size) {
+            new_block_size = required_size;
         }
         
         ArenaBlock* new_block = arena_block_create(new_block_size);
