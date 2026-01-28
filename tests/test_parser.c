@@ -2372,24 +2372,7 @@ void test_parse_record_update_multi(void) {
     arena_destroy(arena);
 }
 
-/* Test: return x unless cond — postfix unless on return */
-void test_parse_return_postfix_unless(void) {
-    Arena* arena = arena_create(4096);
-    Parser* parser = parser_new(arena, "return None unless valid");
 
-    Stmt* stmt = parse_stmt(parser);
-    ASSERT_NOT_NULL(stmt);
-    ASSERT_EQ(stmt->type, STMT_RETURN);
-    ASSERT_NOT_NULL(stmt->data.return_stmt.value);
-
-    // unless wraps the condition in a NOT
-    ASSERT_NOT_NULL(stmt->data.return_stmt.condition);
-    ASSERT_EQ(stmt->data.return_stmt.condition->type, EXPR_UNARY);
-    ASSERT_EQ(stmt->data.return_stmt.condition->data.unary.op, UNOP_NOT);
-    ASSERT_EQ(stmt->data.return_stmt.condition->data.unary.operand->type, EXPR_IDENT);
-
-    arena_destroy(arena);
-}
 
 /* Test: tuple.0 — numeric tuple field access */
 void test_parse_tuple_field_access(void) {
@@ -2573,22 +2556,7 @@ void test_parse_postfix_if(void) {
     arena_destroy(arena);
 }
 
-void test_parse_postfix_unless(void) {
-    Arena* arena = arena_create(4096);
-    Parser* parser = parser_new(arena, "validate() unless skip");
 
-    Stmt* stmt = parse_stmt(parser);
-    ASSERT_NOT_NULL(stmt);
-    ASSERT_EQ(stmt->type, STMT_EXPR);
-    Expr* e = stmt->data.expr.expr;
-    ASSERT_EQ(e->type, EXPR_IF);
-    // condition should be UNOP_NOT wrapping "skip"
-    Expr* cond = e->data.if_expr.condition;
-    ASSERT_EQ(cond->type, EXPR_UNARY);
-    ASSERT_EQ(cond->data.unary.op, UNOP_NOT);
-
-    arena_destroy(arena);
-}
 
 void test_parse_index_access(void) {
     Arena* arena = arena_create(4096);
@@ -2925,7 +2893,7 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_match_condition_complex);
     TEST_RUN(test_parse_record_update);
     TEST_RUN(test_parse_record_update_multi);
-    TEST_RUN(test_parse_return_postfix_unless);
+
     TEST_RUN(test_parse_tuple_field_access);
     TEST_RUN(test_parse_tuple_field_chain);
     TEST_RUN(test_parse_list_comp);
@@ -2940,7 +2908,7 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_newtype);
     TEST_RUN(test_parse_pub_newtype);
     TEST_RUN(test_parse_postfix_if);
-    TEST_RUN(test_parse_postfix_unless);
+
     TEST_RUN(test_parse_index_access);
     TEST_RUN(test_parse_index_chain);
     TEST_RUN(test_parse_module_simple);

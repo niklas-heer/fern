@@ -4,8 +4,38 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
-### 10 Using <- operator instead of ?
+### 15 No named tuples (use records for named fields)
 * **Status**: ✅ Adopted
+* **Decision**: I will not support named tuple syntax `(x: 10, y: 20)`. Use positional tuples `(10, 20)` or declared records for named fields.
+* **Context**: Named tuples create confusion because they look like records but aren't declared types. Users wouldn't know when to choose named tuples vs records. Keeping a clear distinction simplifies the mental model: tuples are positional and anonymous `(a, b, c)`, records are declared with `type` and have named fields. If you need named fields, declare a type.
+* **Consequences**: Tuple syntax is positional only: `(10, 20)`. Named fields require a `type` declaration. Simpler grammar, clearer semantics, no ambiguity about tuple vs record.
+
+### 14 No unless keyword
+* **Status**: ✅ Adopted
+* **Decision**: I will not include `unless` as a keyword. Use `if not` for negated conditions.
+* **Context**: `unless` (from Ruby) is redundant with `if not` and adds cognitive overhead. Developers must mentally negate the condition to understand `unless`. It's especially confusing with already-negated conditions: `unless not ready`. Most Ruby style guides recommend avoiding `unless` with negations. Having one way to express conditionals (`if`) keeps the language simpler.
+* **Consequences**: Only `if` for conditionals. Postfix conditionals use `if`: `return early if condition`. Negation uses `if not condition`. One less keyword to parse and teach.
+
+### 13 No while or loop constructs (Gleam-style)
+* **Status**: ✅ Adopted
+* **Decision**: I will not include `while` or `loop` constructs. Stateful iteration uses recursion with tail-call optimization.
+* **Context**: `while` and `loop` require mutable state between iterations, which conflicts with immutability. The semantics of rebinding inside loops are unclear and error-prone. Gleam takes the same approach: no loops, use recursion. Tail-call optimization makes recursion efficient. `for` loops over collections are kept since they don't require mutation - they're just iteration. Functional combinators (`fold`, `map`, `filter`, `find`) handle most cases elegantly.
+* **Consequences**: Remove `while` and `loop` from grammar. Keep `for` for collection iteration. Recursion is the primary mechanism for stateful iteration. The lexer doesn't need TOKEN_WHILE or TOKEN_LOOP. Simplifies the language considerably.
+
+### 12 Elixir-style record update syntax
+* **Status**: ✅ Adopted
+* **Decision**: I will use `%{ record | field: value }` syntax for record updates instead of `{ record | field: value }`.
+* **Context**: The original `{ record | field: value }` syntax conflicts with the "no braces" philosophy - Fern uses indentation, not braces, for control flow. Using `%{...}` for record updates matches map literal syntax `%{"key": value}` and is inspired by Elixir. This creates consistency: both maps and record updates use `%{...}`.
+* **Consequences**: Record update syntax is `%{ user | age: 31 }`. Map literals are `%{"key": value}`. Braces without `%` are not used.
+
+### 11 Using ? operator for Result propagation
+* **Status**: ✅ Adopted ⬆️ Supersedes [10]
+* **Decision**: I will use the `?` operator (Rust-style, postfix) for Result propagation, keeping `<-` only inside `with` expressions.
+* **Context**: After writing real examples, the postfix `?` works better than prefix `<-` because: (1) you see WHAT might fail before the `?`, not after, (2) it's familiar from Rust which is widely known, (3) it chains naturally `foo()?.bar()?.baz()?`, (4) it integrates cleanly with `let` bindings: `let x = fallible()?`. The `<-` syntax is preserved only inside `with` blocks for complex error handling, similar to Haskell's do-notation where `<-` is scoped.
+* **Consequences**: The lexer needs `?` as TOKEN_QUESTION. The `<-` token (TOKEN_BIND) is only valid inside `with` blocks. Simple error propagation uses `let x = f()?`, complex handling uses `with x <- f(), ...`.
+
+### 10 Using <- operator instead of ?
+* **Status**: ⛔ Deprecated by [11]
 * **Decision**: I will use the `<-` operator for Result binding instead of the `?` operator.
 * **Context**: Initially considered Rust's `?` operator (postfix), but this has clarity issues: (1) it comes at the END of the expression, so you don't immediately see that an operation can fail, (2) `?` is overloaded in many languages (ternary, optional, etc.), making it less obvious. The `<-` operator (from Gleam/Roc) addresses both issues: it comes FIRST so failure is immediately visible, it reads naturally as "content comes from read_file", and it's not overloaded with other meanings.
 * **Consequences**: All error handling examples use `<-` syntax. The lexer must recognize `<-` as a distinct token. Error messages reference `<-` in explanations.
@@ -31,8 +61,8 @@ This document tracks major architectural and technical decisions made during the
 ### 6 with expression for complex error handling
 * **Status**: ✅ Adopted
 * **Decision**: I will provide a `with` expression for complex error handling scenarios where different error types need different responses.
-* **Context**: While `<-` handles simple error propagation, sometimes you need to handle different errors differently (e.g., return 404 for NotFound, 403 for PermissionDenied, 401 for AuthError). The `with` expression allows binding multiple Results and pattern matching on different error types in an `else` clause, similar to Gleam's `use` but with explicit error handling.
-* **Consequences**: The parser must support `with`/`do`/`else` syntax. The type checker must verify all error types are handled in the else clause.
+* **Context**: While `?` handles simple error propagation, sometimes you need to handle different errors differently (e.g., return 404 for NotFound, 403 for PermissionDenied, 401 for AuthError). The `with` expression allows binding multiple Results using `<-` and pattern matching on different error types in an `else` clause, similar to Haskell's do-notation.
+* **Consequences**: The parser must support `with`/`do`/`else` syntax. The `<-` operator is only valid inside `with` blocks. The type checker must verify all error types are handled in the else clause.
 
 ### 5 defer statement for resource cleanup
 * **Status**: ✅ Adopted

@@ -1440,23 +1440,16 @@ Stmt* parse_stmt(Parser* parser) {
         Stmt* ret = stmt_return(parser->arena, value, loc);
         if (match(parser, TOKEN_IF)) {
             ret->data.return_stmt.condition = parse_expression(parser);
-        } else if (match(parser, TOKEN_UNLESS)) {
-            Expr* cond = parse_expression(parser);
-            ret->data.return_stmt.condition = expr_unary(parser->arena, UNOP_NOT, cond, cond->loc);
         }
         return ret;
     }
     
-    // Expression statement (with optional postfix if/unless)
+    // Expression statement (with optional postfix if)
     Expr* expr = parse_expression(parser);
 
     if (match(parser, TOKEN_IF)) {
         Expr* cond = parse_expression(parser);
         expr = expr_if(parser->arena, cond, expr, NULL, expr->loc);
-    } else if (match(parser, TOKEN_UNLESS)) {
-        Expr* cond = parse_expression(parser);
-        Expr* negated = expr_unary(parser->arena, UNOP_NOT, cond, cond->loc);
-        expr = expr_if(parser->arena, negated, expr, NULL, expr->loc);
     }
 
     return stmt_expr(parser->arena, expr, expr->loc);

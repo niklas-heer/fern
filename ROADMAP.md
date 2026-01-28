@@ -120,6 +120,7 @@ tests/lexer/
 - [x] Implement lexer.c (lib/lexer.c)
   - [x] Keyword recognition (let, fn, if, match, true, false, etc.)
   - [x] Operator recognition (<-, ->, ==, !=, <, <=, >, >=, etc.)
+  - [ ] Add `?` operator (TOKEN_QUESTION) for Result propagation
   - [x] Numeric literals (Int, Float)
   - [x] String literals (basic) - Interpolation TODO
   - [x] Comment handling (#) - Block comments /* */ TODO
@@ -154,9 +155,17 @@ void test_lex_basic_function() {
     );
 }
 
-// Test: <- operator
+// Test: ? operator (Result propagation)
+void test_lex_question_operator() {
+    char* source = "read_file(\"config.txt\")?";
+    Token* tokens = lex(source);
+    // Should have: CALL ... TOKEN_QUESTION
+    assert_token_at(tokens, /* last */, TOKEN_QUESTION);
+}
+
+// Test: <- operator (only in with blocks)
 void test_lex_bind_operator() {
-    char* source = "content <- read_file(\"config.txt\")";
+    char* source = "x <- read_file(\"config.txt\")";
     Token* tokens = lex(source);
     assert_token_at(tokens, 1, TOKEN_BIND);  // <-
 }
@@ -1877,6 +1886,41 @@ Test Results:
 Total:  108
 Passed: 108
 ```
+
+---
+
+## Design Changes (2026-01-28)
+
+The following design changes were made and affect implementation. See DECISIONS.md #11-15 for details.
+
+### Lexer Changes Needed
+- [ ] Add `TOKEN_QUESTION` for `?` operator (Result propagation)
+- [x] `TOKEN_BIND` (`<-`) is kept but only valid inside `with` blocks
+- [x] No `TOKEN_UNLESS` needed (keyword removed from design)
+- [x] No `TOKEN_WHILE` or `TOKEN_LOOP` needed (constructs removed from design)
+
+### Parser Changes Needed
+- [ ] Parse `?` as postfix operator on expressions returning `Result`
+- [ ] `<-` only valid inside `with` expressions (not standalone statements)
+- [x] No `while` or `loop` parsing needed (removed from design)
+- [x] No `unless` parsing needed (removed from design)
+- [x] Named tuple syntax `(x: 10)` not supported - only positional tuples
+- [ ] Record update uses `%{ record | field: value }` syntax
+
+### Already Implemented (No Changes Needed)
+- [x] `for` iteration over collections — keep as-is
+- [x] `if` expressions — keep as-is
+- [x] Match expressions — keep as-is
+- [x] Block expressions — keep as-is
+- [x] Positional tuples `(a, b)` — keep as-is
+
+### Summary of Removed Features
+These features were in earlier design drafts but are now explicitly NOT part of Fern:
+- `unless` keyword — use `if not` instead
+- `while` loops — use recursion or `list.fold`/`list.iterate`
+- `loop` construct — use recursion
+- Named tuples `(x: 10, y: 20)` — use `type` records instead
+- Standalone `<-` operator — use `?` for propagation, `with`/`<-` for complex handling
 
 ---
 

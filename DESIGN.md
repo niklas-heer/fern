@@ -580,7 +580,7 @@ let user = User("Niklas", "niklas@example.com", 30)
 user.name
 
 # Update (returns new record)
-let updated = { user | age: 31 }
+let updated = %{ user | age: 31 }
 ```
 
 ### Union Types
@@ -809,6 +809,13 @@ fn process(items: List(Item)) -> List(Item):
     # ... rest of processing
 ```
 
+**Note:** Only `if` is supported for postfix guards. There is no `unless` keyword — use `if not` for negated conditions:
+
+```fern
+log("debug: {msg}") if debug_mode
+skip_validation() if not strict_mode
+```
+
 ### Destructuring
 
 In let bindings:
@@ -1016,7 +1023,7 @@ let result = match status:
 ```
 return None if is_empty(list)
 log("debug: {msg}") if debug_mode
-skip_validation() unless strict_mode
+skip_validation() if not strict_mode
 ```
 
 ### Let-else (for early unwrapping)
@@ -1029,9 +1036,11 @@ fn process(input: Option(Data)) -> Result(Output, Error):
     # Continue with data...
 ```
 
-### Loops
+### Iteration
 
-**For loops (iteration):**
+Fern provides `for` loops for iterating over collections. For stateful iteration, use recursion or functional combinators.
+
+**For loops (iteration over collections):**
 ```fern
 # Iterate over list
 for item in items:
@@ -1054,26 +1063,6 @@ for (key, value) in user_map:
     print("{key}: {value}")
 ```
 
-**While loops:**
-```fern
-# While condition (use recursion or functional approach instead)
-# Note: While loops require rebinding
-fn count_to_ten() -> ():
-    let count = 0
-    while count < 10:
-        print(count)
-        let count = count + 1  # Rebinding
-
-# Infinite loop with break
-loop:
-    let input = read_input()
-    break if input == "quit"
-    process(input)
-
-# Note: Prefer functional approaches for most iteration
-# Loops are provided for imperative algorithms but immutability is preferred
-```
-
 **Loop control:**
 ```fern
 # Early exit with break
@@ -1092,32 +1081,40 @@ for item in items:
 None  # No match found
 ```
 
-**Loop expressions (return values):**
+**Functional alternatives (preferred):**
 ```fern
-# Loop with break value
-let result = loop:
-    let x = compute()
-    break x if x > 100
-    let x = x * 2
-
-# For loop collecting results (use map instead)
-let doubled = items |> map((x) -> x * 2)  # Preferred
-```
-
-**Functional alternatives (preferred for immutability):**
-```fern
-# Instead of for loop with mutation
+# Summing - use fold
 let sum = items |> list.fold(0, (acc, x) -> acc + x)
 
-# Instead of while loop
-let result = list.iterate(initial_state, (state) ->
-    return Break(state) if done(state)
-    Continue(transform(state))
-)
-
-# Instead of loop with break
+# Finding - use find
 let found = items |> list.find((x) -> x.matches(criteria))
+
+# Transforming - use map
+let doubled = items |> map((x) -> x * 2)
+
+# Filtering - use filter
+let evens = items |> filter((x) -> x % 2 == 0)
 ```
+
+**Stateful iteration - use recursion:**
+```fern
+# Instead of while loops, use tail-recursive functions
+fn count_down(n: Int) -> ():
+    return () if n <= 0
+    print(n)
+    count_down(n - 1)  # Tail call optimized
+
+# With accumulator
+fn sum_list(items: List(Int)) -> Int:
+    sum_loop(items, 0)
+
+fn sum_loop([], acc) -> acc
+fn sum_loop([x, ..xs], acc) -> sum_loop(xs, acc + x)
+```
+
+**Why no `while` or `loop`?**
+
+Fern follows Gleam's approach: no `while` or `loop` constructs. These require mutable state between iterations, which conflicts with immutability. Recursion with tail-call optimization handles all stateful iteration patterns cleanly. This keeps the language simple and the semantics clear.
 
 ---
 
@@ -1449,26 +1446,26 @@ fn main() -> Result((), Error):
     # Error: Result value must be handled
     #
     # Help: Use one of:
-    #   - Bind with <-: content <- read_file("config.txt")
+    #   - Propagate with ?: let content = read_file("config.txt")?
     #   - Match: match read_file(...): Ok(c) -> ..., Err(e) -> ...
     #   - Combinator: read_file(...) |> unwrap_or(default)
-    
-    # ✅ Correct: Use <- to bind and handle error
-    content <- read_file("config.txt")
+
+    # ✅ Correct: Use ? to propagate error
+    let content = read_file("config.txt")?
     process(content)
     Ok(())
 ```
 
 **The compiler will reject:**
 - Ignoring Result return values
-- Using Result values without pattern matching or `<-`
+- Using Result values without pattern matching or `?`
 - Unhandled error cases
 
 **Valid handling strategies:**
 
 ```fern
-# 1. Use <- operator (propagate error up) - MOST COMMON
-value <- fallible_operation()
+# 1. Use ? operator (propagate error up) - MOST COMMON
+let value = fallible_operation()?
 
 # 2. Pattern match (custom error handling)
 match fallible_operation():
@@ -1490,34 +1487,34 @@ else
     Err(e) -> handle(e)
 ```
 
-### The `<-` Operator (Result Binding)
+### The `?` Operator (Result Propagation)
 
 Unwrap Result or early return on error:
 
 ```fern
 fn load_and_process(path: String) -> Result(Output, Error):
-    content <- read_file(path)          # Returns Err if fails
-    config <- parse_config(content)     # Returns Err if fails
-    validated <- validate(config)       # Returns Err if fails
-    Ok(process(validated))              # All succeeded
+    let content = read_file(path)?          # Returns Err if fails
+    let config = parse_config(content)?     # Returns Err if fails
+    let validated = validate(config)?       # Returns Err if fails
+    Ok(process(validated))                  # All succeeded
 ```
 
-**How `<-` works:**
-- If `Ok(value)`, binds `value` to the left-hand side and continues
+**How `?` works:**
+- If `Ok(value)`, evaluates to `value` and continues
 - If `Err(e)`, immediately returns `Err(e)` from function
 - Can only be used in functions returning `Result`
-- More explicit than `?` - you see the bind operation upfront
+- Postfix operator - attached to the expression that might fail
 
-**Why `<-` instead of `?`:**
-- ✅ Comes FIRST - immediately signals "this can fail"
-- ✅ Not overloaded - clear single meaning
-- ✅ Reads like: "content comes from read_file"
-- ✅ Visually consistent with let: `let x = ...` vs `x <- ...`
-- ✅ Similar to Gleam, Roc, Haskell - established pattern
+**Why `?` (Rust-style):**
+- ✅ Familiar from Rust - widely understood
+- ✅ Postfix shows WHAT can fail - you see the call first, then the `?`
+- ✅ Compact - doesn't require separate binding syntax
+- ✅ Chainable - `foo()?.bar()?.baz()?`
+- ✅ Works naturally with `let` bindings
 
 ### The `with` Expression (Complex Error Handling)
 
-For cases where you need custom error handling for different operations:
+For cases where you need custom error handling for different operations, use `with`. This is the **only** place where `<-` appears in Fern — it binds Results within a `with` block.
 
 ```fern
 fn process_request(req: Request) -> Result(Response, Error):
@@ -1531,7 +1528,7 @@ fn process_request(req: Request) -> Result(Response, Error):
         Ok(Response.ok(validated))
     else
         # Error handling with pattern matching
-        Err(AuthError(msg)) -> 
+        Err(AuthError(msg)) ->
             log.warn("Auth failed: {msg}")
             Ok(Response.unauthorized())
         Err(PermissionError(msg)) ->
@@ -1546,14 +1543,14 @@ fn process_request(req: Request) -> Result(Response, Error):
 ```
 
 **How `with` works:**
-1. Evaluates each binding in sequence (like `<-`)
+1. Evaluates each `<-` binding in sequence
 2. If all succeed, executes `do` block
 3. If any fails, jumps to `else` block with the error
 4. Can pattern match on different error types
 5. Must return same type from all branches
 
-**When to use `with` vs `<-`:**
-- Use `<-` when errors should propagate up (most common)
+**When to use `with` vs `?`:**
+- Use `?` when errors should propagate up (most common)
 - Use `with` when you need custom handling per error type
 - Use `with` when operations are related and should be grouped
 
@@ -1573,11 +1570,11 @@ Ensure cleanup code runs when function exits (success or error):
 
 ```fern
 fn process_file(path: String) -> Result(Data, Error):
-    file <- open_file(path)
+    let file = open_file(path)?
     defer close_file(file)  # Guaranteed to run on exit
-    
-    data <- read_data(file)
-    transformed <- transform(data)
+
+    let data = read_data(file)?
+    let transformed = transform(data)?
     Ok(transformed)
     # close_file(file) is called here automatically
 ```
@@ -1591,30 +1588,30 @@ fn process_file(path: String) -> Result(Data, Error):
 **Multiple defers:**
 ```fern
 fn complex_operation() -> Result(Output, Error):
-    resource1 <- acquire_resource1()
+    let resource1 = acquire_resource1()?
     defer release_resource1(resource1)  # Runs last
-    
-    resource2 <- acquire_resource2()
+
+    let resource2 = acquire_resource2()?
     defer release_resource2(resource2)  # Runs first
-    
-    result <- compute(resource1, resource2)
-    
+
+    let result = compute(resource1, resource2)?
+
     # On exit (any path):
     # 1. release_resource2(resource2)
     # 2. release_resource1(resource1)
-    
+
     Ok(result)
 ```
 
 **With error handling:**
 ```fern
 fn read_and_process(path: String) -> Result(Output, Error):
-    file <- open_file(path)
+    let file = open_file(path)?
     defer close_file(file)
-    
+
     # Even if this fails, close_file still runs
-    data <- read_all(file)
-    
+    let data = read_all(file)?
+
     Ok(process(data))
     # close_file runs here (success or error)
 ```
@@ -1834,13 +1831,29 @@ headers |> put("Authorization", token)
 
 ### Tuples
 
-```
+Tuples are fixed-size, positional collections:
+
+```fern
 let point = (10, 20)
 let (x, y) = point
 
-# Named tuples / records
-let point = (x: 10, y: 20)
-point.x
+# Access by position
+point.0  # 10
+point.1  # 20
+
+# Tuples can hold different types
+let mixed = ("hello", 42, true)
+```
+
+**For named fields, use records (declared with `type`):**
+
+```fern
+type Point:
+    x: Int
+    y: Int
+
+let point = Point(10, 20)
+point.x  # 10
 ```
 
 ---
@@ -2530,9 +2543,10 @@ Output is a single statically-linked binary with no runtime dependencies.
 
 1. **No `mut` keyword**: Language is immutable by default
 2. **Rebinding allowed**: `let x = x + 1` creates new binding (shadowing)
-3. **Alternatives**: Recursion, fold/reduce, tail call optimization
-4. **Performance escape hatch**: Stdlib can use C FFI for critical code
-5. **v1 decision**: Wait for real performance data before considering mutation
+3. **No `while` or `loop`**: Use recursion or functional combinators (Gleam-style)
+4. **`for` iteration**: Iterate over collections (no mutation needed)
+5. **Performance escape hatch**: Stdlib can use C FFI for critical code
+6. **v1 decision**: Wait for real performance data before considering mutation
 
 ### Error Handling & Panics ✅ Decided
 
@@ -2541,8 +2555,8 @@ Output is a single statically-linked binary with no runtime dependencies.
 3. **Compiler enforcement**: Unhandled Result values cause compile errors
 4. **Programs never crash**: All errors are recoverable
 5. **No exceptions**: No try/catch mechanism
-6. **`<-` operator**: Bind Result or early return (replaces `?`)
-7. **`with` expression**: Complex error handling with pattern matching
+6. **`?` operator**: Propagate Result or early return (Rust-style, postfix)
+7. **`with` expression**: Complex error handling with `<-` bindings and pattern matching
 8. **`defer` statement**: Guaranteed cleanup (non-actor functions only)
 9. **Debug assertions**: `debug_assert()` for development only (removed in release)
 
@@ -2552,9 +2566,9 @@ Output is a single statically-linked binary with no runtime dependencies.
 - Server reliability: Servers log errors and continue serving
 - Better debugging: Errors are logged, not crashes
 - Simpler mental model: Only one error handling path (Result)
-- `<-` clearer than `?`: Signals failure upfront, not at end of line
+- `?` is familiar from Rust and shows WHAT can fail (postfix on the call)
+- `with`/`<-` for complex cases where different errors need different handling
 - Learned from Rust: Panics cause problems in production code
-- Learned from Gleam/Roc: `<-` is more explicit and readable
 
 ### REPL ✅ Decided
 
@@ -2846,7 +2860,7 @@ Each error code links to detailed documentation:
 ```
 # Fern ✅ Friendly and actionable
 Error: Result value must be handled
-  = help: Use ? operator: let data = read_file(...)?
+  = help: Propagate with ?: let data = read_file(...)?
 
 # Typical C/C++ ❌ Cryptic
 error: invalid conversion from 'const char*' to 'int'
@@ -3401,15 +3415,6 @@ fn sum_list(items: List(Int)) -> Int:
     items |> list.fold(0, (acc, x) -> acc + x)
 ```
 
-**3. Rebinding in loops:**
-```fern
-fn sum_list(items: List(Int)) -> Int:
-    let total = 0
-    for item in items:
-        let total = total + item  # Rebinding, not mutation
-    total
-```
-
 ### Performance Escape Hatch
 
 For stdlib authors, use C FFI for performance-critical code:
@@ -3438,16 +3443,16 @@ pub fn sum_optimized(items: List(Int)) -> Int:
 - Safe API (no mutation visible)
 - Immutable semantics
 
-### Why No `mut` in v1
+### Why No `mut`, `while`, or `loop` in v1
 
 **Reasons:**
-- ✅ Keeps language simple
+- ✅ Keeps language simple and semantics clear
 - ✅ Easier for AI to generate safe code
-- ✅ Compiler can optimize rebinding anyway
-- ✅ Can add later if truly needed (with data)
-- ✅ Matches functional-first philosophy
+- ✅ Compiler can optimize rebinding and tail calls
+- ✅ Recursion handles all stateful iteration patterns
+- ✅ Matches functional-first philosophy (like Gleam)
 
-**If needed later:**
+**If mutation is truly needed later:**
 - Collect real performance data
 - Consider `unsafe { mut }` blocks
 - Or keep using C FFI (cleaner boundary)
