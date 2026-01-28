@@ -3868,6 +3868,11 @@ The stdlib provides the foundation, packages provide specialization.
 
 Fern's compiler is implemented in **C with safety libraries**, targeting **QBE** for fast, small native binaries.
 
+**Key Documents:**
+- **FERN_STYLE.md** — Coding standards (TigerBeetle-inspired)
+- **CLAUDE.md** — AI development workflow and TDD rules
+- **ROADMAP.md** — Implementation milestones and tasks
+
 ### Compiler Language: Safe C
 
 **Why C for AI-assisted development:**
@@ -3875,6 +3880,24 @@ Fern's compiler is implemented in **C with safety libraries**, targeting **QBE**
 - Fast iteration (compile and test in seconds)
 - Direct control over memory and codegen
 - Native performance
+
+### FERN_STYLE Requirements
+
+All compiler code follows **FERN_STYLE.md** (inspired by [TigerBeetle's TIGER_STYLE](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md)):
+
+| Rule | Requirement |
+|------|-------------|
+| Assertion density | Minimum 2 assertions per function |
+| Function size | Maximum 70 lines |
+| Pair assertions | Assert before write AND after read |
+| Bounds | Explicit limits on all loops/buffers |
+| Memory | Arena allocation only (no malloc/free) |
+
+**Why these rules:**
+- Assertions catch bugs via fuzzing (force multiplier)
+- Small functions fit in AI context windows
+- Explicit bounds prevent infinite loops and overflows
+- Arena allocation eliminates memory bugs
 
 **Safety Stack (all MIT/BSD licensed):**
 

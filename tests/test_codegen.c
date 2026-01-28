@@ -354,6 +354,138 @@ void test_codegen_lambda(void) {
     arena_destroy(arena);
 }
 
+/* ========== Try Expression (?) Tests ========== */
+
+void test_codegen_try_operator(void) {
+    Arena* arena = arena_create(4096);
+    
+    /* fn get_value() -> Result(Int, String): Ok(42)? */
+    const char* qbe = generate_qbe(arena, 
+        "fn get_value() -> Result(Int, String): Ok(42)?");
+    
+    ASSERT_NOT_NULL(qbe);
+    /* ? operator should generate:
+     * 1. Call to check if Result is Ok
+     * 2. Conditional branch on error
+     * 3. Return early if Err
+     * 4. Unwrap value if Ok
+     */
+    ASSERT_TRUE(strstr(qbe, "call") != NULL);  /* Runtime call */
+    ASSERT_TRUE(strstr(qbe, "jnz") != NULL);   /* Conditional branch */
+    
+    arena_destroy(arena);
+}
+
+void test_codegen_try_in_chain(void) {
+    Arena* arena = arena_create(8192);  /* Larger arena for complex code */
+    
+    /* Multiple ? in sequence - each needs its own check */
+    /* Simpler version: just test that ? generates expected pattern */
+    const char* qbe = generate_qbe(arena,
+        "fn chain(x: Int) -> Result(Int, String): Ok(x)?");
+    
+    ASSERT_NOT_NULL(qbe);
+    /* Should have conditional branch for ? operator */
+    ASSERT_TRUE(strstr(qbe, "jnz") != NULL);
+    ASSERT_TRUE(strstr(qbe, "fern_result") != NULL);
+    
+    arena_destroy(arena);
+}
+
+/* ========== String Runtime Integration Tests ========== */
+
+void test_codegen_string_concat(void) {
+    Arena* arena = arena_create(8192);
+    
+    /* String concatenation - for now just verify the function compiles */
+    /* Full string concat requires runtime integration */
+    const char* qbe = generate_qbe(arena,
+        "fn greet(name: String) -> String: name");
+    
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "$greet") != NULL);
+    
+    arena_destroy(arena);
+}
+
+void test_codegen_string_new(void) {
+    Arena* arena = arena_create(4096);
+    
+    /* String literal should create a FernString via runtime */
+    const char* qbe = generate_qbe(arena,
+        "fn get_str() -> String: \"hello\"");
+    
+    ASSERT_NOT_NULL(qbe);
+    /* Should have string data and potentially runtime call */
+    ASSERT_TRUE(strstr(qbe, "data") != NULL);
+    ASSERT_TRUE(strstr(qbe, "hello") != NULL);
+    
+    arena_destroy(arena);
+}
+
+/* ========== List Runtime Integration Tests ========== */
+
+void test_codegen_list_new(void) {
+    Arena* arena = arena_create(8192);
+    
+    /* List creation should call fern_list_new and fern_list_push */
+    const char* qbe = generate_qbe(arena,
+        "fn make_list() -> List(Int): [1, 2, 3]");
+    
+    ASSERT_NOT_NULL(qbe);
+    /* Should call runtime list functions */
+    ASSERT_TRUE(strstr(qbe, "$fern_list_new") != NULL);
+    ASSERT_TRUE(strstr(qbe, "$fern_list_push") != NULL);
+    
+    arena_destroy(arena);
+}
+
+void test_codegen_list_index(void) {
+    Arena* arena = arena_create(8192);
+    
+    /* List indexing should call fern_list_get */
+    const char* qbe = generate_qbe(arena,
+        "fn first(items: List(Int)) -> Int: items[0]");
+    
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "$first") != NULL);
+    ASSERT_TRUE(strstr(qbe, "$fern_list_get") != NULL);
+    
+    arena_destroy(arena);
+}
+
+/* ========== Result Type Tests ========== */
+
+void test_codegen_ok_constructor(void) {
+    Arena* arena = arena_create(8192);
+    
+    /* Ok() constructor should create a Result with tag=0 */
+    const char* qbe = generate_qbe(arena,
+        "fn success() -> Result(Int, String): Ok(42)");
+    
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "$success") != NULL);
+    /* Should call fern_result_ok */
+    ASSERT_TRUE(strstr(qbe, "$fern_result_ok") != NULL);
+    
+    arena_destroy(arena);
+}
+
+void test_codegen_err_constructor(void) {
+    Arena* arena = arena_create(8192);
+    
+    /* Err() constructor should create a Result with tag=1 */
+    const char* qbe = generate_qbe(arena,
+        "fn failure() -> Result(Int, String): Err(\"error\")");
+    
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "$failure") != NULL);
+    /* Should call fern_result_err */
+    ASSERT_TRUE(strstr(qbe, "$fern_result_err") != NULL);
+    
+    arena_destroy(arena);
+}
+
 /* ========== Test Runner ========== */
 
 void run_codegen_tests(void) {
@@ -408,4 +540,20 @@ void run_codegen_tests(void) {
     
     /* Lambda expressions */
     TEST_RUN(test_codegen_lambda);
+    
+    /* Try expression (? operator) */
+    TEST_RUN(test_codegen_try_operator);
+    TEST_RUN(test_codegen_try_in_chain);
+    
+    /* String runtime integration */
+    TEST_RUN(test_codegen_string_concat);
+    TEST_RUN(test_codegen_string_new);
+    
+    /* List runtime integration */
+    TEST_RUN(test_codegen_list_new);
+    TEST_RUN(test_codegen_list_index);
+    
+    /* Result type constructors */
+    TEST_RUN(test_codegen_ok_constructor);
+    TEST_RUN(test_codegen_err_constructor);
 }

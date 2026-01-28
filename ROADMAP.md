@@ -763,12 +763,25 @@ make test
 
 ## Notes for AI Implementation
 
+**Required Reading:**
+- **FERN_STYLE.md** — Coding standards (assertion density, function limits, etc.)
+- **CLAUDE.md** — TDD workflow and safety rules
+- **DESIGN.md** — Language specification
+
+**FERN_STYLE Requirements (TigerBeetle-inspired):**
+- Minimum **2 assertions per function**
+- Maximum **70 lines per function**
+- **Pair assertions** for critical operations (validate before write AND after read)
+- **Explicit bounds** on all loops and buffers
+- **Compile-time assertions** for type sizes and constants
+- Comments explain WHY, not just WHAT
+
 **When implementing:**
 - Always run tests after changes
 - Use AddressSanitizer to catch memory errors
-- Follow CLAUDE.md guidelines
-- Keep functions small and focused
-- Add comments explaining non-obvious code
+- Follow FERN_STYLE.md guidelines
+- Keep functions under 70 lines
+- Add assertions for all invariants
 
 **Error handling:**
 - All functions return Result types
@@ -780,6 +793,51 @@ make test
 - Use Datatype99 for tagged unions
 - Use SDS for all strings
 - Use stb_ds for hash maps and arrays
+
+---
+
+## FernFuzz - Grammar-Based Fuzzer (Planned)
+
+**Status**: Planned for after Parser milestone
+
+Inspired by TigerBeetle's VOPR, FernFuzz will test the compiler with random programs.
+
+### Components
+
+1. **Random Program Generator**
+   - Generate valid Fern programs from the grammar
+   - Deterministic from seed (reproducible failures)
+   - Configurable depth and complexity
+
+2. **Property Tests**
+   - **No crashes**: Any input must not crash the compiler
+   - **Round-trip**: `parse(print(parse(x))) == parse(x)`
+   - **Error messages**: Invalid input produces helpful errors
+
+3. **Differential Testing**
+   - Compare behavior across compiler versions
+   - Detect regressions automatically
+
+### Usage (Planned)
+
+```bash
+# Run 10,000 random programs
+make fuzz
+
+# Reproduce a failure
+make fuzz SEED=0x1234567890abcdef
+
+# Run continuously
+make fuzz-forever
+```
+
+### Implementation Tasks
+
+- [ ] Create `tests/fuzz/fuzz_generator.c` — Generate random ASTs
+- [ ] Create `tests/fuzz/fuzz_runner.c` — Run fuzzer with seeds
+- [ ] Add round-trip property tests
+- [ ] Add crash detection
+- [ ] Integrate with CI (run on every PR)
 
 ## Iteration 9: Function Definition Parsing
 

@@ -293,6 +293,29 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             CallExpr* call = &expr->data.call;
             String* result = fresh_temp(cg);
             
+            /* Check for special Result constructors Ok and Err */
+            if (call->func->type == EXPR_IDENT) {
+                const char* fn_name = string_cstr(call->func->data.ident.name);
+                
+                /* Handle Ok(value) - creates a successful Result */
+                if (strcmp(fn_name, "Ok") == 0 && call->args->len == 1) {
+                    String* val = codegen_expr(cg, call->args->data[0].value);
+                    /* Call runtime to create Ok result */
+                    emit(cg, "    %s =l call $fern_result_ok(w %s)\n",
+                        string_cstr(result), string_cstr(val));
+                    return result;
+                }
+                
+                /* Handle Err(error) - creates an error Result */
+                if (strcmp(fn_name, "Err") == 0 && call->args->len == 1) {
+                    String* err = codegen_expr(cg, call->args->data[0].value);
+                    /* Call runtime to create Err result */
+                    emit(cg, "    %s =l call $fern_result_err(w %s)\n",
+                        string_cstr(result), string_cstr(err));
+                    return result;
+                }
+            }
+            
             /* Generate code for arguments */
             String** arg_temps = arena_alloc(cg->arena, sizeof(String*) * call->args->len);
             for (size_t i = 0; i < call->args->len; i++) {
@@ -333,16 +356,19 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
         
         case EXPR_LIST: {
             ListExpr* list = &expr->data.list;
+            String* list_ptr = fresh_temp(cg);
             
-            /* Generate code for each element */
+            /* Create a new list via runtime */
+            emit(cg, "    %s =l call $fern_list_new()\n", string_cstr(list_ptr));
+            
+            /* Push each element to the list */
             for (size_t i = 0; i < list->elements->len; i++) {
-                codegen_expr(cg, list->elements->data[i]);
+                String* elem = codegen_expr(cg, list->elements->data[i]);
+                emit(cg, "    call $fern_list_push(l %s, w %s)\n",
+                    string_cstr(list_ptr), string_cstr(elem));
             }
             
-            /* For now, return a placeholder - full list support needs runtime */
-            String* tmp = fresh_temp(cg);
-            emit(cg, "    %s =l copy 0  # list placeholder\n", string_cstr(tmp));
-            return tmp;
+            return list_ptr;
         }
         
         case EXPR_LAMBDA: {
@@ -385,6 +411,67 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             String* tmp = fresh_temp(cg);
             emit(cg, "    %s =l copy %s\n", string_cstr(tmp), fn_name_buf);
             return tmp;
+        }
+        
+        case EXPR_TRY: {
+            /* The ? operator: unwrap Result or return early with error
+             * 
+             * Generated code pattern:
+             *   result = <operand>           # Get the Result value
+             *   tag = load result            # Load the tag (offset 0)
+             *   jnz tag, @err, @ok           # Branch on tag (0=Ok, 1=Err)
+             * @err
+             *   ret result                   # Return the error as-is
+             * @ok
+             *   value = load result+8        # Load the value (offset 8)
+             *   ... continue with value ...
+             */
+            TryExpr* try_expr = &expr->data.try_expr;
+            
+            /* Generate code for the operand (returns a Result pointer or struct) */
+            String* result_val = codegen_expr(cg, try_expr->operand);
+            
+            /* For now, we'll call runtime functions to check and unwrap
+             * This assumes Result is passed as a pointer */
+            String* is_ok = fresh_temp(cg);
+            String* ok_label = fresh_label(cg);
+            String* err_label = fresh_label(cg);
+            String* unwrapped = fresh_temp(cg);
+            
+            /* Call fern_result_is_ok to check the tag */
+            emit(cg, "    %s =w call $fern_result_is_ok(l %s)\n", 
+                string_cstr(is_ok), string_cstr(result_val));
+            
+            /* Branch: if Ok continue, if Err return early */
+            emit(cg, "    jnz %s, %s, %s\n", 
+                string_cstr(is_ok), string_cstr(ok_label), string_cstr(err_label));
+            
+            /* Error path: return the error */
+            emit(cg, "%s\n", string_cstr(err_label));
+            emit(cg, "    ret %s\n", string_cstr(result_val));
+            
+            /* Ok path: unwrap the value */
+            emit(cg, "%s\n", string_cstr(ok_label));
+            emit(cg, "    %s =w call $fern_result_unwrap(l %s)\n",
+                string_cstr(unwrapped), string_cstr(result_val));
+            
+            return unwrapped;
+        }
+        
+        case EXPR_INDEX: {
+            /* Index expression: list[index]
+             * Calls fern_list_get(list, index) */
+            IndexExpr* idx = &expr->data.index_expr;
+            
+            String* obj = codegen_expr(cg, idx->object);
+            String* index = codegen_expr(cg, idx->index);
+            String* result = fresh_temp(cg);
+            
+            /* Call runtime function to get element */
+            emit(cg, "    %s =w call $fern_list_get(l %s, w %s)\n",
+                string_cstr(result), string_cstr(obj), string_cstr(index));
+            
+            return result;
         }
             
         default:
