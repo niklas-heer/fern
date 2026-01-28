@@ -222,6 +222,41 @@ void test_parse_unary_not(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse simple if expression */
+void test_parse_if_simple(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "if true: 42");
+    
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_IF);
+    ASSERT_NOT_NULL(expr->data.if_expr.condition);
+    ASSERT_EQ(expr->data.if_expr.condition->type, EXPR_BOOL_LIT);
+    ASSERT_NOT_NULL(expr->data.if_expr.then_branch);
+    ASSERT_EQ(expr->data.if_expr.then_branch->type, EXPR_INT_LIT);
+    ASSERT_NULL(expr->data.if_expr.else_branch);
+    
+    arena_destroy(arena);
+}
+
+/* Test: Parse if-else expression */
+void test_parse_if_else(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "if x > 0: 1 else: 0");
+    
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_IF);
+    ASSERT_NOT_NULL(expr->data.if_expr.condition);
+    ASSERT_EQ(expr->data.if_expr.condition->type, EXPR_BINARY);
+    ASSERT_NOT_NULL(expr->data.if_expr.then_branch);
+    ASSERT_EQ(expr->data.if_expr.then_branch->type, EXPR_INT_LIT);
+    ASSERT_NOT_NULL(expr->data.if_expr.else_branch);
+    ASSERT_EQ(expr->data.if_expr.else_branch->type, EXPR_INT_LIT);
+    
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -237,4 +272,6 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_return_statement);
     TEST_RUN(test_parse_unary_neg);
     TEST_RUN(test_parse_unary_not);
+    TEST_RUN(test_parse_if_simple);
+    TEST_RUN(test_parse_if_else);
 }
