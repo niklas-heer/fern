@@ -583,6 +583,27 @@ int64_t fern_list_get(FernList* list, int64_t index) {
 }
 
 /**
+ * Append an element to a list in place (mutates the list).
+ * Used for list literal construction.
+ * @param list The list to modify.
+ * @param value The value to append.
+ */
+void fern_list_push_mut(FernList* list, int64_t value) {
+    assert(list != NULL);
+
+    /* Grow if needed */
+    if (list->len >= list->cap) {
+        int64_t new_cap = list->cap * 2;
+        if (new_cap < 8) new_cap = 8;
+        list->data = realloc(list->data, (size_t)new_cap * sizeof(int64_t));
+        assert(list->data != NULL);
+        list->cap = new_cap;
+    }
+    
+    list->data[list->len++] = value;
+}
+
+/**
  * Append an element to a list (returns new list).
  * @param list The original list.
  * @param value The value to append.

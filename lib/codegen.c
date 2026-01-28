@@ -18,6 +18,9 @@
 /* Maximum number of deferred expressions in a single function */
 #define MAX_DEFERS 64
 
+/* Maximum number of tracked wide (64-bit) variables */
+#define MAX_WIDE_VARS 256
+
 struct Codegen {
     Arena* arena;
     String* output;      /* Accumulated QBE IR (functions) */
@@ -29,6 +32,10 @@ struct Codegen {
     /* Defer stack for current function - expressions run in LIFO order */
     Expr* defer_stack[MAX_DEFERS];
     int defer_count;
+    
+    /* Track variables that are 64-bit (pointers: lists, strings) */
+    String* wide_vars[MAX_WIDE_VARS];
+    int wide_var_count;
 };
 
 /* ========== Helper Functions ========== */
@@ -77,6 +84,83 @@ static String* fresh_label(Codegen* cg) {
     return string_new(cg->arena, buf);
 }
 
+/* ========== QBE Type Helpers ========== */
+
+/**
+ * Register a variable as wide (64-bit pointer type).
+ * @param cg The codegen context.
+ * @param name The variable name.
+ */
+static void register_wide_var(Codegen* cg, String* name) {
+    assert(cg != NULL);
+    assert(name != NULL);
+    assert(cg->wide_var_count < MAX_WIDE_VARS);
+    cg->wide_vars[cg->wide_var_count++] = name;
+}
+
+/**
+ * Check if a variable is wide (64-bit pointer type).
+ * @param cg The codegen context.
+ * @param name The variable name.
+ * @return True if the variable is wide.
+ */
+static bool is_wide_var(Codegen* cg, String* name) {
+    assert(cg != NULL);
+    assert(name != NULL);
+    for (int i = 0; i < cg->wide_var_count; i++) {
+        if (strcmp(string_cstr(cg->wide_vars[i]), string_cstr(name)) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Clear wide variable tracking (call at start of each function).
+ * @param cg The codegen context.
+ */
+static void clear_wide_vars(Codegen* cg) __attribute__((unused));
+static void clear_wide_vars(Codegen* cg) {
+    /* FERN_STYLE: allow(assertion-density) - simple reset function */
+    assert(cg != NULL);
+    cg->wide_var_count = 0;
+}
+
+/**
+ * Get QBE type specifier for an expression.
+ * Returns 'l' for pointer types (lists, strings), 'w' for word types (int, bool).
+ * @param expr The expression to check.
+ * @return 'l' for 64-bit, 'w' for 32-bit.
+ */
+static char qbe_type_for_expr(Expr* expr) {
+    /* FERN_STYLE: allow(assertion-density) - simple type lookup */
+    if (expr == NULL) return 'w';
+    
+    switch (expr->type) {
+        /* Pointer types (64-bit) */
+        case EXPR_LIST:
+        case EXPR_STRING_LIT:
+            return 'l';
+        
+        /* Word types (32-bit) */
+        case EXPR_INT_LIT:
+        case EXPR_BOOL_LIT:
+            return 'w';
+        
+        /* For identifiers and calls, we'd need type info - default to word */
+        /* TODO: track types through codegen for proper handling */
+        case EXPR_IDENT:
+        case EXPR_CALL:
+        case EXPR_BINARY:
+        case EXPR_UNARY:
+        case EXPR_IF:
+        case EXPR_MATCH:
+        case EXPR_BLOCK:
+        default:
+            return 'w';
+    }
+}
+
 /* ========== Codegen Creation ========== */
 
 /**
@@ -95,6 +179,7 @@ Codegen* codegen_new(Arena* arena) {
     cg->label_counter = 0;
     cg->string_counter = 0;
     cg->defer_count = 0;
+    cg->wide_var_count = 0;
     return cg;
 }
 
@@ -262,7 +347,10 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
         case EXPR_IDENT: {
             /* Variable reference - return the variable name as a QBE temporary */
             String* tmp = fresh_temp(cg);
-            emit(cg, "    %s =w copy %%%s\n", string_cstr(tmp), string_cstr(expr->data.ident.name));
+            /* Check if variable is a wide type (pointer) */
+            char type_spec = is_wide_var(cg, expr->data.ident.name) ? 'l' : 'w';
+            emit(cg, "    %s =%c copy %%%s\n", string_cstr(tmp), type_spec, 
+                string_cstr(expr->data.ident.name));
             return tmp;
         }
         
@@ -515,10 +603,10 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             /* Create a new list via runtime */
             emit(cg, "    %s =l call $fern_list_new()\n", string_cstr(list_ptr));
             
-            /* Push each element to the list */
+            /* Push each element to the list (mutating for construction) */
             for (size_t i = 0; i < list->elements->len; i++) {
                 String* elem = codegen_expr(cg, list->elements->data[i]);
-                emit(cg, "    call $fern_list_push(l %s, w %s)\n",
+                emit(cg, "    call $fern_list_push_mut(l %s, w %s)\n",
                     string_cstr(list_ptr), string_cstr(elem));
             }
             
@@ -825,10 +913,17 @@ void codegen_stmt(Codegen* cg, Stmt* stmt) {
             LetStmt* let = &stmt->data.let;
             String* val = codegen_expr(cg, let->value);
             
+            /* Determine QBE type based on the value expression */
+            char type_spec = qbe_type_for_expr(let->value);
+            
             /* For simple identifier patterns, just copy to a named local */
             if (let->pattern->type == PATTERN_IDENT) {
-                emit(cg, "    %%%s =w copy %s\n", 
-                    string_cstr(let->pattern->data.ident), string_cstr(val));
+                /* Register wide variables for later reference */
+                if (type_spec == 'l') {
+                    register_wide_var(cg, let->pattern->data.ident);
+                }
+                emit(cg, "    %%%s =%c copy %s\n", 
+                    string_cstr(let->pattern->data.ident), type_spec, string_cstr(val));
             } else {
                 emit(cg, "    # TODO: pattern binding\n");
             }

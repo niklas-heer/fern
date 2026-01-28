@@ -254,6 +254,14 @@ int64_t fern_list_len(FernList* list);
 int64_t fern_list_get(FernList* list, int64_t index);
 
 /**
+ * Append an element to a list in place (mutates the list).
+ * Used for list literal construction.
+ * @param list The list to modify.
+ * @param value The value to append.
+ */
+void fern_list_push_mut(FernList* list, int64_t value);
+
+/**
  * Append an element to a list (returns new list).
  * @param list The original list.
  * @param value The value to append.
