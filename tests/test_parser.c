@@ -1268,6 +1268,114 @@ void test_parse_with_in_block(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse public function definition */
+void test_parse_pub_function(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "pub fn add(x: Int, y: Int) -> Int: x + y");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_FN);
+    ASSERT_STR_EQ(string_cstr(stmt->data.fn.name), "add");
+    ASSERT_TRUE(stmt->data.fn.is_public);
+
+    // Should still parse params and body correctly
+    ASSERT_NOT_NULL(stmt->data.fn.params);
+    ASSERT_EQ(stmt->data.fn.params->len, 2);
+    ASSERT_NOT_NULL(stmt->data.fn.body);
+    ASSERT_EQ(stmt->data.fn.body->type, EXPR_BINARY);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse private function (default, no pub keyword) */
+void test_parse_private_function(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "fn helper() -> Int: 42");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_FN);
+    ASSERT_STR_EQ(string_cstr(stmt->data.fn.name), "helper");
+    ASSERT_FALSE(stmt->data.fn.is_public);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse import of entire module */
+void test_parse_import_module(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "import math.geometry");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_IMPORT);
+
+    // Module path should be "math.geometry"
+    ASSERT_NOT_NULL(stmt->data.import.path);
+    ASSERT_EQ(stmt->data.import.path->len, 2);
+    ASSERT_STR_EQ(string_cstr(StringVec_get(stmt->data.import.path, 0)), "math");
+    ASSERT_STR_EQ(string_cstr(StringVec_get(stmt->data.import.path, 1)), "geometry");
+
+    // No specific items, no alias
+    ASSERT_NULL(stmt->data.import.items);
+    ASSERT_NULL(stmt->data.import.alias);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse import with specific items */
+void test_parse_import_items(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "import http.server.{cors, auth}");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_IMPORT);
+
+    // Module path should be "http.server"
+    ASSERT_NOT_NULL(stmt->data.import.path);
+    ASSERT_EQ(stmt->data.import.path->len, 2);
+    ASSERT_STR_EQ(string_cstr(StringVec_get(stmt->data.import.path, 0)), "http");
+    ASSERT_STR_EQ(string_cstr(StringVec_get(stmt->data.import.path, 1)), "server");
+
+    // Should have 2 specific items
+    ASSERT_NOT_NULL(stmt->data.import.items);
+    ASSERT_EQ(stmt->data.import.items->len, 2);
+    ASSERT_STR_EQ(string_cstr(StringVec_get(stmt->data.import.items, 0)), "cors");
+    ASSERT_STR_EQ(string_cstr(StringVec_get(stmt->data.import.items, 1)), "auth");
+
+    // No alias
+    ASSERT_NULL(stmt->data.import.alias);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse import with alias */
+void test_parse_import_alias(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "import math.geometry as geo");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_IMPORT);
+
+    // Module path should be "math.geometry"
+    ASSERT_NOT_NULL(stmt->data.import.path);
+    ASSERT_EQ(stmt->data.import.path->len, 2);
+    ASSERT_STR_EQ(string_cstr(StringVec_get(stmt->data.import.path, 0)), "math");
+    ASSERT_STR_EQ(string_cstr(StringVec_get(stmt->data.import.path, 1)), "geometry");
+
+    // No specific items
+    ASSERT_NULL(stmt->data.import.items);
+
+    // Should have alias "geo"
+    ASSERT_NOT_NULL(stmt->data.import.alias);
+    ASSERT_STR_EQ(string_cstr(stmt->data.import.alias), "geo");
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -1329,4 +1437,9 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_with_multiple_bindings);
     TEST_RUN(test_parse_with_else_clause);
     TEST_RUN(test_parse_with_in_block);
+    TEST_RUN(test_parse_pub_function);
+    TEST_RUN(test_parse_private_function);
+    TEST_RUN(test_parse_import_module);
+    TEST_RUN(test_parse_import_items);
+    TEST_RUN(test_parse_import_alias);
 }
