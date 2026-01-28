@@ -64,6 +64,18 @@ static void skip_whitespace(Lexer* lex) {
             while (!is_at_end(lex) && peek(lex) != '\n') {
                 advance(lex);
             }
+        } else if (c == '/' && peek_next(lex) == '*') {
+            // Skip block comment /* ... */
+            advance(lex); // consume '/'
+            advance(lex); // consume '*'
+            while (!is_at_end(lex)) {
+                if (peek(lex) == '*' && peek_next(lex) == '/') {
+                    advance(lex); // consume '*'
+                    advance(lex); // consume '/'
+                    break;
+                }
+                advance(lex);
+            }
         } else {
             break;
         }

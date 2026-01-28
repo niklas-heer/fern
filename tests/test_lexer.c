@@ -405,6 +405,53 @@ void test_lex_question_mark(void) {
     arena_destroy(arena);
 }
 
+/* Test: Lex block comment */
+void test_lex_block_comment(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "42 /* this is a comment */ 7");
+    
+    Token tok1 = lexer_next(lex);
+    ASSERT_EQ(tok1.type, TOKEN_INT);
+    ASSERT_STR_EQ(string_cstr(tok1.text), "42");
+    
+    // Block comment should be skipped
+    Token tok2 = lexer_next(lex);
+    ASSERT_EQ(tok2.type, TOKEN_INT);
+    ASSERT_STR_EQ(string_cstr(tok2.text), "7");
+    
+    arena_destroy(arena);
+}
+
+/* Test: Lex multiline block comment */
+void test_lex_block_comment_multiline(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "x /* comment\nspans\nlines */ y");
+    
+    Token tok1 = lexer_next(lex);
+    ASSERT_EQ(tok1.type, TOKEN_IDENT);
+    ASSERT_STR_EQ(string_cstr(tok1.text), "x");
+    
+    Token tok2 = lexer_next(lex);
+    ASSERT_EQ(tok2.type, TOKEN_IDENT);
+    ASSERT_STR_EQ(string_cstr(tok2.text), "y");
+    
+    arena_destroy(arena);
+}
+
+/* Test: Lex block comment at end of input */
+void test_lex_block_comment_end(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "42 /* comment */");
+    
+    Token tok1 = lexer_next(lex);
+    ASSERT_EQ(tok1.type, TOKEN_INT);
+    
+    Token tok2 = lexer_next(lex);
+    ASSERT_EQ(tok2.type, TOKEN_EOF);
+    
+    arena_destroy(arena);
+}
+
 void run_lexer_tests(void) {
     printf("\n=== Lexer Tests ===\n");
     TEST_RUN(test_lex_integer);
@@ -431,4 +478,7 @@ void run_lexer_tests(void) {
     TEST_RUN(test_lex_binary_literal);
     TEST_RUN(test_lex_octal_literal);
     TEST_RUN(test_lex_question_mark);
+    TEST_RUN(test_lex_block_comment);
+    TEST_RUN(test_lex_block_comment_multiline);
+    TEST_RUN(test_lex_block_comment_end);
 }
