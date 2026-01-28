@@ -256,6 +256,20 @@ static bool can_start_block_expr(Parser* parser) {
 }
 
 /**
+ * Check if current token can start a pattern (for match arms).
+ * @param parser The parser to check.
+ * @return True if this token can start a pattern.
+ */
+static bool can_start_pattern(Parser* parser) {
+    // FERN_STYLE: allow(assertion-density) simple predicate
+    TokenType t = parser->current.type;
+    /* Patterns can start with: identifiers, literals, _, (, [ */
+    return t == TOKEN_IDENT || t == TOKEN_INT || t == TOKEN_FLOAT ||
+           t == TOKEN_STRING || t == TOKEN_TRUE || t == TOKEN_FALSE ||
+           t == TOKEN_UNDERSCORE || t == TOKEN_LPAREN || t == TOKEN_LBRACKET;
+}
+
+/**
  * Parse an indented block after a colon.
  * Expects: NEWLINE INDENT stmt* expr DEDENT (or single expression on same line)
  * @param parser The parser to use.
@@ -1021,7 +1035,7 @@ static Expr* parse_primary_internal(Parser* parser) {
                 arm.body = body;
                 MatchArmVec_push(parser->arena, arms, arm);
             }
-        } while (match(parser, TOKEN_COMMA));
+        } while (match(parser, TOKEN_COMMA) || can_start_pattern(parser));
         
         return expr_match(parser->arena, value, arms, loc);
     }
@@ -1032,12 +1046,12 @@ static Expr* parse_primary_internal(Parser* parser) {
         
         Expr* condition = parse_expression(parser);
         consume(parser, TOKEN_COLON, "Expected ':' after if condition");
-        Expr* then_branch = parse_expression(parser);
+        Expr* then_branch = parse_indented_block(parser);
         
         Expr* else_branch = NULL;
         if (match(parser, TOKEN_ELSE)) {
             consume(parser, TOKEN_COLON, "Expected ':' after else");
-            else_branch = parse_expression(parser);
+            else_branch = parse_indented_block(parser);
         }
         
         return expr_if(parser->arena, condition, then_branch, else_branch, loc);
@@ -1135,9 +1149,9 @@ static Expr* parse_primary_internal(Parser* parser) {
             WithBindingVec_push(parser->arena, bindings, binding);
         } while (match(parser, TOKEN_COMMA));
 
-        // Parse do body
+        // Parse do body (supports indented blocks)
         consume(parser, TOKEN_DO, "Expected 'do' after with bindings");
-        Expr* body = parse_expression(parser);
+        Expr* body = parse_indented_block(parser);
 
         // Parse optional else clause with match arms
         MatchArmVec* else_arms = NULL;
@@ -1167,7 +1181,7 @@ static Expr* parse_primary_internal(Parser* parser) {
         consume(parser, TOKEN_IN, "Expected 'in' after for variable");
         Expr* iterable = parse_expression(parser);
         consume(parser, TOKEN_COLON, "Expected ':' after for iterable");
-        Expr* body = parse_expression(parser);
+        Expr* body = parse_indented_block(parser);
         return expr_for(parser->arena, var_tok.text, iterable, body, loc);
     }
 
