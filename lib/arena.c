@@ -1,0 +1,150 @@
+/* Arena Allocator Implementation */
+
+#include "arena.h"
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+#include <stdint.h>
+
+#define ARENA_MIN_BLOCK_SIZE 4096
+#define ARENA_ALIGNMENT 16
+
+typedef struct ArenaBlock {
+    struct ArenaBlock* next;
+    size_t size;
+    size_t used;
+    char data[];
+} ArenaBlock;
+
+struct Arena {
+    ArenaBlock* current;
+    ArenaBlock* first;
+    size_t block_size;
+    size_t total_allocated;
+};
+
+static size_t align_up(size_t n, size_t alignment) {
+    return (n + alignment - 1) & ~(alignment - 1);
+}
+
+static ArenaBlock* arena_block_create(size_t size) {
+    size_t block_size = sizeof(ArenaBlock) + size;
+    ArenaBlock* block = malloc(block_size);
+    if (!block) {
+        return NULL;
+    }
+    
+    block->next = NULL;
+    block->size = size;
+    block->used = 0;
+    
+    return block;
+}
+
+Arena* arena_create(size_t block_size) {
+    if (block_size < ARENA_MIN_BLOCK_SIZE) {
+        block_size = ARENA_MIN_BLOCK_SIZE;
+    }
+    
+    Arena* arena = malloc(sizeof(Arena));
+    if (!arena) {
+        return NULL;
+    }
+    
+    arena->block_size = block_size;
+    arena->total_allocated = 0;
+    arena->first = arena_block_create(block_size);
+    
+    if (!arena->first) {
+        free(arena);
+        return NULL;
+    }
+    
+    arena->current = arena->first;
+    
+    return arena;
+}
+
+void* arena_alloc_aligned(Arena* arena, size_t size, size_t alignment) {
+    assert(arena != NULL);
+    assert(size > 0);
+    assert(alignment > 0 && (alignment & (alignment - 1)) == 0); // Power of 2
+    
+    ArenaBlock* block = arena->current;
+    
+    // Calculate the aligned pointer from current position
+    uintptr_t current_addr = (uintptr_t)(block->data + block->used);
+    uintptr_t aligned_addr = (current_addr + alignment - 1) & ~(alignment - 1);
+    size_t padding = aligned_addr - current_addr;
+    size_t aligned_used = block->used + padding;
+    size_t aligned_size = align_up(size, ARENA_ALIGNMENT);
+    
+    // Check if current block has enough space
+    if (aligned_used + aligned_size > block->size) {
+        // Need a new block
+        size_t new_block_size = arena->block_size;
+        if (aligned_size > new_block_size) {
+            new_block_size = aligned_size;
+        }
+        
+        ArenaBlock* new_block = arena_block_create(new_block_size);
+        if (!new_block) {
+            return NULL;
+        }
+        
+        block->next = new_block;
+        arena->current = new_block;
+        block = new_block;
+        
+        // Recalculate alignment for new block
+        current_addr = (uintptr_t)(block->data);
+        aligned_addr = (current_addr + alignment - 1) & ~(alignment - 1);
+        padding = aligned_addr - current_addr;
+        aligned_used = padding;
+    }
+    
+    void* ptr = block->data + aligned_used;
+    block->used = aligned_used + aligned_size;
+    arena->total_allocated += aligned_size;
+    
+    // Zero the memory
+    memset(ptr, 0, size);
+    
+    return ptr;
+}
+
+void* arena_alloc(Arena* arena, size_t size) {
+    return arena_alloc_aligned(arena, size, ARENA_ALIGNMENT);
+}
+
+void arena_reset(Arena* arena) {
+    assert(arena != NULL);
+    
+    // Reset all blocks to unused
+    for (ArenaBlock* block = arena->first; block != NULL; block = block->next) {
+        block->used = 0;
+    }
+    
+    arena->current = arena->first;
+    arena->total_allocated = 0;
+}
+
+void arena_destroy(Arena* arena) {
+    if (!arena) {
+        return;
+    }
+    
+    ArenaBlock* block = arena->first;
+    while (block) {
+        ArenaBlock* next = block->next;
+        free(block);
+        block = next;
+    }
+    
+    free(arena);
+}
+
+size_t arena_total_allocated(Arena* arena) {
+    assert(arena != NULL);
+    return arena->total_allocated;
+}

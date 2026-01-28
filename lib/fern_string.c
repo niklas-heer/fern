@@ -1,0 +1,139 @@
+/* Dynamic String Implementation */
+
+#include "fern_string.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <assert.h>
+
+struct String {
+    size_t len;
+    char data[];
+};
+
+String* string_new_len(Arena* arena, const char* data, size_t len) {
+    assert(arena != NULL);
+    assert(data != NULL || len == 0);
+    
+    String* s = arena_alloc(arena, sizeof(String) + len + 1);
+    if (!s) {
+        return NULL;
+    }
+    
+    s->len = len;
+    if (len > 0) {
+        memcpy(s->data, data, len);
+    }
+    s->data[len] = '\0';
+    
+    return s;
+}
+
+String* string_new(Arena* arena, const char* cstr) {
+    assert(arena != NULL);
+    assert(cstr != NULL);
+    
+    return string_new_len(arena, cstr, strlen(cstr));
+}
+
+String* string_empty(Arena* arena) {
+    assert(arena != NULL);
+    return string_new_len(arena, "", 0);
+}
+
+const char* string_cstr(const String* s) {
+    assert(s != NULL);
+    return s->data;
+}
+
+size_t string_len(const String* s) {
+    assert(s != NULL);
+    return s->len;
+}
+
+bool string_is_empty(const String* s) {
+    assert(s != NULL);
+    return s->len == 0;
+}
+
+String* string_concat(Arena* arena, const String* a, const String* b) {
+    assert(arena != NULL);
+    assert(a != NULL);
+    assert(b != NULL);
+    
+    size_t total_len = a->len + b->len;
+    String* result = arena_alloc(arena, sizeof(String) + total_len + 1);
+    if (!result) {
+        return NULL;
+    }
+    
+    result->len = total_len;
+    memcpy(result->data, a->data, a->len);
+    memcpy(result->data + a->len, b->data, b->len);
+    result->data[total_len] = '\0';
+    
+    return result;
+}
+
+bool string_equal(const String* a, const String* b) {
+    assert(a != NULL);
+    assert(b != NULL);
+    
+    if (a->len != b->len) {
+        return false;
+    }
+    
+    return memcmp(a->data, b->data, a->len) == 0;
+}
+
+int string_compare(const String* a, const String* b) {
+    assert(a != NULL);
+    assert(b != NULL);
+    
+    size_t min_len = a->len < b->len ? a->len : b->len;
+    int cmp = memcmp(a->data, b->data, min_len);
+    
+    if (cmp != 0) {
+        return cmp;
+    }
+    
+    // Equal up to min_len, compare lengths
+    if (a->len < b->len) {
+        return -1;
+    } else if (a->len > b->len) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+String* string_format(Arena* arena, const char* fmt, ...) {
+    assert(arena != NULL);
+    assert(fmt != NULL);
+    
+    va_list args1, args2;
+    va_start(args1, fmt);
+    va_copy(args2, args1);
+    
+    // Calculate required size
+    int size = vsnprintf(NULL, 0, fmt, args1);
+    va_end(args1);
+    
+    if (size < 0) {
+        va_end(args2);
+        return NULL;
+    }
+    
+    String* s = arena_alloc(arena, sizeof(String) + size + 1);
+    if (!s) {
+        va_end(args2);
+        return NULL;
+    }
+    
+    s->len = size;
+    vsnprintf(s->data, size + 1, fmt, args2);
+    va_end(args2);
+    
+    return s;
+}

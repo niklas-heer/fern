@@ -1,0 +1,21 @@
+# Build artifacts
+build/
+bin/
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Debug files
+*.dSYM/
+vgcore.*
+
+# Test outputs
+*.log
