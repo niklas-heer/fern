@@ -1,0 +1,16 @@
+# Factorial calculation using recursion
+# Demonstrates recursive functions and conditionals
+
+fn factorial(n: Int) -> Int:
+    if n <= 1:
+        1
+    else:
+        n * factorial(n - 1)
+
+fn main() -> Int:
+    # Calculate factorials
+    println(factorial(0))
+    println(factorial(1))
+    println(factorial(5))
+    println(factorial(10))
+    0

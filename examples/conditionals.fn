@@ -1,0 +1,35 @@
+# Conditional expressions example
+# Demonstrates if/else and nested conditionals
+
+fn abs(n: Int) -> Int:
+    if n < 0: 0 - n
+    else: n
+
+fn max(a: Int, b: Int) -> Int:
+    if a > b: a
+    else: b
+
+fn min(a: Int, b: Int) -> Int:
+    if a < b: a
+    else: b
+
+fn clamp(value: Int, lo: Int, hi: Int) -> Int:
+    if value < lo: lo
+    else: if value > hi: hi
+    else: value
+
+fn main() -> Int:
+    # Test abs
+    println(abs(5))
+    println(abs(0 - 5))
+
+    # Test max/min
+    println(max(10, 20))
+    println(min(10, 20))
+
+    # Test clamp
+    println(clamp(5, 0, 10))
+    println(clamp(0 - 5, 0, 10))
+    println(clamp(15, 0, 10))
+
+    0
