@@ -1164,6 +1164,110 @@ void test_parse_function_pattern_params(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse simple with expression (single binding, no else) */
+void test_parse_with_simple(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "with x <- f() do Ok(x)");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_WITH);
+    ASSERT_NOT_NULL(expr->data.with_expr.bindings);
+    ASSERT_EQ(expr->data.with_expr.bindings->len, 1);
+
+    // Check binding: x <- f()
+    WithBinding b1 = WithBindingVec_get(expr->data.with_expr.bindings, 0);
+    ASSERT_STR_EQ(string_cstr(b1.name), "x");
+    ASSERT_NOT_NULL(b1.value);
+    ASSERT_EQ(b1.value->type, EXPR_CALL);
+
+    // Check do body: Ok(x)
+    ASSERT_NOT_NULL(expr->data.with_expr.body);
+    ASSERT_EQ(expr->data.with_expr.body->type, EXPR_CALL);
+
+    // No else clause
+    ASSERT_NULL(expr->data.with_expr.else_arms);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse with expression with multiple bindings */
+void test_parse_with_multiple_bindings(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "with x <- f(), y <- g(x) do Ok(y)");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_WITH);
+    ASSERT_NOT_NULL(expr->data.with_expr.bindings);
+    ASSERT_EQ(expr->data.with_expr.bindings->len, 2);
+
+    // First binding: x <- f()
+    WithBinding b1 = WithBindingVec_get(expr->data.with_expr.bindings, 0);
+    ASSERT_STR_EQ(string_cstr(b1.name), "x");
+    ASSERT_EQ(b1.value->type, EXPR_CALL);
+
+    // Second binding: y <- g(x)
+    WithBinding b2 = WithBindingVec_get(expr->data.with_expr.bindings, 1);
+    ASSERT_STR_EQ(string_cstr(b2.name), "y");
+    ASSERT_EQ(b2.value->type, EXPR_CALL);
+
+    // Check do body: Ok(y)
+    ASSERT_NOT_NULL(expr->data.with_expr.body);
+    ASSERT_EQ(expr->data.with_expr.body->type, EXPR_CALL);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse with expression with else clause */
+void test_parse_with_else_clause(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "with x <- f() do Ok(x) else Err(e) -> e");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_WITH);
+    ASSERT_EQ(expr->data.with_expr.bindings->len, 1);
+
+    // Check do body
+    ASSERT_NOT_NULL(expr->data.with_expr.body);
+    ASSERT_EQ(expr->data.with_expr.body->type, EXPR_CALL);
+
+    // Check else arms
+    ASSERT_NOT_NULL(expr->data.with_expr.else_arms);
+    ASSERT_EQ(expr->data.with_expr.else_arms->len, 1);
+
+    // First else arm: Err(e) -> e
+    MatchArm arm = MatchArmVec_get(expr->data.with_expr.else_arms, 0);
+    ASSERT_NOT_NULL(arm.pattern);
+    ASSERT_NOT_NULL(arm.body);
+    ASSERT_EQ(arm.body->type, EXPR_IDENT);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse with expression inside a block */
+void test_parse_with_in_block(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "{ let z = with x <- f() do Ok(x), z }");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_BLOCK);
+    ASSERT_EQ(expr->data.block.stmts->len, 1);
+
+    // The let statement should bind a with expression
+    Stmt* let_stmt = StmtVec_get(expr->data.block.stmts, 0);
+    ASSERT_EQ(let_stmt->type, STMT_LET);
+    ASSERT_EQ(let_stmt->data.let.value->type, EXPR_WITH);
+
+    // Final expression should be the identifier z
+    ASSERT_NOT_NULL(expr->data.block.final_expr);
+    ASSERT_EQ(expr->data.block.final_expr->type, EXPR_IDENT);
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -1221,4 +1325,8 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_function_multi_clause_fibonacci);
     TEST_RUN(test_parse_function_clauses_must_be_adjacent);
     TEST_RUN(test_parse_function_pattern_params);
+    TEST_RUN(test_parse_with_simple);
+    TEST_RUN(test_parse_with_multiple_bindings);
+    TEST_RUN(test_parse_with_else_clause);
+    TEST_RUN(test_parse_with_in_block);
 }
