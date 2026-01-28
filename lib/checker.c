@@ -1185,10 +1185,79 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
             return type_map(checker->arena, key_type, val_type);
         }
             
+        case EXPR_LIST_COMP: {
+            /* List comprehension: [body for var in iterable if condition] */
+            ListCompExpr* comp = &expr->data.list_comp;
+            
+            /* Infer type of iterable */
+            Type* iter_type = checker_infer_expr(checker, comp->iterable);
+            if (iter_type->kind == TYPE_ERROR) return iter_type;
+            
+            /* Iterable must be List(T) or Range */
+            Type* elem_type = NULL;
+            if (iter_type->kind == TYPE_CON) {
+                const char* name = string_cstr(iter_type->data.con.name);
+                if (strcmp(name, "List") == 0 && iter_type->data.con.args && 
+                    iter_type->data.con.args->len > 0) {
+                    elem_type = iter_type->data.con.args->data[0];
+                } else if (strcmp(name, "Range") == 0) {
+                    /* Range iterates over Int */
+                    elem_type = type_int(checker->arena);
+                }
+            }
+            
+            if (!elem_type) {
+                return error_type_at(checker, expr->loc, 
+                    "List comprehension requires an iterable (List or Range), got %s",
+                    string_cstr(type_to_string(checker->arena, iter_type)));
+            }
+            
+            /* Push scope and bind loop variable */
+            checker_push_scope(checker);
+            checker_define(checker, comp->var_name, elem_type);
+            
+            /* Check filter condition if present */
+            if (comp->condition) {
+                Type* cond_type = checker_infer_expr(checker, comp->condition);
+                if (cond_type->kind == TYPE_ERROR) {
+                    checker_pop_scope(checker);
+                    return cond_type;
+                }
+                if (cond_type->kind != TYPE_BOOL) {
+                    checker_pop_scope(checker);
+                    return error_type_at(checker, expr->loc,
+                        "List comprehension filter must be Bool, got %s",
+                        string_cstr(type_to_string(checker->arena, cond_type)));
+                }
+            }
+            
+            /* Infer body type */
+            Type* body_type = checker_infer_expr(checker, comp->body);
+            checker_pop_scope(checker);
+            
+            if (body_type->kind == TYPE_ERROR) return body_type;
+            
+            /* Result is List(body_type) */
+            return type_list(checker->arena, body_type);
+        }
+            
+        case EXPR_INTERP_STRING: {
+            /* String interpolation: "Hello, {name}!" */
+            InterpStringExpr* interp = &expr->data.interp_string;
+            
+            /* Type check each part - string literals and interpolated expressions */
+            for (size_t i = 0; i < interp->parts->len; i++) {
+                Type* part_type = checker_infer_expr(checker, interp->parts->data[i]);
+                if (part_type->kind == TYPE_ERROR) return part_type;
+                /* All parts get implicitly converted to string (assume Show trait) */
+            }
+            
+            /* Result is always String */
+            return type_string(checker->arena);
+        }
+            
         /* TODO: Implement remaining expression types */
-        case EXPR_INTERP_STRING:
         case EXPR_RECORD_UPDATE:
-        case EXPR_LIST_COMP:
         case EXPR_TRY: {
             /* The ? operator unwraps Result types */
             Type* operand_type = checker_infer_expr(checker, expr->data.try_expr.operand);
@@ -1275,7 +1344,7 @@ static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
                 return defined;
             }
             
-            /* Unknown type - treat as a simple type constructor */
+            /* Unknown type - treat as a simple type constructor for flexibility */
             return type_con(checker->arena, name, NULL);
         }
         
@@ -1298,6 +1367,52 @@ static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
     }
     
     return error_type(checker, "Unknown type expression kind");
+}
+
+/* Strict version that errors on unknown types (used for type definitions) */
+static Type* resolve_type_expr_strict(Checker* checker, TypeExpr* type_expr) {
+    if (!type_expr) return NULL;
+    
+    if (type_expr->kind == TYPE_NAMED) {
+        String* name = type_expr->data.named.name;
+        const char* name_str = string_cstr(name);
+        
+        /* Check for built-in primitive types */
+        if (strcmp(name_str, "Int") == 0 ||
+            strcmp(name_str, "Float") == 0 ||
+            strcmp(name_str, "String") == 0 ||
+            strcmp(name_str, "Bool") == 0) {
+            return resolve_type_expr(checker, type_expr);
+        }
+        
+        /* Check for parameterized types (List, Option, Result, Map) */
+        TypeExprVec* args = type_expr->data.named.args;
+        if (args && args->len > 0) {
+            if (strcmp(name_str, "List") == 0 ||
+                strcmp(name_str, "Option") == 0 ||
+                strcmp(name_str, "Result") == 0 ||
+                strcmp(name_str, "Map") == 0) {
+                /* Recursively validate arguments with strict checking */
+                for (size_t i = 0; i < args->len; i++) {
+                    Type* arg = resolve_type_expr_strict(checker, args->data[i]);
+                    if (!arg || arg->kind == TYPE_ERROR) return arg;
+                }
+                return resolve_type_expr(checker, type_expr);
+            }
+        }
+        
+        /* Look up in type environment */
+        Type* defined = type_env_lookup_type(checker->env, name);
+        if (defined) {
+            return defined;
+        }
+        
+        /* Unknown type - error in strict mode */
+        return error_type(checker, "Unknown type '%s'", name_str);
+    }
+    
+    /* For function types, use regular resolution */
+    return resolve_type_expr(checker, type_expr);
 }
 
 /* ========== Statement Type Checking ========== */
@@ -1432,11 +1547,114 @@ bool checker_check_stmt(Checker* checker, Stmt* stmt) {
             checker_infer_expr(checker, stmt->data.expr.expr);
             return !checker_has_errors(checker);
             
+        case STMT_FN: {
+            /* Function definition: fn name(params) -> return_type: body
+             * - Add parameters to scope
+             * - Type check body
+             * - Verify body type matches return type annotation (if present)
+             */
+            FunctionDef* fn = &stmt->data.fn;
+            
+            /* Push scope for function parameters */
+            checker_push_scope(checker);
+            
+            /* Add parameters to scope with their annotated types */
+            if (fn->params) {
+                for (size_t i = 0; i < fn->params->len; i++) {
+                    Parameter* param = &fn->params->data[i];
+                    Type* param_type = NULL;
+                    
+                    if (param->type_ann) {
+                        param_type = resolve_type_expr(checker, param->type_ann);
+                        if (!param_type || param_type->kind == TYPE_ERROR) {
+                            checker_pop_scope(checker);
+                            return false;
+                        }
+                    } else {
+                        /* No type annotation - use fresh type variable */
+                        int var_id = type_fresh_var_id();
+                        param_type = type_var(checker->arena, param->name, var_id);
+                    }
+                    
+                    checker_define(checker, param->name, param_type);
+                }
+            }
+            
+            /* Type check the function body */
+            Type* body_type = checker_infer_expr(checker, fn->body);
+            
+            checker_pop_scope(checker);
+            
+            if (body_type->kind == TYPE_ERROR) {
+                return false;
+            }
+            
+            /* If there's a return type annotation, verify body matches */
+            if (fn->return_type) {
+                Type* return_type = resolve_type_expr(checker, fn->return_type);
+                if (!return_type || return_type->kind == TYPE_ERROR) {
+                    return false;
+                }
+                
+                if (!type_assignable(body_type, return_type)) {
+                    add_error(checker, "Function '%s' body has type %s, but declared return type is %s",
+                        string_cstr(fn->name),
+                        string_cstr(type_to_string(checker->arena, body_type)),
+                        string_cstr(type_to_string(checker->arena, return_type)));
+                    return false;
+                }
+            }
+            
+            /* TODO: Register function in environment for recursive calls */
+            return true;
+        }
+            
+        case STMT_TYPE_DEF: {
+            TypeDef* def = &stmt->data.type_def;
+            
+            // Validate variant field types
+            if (def->variants) {
+                for (size_t i = 0; i < def->variants->len; i++) {
+                    TypeVariant* variant = &def->variants->data[i];
+                    if (variant->fields) {
+                        for (size_t j = 0; j < variant->fields->len; j++) {
+                            TypeField* field = &variant->fields->data[j];
+                            if (field->type_ann) {
+                                Type* field_type = resolve_type_expr_strict(checker, field->type_ann);
+                                if (!field_type || field_type->kind == TYPE_ERROR) {
+                                    add_error(checker, "Unknown type in variant '%s' field '%s'",
+                                        string_cstr(variant->name),
+                                        string_cstr(field->name));
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Validate record field types
+            if (def->record_fields) {
+                for (size_t i = 0; i < def->record_fields->len; i++) {
+                    TypeField* field = &def->record_fields->data[i];
+                    if (field->type_ann) {
+                        Type* field_type = resolve_type_expr_strict(checker, field->type_ann);
+                        if (!field_type || field_type->kind == TYPE_ERROR) {
+                            add_error(checker, "Unknown type in record field '%s'",
+                                string_cstr(field->name));
+                            return false;
+                        }
+                    }
+                }
+            }
+            
+            /* TODO: Register type in environment for use in other definitions */
+            return true;
+        }
+            
         case STMT_RETURN:
-        case STMT_FN:
         case STMT_IMPORT:
         case STMT_DEFER:
-        case STMT_TYPE_DEF:
         case STMT_BREAK:
         case STMT_CONTINUE:
         case STMT_TRAIT:

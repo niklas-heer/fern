@@ -1235,6 +1235,299 @@ void test_check_tuple_field_out_of_bounds(void) {
     arena_destroy(arena);
 }
 
+/* ========== Function Definition Tests ========== */
+
+/* Helper to parse and type check a statement */
+static bool check_stmt_ok(Arena* arena, const char* src) {
+    Parser* parser = parser_new(arena, src);
+    StmtVec* stmts = parse_stmts(parser);
+    if (!stmts || parser->had_error) return false;
+    
+    Checker* checker = checker_new(arena);
+    return checker_check_stmts(checker, stmts);
+}
+
+static const char* check_stmt_error(Arena* arena, const char* src) {
+    Parser* parser = parser_new(arena, src);
+    StmtVec* stmts = parse_stmts(parser);
+    if (!stmts || parser->had_error) return "parse error";
+    
+    Checker* checker = checker_new(arena);
+    checker_check_stmts(checker, stmts);
+    if (checker_has_errors(checker)) {
+        return checker_first_error(checker);
+    }
+    return NULL;
+}
+
+void test_check_fn_simple(void) {
+    Arena* arena = arena_create(4096);
+    
+    // fn add(x: Int, y: Int) -> Int: x + y
+    bool ok = check_stmt_ok(arena, "fn add(x: Int, y: Int) -> Int: x + y");
+    
+    ASSERT_TRUE(ok);
+    
+    arena_destroy(arena);
+}
+
+void test_check_fn_wrong_return_type(void) {
+    Arena* arena = arena_create(4096);
+    
+    // fn get_int() -> Int: "hello" should error - String is not Int
+    const char* err = check_stmt_error(arena, "fn get_int() -> Int: \"hello\"");
+    
+    ASSERT_NOT_NULL(err);
+    // Should report type mismatch
+    
+    arena_destroy(arena);
+}
+
+void test_check_fn_uses_params(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Parameters should be in scope for body
+    bool ok = check_stmt_ok(arena, "fn greet(name: String) -> String: name");
+    
+    ASSERT_TRUE(ok);
+    
+    arena_destroy(arena);
+}
+
+void test_check_fn_no_return_type(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Function without return type annotation
+    bool ok = check_stmt_ok(arena, "fn say_hi(): 42");
+    
+    ASSERT_TRUE(ok);
+    
+    arena_destroy(arena);
+}
+
+void test_check_fn_param_type_mismatch(void) {
+    Arena* arena = arena_create(4096);
+    
+    // fn add(x: Int, y: Int) -> Int: x + "hello" should error
+    const char* err = check_stmt_error(arena, "fn bad(x: Int) -> Int: x + \"hello\"");
+    
+    ASSERT_NOT_NULL(err);
+    // Should report cannot add Int and String
+    
+    arena_destroy(arena);
+}
+
+/* ========== Type Definition Tests ========== */
+
+void test_check_type_def_simple(void) {
+    Arena* arena = arena_create(4096);
+    
+    // type Status:\n    Active\n    Inactive
+    bool ok = check_stmt_ok(arena, "type Status:\n    Active\n    Inactive");
+    
+    ASSERT_TRUE(ok);
+    
+    arena_destroy(arena);
+}
+
+void test_check_type_def_with_fields(void) {
+    Arena* arena = arena_create(4096);
+    
+    // type Shape:\n    Circle(radius: Float)\n    Rect(w: Int, h: Int)
+    bool ok = check_stmt_ok(arena, "type Shape:\n    Circle(radius: Float)\n    Rect(w: Int, h: Int)");
+    
+    ASSERT_TRUE(ok);
+    
+    arena_destroy(arena);
+}
+
+void test_check_type_def_unknown_field_type(void) {
+    Arena* arena = arena_create(4096);
+    
+    // type Bad:\n    Variant(x: Unknown) should error - Unknown is not a type
+    const char* err = check_stmt_error(arena, "type Bad:\n    Variant(x: Unknown)");
+    
+    ASSERT_NOT_NULL(err);
+    // Should report Unknown is not a known type
+    
+    arena_destroy(arena);
+}
+
+void test_check_type_def_record(void) {
+    Arena* arena = arena_create(4096);
+    
+    // type User:\n    name: String\n    age: Int
+    bool ok = check_stmt_ok(arena, "type User:\n    name: String\n    age: Int");
+    
+    ASSERT_TRUE(ok);
+    
+    arena_destroy(arena);
+}
+
+void test_check_type_def_record_unknown_field_type(void) {
+    Arena* arena = arena_create(4096);
+    
+    // type BadRecord:\n    field: Unknown should error
+    const char* err = check_stmt_error(arena, "type BadRecord:\n    field: Unknown");
+    
+    ASSERT_NOT_NULL(err);
+    // Should report Unknown is not a known type
+    
+    arena_destroy(arena);
+}
+
+/* ========== List Comprehension Tests ========== */
+
+void test_check_list_comp_basic(void) {
+    Arena* arena = arena_create(4096);
+    
+    // [x * 2 for x in nums] where nums: List(Int) -> List(Int)
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "nums"), 
+        type_list(arena, type_int(arena)));
+    
+    Parser* parser = parser_new(arena, "[x * 2 for x in nums]");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    
+    Type* t = checker_infer_expr(checker, expr);
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(t->data.con.name), "List");
+    ASSERT_EQ(t->data.con.args->data[0]->kind, TYPE_INT);
+    
+    arena_destroy(arena);
+}
+
+void test_check_list_comp_with_filter(void) {
+    Arena* arena = arena_create(4096);
+    
+    // [x for x in nums if x > 0] where nums: List(Int) -> List(Int)
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "nums"), 
+        type_list(arena, type_int(arena)));
+    
+    Parser* parser = parser_new(arena, "[x for x in nums if x > 0]");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    
+    Type* t = checker_infer_expr(checker, expr);
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(t->data.con.name), "List");
+    
+    arena_destroy(arena);
+}
+
+void test_check_list_comp_non_bool_filter(void) {
+    Arena* arena = arena_create(4096);
+    
+    // [x for x in nums if x] where filter expr is Int, not Bool
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "nums"), 
+        type_list(arena, type_int(arena)));
+    
+    Parser* parser = parser_new(arena, "[x for x in nums if x]");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    
+    Type* t = checker_infer_expr(checker, expr);
+    // Should be an error because the filter must be Bool
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_ERROR);
+    
+    arena_destroy(arena);
+}
+
+void test_check_list_comp_requires_iterable(void) {
+    Arena* arena = arena_create(4096);
+    
+    // [x for x in num] where num is Int, not a list
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "num"), type_int(arena));
+    
+    Parser* parser = parser_new(arena, "[x for x in num]");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    
+    Type* t = checker_infer_expr(checker, expr);
+    // Should be an error because Int is not iterable
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_ERROR);
+    
+    arena_destroy(arena);
+}
+
+/* ========== String Interpolation Tests ========== */
+
+void test_check_interp_string_basic(void) {
+    Arena* arena = arena_create(4096);
+    
+    // "Hello, {name}!" where name: String -> String
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "name"), type_string(arena));
+    
+    Parser* parser = parser_new(arena, "\"Hello, {name}!\"");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    
+    Type* t = checker_infer_expr(checker, expr);
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_STRING);
+    
+    arena_destroy(arena);
+}
+
+void test_check_interp_string_int(void) {
+    Arena* arena = arena_create(4096);
+    
+    // "Count: {n}" where n: Int -> String
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "n"), type_int(arena));
+    
+    Parser* parser = parser_new(arena, "\"Count: {n}\"");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    
+    Type* t = checker_infer_expr(checker, expr);
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_STRING);
+    
+    arena_destroy(arena);
+}
+
+void test_check_interp_string_expr(void) {
+    Arena* arena = arena_create(4096);
+    
+    // "Result: {1 + 2}" -> String
+    Parser* parser = parser_new(arena, "\"Result: {1 + 2}\"");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    
+    Checker* checker = checker_new(arena);
+    Type* t = checker_infer_expr(checker, expr);
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_STRING);
+    
+    arena_destroy(arena);
+}
+
+void test_check_interp_string_undefined_var(void) {
+    Arena* arena = arena_create(4096);
+    
+    // "Hello, {unknown}!" where unknown is not defined -> error
+    Parser* parser = parser_new(arena, "\"Hello, {unknown}!\"");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    
+    Checker* checker = checker_new(arena);
+    Type* t = checker_infer_expr(checker, expr);
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_ERROR);
+    
+    arena_destroy(arena);
+}
+
 /* ========== Test Runner ========== */
 
 void run_checker_tests(void) {
@@ -1364,4 +1657,30 @@ void run_checker_tests(void) {
     TEST_RUN(test_check_tuple_field_access);
     TEST_RUN(test_check_tuple_field_access_second);
     TEST_RUN(test_check_tuple_field_out_of_bounds);
+    
+    // Function definitions
+    TEST_RUN(test_check_fn_simple);
+    TEST_RUN(test_check_fn_wrong_return_type);
+    TEST_RUN(test_check_fn_uses_params);
+    TEST_RUN(test_check_fn_no_return_type);
+    TEST_RUN(test_check_fn_param_type_mismatch);
+    
+    // Type definitions
+    TEST_RUN(test_check_type_def_simple);
+    TEST_RUN(test_check_type_def_with_fields);
+    TEST_RUN(test_check_type_def_unknown_field_type);
+    TEST_RUN(test_check_type_def_record);
+    TEST_RUN(test_check_type_def_record_unknown_field_type);
+    
+    // List comprehensions
+    TEST_RUN(test_check_list_comp_basic);
+    TEST_RUN(test_check_list_comp_with_filter);
+    TEST_RUN(test_check_list_comp_non_bool_filter);
+    TEST_RUN(test_check_list_comp_requires_iterable);
+    
+    // String interpolation
+    TEST_RUN(test_check_interp_string_basic);
+    TEST_RUN(test_check_interp_string_int);
+    TEST_RUN(test_check_interp_string_expr);
+    TEST_RUN(test_check_interp_string_undefined_var);
 }
