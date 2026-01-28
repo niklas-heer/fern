@@ -15,6 +15,9 @@
 
 /* ========== Codegen Structure ========== */
 
+/* Maximum number of deferred expressions in a single function */
+#define MAX_DEFERS 64
+
 struct Codegen {
     Arena* arena;
     String* output;      /* Accumulated QBE IR (functions) */
@@ -22,6 +25,10 @@ struct Codegen {
     int temp_counter;    /* For generating unique temporaries %t0, %t1, ... */
     int label_counter;   /* For generating unique labels @L0, @L1, ... */
     int string_counter;  /* For generating unique string labels $str0, $str1, ... */
+    
+    /* Defer stack for current function - expressions run in LIFO order */
+    Expr* defer_stack[MAX_DEFERS];
+    int defer_count;
 };
 
 /* ========== Helper Functions ========== */
@@ -69,7 +76,31 @@ Codegen* codegen_new(Arena* arena) {
     cg->temp_counter = 0;
     cg->label_counter = 0;
     cg->string_counter = 0;
+    cg->defer_count = 0;
     return cg;
+}
+
+/* Push a deferred expression onto the stack */
+static void push_defer(Codegen* cg, Expr* expr) {
+    assert(cg != NULL);
+    assert(expr != NULL);
+    assert(cg->defer_count < MAX_DEFERS);
+    cg->defer_stack[cg->defer_count++] = expr;
+}
+
+/* Emit all deferred expressions in reverse order (LIFO) */
+static void emit_defers(Codegen* cg) {
+    assert(cg != NULL);
+    /* Emit in reverse order: last defer runs first */
+    for (int i = cg->defer_count - 1; i >= 0; i--) {
+        codegen_expr(cg, cg->defer_stack[i]);
+    }
+}
+
+/* Clear the defer stack (called at function boundaries) */
+static void clear_defers(Codegen* cg) {
+    assert(cg != NULL);
+    cg->defer_count = 0;
 }
 
 /* Emit to data section */
@@ -330,9 +361,12 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             }
             
             /* Generate code for arguments */
-            String** arg_temps = arena_alloc(cg->arena, sizeof(String*) * call->args->len);
-            for (size_t i = 0; i < call->args->len; i++) {
-                arg_temps[i] = codegen_expr(cg, call->args->data[i].value);
+            String** arg_temps = NULL;
+            if (call->args->len > 0) {
+                arg_temps = arena_alloc(cg->arena, sizeof(String*) * call->args->len);
+                for (size_t i = 0; i < call->args->len; i++) {
+                    arg_temps[i] = codegen_expr(cg, call->args->data[i].value);
+                }
             }
             
             /* Generate call */
@@ -595,6 +629,8 @@ void codegen_stmt(Codegen* cg, Stmt* stmt) {
         
         case STMT_RETURN: {
             ReturnStmt* ret = &stmt->data.return_stmt;
+            /* Emit deferred expressions before returning */
+            emit_defers(cg);
             if (ret->value) {
                 String* val = codegen_expr(cg, ret->value);
                 emit(cg, "    ret %s\n", string_cstr(val));
@@ -604,8 +640,19 @@ void codegen_stmt(Codegen* cg, Stmt* stmt) {
             break;
         }
         
+        case STMT_DEFER: {
+            /* Push the deferred expression onto the stack - it will be
+             * emitted before any return (LIFO order) */
+            DeferStmt* defer = &stmt->data.defer_stmt;
+            push_defer(cg, defer->expr);
+            break;
+        }
+        
         case STMT_FN: {
             FunctionDef* fn = &stmt->data.fn;
+            
+            /* Clear defer stack at function start */
+            clear_defers(cg);
             
             /* Function header */
             emit(cg, "export function w $%s(", string_cstr(fn->name));
@@ -623,6 +670,9 @@ void codegen_stmt(Codegen* cg, Stmt* stmt) {
             
             /* Function body */
             String* result = codegen_expr(cg, fn->body);
+            
+            /* Emit deferred expressions before final return */
+            emit_defers(cg);
             emit(cg, "    ret %s\n", string_cstr(result));
             
             emit(cg, "}\n\n");

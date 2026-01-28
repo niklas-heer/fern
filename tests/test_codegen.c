@@ -522,6 +522,42 @@ void test_codegen_for_in_function(void) {
     arena_destroy(arena);
 }
 
+/* ========== Defer Statement Tests ========== */
+
+void test_codegen_defer_simple(void) {
+    Arena* arena = arena_create(8192);
+    
+    /* Simple defer statement - cleanup should be called before return */
+    const char* qbe = generate_qbe(arena,
+        "fn process() -> Int: { defer cleanup(), 42 }");
+    
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "$process") != NULL);
+    /* Should call cleanup before returning */
+    ASSERT_TRUE(strstr(qbe, "$cleanup") != NULL);
+    
+    arena_destroy(arena);
+}
+
+void test_codegen_defer_multiple(void) {
+    Arena* arena = arena_create(8192);
+    
+    /* Multiple defers - should run in reverse order (LIFO) */
+    const char* qbe = generate_qbe(arena,
+        "fn process() -> Int: { defer cleanup1(), defer cleanup2(), 42 }");
+    
+    ASSERT_NOT_NULL(qbe);
+    /* Both cleanups should be called */
+    ASSERT_TRUE(strstr(qbe, "$cleanup1") != NULL);
+    ASSERT_TRUE(strstr(qbe, "$cleanup2") != NULL);
+    /* cleanup2 should appear before cleanup1 in the output (LIFO) */
+    const char* pos1 = strstr(qbe, "$cleanup1");
+    const char* pos2 = strstr(qbe, "$cleanup2");
+    ASSERT_TRUE(pos2 < pos1); /* cleanup2 runs first, so appears first */
+    
+    arena_destroy(arena);
+}
+
 /* ========== Test Runner ========== */
 
 void run_codegen_tests(void) {
@@ -596,4 +632,8 @@ void run_codegen_tests(void) {
     /* For loops */
     TEST_RUN(test_codegen_for_loop);
     TEST_RUN(test_codegen_for_in_function);
+    
+    /* Defer statements */
+    TEST_RUN(test_codegen_defer_simple);
+    TEST_RUN(test_codegen_defer_multiple);
 }
