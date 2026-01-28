@@ -110,12 +110,12 @@ fmt:
 # Check FERN_STYLE compliance
 .PHONY: style
 style:
-	@python3 scripts/check_style.py $(SRC_DIR) $(LIB_DIR)
+	@uv run scripts/check_style.py $(SRC_DIR) $(LIB_DIR)
 
 # Check FERN_STYLE with strict mode (warnings are errors)
 .PHONY: style-strict
 style-strict:
-	@python3 scripts/check_style.py --strict $(SRC_DIR) $(LIB_DIR)
+	@uv run scripts/check_style.py --strict $(SRC_DIR) $(LIB_DIR)
 
 # Help
 .PHONY: help
