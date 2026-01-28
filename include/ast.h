@@ -34,6 +34,7 @@ typedef enum {
     EXPR_BLOCK,         // Sequence of statements with final expression
     EXPR_LIST,          // [1, 2, 3]
     EXPR_BIND,          // x <- operation()
+    EXPR_WITH,          // with x <- f(), y <- g(x) do Ok(y) else Err(e) -> e
 } ExprType;
 
 /* Binary operators */
@@ -155,6 +156,21 @@ typedef struct {
     Expr* value;
 } BindExpr;
 
+/* With binding (name <- expr) used inside with expressions */
+typedef struct {
+    String* name;
+    Expr* value;
+} WithBinding;
+
+VEC_TYPE(WithBindingVec, WithBinding)
+
+/* With expression: with bindings do body [else arms] */
+typedef struct {
+    WithBindingVec* bindings;
+    Expr* body;
+    MatchArmVec* else_arms;  // NULL if no else clause
+} WithExpr;
+
 /* Expression node */
 struct Expr {
     ExprType type;
@@ -173,6 +189,7 @@ struct Expr {
         BlockExpr block;
         ListExpr list;
         BindExpr bind;
+        WithExpr with_expr;
     } data;
 };
 
@@ -317,6 +334,7 @@ Expr* expr_match(Arena* arena, Expr* value, MatchArmVec* arms, SourceLoc loc);
 Expr* expr_block(Arena* arena, StmtVec* stmts, Expr* final_expr, SourceLoc loc);
 Expr* expr_list(Arena* arena, ExprVec* elements, SourceLoc loc);
 Expr* expr_bind(Arena* arena, String* name, Expr* value, SourceLoc loc);
+Expr* expr_with(Arena* arena, WithBindingVec* bindings, Expr* body, MatchArmVec* else_arms, SourceLoc loc);
 
 /* Create statements */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc);

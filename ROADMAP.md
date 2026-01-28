@@ -1254,8 +1254,8 @@ Ready for next task.
 
 ## Iteration 13: With Expression Parsing
 
-**Agent Turn**: IMPLEMENTER
-**Status**: READY
+**Agent Turn**: CONTROLLER
+**Status**: COMPLETE
 **Task**: Implement with expression parsing for chained Result handling
 
 ### Task Requirements
@@ -1284,10 +1284,10 @@ else
 - lib/parser.c (add with expression parsing in parse_primary_internal)
 
 **Success Criteria**:
-- [ ] All 4 new tests pass
-- [ ] No regression in existing 78 tests (78 → 82 tests, all passing)
-- [ ] No compiler warnings
-- [ ] Follows TDD workflow (RED → GREEN → update ROADMAP)
+- [x] All 4 new tests pass
+- [x] No regression in existing 78 tests (78 → 82 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows TDD workflow (RED → GREEN → update ROADMAP)
 
 **Key Design Considerations**:
 - `with` is followed by one or more comma-separated bindings (`name <- expr`)
@@ -1295,14 +1295,62 @@ else
 - `else` keyword is optional and introduces error handling patterns
 - Syntax: `with <binding>, <binding> do <expr> [else <pattern> -> <expr>]`
 
+### Implementation Notes
+
+**Written by**: IMPLEMENTER (Opus 4.5)
+**Time**: 2026-01-28
+
+Implementation completed with TDD workflow:
+1. RED phase: Added 4 failing tests for with expression parsing (74bfe5a)
+2. GREEN phase: Implemented with expression AST and parser
+
+**Tests Written**:
+- test_parse_with_simple() - Parse: `with x <- f() do Ok(x)` ✓
+- test_parse_with_multiple_bindings() - Parse: `with x <- f(), y <- g(x) do Ok(y)` ✓
+- test_parse_with_else_clause() - Parse: `with x <- f() do Ok(x) else Err(e) -> e` ✓
+- test_parse_with_in_block() - Parse: `{ let z = with x <- f() do Ok(x), z }` ✓
+
+**Files Modified**:
+- tests/test_parser.c (added 4 new tests)
+- include/ast.h (added EXPR_WITH, WithBinding, WithBindingVec, WithExpr structs)
+- lib/ast.c (added expr_with helper)
+- lib/parser.c (added with expression parsing in parse_primary_internal)
+
+**AST Changes:**
+- Added `WithBinding` struct (name: String*, value: Expr*)
+- Added `WithBindingVec` (vector of WithBinding)
+- Added `WithExpr` struct (bindings: WithBindingVec*, body: Expr*, else_arms: MatchArmVec*)
+- Added `EXPR_WITH` expression type
+- Added `expr_with()` helper function
+
+**Parser Changes:**
+- Added `with` expression parsing in `parse_primary_internal()`, triggered by `TOKEN_WITH`
+- Parses comma-separated bindings: `name <- expr, name <- expr`
+- Consumes `do` keyword, then parses the success body expression
+- Optionally parses `else` clause with pattern-matched arms (reuses MatchArm)
+- Else clause supports constructor patterns like `Err(e)` by detecting `IDENT(` sequences
+  and parsing them as literal patterns wrapping call expressions
+
+**Key Design Decision:**
+The `else` clause reuses the existing `MatchArmVec` type since its structure is identical
+to match expression arms (pattern -> body). Constructor patterns like `Err(e)` are parsed
+by detecting an identifier followed by `(` and constructing a call expression wrapped in
+a PATTERN_LIT. This avoids adding a separate constructor pattern type to the AST.
+
+Test Results:
+```
+Total:  82
+Passed: 82
+```
+
 ---
 
 ## Ralph Loop Status
 
 **Current Milestone**: 2 - Parser
 **Current Iteration**: 13
-**Agent Turn**: IMPLEMENTER
-**Status**: READY
+**Agent Turn**: CONTROLLER
+**Status**: COMPLETE
 **Started**: 2026-01-28 13:10:00
 **Last Updated**: 2026-01-28
 

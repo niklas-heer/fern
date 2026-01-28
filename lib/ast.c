@@ -181,6 +181,22 @@ Expr* expr_bind(Arena* arena, String* name, Expr* value, SourceLoc loc) {
     return expr;
 }
 
+/* Create with expression */
+Expr* expr_with(Arena* arena, WithBindingVec* bindings, Expr* body, MatchArmVec* else_arms, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(bindings != NULL);
+    assert(body != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_WITH;
+    expr->loc = loc;
+    expr->data.with_expr.bindings = bindings;
+    expr->data.with_expr.body = body;
+    expr->data.with_expr.else_arms = else_arms;  // Can be NULL
+
+    return expr;
+}
+
 /* Create named type expression */
 TypeExpr* type_named(Arena* arena, String* name, TypeExprVec* args, SourceLoc loc) {
     assert(arena != NULL);

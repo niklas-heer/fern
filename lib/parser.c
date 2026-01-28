@@ -435,6 +435,95 @@ static Expr* parse_primary_internal(Parser* parser) {
         return expr_list(parser->arena, elements, loc);
     }
     
+    // With expression: with x <- f(), y <- g(x) do body [else pattern -> expr, ...]
+    if (match(parser, TOKEN_WITH)) {
+        SourceLoc loc = parser->previous.loc;
+
+        // Parse bindings: name <- expr, name <- expr, ...
+        WithBindingVec* bindings = WithBindingVec_new(parser->arena);
+        do {
+            Token name_tok = consume(parser, TOKEN_IDENT, "Expected binding name in with expression");
+            consume(parser, TOKEN_BIND, "Expected '<-' after binding name");
+            Expr* value = parse_expression(parser);
+
+            WithBinding binding;
+            binding.name = name_tok.text;
+            binding.value = value;
+            WithBindingVec_push(parser->arena, bindings, binding);
+        } while (match(parser, TOKEN_COMMA));
+
+        // Parse do body
+        consume(parser, TOKEN_DO, "Expected 'do' after with bindings");
+        Expr* body = parse_expression(parser);
+
+        // Parse optional else clause with match arms
+        MatchArmVec* else_arms = NULL;
+        if (match(parser, TOKEN_ELSE)) {
+            else_arms = MatchArmVec_new(parser->arena);
+            do {
+                // Parse pattern
+                Pattern* pattern;
+                if (match(parser, TOKEN_UNDERSCORE)) {
+                    pattern = pattern_wildcard(parser->arena, parser->previous.loc);
+                } else if (check(parser, TOKEN_IDENT)) {
+                    // Check if this is a constructor call pattern like Err(e)
+                    // For now, parse as identifier pattern
+                    Token ident_tok = parser->current;
+                    advance(parser);
+                    // If followed by '(', parse as a literal pattern (constructor call)
+                    if (check(parser, TOKEN_LPAREN)) {
+                        // Put the identifier back by creating a call expression
+                        Expr* func = expr_ident(parser->arena, ident_tok.text, ident_tok.loc);
+                        advance(parser); // consume '('
+                        Expr** args = NULL;
+                        size_t arg_count = 0;
+                        size_t arg_cap = 0;
+                        if (!check(parser, TOKEN_RPAREN)) {
+                            arg_cap = 4;
+                            args = arena_alloc(parser->arena, sizeof(Expr*) * arg_cap);
+                            do {
+                                if (arg_count >= arg_cap) {
+                                    size_t new_cap = arg_cap * 2;
+                                    Expr** new_data = arena_alloc(parser->arena, sizeof(Expr*) * new_cap);
+                                    for (size_t i = 0; i < arg_count; i++) {
+                                        new_data[i] = args[i];
+                                    }
+                                    args = new_data;
+                                    arg_cap = new_cap;
+                                }
+                                args[arg_count++] = parse_expression(parser);
+                            } while (match(parser, TOKEN_COMMA));
+                        }
+                        consume(parser, TOKEN_RPAREN, "Expected ')' after pattern arguments");
+                        Expr* call = expr_call(parser->arena, func, args, arg_count, ident_tok.loc);
+                        pattern = arena_alloc(parser->arena, sizeof(Pattern));
+                        pattern->type = PATTERN_LIT;
+                        pattern->loc = ident_tok.loc;
+                        pattern->data.literal = call;
+                    } else {
+                        pattern = pattern_ident(parser->arena, ident_tok.text, ident_tok.loc);
+                    }
+                } else {
+                    Expr* pattern_expr = parse_primary_internal(parser);
+                    pattern = arena_alloc(parser->arena, sizeof(Pattern));
+                    pattern->type = PATTERN_LIT;
+                    pattern->loc = pattern_expr->loc;
+                    pattern->data.literal = pattern_expr;
+                }
+
+                consume(parser, TOKEN_ARROW, "Expected '->' after else pattern");
+                Expr* arm_body = parse_expression(parser);
+
+                MatchArm arm;
+                arm.pattern = pattern;
+                arm.body = arm_body;
+                MatchArmVec_push(parser->arena, else_arms, arm);
+            } while (match(parser, TOKEN_COMMA));
+        }
+
+        return expr_with(parser->arena, bindings, body, else_arms, loc);
+    }
+
     // Grouped expression
     if (match(parser, TOKEN_LPAREN)) {
         Expr* expr = parse_expression(parser);
