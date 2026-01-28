@@ -9,13 +9,16 @@
 FERN_STYLE Checker - Enforces TigerBeetle-inspired coding standards.
 
 Checks:
-1. Minimum 2 assertions per function
-2. Maximum 70 lines per function
-3. No direct malloc/free usage (use arena)
-4. No unbounded loops (must have explicit limit)
-5. Function documentation required (doc comment before function)
-6. No manual tagged unions (use Datatype99)
-7. No raw char* for strings (use sds)
+1. Minimum 2 assertions per function         [error]
+2. Maximum 70 lines per function             [error]
+3. No direct malloc/free usage (use arena)   [error]
+4. No unbounded loops (must have limit)      [warning]
+5. Function doc comments required            [warning]
+   - doc-comment: Must have /** ... */ before function
+   - doc-params:  Must have @param for each parameter
+   - doc-return:  Must have @return for non-void functions
+6. No raw char* params (use sds)             [warning]
+7. No manual tagged unions (use Datatype99)  [warning]
 
 Inline Exceptions:
     Add a comment in your function to suppress specific rules:
@@ -25,7 +28,11 @@ Inline Exceptions:
     // FERN_STYLE: allow(no-malloc) this IS the allocator
     // FERN_STYLE: allow(bounded-loops) loop bounded by input length
     // FERN_STYLE: allow(doc-comment) trivial getter
+    // FERN_STYLE: allow(doc-params) params self-explanatory
+    // FERN_STYLE: allow(doc-return) return obvious
+    // FERN_STYLE: allow(doc-style) skip all doc style checks
     // FERN_STYLE: allow(no-raw-char) interop with C library
+    // FERN_STYLE: allow(no-tagged-union) legacy code
 
 Usage:
     uv run scripts/check_style.py src/ lib/
@@ -46,6 +53,17 @@ from rich.table import Table
 from rich.text import Text
 
 console = Console()
+
+
+@dataclass
+class DocComment:
+    """Parsed documentation comment."""
+
+    exists: bool = False
+    has_description: bool = False
+    documented_params: set = field(default_factory=set)
+    has_return: bool = False
+    raw_text: str = ""
 
 
 @dataclass
@@ -73,6 +91,9 @@ class Function:
     has_free: bool
     has_doc_comment: bool = False
     has_raw_char_params: bool = False  # char* in parameters (should use sds)
+    doc_comment: DocComment = field(default_factory=DocComment)
+    param_names: list = field(default_factory=list)
+    return_type: str = ""
     allowed_rules: set = field(default_factory=set)  # Rules to skip via inline comments
 
 
@@ -132,18 +153,20 @@ def find_c_files(directories: list[str]) -> Iterator[Path]:
 ALLOW_PATTERN = re.compile(r"(?://|/\*)\s*FERN_STYLE:\s*allow\(([^)]+)\)")
 
 
-def has_doc_comment_before(lines: list[str], func_line_idx: int) -> bool:
-    """Check if there's a documentation comment before the function.
+def parse_doc_comment(lines: list[str], func_line_idx: int) -> DocComment:
+    """Parse documentation comment before a function.
 
     Looks for:
     - /** ... */ style (Doxygen/Javadoc)
     - /* ... */ style multi-line comments
     - /// style single-line doc comments
 
-    Returns True if a doc comment is found within 10 lines before the function.
+    Returns DocComment with details about what's documented.
     """
+    result = DocComment()
+
     # Look backwards from function definition
-    search_start = max(0, func_line_idx - 10)
+    search_start = max(0, func_line_idx - 30)  # Allow larger comments
 
     for i in range(func_line_idx - 1, search_start - 1, -1):
         line = lines[i].strip()
@@ -154,30 +177,139 @@ def has_doc_comment_before(lines: list[str], func_line_idx: int) -> bool:
 
         # Found a doc comment ending
         if line.endswith("*/"):
-            # Check if it's a proper doc comment (has content)
             # Look for the start of this comment
             for j in range(i, search_start - 1, -1):
                 check_line = lines[j].strip()
                 if check_line.startswith("/**") or check_line.startswith("/*"):
-                    # Found the start - check if it has meaningful content
-                    # A doc comment should have at least a description
+                    # Found the start - parse the comment
                     comment_lines = lines[j : i + 1]
-                    comment_text = " ".join(comment_lines)
-                    # Must have more than just /* */
-                    if len(comment_text.replace("/*", "").replace("*/", "").replace("*", "").strip()) > 5:
-                        return True
-                    return False
-            return False
+                    comment_text = "\n".join(comment_lines)
+                    result.raw_text = comment_text
+                    result.exists = True
 
-        # /// style doc comment
+                    # Check for description (text after /** on first line or second line)
+                    # Strip comment markers and check for content
+                    content = (
+                        comment_text.replace("/**", "")
+                        .replace("/*", "")
+                        .replace("*/", "")
+                    )
+                    content_lines = [
+                        l.strip().lstrip("*").strip() for l in content.split("\n")
+                    ]
+                    # First non-empty line that's not a tag is the description
+                    for cl in content_lines:
+                        if cl and not cl.startswith("@"):
+                            result.has_description = True
+                            break
+
+                    # Check for @param tags
+                    for match in re.finditer(r"@param\s+(\w+)", comment_text):
+                        result.documented_params.add(match.group(1))
+
+                    # Check for @return or @returns
+                    if re.search(r"@returns?\b", comment_text):
+                        result.has_return = True
+
+                    return result
+            return result
+
+        # /// style doc comment - collect consecutive /// lines
         if line.startswith("///"):
-            return True
+            doc_lines = [line]
+            for k in range(i - 1, search_start - 1, -1):
+                prev_line = lines[k].strip()
+                if prev_line.startswith("///"):
+                    doc_lines.insert(0, prev_line)
+                elif not prev_line:
+                    continue
+                else:
+                    break
+
+            comment_text = "\n".join(doc_lines)
+            result.raw_text = comment_text
+            result.exists = True
+
+            content = comment_text.replace("///", "")
+            if len(content.strip()) > 5:
+                result.has_description = True
+
+            for match in re.finditer(r"@param\s+(\w+)", comment_text):
+                result.documented_params.add(match.group(1))
+
+            if re.search(r"@returns?\b", comment_text):
+                result.has_return = True
+
+            return result
 
         # If we hit actual code (not a comment), stop looking
         if not line.startswith("//") and not line.startswith("*"):
-            return False
+            return result
 
-    return False
+    return result
+
+
+def extract_function_params(line: str) -> list[str]:
+    """Extract parameter names from a function signature."""
+    param_match = re.search(r"\(([^)]*)\)", line)
+    if not param_match:
+        return []
+
+    params_str = param_match.group(1).strip()
+    if not params_str or params_str == "void":
+        return []
+
+    params = []
+    # Split by comma, but handle function pointers
+    depth = 0
+    current = ""
+    for char in params_str:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "," and depth == 0:
+            params.append(current.strip())
+            current = ""
+            continue
+        current += char
+    if current.strip():
+        params.append(current.strip())
+
+    # Extract parameter names (last word before optional array brackets)
+    names = []
+    for param in params:
+        # Remove array brackets
+        param = re.sub(r"\[[^\]]*\]", "", param)
+        # Get last word (the parameter name)
+        words = param.split()
+        if words:
+            # Handle pointer: "int *name" or "int* name"
+            last = words[-1].lstrip("*")
+            if last and last != "void":
+                names.append(last)
+
+    return names
+
+
+def get_return_type(line: str) -> str:
+    """Extract return type from function signature."""
+    # Remove everything from ( onwards
+    sig = re.sub(r"\(.*", "", line).strip()
+    # Remove function name (last word)
+    words = sig.split()
+    if len(words) >= 2:
+        return " ".join(words[:-1])
+    return ""
+
+
+def has_doc_comment_before(lines: list[str], func_line_idx: int) -> bool:
+    """Check if there's a documentation comment before the function.
+
+    Simple check - returns True if any doc comment exists.
+    """
+    doc = parse_doc_comment(lines, func_line_idx)
+    return doc.exists and doc.has_description
 
 
 def check_raw_char_params(line: str) -> bool:
@@ -237,8 +369,13 @@ def extract_functions(content: str, filepath: Path) -> list[Function]:
             func_name = match.group(1)
             start_line = i + 1  # 1-indexed
 
-            # Check for doc comment before function
-            has_doc = has_doc_comment_before(lines, i)
+            # Parse doc comment before function
+            doc_comment = parse_doc_comment(lines, i)
+            has_doc = doc_comment.exists and doc_comment.has_description
+
+            # Extract parameter names and return type
+            param_names = extract_function_params(line)
+            return_type = get_return_type(line)
 
             # Check for raw char* parameters
             has_raw_char = check_raw_char_params(line)
@@ -315,6 +452,9 @@ def extract_functions(content: str, filepath: Path) -> list[Function]:
                     has_free=has_free,
                     has_doc_comment=has_doc,
                     has_raw_char_params=has_raw_char,
+                    doc_comment=doc_comment,
+                    param_names=param_names,
+                    return_type=return_type,
                     allowed_rules=allowed_rules,
                 )
             )
@@ -463,6 +603,41 @@ def check_file(filepath: Path) -> list[Violation]:
                     severity="warning",
                 )
             )
+        elif func.has_doc_comment and "doc-style" not in func.allowed_rules:
+            # Check doc comment style/completeness
+            doc = func.doc_comment
+
+            # Check for missing @param
+            missing_params = set(func.param_names) - doc.documented_params
+            if missing_params and "doc-params" not in func.allowed_rules:
+                violations.append(
+                    Violation(
+                        file=filepath,
+                        line=func.start_line,
+                        function=func.name,
+                        rule="doc-params",
+                        message=f"Missing @param for: {', '.join(sorted(missing_params))}",
+                        severity="warning",
+                    )
+                )
+
+            # Check for missing @return (only for non-void functions)
+            if (
+                func.return_type
+                and func.return_type != "void"
+                and "doc-return" not in func.allowed_rules
+            ):
+                if not doc.has_return:
+                    violations.append(
+                        Violation(
+                            file=filepath,
+                            line=func.start_line,
+                            function=func.name,
+                            rule="doc-return",
+                            message="Missing @return for non-void function",
+                            severity="warning",
+                        )
+                    )
 
         # Rule 6: No raw char* parameters (use sds)
         if func.has_raw_char_params and "no-raw-char" not in func.allowed_rules:
@@ -572,14 +747,20 @@ FERN_STYLE Rules (TigerBeetle-inspired):
   3. No malloc/free (use arena allocation)   [error]
   4. No unbounded loops (add explicit limits)[warning]
   5. Function doc comments required          [warning]
+     - doc-comment: must have /** ... */
+     - doc-params:  must have @param for each param
+     - doc-return:  must have @return if non-void
   6. No raw char* params (use sds)           [warning]
+  7. No manual tagged unions (use Datatype99)[warning]
 
 Inline Exceptions:
   Add a comment inside the function to suppress specific rules:
     // FERN_STYLE: allow(assertion-density) simple helper
     // FERN_STYLE: allow(no-malloc, no-free) this IS the allocator
     // FERN_STYLE: allow(doc-comment) trivial getter
+    // FERN_STYLE: allow(doc-style) skip all doc checks
     // FERN_STYLE: allow(no-raw-char) C library interop
+    // FERN_STYLE: allow(no-tagged-union) legacy code
 
 Examples:
   uv run %(prog)s src/ lib/           Check all .c files

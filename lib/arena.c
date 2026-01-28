@@ -28,12 +28,14 @@ struct Arena {
     size_t total_allocated;
 };
 
+/** Align n up to the nearest multiple of alignment (must be power of 2). */
 static size_t align_up(size_t n, size_t alignment) {
     assert(alignment > 0);
     assert((alignment & (alignment - 1)) == 0);  /* Must be power of 2. */
     return (n + alignment - 1) & ~(alignment - 1);
 }
 
+/** Create a new arena block with the given size. */
 static ArenaBlock* arena_block_create(size_t size) {
     // FERN_STYLE: allow(no-malloc) this IS the arena allocator implementation
     assert(size > 0);
@@ -52,6 +54,7 @@ static ArenaBlock* arena_block_create(size_t size) {
     return block;
 }
 
+/** Create a new arena with the given initial block size. */
 Arena* arena_create(size_t block_size) {
     // FERN_STYLE: allow(no-malloc, no-free) this IS the arena allocator implementation
     assert(block_size > 0);
@@ -80,6 +83,7 @@ Arena* arena_create(size_t block_size) {
     return arena;
 }
 
+/** Allocate size bytes from arena with the given alignment. */
 void* arena_alloc_aligned(Arena* arena, size_t size, size_t alignment) {
     assert(arena != NULL);
     assert(size > 0);
@@ -130,12 +134,14 @@ void* arena_alloc_aligned(Arena* arena, size_t size, size_t alignment) {
     return ptr;
 }
 
+/** Allocate size bytes from arena with default alignment. */
 void* arena_alloc(Arena* arena, size_t size) {
     assert(arena != NULL);
     assert(size > 0);
     return arena_alloc_aligned(arena, size, ARENA_ALIGNMENT);
 }
 
+/** Reset arena to empty state, keeping allocated blocks for reuse. */
 void arena_reset(Arena* arena) {
     assert(arena != NULL);
     assert(arena->first != NULL);
@@ -151,6 +157,7 @@ void arena_reset(Arena* arena) {
     arena->total_allocated = 0;
 }
 
+/** Free all memory associated with the arena. */
 void arena_destroy(Arena* arena) {
     // FERN_STYLE: allow(no-free) this IS the arena allocator implementation
     if (!arena) {
@@ -172,6 +179,7 @@ void arena_destroy(Arena* arena) {
     free(arena);
 }
 
+/** Return total bytes allocated from this arena. */
 size_t arena_total_allocated(Arena* arena) {
     assert(arena != NULL);
     assert(arena->total_allocated <= SIZE_MAX);  /* Sanity check. */

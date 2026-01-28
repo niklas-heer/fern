@@ -259,6 +259,7 @@ Expr* expr_for(Arena* arena, String* var_name, Expr* iterable, Expr* body, Sourc
     return expr;
 }
 
+/** Create a lambda expression node. */
 Expr* expr_lambda(Arena* arena, StringVec* params, Expr* body, SourceLoc loc) {
     assert(arena != NULL);
     assert(params != NULL);
@@ -273,6 +274,7 @@ Expr* expr_lambda(Arena* arena, StringVec* params, Expr* body, SourceLoc loc) {
     return expr;
 }
 
+/** Create a tuple expression node. */
 Expr* expr_tuple(Arena* arena, ExprVec* elements, SourceLoc loc) {
     assert(arena != NULL);
     assert(elements != NULL);
@@ -285,6 +287,7 @@ Expr* expr_tuple(Arena* arena, ExprVec* elements, SourceLoc loc) {
     return expr;
 }
 
+/** Create a record update expression node. */
 Expr* expr_record_update(Arena* arena, Expr* base, RecordFieldVec* fields, SourceLoc loc) {
     assert(arena != NULL);
     assert(base != NULL);
@@ -299,6 +302,7 @@ Expr* expr_record_update(Arena* arena, Expr* base, RecordFieldVec* fields, Sourc
     return expr;
 }
 
+/** Create a list comprehension expression node. */
 Expr* expr_list_comp(Arena* arena, Expr* body, String* var_name, Expr* iterable, Expr* condition, SourceLoc loc) {
     assert(arena != NULL);
     assert(body != NULL);
@@ -316,6 +320,7 @@ Expr* expr_list_comp(Arena* arena, Expr* body, String* var_name, Expr* iterable,
     return expr;
 }
 
+/** Create an index expression node. */
 Expr* expr_index(Arena* arena, Expr* object, Expr* index, SourceLoc loc) {
     assert(arena != NULL);
     assert(object != NULL);
@@ -330,6 +335,7 @@ Expr* expr_index(Arena* arena, Expr* object, Expr* index, SourceLoc loc) {
     return expr;
 }
 
+/** Create a spawn expression node. */
 Expr* expr_spawn(Arena* arena, Expr* func, SourceLoc loc) {
     assert(arena != NULL);
     assert(func != NULL);
@@ -342,6 +348,7 @@ Expr* expr_spawn(Arena* arena, Expr* func, SourceLoc loc) {
     return expr;
 }
 
+/** Create a send expression node. */
 Expr* expr_send(Arena* arena, Expr* pid, Expr* message, SourceLoc loc) {
     assert(arena != NULL);
     assert(pid != NULL);
@@ -356,6 +363,7 @@ Expr* expr_send(Arena* arena, Expr* pid, Expr* message, SourceLoc loc) {
     return expr;
 }
 
+/** Create a receive expression node. */
 Expr* expr_receive(Arena* arena, MatchArmVec* arms, Expr* after_timeout, Expr* after_body, SourceLoc loc) {
     assert(arena != NULL);
     assert(arms != NULL);
@@ -370,6 +378,7 @@ Expr* expr_receive(Arena* arena, MatchArmVec* arms, Expr* after_timeout, Expr* a
     return expr;
 }
 
+/** Create a try expression node (? operator). */
 Expr* expr_try(Arena* arena, Expr* operand, SourceLoc loc) {
     assert(arena != NULL);
     assert(operand != NULL);
@@ -382,6 +391,7 @@ Expr* expr_try(Arena* arena, Expr* operand, SourceLoc loc) {
     return expr;
 }
 
+/** Create a map literal expression node. */
 Expr* expr_map(Arena* arena, MapEntryVec* entries, SourceLoc loc) {
     assert(arena != NULL);
     assert(entries != NULL);
@@ -394,6 +404,7 @@ Expr* expr_map(Arena* arena, MapEntryVec* entries, SourceLoc loc) {
     return expr;
 }
 
+/** Create an interpolated string expression node. */
 Expr* expr_interp_string(Arena* arena, ExprVec* parts, SourceLoc loc) {
     assert(arena != NULL);
     assert(parts != NULL);
@@ -521,6 +532,7 @@ Stmt* stmt_newtype(Arena* arena, String* name, bool is_public, String* construct
     return stmt;
 }
 
+/** Create a module declaration statement node. */
 Stmt* stmt_module(Arena* arena, StringVec* path, SourceLoc loc) {
     assert(arena != NULL);
     assert(path != NULL);
@@ -533,6 +545,7 @@ Stmt* stmt_module(Arena* arena, StringVec* path, SourceLoc loc) {
     return stmt;
 }
 
+/** Create a break statement node. */
 Stmt* stmt_break(Arena* arena, Expr* value, SourceLoc loc) {
     assert(arena != NULL);
     assert(loc.line >= 0);
@@ -659,6 +672,7 @@ Pattern* pattern_wildcard(Arena* arena, SourceLoc loc) {
     return pat;
 }
 
+/** Create a tuple pattern node. */
 Pattern* pattern_tuple(Arena* arena, PatternVec* elements, SourceLoc loc) {
     assert(arena != NULL);
     assert(elements != NULL);
@@ -671,6 +685,7 @@ Pattern* pattern_tuple(Arena* arena, PatternVec* elements, SourceLoc loc) {
     return pat;
 }
 
+/** Create a rest pattern node (..name or .._). */
 Pattern* pattern_rest(Arena* arena, String* name, SourceLoc loc) {
     assert(arena != NULL);
     assert(loc.line >= 0);
@@ -684,6 +699,7 @@ Pattern* pattern_rest(Arena* arena, String* name, SourceLoc loc) {
     return pat;
 }
 
+/** Create a constructor pattern node. */
 Pattern* pattern_constructor(Arena* arena, String* name, PatternVec* args, SourceLoc loc) {
     assert(arena != NULL);
     assert(name != NULL);

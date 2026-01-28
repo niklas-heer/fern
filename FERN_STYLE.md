@@ -397,13 +397,13 @@ Token tok = next();  // consume the opening paren
 
 ### Doc Comments (API Documentation)
 
-Use `/** */` doc comments for all public functions, structs, and enums in header files.
-These will be extracted by the documentation generator.
+Use `/** */` doc comments for **all functions** (not just public ones).
+These are checked automatically by `make style`.
 
 **Format:**
 ```c
 /**
- * @brief Short one-line description.
+ * Short one-line description (or use @brief).
  *
  * Longer description with more details. Can span multiple lines.
  * Use markdown for formatting.
@@ -421,10 +421,10 @@ These will be extracted by the documentation generator.
  */
 ```
 
-**Required tags:**
-- `@brief` - Always required, one line
-- `@param` - For each parameter
-- `@return` - For non-void functions
+**Required (checked by `make style`):**
+- **Description** - First line of comment OR `@brief` tag
+- `@param` - For each parameter (rule: `doc-params`)
+- `@return` - For non-void functions (rule: `doc-return`)
 
 **Optional tags:**
 - `@example` - Code example (will be syntax highlighted)
@@ -672,12 +672,26 @@ Write tests first. AI generates better implementation when tests exist.
 
 Before committing code, verify:
 
+**Run automated checks:**
+```bash
+make clean && make && make test && make style
+```
+
+**Code Quality:**
 - [ ] Minimum 2 assertions per function
 - [ ] Function under 70 lines
 - [ ] All loops have explicit bounds
 - [ ] All errors handled (no ignored Results)
 - [ ] Arena allocation only (no malloc/free)
+- [ ] No raw `char*` parameters (use `sds` or `const char*`)
+
+**Documentation:**
+- [ ] All functions have `/** */` doc comments
+- [ ] `@param` for each parameter
+- [ ] `@return` for non-void functions
 - [ ] Comments explain WHY, not just WHAT
+
+**Testing:**
 - [ ] Tests cover valid, invalid, and boundary cases
 - [ ] Compiles with `-Wall -Wextra -Werror`
 - [ ] Passes AddressSanitizer
