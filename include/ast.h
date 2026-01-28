@@ -243,6 +243,7 @@ Expr* expr_ident(Arena* arena, String* name, SourceLoc loc);
 Expr* expr_binary(Arena* arena, BinaryOp op, Expr* left, Expr* right, SourceLoc loc);
 Expr* expr_unary(Arena* arena, UnaryOp op, Expr* operand, SourceLoc loc);
 Expr* expr_call(Arena* arena, Expr* func, Expr** args, size_t num_args, SourceLoc loc);
+Expr* expr_if(Arena* arena, Expr* condition, Expr* then_branch, Expr* else_branch, SourceLoc loc);
 
 /* Create statements */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc);

@@ -312,6 +312,23 @@ static Expr* parse_primary_internal(Parser* parser) {
         return expr_ident(parser->arena, tok.text, tok.loc);
     }
     
+    // If expression
+    if (match(parser, TOKEN_IF)) {
+        SourceLoc loc = parser->previous.loc;
+        
+        Expr* condition = parse_expression(parser);
+        consume(parser, TOKEN_COLON, "Expected ':' after if condition");
+        Expr* then_branch = parse_expression(parser);
+        
+        Expr* else_branch = NULL;
+        if (match(parser, TOKEN_ELSE)) {
+            consume(parser, TOKEN_COLON, "Expected ':' after else");
+            else_branch = parse_expression(parser);
+        }
+        
+        return expr_if(parser->arena, condition, then_branch, else_branch, loc);
+    }
+    
     // Grouped expression
     if (match(parser, TOKEN_LPAREN)) {
         Expr* expr = parse_expression(parser);

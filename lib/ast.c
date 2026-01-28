@@ -107,6 +107,23 @@ Expr* expr_call(Arena* arena, Expr* func, Expr** args, size_t num_args, SourceLo
     return expr;
 }
 
+/* Create if expression */
+Expr* expr_if(Arena* arena, Expr* condition, Expr* then_branch, Expr* else_branch, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(condition != NULL);
+    assert(then_branch != NULL);
+    // else_branch can be NULL
+    
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_IF;
+    expr->loc = loc;
+    expr->data.if_expr.condition = condition;
+    expr->data.if_expr.then_branch = then_branch;
+    expr->data.if_expr.else_branch = else_branch;
+    
+    return expr;
+}
+
 /* Create let statement */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc) {
     assert(arena != NULL);
