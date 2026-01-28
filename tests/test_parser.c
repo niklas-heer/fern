@@ -1799,6 +1799,54 @@ void test_parse_trait_multiple_methods(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse labeled function arguments */
+void test_parse_call_labeled_args(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "connect(host: \"localhost\", port: 8080)");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_CALL);
+    ASSERT_EQ(expr->data.call.args->len, 2);
+
+    CallArg arg1 = CallArgVec_get(expr->data.call.args, 0);
+    ASSERT_NOT_NULL(arg1.label);
+    ASSERT_STR_EQ(string_cstr(arg1.label), "host");
+    ASSERT_EQ(arg1.value->type, EXPR_STRING_LIT);
+
+    CallArg arg2 = CallArgVec_get(expr->data.call.args, 1);
+    ASSERT_NOT_NULL(arg2.label);
+    ASSERT_STR_EQ(string_cstr(arg2.label), "port");
+    ASSERT_EQ(arg2.value->type, EXPR_INT_LIT);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse mixed positional and labeled args */
+void test_parse_call_mixed_args(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "f(1, 2, name: \"test\")");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_CALL);
+    ASSERT_EQ(expr->data.call.args->len, 3);
+
+    // First two are positional (no label)
+    CallArg a1 = CallArgVec_get(expr->data.call.args, 0);
+    ASSERT_NULL(a1.label);
+
+    CallArg a2 = CallArgVec_get(expr->data.call.args, 1);
+    ASSERT_NULL(a2.label);
+
+    // Third is labeled
+    CallArg a3 = CallArgVec_get(expr->data.call.args, 2);
+    ASSERT_NOT_NULL(a3.label);
+    ASSERT_STR_EQ(string_cstr(a3.label), "name");
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -1887,4 +1935,6 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_trait_def);
     TEST_RUN(test_parse_impl_block);
     TEST_RUN(test_parse_trait_multiple_methods);
+    TEST_RUN(test_parse_call_labeled_args);
+    TEST_RUN(test_parse_call_mixed_args);
 }

@@ -259,32 +259,38 @@ static Expr* parse_call(Parser* parser) {
     while (match(parser, TOKEN_LPAREN)) {
         SourceLoc loc = parser->previous.loc;
         
-        // Parse arguments into temporary array
-        Expr** args = NULL;
-        size_t arg_count = 0;
-        size_t arg_cap = 0;
+        CallArgVec* arg_vec = CallArgVec_new(parser->arena);
         
         if (!check(parser, TOKEN_RPAREN)) {
-            arg_cap = 4;
-            args = arena_alloc(parser->arena, sizeof(Expr*) * arg_cap);
-            
             do {
-                if (arg_count >= arg_cap) {
-                    size_t new_cap = arg_cap * 2;
-                    Expr** new_data = arena_alloc(parser->arena, sizeof(Expr*) * new_cap);
-                    for (size_t i = 0; i < arg_count; i++) {
-                        new_data[i] = args[i];
+                CallArg arg;
+                arg.label = NULL;
+                
+                // Check for labeled argument: ident: expr
+                // Detect by checking IDENT followed by COLON via lexer_peek
+                if (check(parser, TOKEN_IDENT)) {
+                    Token peek_tok = lexer_peek(parser->lexer);
+                    if (peek_tok.type == TOKEN_COLON) {
+                        // Labeled argument
+                        arg.label = parser->current.text;
+                        advance(parser); // consume ident
+                        advance(parser); // consume colon
                     }
-                    args = new_data;
-                    arg_cap = new_cap;
                 }
-                args[arg_count++] = parse_expression(parser);
+                
+                arg.value = parse_expression(parser);
+                CallArgVec_push(parser->arena, arg_vec, arg);
             } while (match(parser, TOKEN_COMMA));
         }
         
         consume(parser, TOKEN_RPAREN, "Expected ')' after arguments");
         
-        expr = expr_call(parser->arena, expr, args, arg_count, loc);
+        Expr* call = arena_alloc(parser->arena, sizeof(Expr));
+        call->type = EXPR_CALL;
+        call->loc = loc;
+        call->data.call.func = expr;
+        call->data.call.args = arg_vec;
+        expr = call;
     }
     
     return expr;
