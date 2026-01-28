@@ -1370,40 +1370,64 @@ Next priority: Type parsing for type annotations.
 ## Iteration 8: Type Parsing
 
 **Agent Turn**: IMPLEMENTER
-**Status**: IN_PROGRESS
+**Status**: COMPLETE ✅
 **Task**: Implement type annotation parsing
 
-### Next Task
+### Completed Task
 
-- [ ] Implement type annotation parsing
+- [x] Implement type annotation parsing ✅ COMPLETE
 
-**TDD Workflow**:
-1. Write tests for type parsing (basic types: Int, String, Bool, custom types, Result types)
-2. Define Type AST nodes (include/ast.h)
-3. Implement parse_type() function (lib/parser.c)
-4. Run tests until passing
-5. Update ROADMAP.md
+**Tests Written**:
+- test_parse_type_int() - Parse: `Int` ✓
+- test_parse_type_string() - Parse: `String` ✓
+- test_parse_type_bool() - Parse: `Bool` ✓
+- test_parse_type_custom() - Parse: `User` ✓
+- test_parse_type_result() - Parse: `Result(String, Error)` ✓
+- test_parse_type_list() - Parse: `List(Int)` ✓
+- test_parse_type_function() - Parse: `(Int, String) -> Bool` ✓
 
-**Test Cases to Write**:
-- test_parse_type_int() - Parse: `Int`
-- test_parse_type_string() - Parse: `String`
-- test_parse_type_bool() - Parse: `Bool`
-- test_parse_type_custom() - Parse: `User`
-- test_parse_type_result() - Parse: `Result(String, Error)`
-- test_parse_type_list() - Parse: `List(Int)`
-- test_parse_type_function() - Parse: `(Int, String) -> Bool`
+**Files Modified**:
+- tests/test_parser.c (added 7 new tests)
+- include/ast.h (expanded TypeExpr with TypeExprKind, NamedType, FunctionType, TypeExprVec)
+- lib/ast.c (added type_named and type_function helpers)
+- include/parser.h (added parse_type declaration)
+- lib/parser.c (added parse_type function)
 
-**Expected Files to Modify**:
-- tests/test_parser.c (add 7 new tests)
-- include/ast.h (add Type AST node definition)
-- lib/ast.c (add type constructor helpers)
-- lib/parser.c (add parse_type function)
+**Success Criteria Met**:
+- [x] All 7 new tests pass
+- [x] No regression in existing tests (54 → 61 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows existing parser patterns
 
-**Success Criteria**:
-- All 7 new tests pass
-- No regression in existing tests (54 → 61 tests, all passing)
-- No compiler warnings
-- Follows existing parser patterns
+### Implementation Notes
+
+**Written by**: IMPLEMENTER (Opus 4.5)
+**Time**: 2026-01-28
+
+Implementation completed with TDD workflow:
+1. RED phase: Added 7 failing tests for type annotations (9aafe10)
+2. GREEN phase: Implemented type parsing
+
+Type Expression AST Redesign:
+- Replaced simple `TypeExpr { String* name; SourceLoc loc; }` with a proper tagged union
+- Added `TypeExprKind` enum: `TYPE_NAMED`, `TYPE_FUNCTION`
+- `TYPE_NAMED`: Supports simple types (Int, Bool) and parameterized types (Result(String, Error), List(Int))
+- `TYPE_FUNCTION`: Supports function types ((Int, String) -> Bool)
+- Added `TypeExprVec` for type argument and parameter lists
+
+parse_type() Implementation:
+- Parses function types when starting with `(`: `(param, param) -> return_type`
+- Parses named types: bare identifier or identifier followed by `(arg, arg)`
+- Recursive - type arguments can themselves be any type expression
+- Integrated as public API in parser.h
+
+Test Results:
+```
+Total:  61
+Passed: 61
+```
+
+Ready for CONTROLLER verification.
 
 ---
 

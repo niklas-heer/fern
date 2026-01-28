@@ -441,6 +441,50 @@ static Expr* parse_primary_internal(Parser* parser) {
     return expr_int_lit(parser->arena, 0, parser->current.loc);
 }
 
+// Type parsing
+// Parses type annotations: Int, String, Result(String, Error), (Int, String) -> Bool
+TypeExpr* parse_type(Parser* parser) {
+    // Function type: (param, param) -> return_type
+    if (match(parser, TOKEN_LPAREN)) {
+        SourceLoc loc = parser->previous.loc;
+        TypeExprVec* params = TypeExprVec_new(parser->arena);
+
+        if (!check(parser, TOKEN_RPAREN)) {
+            do {
+                TypeExpr* param = parse_type(parser);
+                TypeExprVec_push(parser->arena, params, param);
+            } while (match(parser, TOKEN_COMMA));
+        }
+
+        consume(parser, TOKEN_RPAREN, "Expected ')' after type parameters");
+        consume(parser, TOKEN_ARROW, "Expected '->' after function type parameters");
+
+        TypeExpr* return_type = parse_type(parser);
+        return type_function(parser->arena, params, return_type, loc);
+    }
+
+    // Named type: Ident or Ident(args)
+    Token name_tok = consume(parser, TOKEN_IDENT, "Expected type name");
+    SourceLoc loc = name_tok.loc;
+
+    // Check for type arguments: Name(arg1, arg2)
+    TypeExprVec* args = NULL;
+    if (match(parser, TOKEN_LPAREN)) {
+        args = TypeExprVec_new(parser->arena);
+
+        if (!check(parser, TOKEN_RPAREN)) {
+            do {
+                TypeExpr* arg = parse_type(parser);
+                TypeExprVec_push(parser->arena, args, arg);
+            } while (match(parser, TOKEN_COMMA));
+        }
+
+        consume(parser, TOKEN_RPAREN, "Expected ')' after type arguments");
+    }
+
+    return type_named(parser->arena, name_tok.text, args, loc);
+}
+
 // Statement parsing
 Stmt* parse_stmt(Parser* parser) {
     // Let statement

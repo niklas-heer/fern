@@ -22,6 +22,9 @@ Parser* parser_new(Arena* arena, const char* source);
 Expr* parse_expr(Parser* parser);
 Expr* parse_primary(Parser* parser);
 
+// Type parsing
+TypeExpr* parse_type(Parser* parser);
+
 // Statement parsing
 Stmt* parse_stmt(Parser* parser);
 

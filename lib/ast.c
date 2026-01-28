@@ -181,6 +181,35 @@ Expr* expr_bind(Arena* arena, String* name, Expr* value, SourceLoc loc) {
     return expr;
 }
 
+/* Create named type expression */
+TypeExpr* type_named(Arena* arena, String* name, TypeExprVec* args, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(name != NULL);
+
+    TypeExpr* type = arena_alloc(arena, sizeof(TypeExpr));
+    type->kind = TYPE_NAMED;
+    type->loc = loc;
+    type->data.named.name = name;
+    type->data.named.args = args;  // Can be NULL for simple types
+
+    return type;
+}
+
+/* Create function type expression */
+TypeExpr* type_function(Arena* arena, TypeExprVec* params, TypeExpr* return_type, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(params != NULL);
+    assert(return_type != NULL);
+
+    TypeExpr* type = arena_alloc(arena, sizeof(TypeExpr));
+    type->kind = TYPE_FUNCTION;
+    type->loc = loc;
+    type->data.func.params = params;
+    type->data.func.return_type = return_type;
+
+    return type;
+}
+
 /* Create let statement */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc) {
     assert(arena != NULL);

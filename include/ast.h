@@ -227,10 +227,35 @@ struct Pattern {
     } data;
 };
 
-/* Type expression (simplified for now) */
+/* Type expression kinds */
+typedef enum {
+    TYPE_NAMED,         // Int, String, Result(String, Error), List(Int)
+    TYPE_FUNCTION,      // (Int, String) -> Bool
+} TypeExprKind;
+
+/* Vector of type expressions (for type arguments and function params) */
+VEC_TYPE(TypeExprVec, TypeExpr*)
+
+/* Named type (with optional type arguments) */
+typedef struct {
+    String* name;
+    TypeExprVec* args;  // NULL if no type arguments
+} NamedType;
+
+/* Function type: (params) -> return_type */
+typedef struct {
+    TypeExprVec* params;
+    TypeExpr* return_type;
+} FunctionType;
+
+/* Type expression node */
 struct TypeExpr {
-    String* name;       // "Int", "String", "Result(T, E)", etc.
+    TypeExprKind kind;
     SourceLoc loc;
+    union {
+        NamedType named;
+        FunctionType func;
+    } data;
 };
 
 /* Helper functions */
@@ -257,5 +282,9 @@ Stmt* stmt_expr(Arena* arena, Expr* expr, SourceLoc loc);
 /* Create patterns */
 Pattern* pattern_ident(Arena* arena, String* name, SourceLoc loc);
 Pattern* pattern_wildcard(Arena* arena, SourceLoc loc);
+
+/* Create type expressions */
+TypeExpr* type_named(Arena* arena, String* name, TypeExprVec* args, SourceLoc loc);
+TypeExpr* type_function(Arena* arena, TypeExprVec* params, TypeExpr* return_type, SourceLoc loc);
 
 #endif /* FERN_AST_H */
