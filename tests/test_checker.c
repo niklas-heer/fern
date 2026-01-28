@@ -626,6 +626,41 @@ void test_check_match_binds_pattern_var(void) {
     arena_destroy(arena);
 }
 
+/* ========== Try Operator Tests ========== */
+
+void test_check_try_unwraps_result(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Define: fn get_value() -> Result(Int, String)
+    TypeVec* params = TypeVec_new(arena);
+    Type* result_type = type_result(arena, type_int(arena), type_string(arena));
+    Type* fn_type = type_fn(arena, params, result_type);
+    
+    // get_value()? should have type Int (unwrapped from Result)
+    Parser* parser = parser_new(arena, "get_value()?");
+    Expr* expr = parse_expr(parser);
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "get_value"), fn_type);
+    Type* t = checker_infer_expr(checker, expr);
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_INT);
+    
+    arena_destroy(arena);
+}
+
+void test_check_try_requires_result(void) {
+    Arena* arena = arena_create(4096);
+    
+    // 42? should error - can't use ? on non-Result
+    const char* err = check_expr_error(arena, "42?");
+    
+    ASSERT_NOT_NULL(err);
+    // Should report that ? requires Result type
+    
+    arena_destroy(arena);
+}
+
 /* ========== Test Runner ========== */
 
 void run_checker_tests(void) {
@@ -698,4 +733,8 @@ void run_checker_tests(void) {
     TEST_RUN(test_check_match_simple);
     TEST_RUN(test_check_match_branch_types_must_match);
     TEST_RUN(test_check_match_binds_pattern_var);
+    
+    // Try operator (?)
+    TEST_RUN(test_check_try_unwraps_result);
+    TEST_RUN(test_check_try_requires_result);
 }

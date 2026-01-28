@@ -504,10 +504,24 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
         case EXPR_RECORD_UPDATE:
         case EXPR_LIST_COMP:
         case EXPR_INDEX:
+        case EXPR_TRY: {
+            /* The ? operator unwraps Result types */
+            Type* operand_type = checker_infer_expr(checker, expr->data.try_expr.operand);
+            if (operand_type->kind == TYPE_ERROR) return operand_type;
+            
+            /* Operand must be Result(ok, err) */
+            if (!type_is_result(operand_type)) {
+                return error_type(checker, "The ? operator requires a Result type, got %s",
+                    string_cstr(type_to_string(checker->arena, operand_type)));
+            }
+            
+            /* Return the Ok type (first type argument) */
+            return operand_type->data.con.args->data[0];
+        }
+            
         case EXPR_SPAWN:
         case EXPR_SEND:
         case EXPR_RECEIVE:
-        case EXPR_TRY:
             return error_type(checker, "Type checking not yet implemented for this expression type");
     }
     
