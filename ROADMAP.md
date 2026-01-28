@@ -1407,76 +1407,184 @@ Ready for next task.
 
 ## Iteration 14: Module and Import Declarations
 
-**Agent Turn**: IMPLEMENTER
-**Status**: ✅ COMPLETE
+**Agent Turn**: CONTROLLER
+**Status**: COMPLETE ✅ VERIFIED
 **Task**: Implement module and import declaration parsing
+
+### Completed Task
+
+- [x] Implement module and import declaration parsing ✅ VERIFIED
+
+**Tests Written**:
+- test_parse_pub_function() - Parse: `pub fn add(x: Int, y: Int) -> Int: x + y` ✓
+- test_parse_private_function() - Parse: `fn helper() -> Int: 42` (verify no pub) ✓
+- test_parse_import_module() - Parse: `import math.geometry` ✓
+- test_parse_import_items() - Parse: `import http.server.{cors, auth}` ✓
+- test_parse_import_alias() - Parse: `import math.geometry as geo` ✓
+
+**Files Modified**:
+- tests/test_parser.c (added 5 new tests)
+- include/token.h (added TOKEN_AS, TOKEN_MODULE keywords)
+- lib/lexer.c (added keyword recognition for 'as' and 'module')
+- lib/token.c (added token name strings)
+- include/ast.h (added StringVec, STMT_IMPORT, ImportDecl, is_public to FunctionDef)
+- lib/ast.c (updated stmt_fn with is_public param, added stmt_import helper)
+- lib/parser.c (added import statement parsing, pub fn prefix handling)
+
+**Success Criteria Met**:
+- [x] All 5 new tests pass
+- [x] No regression in existing 82 tests (82 → 87 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows TDD workflow (RED → GREEN)
+
+### Implementation Notes
+
+**Written by**: IMPLEMENTER (Opus 4.5)
+**Time**: 2026-01-28
+
+Implementation completed with TDD workflow:
+1. RED phase: Added 5 failing tests for module and import declarations (2a1c611)
+2. GREEN phase: Implemented parsing for pub keyword and import statements (307f2be)
+
+**AST Changes:**
+- Added `StringVec` (VEC_TYPE for String*)
+- Added `STMT_IMPORT` statement type with `ImportDecl` struct (path, items, alias)
+- Extended `FunctionDef` with `is_public` boolean field
+- Updated `stmt_fn()` signature to include `is_public` parameter
+
+**Lexer Changes:**
+- Added TOKEN_AS keyword for `as` (import aliasing)
+- Added TOKEN_MODULE keyword for `module` (future module declarations)
+
+**Parser Changes:**
+- Enhanced function parsing to check for optional `pub` keyword prefix
+- Added import statement parsing in `parse_stmt()`, triggered by TOKEN_IMPORT
+- Import parsing supports three forms:
+  - `import path.to.module` (entire module)
+  - `import path.to.module.{item1, item2}` (selective imports)
+  - `import path.to.module as alias` (aliased import)
+- Module path is parsed as dot-separated identifiers stored in StringVec
+
+Test Results:
+```
+Total:  87
+Passed: 87
+```
+
+### Verification Notes
+
+**Written by**: CONTROLLER (Sonnet 4.5)
+**Time**: 2026-01-28
+
+✅ ACCEPTED - Module and import declaration parsing implementation
+
+Verification Results:
+- Tests: 87/87 passing ✓
+- Code quality: Excellent ✓
+- No compiler warnings ✓
+- Uses arena allocation correctly ✓
+- Follows existing parser patterns ✓
+- TDD workflow followed correctly ✓
+- Comprehensive import syntax support ✓
+
+Success Criteria Met:
+- [x] All 5 new tests pass
+- [x] No regression (82 → 87 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows TDD workflow (RED → GREEN)
+
+Code Review:
+- AST changes (StringVec, ImportDecl, is_public): Clean design ✓
+- stmt_import() helper: Follows existing patterns ✓
+- Parser implementation: Clear parsing logic for all import forms ✓
+- pub keyword handling: Simple and correct ✓
+- Excellent commit messages with full details ✓
+
+Commits reviewed:
+- 2a1c611: Tests (RED phase) ✓
+- 307f2be: Implementation (GREEN phase) ✓
+
+**Parser Milestone Progress:**
+Completed 14 iterations with 87/87 tests passing. The parser now handles:
+- Basic expressions (literals, identifiers, binary/unary ops, function calls)
+- Control flow (if/else, match with comprehensive patterns)
+- Data structures (blocks, lists, nested combinations)
+- Statements (let with optional type annotations, return, expression statements)
+- Result handling (← bind operator, with expressions)
+- Function composition (|> pipe operator)
+- Type annotations (simple, parameterized, function types)
+- Function definitions (single-clause typed, multi-clause pattern-based, pub/private visibility)
+- Pattern matching (literals, wildcards, identifier bindings)
+- **NEW**: Module system (import declarations with selective/aliased imports)
+
+This completes the core parser functionality defined in Milestone 2. The parser can now handle:
+- All expression types from DESIGN.md
+- All statement types (let, return, function definitions, imports)
+- Full type annotation system
+- Module visibility and imports
+
+**Milestone 2 Status**: Core parsing is complete. Remaining items:
+- Error recovery (enhancement for production use)
+- Indentation tracking (for production-ready code)
+- Pretty-print AST utility (debugging tool)
+
+Ready for next milestone or refinement tasks.
+
+---
+
+## Iteration 15: Defer Statement Parsing
+
+**Agent Turn**: IMPLEMENTER
+**Status**: 🚧 IN PROGRESS
+**Task**: Implement defer statement parsing for resource cleanup
 
 ### Task Requirements
 
-Implement parsing for module visibility and imports:
+Implement parsing for `defer` statements used to schedule cleanup operations:
 ```fern
-# Public function (visible to other modules)
-pub fn add(x: Int, y: Int) -> Int:
-    x + y
+fn process() -> Result((), Error):
+    file <- open_file("data.txt")
+    defer close_file(file)
 
-# Private function (default, only visible within module)
-fn helper() -> Int:
-    42
-
-# Import entire module
-import math.geometry
-
-# Import specific items
-import http.server.{cors, auth}
-
-# Import with alias
-import math.geometry as geo
+    # File will be closed automatically at function exit
+    # (on both success and error paths)
+    content <- read_all(file)
+    Ok(())
 ```
 
 **Tests to Write** (TDD - RED phase first):
-- test_parse_pub_function() - Parse: `pub fn add(x: Int, y: Int) -> Int: x + y`
-- test_parse_private_function() - Parse: `fn helper() -> Int: 42` (verify no pub)
-- test_parse_import_module() - Parse: `import math.geometry`
-- test_parse_import_items() - Parse: `import http.server.{cors, auth}`
-- test_parse_import_alias() - Parse: `import math.geometry as geo`
+- test_parse_defer_simple() - Parse: `defer close(file)`
+- test_parse_defer_with_call() - Parse: `defer cleanup_resource(handle)`
+- test_parse_defer_in_block() - Parse: `{ file <- open(), defer close(file), read(file) }`
+- test_parse_defer_multiple() - Parse multiple defer statements in sequence
 
 **Expected Changes**:
-- tests/test_parser.c (add 5+ new tests)
-- include/ast.h (add ImportDecl struct, ImportItem, visibility flag to FunctionDef)
-- lib/ast.c (add import_decl helper, modify stmt_fn to include is_public)
-- lib/parser.c (add import parsing, enhance function parsing for pub keyword)
+- tests/test_parser.c (add 4 new tests)
+- include/ast.h (add STMT_DEFER statement type with DeferStmt struct)
+- lib/ast.c (add stmt_defer helper)
+- lib/parser.c (add defer statement parsing in parse_stmt)
 
 **Success Criteria**:
-- [x] All 5 new tests pass (test_parse_pub_function, test_parse_private_function, test_parse_import_module, test_parse_import_items, test_parse_import_alias)
-- [x] No regression in existing 82 tests (82 → 87 tests, all passing)
-- [x] No compiler warnings
-- [x] Follows TDD workflow (RED → GREEN → update ROADMAP)
+- [ ] All 4 new tests pass
+- [ ] No regression in existing 87 tests (87 → 91 tests, all passing)
+- [ ] No compiler warnings
+- [ ] Follows TDD workflow (RED → GREEN → update ROADMAP)
 
 **Key Design Considerations**:
-- `pub` keyword is optional prefix for function definitions
-- Import statements have module path (dot-separated identifiers)
-- Import can have: entire module, specific items `{item, item}`, or alias `as name`
-- Parser should create STMT_IMPORT statement type
-- FunctionDef needs `is_public` boolean field
-
-**Implementation Notes**:
-- Added `TOKEN_AS` and `TOKEN_MODULE` keywords to lexer (token.h, lexer.c, token.c)
-- Added `StringVec` (VEC_TYPE) for module path segments and import items
-- Added `STMT_IMPORT` statement type with `ImportDecl` struct (path, items, alias)
-- Added `is_public` boolean field to `FunctionDef`
-- Updated `stmt_fn()` signature to include `is_public` parameter
-- Parser handles `pub fn` prefix, `import path.to.module`, `import path.{items}`, `import path as alias`
-- All 87 tests passing (82 existing + 5 new), no regressions
+- `defer` is followed by a single expression (typically a function call)
+- Defer statements are executed in LIFO order at function exit
+- Parser creates STMT_DEFER statement type with the deferred expression
+- Syntax: `defer <expression>`
 
 ---
 
 ## Ralph Loop Status
 
 **Current Milestone**: 2 - Parser
-**Current Iteration**: 14
-**Agent Turn**: VERIFIER
-**Status**: IMPLEMENTED
-**Started**: 2026-01-28 13:10:00
+**Current Iteration**: 15
+**Agent Turn**: IMPLEMENTER
+**Status**: STARTED
+**Started**: 2026-01-28 14:45:00
 **Last Updated**: 2026-01-28
 
 ### Previous Task
