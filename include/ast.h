@@ -19,6 +19,9 @@ typedef struct Stmt Stmt;
 typedef struct Pattern Pattern;
 typedef struct TypeExpr TypeExpr;
 
+/* Vector of type expressions (forward-declared here for use in ImplDef etc.) */
+VEC_TYPE(TypeExprVec, TypeExpr*)
+
 /* Expression types */
 typedef enum {
     EXPR_INT_LIT,       // 42
@@ -308,6 +311,8 @@ typedef enum {
     STMT_TYPE_DEF,      // type Name: variants/fields
     STMT_BREAK,         // break [expr]
     STMT_CONTINUE,      // continue
+    STMT_TRAIT,         // trait Name(params): methods
+    STMT_IMPL,          // impl Trait(Type): methods
 } StmtType;
 
 /* Let statement */
@@ -339,6 +344,20 @@ typedef struct {
     Expr* expr;
 } DeferStmt;
 
+/* Trait definition: trait Name(params): methods */
+typedef struct {
+    String* name;
+    StringVec* type_params;     // e.g., (a) in trait Show(a)
+    StmtVec* methods;           // List of STMT_FN
+} TraitDef;
+
+/* Impl block: impl Trait(Type): methods */
+typedef struct {
+    String* trait_name;
+    TypeExprVec* type_args;     // e.g., (Point) in impl Show(Point)
+    StmtVec* methods;           // List of STMT_FN
+} ImplDef;
+
 /* Break statement: break [value] */
 typedef struct {
     Expr* value;        // NULL for bare break
@@ -357,6 +376,8 @@ struct Stmt {
         DeferStmt defer_stmt;
         TypeDef type_def;
         BreakStmt break_stmt;
+        TraitDef trait_def;
+        ImplDef impl_def;
     } data;
 };
 
@@ -381,9 +402,6 @@ typedef enum {
     TYPE_NAMED,         // Int, String, Result(String, Error), List(Int)
     TYPE_FUNCTION,      // (Int, String) -> Bool
 } TypeExprKind;
-
-/* Vector of type expressions (for type arguments and function params) */
-VEC_TYPE(TypeExprVec, TypeExpr*)
 
 /* Named type (with optional type arguments) */
 typedef struct {
@@ -440,6 +458,8 @@ Stmt* stmt_type_def(Arena* arena, String* name, bool is_public, StringVec* type_
                     TypeVariantVec* variants, TypeFieldVec* record_fields, SourceLoc loc);
 Stmt* stmt_break(Arena* arena, Expr* value, SourceLoc loc);
 Stmt* stmt_continue(Arena* arena, SourceLoc loc);
+Stmt* stmt_trait(Arena* arena, String* name, StringVec* type_params, StmtVec* methods, SourceLoc loc);
+Stmt* stmt_impl(Arena* arena, String* trait_name, TypeExprVec* type_args, StmtVec* methods, SourceLoc loc);
 
 /* Create patterns */
 Pattern* pattern_ident(Arena* arena, String* name, SourceLoc loc);

@@ -745,6 +745,68 @@ Stmt* parse_stmt(Parser* parser) {
         return stmt_defer(parser->arena, expr, loc);
     }
 
+    // Trait definition: trait Name(params): methods
+    if (match(parser, TOKEN_TRAIT)) {
+        SourceLoc loc = parser->previous.loc;
+        Token name_tok = consume(parser, TOKEN_IDENT, "Expected trait name");
+
+        // Type parameters: (a, b)
+        StringVec* type_params = NULL;
+        if (match(parser, TOKEN_LPAREN)) {
+            type_params = StringVec_new(parser->arena);
+            if (!check(parser, TOKEN_RPAREN)) {
+                do {
+                    Token param = consume(parser, TOKEN_IDENT, "Expected type parameter");
+                    StringVec_push(parser->arena, type_params, param.text);
+                } while (match(parser, TOKEN_COMMA));
+            }
+            consume(parser, TOKEN_RPAREN, "Expected ')' after trait type parameters");
+        }
+
+        // TODO: parse optional "with Constraint(a)" super-trait clause
+
+        consume(parser, TOKEN_COLON, "Expected ':' after trait declaration");
+
+        // Parse methods (fn definitions)
+        StmtVec* methods = StmtVec_new(parser->arena);
+        while (check(parser, TOKEN_FN)) {
+            Stmt* method = parse_stmt(parser);
+            StmtVec_push(parser->arena, methods, method);
+        }
+
+        return stmt_trait(parser->arena, name_tok.text, type_params, methods, loc);
+    }
+
+    // Impl block: impl Trait(Type): methods
+    if (match(parser, TOKEN_IMPL)) {
+        SourceLoc loc = parser->previous.loc;
+        Token trait_tok = consume(parser, TOKEN_IDENT, "Expected trait name after 'impl'");
+
+        // Type arguments: (Point, String)
+        TypeExprVec* type_args = NULL;
+        if (match(parser, TOKEN_LPAREN)) {
+            type_args = TypeExprVec_new(parser->arena);
+            if (!check(parser, TOKEN_RPAREN)) {
+                do {
+                    TypeExpr* arg = parse_type(parser);
+                    TypeExprVec_push(parser->arena, type_args, arg);
+                } while (match(parser, TOKEN_COMMA));
+            }
+            consume(parser, TOKEN_RPAREN, "Expected ')' after impl type arguments");
+        }
+
+        consume(parser, TOKEN_COLON, "Expected ':' after impl declaration");
+
+        // Parse methods (fn definitions)
+        StmtVec* methods = StmtVec_new(parser->arena);
+        while (check(parser, TOKEN_FN)) {
+            Stmt* method = parse_stmt(parser);
+            StmtVec_push(parser->arena, methods, method);
+        }
+
+        return stmt_impl(parser->arena, trait_tok.text, type_args, methods, loc);
+    }
+
     // Public declaration: pub fn ... or pub type ...
     bool is_public = false;
     if (match(parser, TOKEN_PUB)) {

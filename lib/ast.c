@@ -388,6 +388,38 @@ Stmt* stmt_continue(Arena* arena, SourceLoc loc) {
     return stmt;
 }
 
+/* Create trait definition */
+Stmt* stmt_trait(Arena* arena, String* name, StringVec* type_params, StmtVec* methods, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(name != NULL);
+    assert(methods != NULL);
+
+    Stmt* stmt = arena_alloc(arena, sizeof(Stmt));
+    stmt->type = STMT_TRAIT;
+    stmt->loc = loc;
+    stmt->data.trait_def.name = name;
+    stmt->data.trait_def.type_params = type_params;
+    stmt->data.trait_def.methods = methods;
+
+    return stmt;
+}
+
+/* Create impl block */
+Stmt* stmt_impl(Arena* arena, String* trait_name, TypeExprVec* type_args, StmtVec* methods, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(trait_name != NULL);
+    assert(methods != NULL);
+
+    Stmt* stmt = arena_alloc(arena, sizeof(Stmt));
+    stmt->type = STMT_IMPL;
+    stmt->loc = loc;
+    stmt->data.impl_def.trait_name = trait_name;
+    stmt->data.impl_def.type_args = type_args;
+    stmt->data.impl_def.methods = methods;
+
+    return stmt;
+}
+
 /* Create let statement */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc) {
     assert(arena != NULL);

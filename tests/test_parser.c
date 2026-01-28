@@ -1742,6 +1742,63 @@ void test_parse_for_range(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse trait definition */
+void test_parse_trait_def(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "trait Show(a):\n    fn show(a: a) -> String: \"\"");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    ASSERT_EQ(stmts->len, 1);
+
+    Stmt* stmt = StmtVec_get(stmts, 0);
+    ASSERT_EQ(stmt->type, STMT_TRAIT);
+    ASSERT_STR_EQ(string_cstr(stmt->data.trait_def.name), "Show");
+    ASSERT_NOT_NULL(stmt->data.trait_def.type_params);
+    ASSERT_EQ(stmt->data.trait_def.type_params->len, 1);
+    ASSERT_EQ(stmt->data.trait_def.methods->len, 1);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse impl block */
+void test_parse_impl_block(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "impl Show(Point):\n    fn show(p: Point) -> String: \"point\"");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    ASSERT_EQ(stmts->len, 1);
+
+    Stmt* stmt = StmtVec_get(stmts, 0);
+    ASSERT_EQ(stmt->type, STMT_IMPL);
+    ASSERT_STR_EQ(string_cstr(stmt->data.impl_def.trait_name), "Show");
+    ASSERT_NOT_NULL(stmt->data.impl_def.type_args);
+    ASSERT_EQ(stmt->data.impl_def.type_args->len, 1);
+    ASSERT_EQ(stmt->data.impl_def.methods->len, 1);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse trait with multiple methods */
+void test_parse_trait_multiple_methods(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena,
+        "trait Eq(a):\n"
+        "    fn eq(x: a, y: a) -> Bool: false\n"
+        "    fn neq(x: a, y: a) -> Bool: true");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    ASSERT_EQ(stmts->len, 1);
+
+    Stmt* stmt = StmtVec_get(stmts, 0);
+    ASSERT_EQ(stmt->type, STMT_TRAIT);
+    ASSERT_EQ(stmt->data.trait_def.methods->len, 2);
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -1827,4 +1884,7 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_continue);
     TEST_RUN(test_parse_range_exclusive);
     TEST_RUN(test_parse_for_range);
+    TEST_RUN(test_parse_trait_def);
+    TEST_RUN(test_parse_impl_block);
+    TEST_RUN(test_parse_trait_multiple_methods);
 }
