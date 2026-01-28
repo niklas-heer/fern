@@ -137,6 +137,7 @@ typedef struct {
 /* Match arm */
 typedef struct {
     Pattern* pattern;
+    Expr* guard;        // NULL if no guard; otherwise the `if` condition
     Expr* body;
 } MatchArm;
 

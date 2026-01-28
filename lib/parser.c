@@ -463,11 +463,18 @@ static Expr* parse_primary_internal(Parser* parser) {
                 pattern->data.literal = pattern_expr;
             }
             
+            // Optional guard: pattern if condition -> body
+            Expr* guard = NULL;
+            if (match(parser, TOKEN_IF)) {
+                guard = parse_expression(parser);
+            }
+
             consume(parser, TOKEN_ARROW, "Expected '->' after match pattern");
             Expr* body = parse_expression(parser);
             
             MatchArm arm;
             arm.pattern = pattern;
+            arm.guard = guard;
             arm.body = body;
             MatchArmVec_push(parser->arena, arms, arm);
             
@@ -631,6 +638,7 @@ static Expr* parse_primary_internal(Parser* parser) {
 
                 MatchArm arm;
                 arm.pattern = pattern;
+                arm.guard = NULL;
                 arm.body = arm_body;
                 MatchArmVec_push(parser->arena, else_arms, arm);
             } while (match(parser, TOKEN_COMMA));

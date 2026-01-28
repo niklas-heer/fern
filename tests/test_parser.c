@@ -1905,6 +1905,24 @@ void test_parse_method_call(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse match with guard */
+void test_parse_match_guard(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "match x: n if n > 0 -> n, _ -> 0");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_MATCH);
+    ASSERT_EQ(expr->data.match_expr.arms->len, 2);
+    // First arm has a guard
+    ASSERT_NOT_NULL(expr->data.match_expr.arms->data[0].guard);
+    ASSERT_EQ(expr->data.match_expr.arms->data[0].guard->type, EXPR_BINARY);
+    // Second arm has no guard
+    ASSERT_NULL(expr->data.match_expr.arms->data[1].guard);
+
+    arena_destroy(arena);
+}
+
 /* Test: Parse tuple literal */
 void test_parse_tuple(void) {
     Arena* arena = arena_create(4096);
@@ -2228,6 +2246,7 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_dot_access);
     TEST_RUN(test_parse_dot_chain);
     TEST_RUN(test_parse_method_call);
+    TEST_RUN(test_parse_match_guard);
     TEST_RUN(test_parse_tuple);
     TEST_RUN(test_parse_tuple_pair);
     TEST_RUN(test_parse_grouped_not_tuple);
