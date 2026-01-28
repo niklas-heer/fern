@@ -2557,6 +2557,40 @@ void test_parse_fn_no_where(void) {
     arena_destroy(arena);
 }
 
+void test_parse_rest_pattern(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "let [first, ..rest] = items");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_LET);
+    // Pattern should be a tuple with 2 elements: first, ..rest
+    ASSERT_EQ(stmt->data.let.pattern->type, PATTERN_TUPLE);
+    ASSERT_EQ(stmt->data.let.pattern->data.tuple->len, (size_t)2);
+    Pattern* second = PatternVec_get(stmt->data.let.pattern->data.tuple, 1);
+    ASSERT_EQ(second->type, PATTERN_REST);
+    ASSERT_NOT_NULL(second->data.rest_name);
+    ASSERT_STR_EQ(string_cstr(second->data.rest_name), "rest");
+
+    arena_destroy(arena);
+}
+
+void test_parse_rest_pattern_ignore(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "let [first, .._] = items");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_LET);
+    ASSERT_EQ(stmt->data.let.pattern->type, PATTERN_TUPLE);
+    ASSERT_EQ(stmt->data.let.pattern->data.tuple->len, (size_t)2);
+    Pattern* second = PatternVec_get(stmt->data.let.pattern->data.tuple, 1);
+    ASSERT_EQ(second->type, PATTERN_REST);
+    ASSERT_NULL(second->data.rest_name);
+
+    arena_destroy(arena);
+}
+
 void test_parse_spawn(void) {
     Arena* arena = arena_create(4096);
     Parser* parser = parser_new(arena, "spawn(worker_loop)");
@@ -2778,6 +2812,8 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_fn_no_where);
     TEST_RUN(test_parse_newtype);
     TEST_RUN(test_parse_pub_newtype);
+    TEST_RUN(test_parse_rest_pattern);
+    TEST_RUN(test_parse_rest_pattern_ignore);
     TEST_RUN(test_parse_spawn);
     TEST_RUN(test_parse_send);
     TEST_RUN(test_parse_receive);

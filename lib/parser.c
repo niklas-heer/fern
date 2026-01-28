@@ -356,6 +356,30 @@ static Pattern* parse_pattern(Parser* parser) {
         return pattern_wildcard(parser->arena, parser->previous.loc);
     }
 
+    // Rest pattern: ..rest or .._
+    if (match(parser, TOKEN_DOTDOT)) {
+        SourceLoc loc = parser->previous.loc;
+        if (match(parser, TOKEN_UNDERSCORE)) {
+            return pattern_rest(parser->arena, NULL, loc);
+        }
+        Token name_tok = consume(parser, TOKEN_IDENT, "Expected identifier or '_' after '..'");
+        return pattern_rest(parser->arena, name_tok.text, loc);
+    }
+
+    // List pattern: [x, y, ..rest]
+    if (match(parser, TOKEN_LBRACKET)) {
+        SourceLoc loc = parser->previous.loc;
+        PatternVec* elements = PatternVec_new(parser->arena);
+        if (!check(parser, TOKEN_RBRACKET)) {
+            do {
+                Pattern* sub = parse_pattern(parser);
+                PatternVec_push(parser->arena, elements, sub);
+            } while (match(parser, TOKEN_COMMA));
+        }
+        consume(parser, TOKEN_RBRACKET, "Expected ']' after list pattern");
+        return pattern_tuple(parser->arena, elements, loc);
+    }
+
     // Tuple pattern: (x, y, z)
     if (match(parser, TOKEN_LPAREN)) {
         SourceLoc loc = parser->previous.loc;

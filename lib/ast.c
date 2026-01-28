@@ -653,6 +653,18 @@ Pattern* pattern_tuple(Arena* arena, PatternVec* elements, SourceLoc loc) {
     return pat;
 }
 
+Pattern* pattern_rest(Arena* arena, String* name, SourceLoc loc) {
+    assert(arena != NULL);
+    // name can be NULL for .._
+
+    Pattern* pat = arena_alloc(arena, sizeof(Pattern));
+    pat->type = PATTERN_REST;
+    pat->loc = loc;
+    pat->data.rest_name = name;
+
+    return pat;
+}
+
 Pattern* pattern_constructor(Arena* arena, String* name, PatternVec* args, SourceLoc loc) {
     assert(arena != NULL);
     assert(name != NULL);
