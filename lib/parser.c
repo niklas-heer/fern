@@ -591,8 +591,58 @@ static Expr* parse_primary_internal(Parser* parser) {
         return expr_loop(parser->arena, body, loc);
     }
 
-    // Grouped expression
+    // Lambda or grouped expression
     if (match(parser, TOKEN_LPAREN)) {
+        SourceLoc loc = parser->previous.loc;
+
+        // Save state for speculative parsing
+        Token saved_current = parser->current;
+        Token saved_previous = parser->previous;
+        bool saved_error = parser->had_error;
+        bool saved_panic = parser->panic_mode;
+        LexerState saved_lexer = lexer_save(parser->lexer);
+
+        // Try to parse as lambda: (ident, ident, ...) -> expr
+        bool is_lambda = false;
+        StringVec* params = StringVec_new(parser->arena);
+
+        if (check(parser, TOKEN_RPAREN)) {
+            // () -> expr  (zero-param lambda)
+            advance(parser);
+            if (check(parser, TOKEN_ARROW)) {
+                is_lambda = true;
+            }
+        } else if (check(parser, TOKEN_IDENT)) {
+            // Try collecting ident, ident, ... )
+            bool valid = true;
+            do {
+                if (!check(parser, TOKEN_IDENT)) {
+                    valid = false;
+                    break;
+                }
+                StringVec_push(parser->arena, params, parser->current.text);
+                advance(parser);
+            } while (match(parser, TOKEN_COMMA));
+
+            if (valid && match(parser, TOKEN_RPAREN) && check(parser, TOKEN_ARROW)) {
+                is_lambda = true;
+            }
+        }
+
+        if (is_lambda) {
+            // Consume -> and parse body
+            advance(parser); // consume TOKEN_ARROW
+            Expr* body = parse_expression(parser);
+            return expr_lambda(parser->arena, params, body, loc);
+        }
+
+        // Not a lambda — restore state and parse as grouped expression
+        parser->current = saved_current;
+        parser->previous = saved_previous;
+        parser->had_error = saved_error;
+        parser->panic_mode = saved_panic;
+        lexer_restore(parser->lexer, saved_lexer);
+
         Expr* expr = parse_expression(parser);
         consume(parser, TOKEN_RPAREN, "Expected ')' after expression");
         return expr;

@@ -285,6 +285,20 @@ Expr* expr_loop(Arena* arena, Expr* body, SourceLoc loc) {
     return expr;
 }
 
+Expr* expr_lambda(Arena* arena, StringVec* params, Expr* body, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(params != NULL);
+    assert(body != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_LAMBDA;
+    expr->loc = loc;
+    expr->data.lambda.params = params;
+    expr->data.lambda.body = body;
+
+    return expr;
+}
+
 /* Create named type expression */
 TypeExpr* type_named(Arena* arena, String* name, TypeExprVec* args, SourceLoc loc) {
     assert(arena != NULL);

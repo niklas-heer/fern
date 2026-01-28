@@ -376,6 +376,20 @@ Token lexer_peek(Lexer* lex) {
     return tok;
 }
 
+LexerState lexer_save(Lexer* lex) {
+    return (LexerState){
+        .current = lex->current,
+        .line = lex->line,
+        .column = lex->column,
+    };
+}
+
+void lexer_restore(Lexer* lex, LexerState state) {
+    lex->current = state.current;
+    lex->line = state.line;
+    lex->column = state.column;
+}
+
 bool lexer_is_eof(Lexer* lex) {
     assert(lex != NULL);
     skip_whitespace(lex);

@@ -19,8 +19,9 @@ typedef struct Stmt Stmt;
 typedef struct Pattern Pattern;
 typedef struct TypeExpr TypeExpr;
 
-/* Vector of type expressions (forward-declared here for use in ImplDef etc.) */
+/* Forward-declared vector types (needed before their typical definition site) */
 VEC_TYPE(TypeExprVec, TypeExpr*)
+VEC_TYPE(StringVec, String*)
 
 /* Expression types */
 typedef enum {
@@ -43,6 +44,7 @@ typedef enum {
     EXPR_FOR,           // for item in iterable: body
     EXPR_WHILE,         // while condition: body
     EXPR_LOOP,          // loop: body
+    EXPR_LAMBDA,        // (x, y) -> expr
 } ExprType;
 
 /* Binary operators */
@@ -210,6 +212,12 @@ typedef struct {
     Expr* body;
 } LoopExpr;
 
+/* Lambda expression: (params) -> body */
+typedef struct {
+    StringVec* params;
+    Expr* body;
+} LambdaExpr;
+
 /* Expression node */
 struct Expr {
     ExprType type;
@@ -234,6 +242,7 @@ struct Expr {
         ForExpr for_loop;
         WhileExpr while_loop;
         LoopExpr loop;
+        LambdaExpr lambda;
     } data;
 };
 
@@ -279,9 +288,6 @@ typedef struct {
     Expr* body;                      // Body (single-clause)
     FunctionClauseVec* clauses;      // NULL for single-clause functions
 } FunctionDef;
-
-/* String vector (for import paths and items) */
-VEC_TYPE(StringVec, String*)
 
 /* Type variant field (name: Type) — used in sum type variants and record types */
 typedef struct {
@@ -455,6 +461,7 @@ Expr* expr_range(Arena* arena, Expr* start, Expr* end, bool inclusive, SourceLoc
 Expr* expr_for(Arena* arena, String* var_name, Expr* iterable, Expr* body, SourceLoc loc);
 Expr* expr_while(Arena* arena, Expr* condition, Expr* body, SourceLoc loc);
 Expr* expr_loop(Arena* arena, Expr* body, SourceLoc loc);
+Expr* expr_lambda(Arena* arena, StringVec* params, Expr* body, SourceLoc loc);
 
 /* Create statements */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc);

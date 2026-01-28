@@ -1890,6 +1890,49 @@ void test_parse_method_call(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse lambda expression */
+void test_parse_lambda(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "(x) -> x * 2");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_LAMBDA);
+    ASSERT_EQ(expr->data.lambda.params->len, 1);
+    ASSERT_STR_EQ(string_cstr(expr->data.lambda.params->data[0]), "x");
+    ASSERT_EQ(expr->data.lambda.body->type, EXPR_BINARY);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse lambda with multiple params */
+void test_parse_lambda_multi_params(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "(a, b) -> a + b");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_LAMBDA);
+    ASSERT_EQ(expr->data.lambda.params->len, 2);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse lambda in pipe */
+void test_parse_lambda_in_pipe(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "items |> map((x) -> x * 2)");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_BINARY);
+    ASSERT_EQ(expr->data.binary.op, BINOP_PIPE);
+    // RHS is map call with lambda arg
+    ASSERT_EQ(expr->data.binary.right->type, EXPR_CALL);
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -1983,4 +2026,7 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_dot_access);
     TEST_RUN(test_parse_dot_chain);
     TEST_RUN(test_parse_method_call);
+    TEST_RUN(test_parse_lambda);
+    TEST_RUN(test_parse_lambda_multi_params);
+    TEST_RUN(test_parse_lambda_in_pipe);
 }
