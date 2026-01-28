@@ -1,6 +1,7 @@
 /* Fern Type Checker Implementation */
 
 #include "checker.h"
+#include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +40,8 @@ static Type* instantiate_type(Arena* arena, Type* type, VarMapping** map);
 /* ========== Helper Functions ========== */
 
 static void add_error(Checker* checker, const char* fmt, ...) {
+    assert(checker != NULL);
+    assert(fmt != NULL);
     va_list args;
     va_start(args, fmt);
     
@@ -61,6 +64,8 @@ static void add_error(Checker* checker, const char* fmt, ...) {
 }
 
 static Type* error_type(Checker* checker, const char* fmt, ...) {
+    assert(checker != NULL);
+    assert(fmt != NULL);
     va_list args;
     va_start(args, fmt);
     
@@ -74,6 +79,8 @@ static Type* error_type(Checker* checker, const char* fmt, ...) {
 
 /* Error with source location */
 static Type* error_type_at(Checker* checker, SourceLoc loc, const char* fmt, ...) {
+    assert(checker != NULL);
+    assert(fmt != NULL);
     va_list args;
     va_start(args, fmt);
     
@@ -100,7 +107,9 @@ static Type* error_type_at(Checker* checker, SourceLoc loc, const char* fmt, ...
 /* ========== Checker Creation ========== */
 
 Checker* checker_new(Arena* arena) {
+    assert(arena != NULL);
     Checker* checker = arena_alloc(arena, sizeof(Checker));
+    assert(checker != NULL);
     checker->arena = arena;
     checker->env = type_env_new(arena);
     checker->errors = NULL;
@@ -205,6 +214,8 @@ static Type* check_logical_op(Checker* checker, Type* left, Type* right,
 /* ========== Pipe Operator Type Checking ========== */
 
 static Type* check_pipe_expr(Checker* checker, BinaryExpr* expr) {
+    assert(checker != NULL);
+    assert(expr != NULL);
     /* Pipe: left |> right
      * 
      * The pipe operator passes the left value as the first argument to
@@ -280,6 +291,8 @@ static Type* check_pipe_expr(Checker* checker, BinaryExpr* expr) {
 }
 
 static Type* check_binary_expr(Checker* checker, BinaryExpr* expr) {
+    assert(checker != NULL);
+    assert(expr != NULL);
     /* Pipe operator needs special handling - don't type check right side yet */
     if (expr->op == BINOP_PIPE) {
         return check_pipe_expr(checker, expr);
@@ -336,6 +349,8 @@ static Type* check_binary_expr(Checker* checker, BinaryExpr* expr) {
 /* ========== Unary Operator Type Checking ========== */
 
 static Type* check_unary_expr(Checker* checker, UnaryExpr* expr) {
+    assert(checker != NULL);
+    assert(expr != NULL);
     Type* operand = checker_infer_expr(checker, expr->operand);
     
     if (operand->kind == TYPE_ERROR) return operand;
@@ -365,6 +380,8 @@ static Type* check_unary_expr(Checker* checker, UnaryExpr* expr) {
 /* ========== Collection Type Checking ========== */
 
 static Type* check_list_expr(Checker* checker, ListExpr* expr) {
+    assert(checker != NULL);
+    assert(expr != NULL);
     if (expr->elements->len == 0) {
         /* Empty list has type List(a) where a is a fresh type variable */
         int var_id = type_fresh_var_id();
@@ -395,6 +412,8 @@ static Type* check_list_expr(Checker* checker, ListExpr* expr) {
 }
 
 static Type* check_tuple_expr(Checker* checker, TupleExpr* expr) {
+    assert(checker != NULL);
+    assert(expr != NULL);
     TypeVec* elem_types = TypeVec_new(checker->arena);
     
     for (size_t i = 0; i < expr->elements->len; i++) {
@@ -410,7 +429,9 @@ static Type* check_tuple_expr(Checker* checker, TupleExpr* expr) {
 
 /* Check if a type contains a specific type variable */
 static bool type_contains_var(Type* type, int var_id) {
+    assert(var_id >= 0);
     if (!type) return false;
+    assert(type->kind >= TYPE_INT && type->kind <= TYPE_ERROR);
     
     switch (type->kind) {
         case TYPE_VAR:
@@ -453,7 +474,10 @@ static bool type_contains_var(Type* type, int var_id) {
 /* Unify two types, binding type variables as needed
  * Returns true if unification succeeded */
 static bool unify(Type* a, Type* b) {
+    /* NULL types are equal only to each other. */
     if (!a || !b) return a == b;
+    assert(a->kind >= TYPE_INT && a->kind <= TYPE_ERROR);
+    assert(b->kind >= TYPE_INT && b->kind <= TYPE_ERROR);
     
     /* Follow bound type variables */
     while (a->kind == TYPE_VAR && a->data.var.bound) {
@@ -544,7 +568,9 @@ static bool unify(Type* a, Type* b) {
 
 /* Substitute bound type variables with their concrete types */
 static Type* substitute(Arena* arena, Type* type) {
+    assert(arena != NULL);
     if (!type) return NULL;
+    assert(type->kind >= TYPE_INT && type->kind <= TYPE_ERROR);
     
     switch (type->kind) {
         case TYPE_VAR:
@@ -593,7 +619,10 @@ static Type* substitute(Arena* arena, Type* type) {
 
 /* Find a mapping for a type variable ID */
 static Type* find_var_mapping(VarMapping* map, int var_id) {
+    assert(var_id >= 0);
+    /* map may be NULL on first call - that's valid. */
     for (VarMapping* m = map; m != NULL; m = m->next) {
+        assert(m->new_var != NULL);
         if (m->old_id == var_id) {
             return m->new_var;
         }
@@ -605,6 +634,8 @@ static Type* find_var_mapping(VarMapping* map, int var_id) {
  * This maintains sharing: if the same type variable appears multiple times,
  * it will be replaced with the same fresh variable each time. */
 static Type* instantiate_type(Arena* arena, Type* type, VarMapping** map) {
+    assert(arena != NULL);
+    assert(map != NULL);
     if (!type) return NULL;
     
     switch (type->kind) {
@@ -668,6 +699,8 @@ static Type* instantiate_type(Arena* arena, Type* type, VarMapping** map) {
 /* ========== Function Call Type Checking ========== */
 
 static Type* check_call_expr(Checker* checker, CallExpr* expr) {
+    assert(checker != NULL);
+    assert(expr != NULL);
     /* Infer the type of the callee */
     Type* callee_type = checker_infer_expr(checker, expr->func);
     if (callee_type->kind == TYPE_ERROR) return callee_type;
@@ -717,6 +750,8 @@ static Type* check_call_expr(Checker* checker, CallExpr* expr) {
 /* ========== If Expression Type Checking ========== */
 
 static Type* check_if_expr(Checker* checker, IfExpr* expr) {
+    assert(checker != NULL);
+    assert(expr != NULL);
     /* Check condition is Bool */
     Type* cond_type = checker_infer_expr(checker, expr->condition);
     if (cond_type->kind == TYPE_ERROR) return cond_type;
@@ -752,6 +787,8 @@ static Type* check_if_expr(Checker* checker, IfExpr* expr) {
 /* ========== Block Expression Type Checking ========== */
 
 static Type* check_block_expr(Checker* checker, BlockExpr* expr) {
+    assert(checker != NULL);
+    assert(expr != NULL);
     /* Push a new scope for the block */
     checker_push_scope(checker);
     
@@ -779,6 +816,8 @@ static Type* check_block_expr(Checker* checker, BlockExpr* expr) {
 /* ========== Match Expression Type Checking ========== */
 
 static Type* check_match_expr(Checker* checker, MatchExpr* expr) {
+    assert(checker != NULL);
+    assert(expr != NULL);
     /* Infer type of the scrutinee */
     Type* scrutinee_type = checker_infer_expr(checker, expr->value);
     if (scrutinee_type->kind == TYPE_ERROR) return scrutinee_type;
@@ -853,6 +892,8 @@ static Type* check_match_expr(Checker* checker, MatchExpr* expr) {
 /* ========== Main Type Inference ========== */
 
 Type* checker_infer_expr(Checker* checker, Expr* expr) {
+    assert(checker != NULL);
+    assert(expr != NULL);
     switch (expr->type) {
         case EXPR_INT_LIT:
             return type_int(checker->arena);
@@ -1286,7 +1327,9 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
 
 /* Convert a TypeExpr (AST type annotation) to a Type */
 static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
+    assert(checker != NULL);
     if (!type_expr) return NULL;
+    assert(type_expr->kind == TYPE_NAMED || type_expr->kind == TYPE_FUNCTION);
     
     switch (type_expr->kind) {
         case TYPE_NAMED: {
@@ -1371,7 +1414,9 @@ static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
 
 /* Strict version that errors on unknown types (used for type definitions) */
 static Type* resolve_type_expr_strict(Checker* checker, TypeExpr* type_expr) {
+    assert(checker != NULL);
     if (!type_expr) return NULL;
+    assert(type_expr->kind == TYPE_NAMED || type_expr->kind == TYPE_FUNCTION);
     
     if (type_expr->kind == TYPE_NAMED) {
         String* name = type_expr->data.named.name;
@@ -1419,6 +1464,8 @@ static Type* resolve_type_expr_strict(Checker* checker, TypeExpr* type_expr) {
 
 /* Bind a pattern to a type in the environment */
 static bool bind_pattern(Checker* checker, Pattern* pattern, Type* type) {
+    assert(checker != NULL);
+    assert(pattern != NULL);
     switch (pattern->type) {
         case PATTERN_IDENT:
             checker_define(checker, pattern->data.ident, type);
@@ -1509,6 +1556,8 @@ static bool bind_pattern(Checker* checker, Pattern* pattern, Type* type) {
 }
 
 static bool check_let_stmt(Checker* checker, LetStmt* stmt) {
+    assert(checker != NULL);
+    assert(stmt != NULL);
     /* Infer type of the value expression */
     Type* value_type = checker_infer_expr(checker, stmt->value);
     if (value_type->kind == TYPE_ERROR) {
@@ -1538,6 +1587,8 @@ static bool check_let_stmt(Checker* checker, LetStmt* stmt) {
 }
 
 bool checker_check_stmt(Checker* checker, Stmt* stmt) {
+    assert(checker != NULL);
+    assert(stmt != NULL);
     switch (stmt->type) {
         case STMT_LET:
             return check_let_stmt(checker, &stmt->data.let);
@@ -1669,6 +1720,8 @@ bool checker_check_stmt(Checker* checker, Stmt* stmt) {
 }
 
 bool checker_check_stmts(Checker* checker, StmtVec* stmts) {
+    assert(checker != NULL);
+    assert(stmts != NULL);
     for (size_t i = 0; i < stmts->len; i++) {
         if (!checker_check_stmt(checker, stmts->data[i])) {
             return false;
@@ -1680,10 +1733,14 @@ bool checker_check_stmts(Checker* checker, StmtVec* stmts) {
 /* ========== Error Handling ========== */
 
 bool checker_has_errors(Checker* checker) {
+    assert(checker != NULL);
+    assert(checker->arena != NULL);
     return checker->errors != NULL;
 }
 
 const char* checker_first_error(Checker* checker) {
+    assert(checker != NULL);
+    assert(checker->arena != NULL);
     if (!checker->errors) return NULL;
     return string_cstr(checker->errors->message);
 }
@@ -1691,17 +1748,25 @@ const char* checker_first_error(Checker* checker) {
 /* ========== Environment Access ========== */
 
 TypeEnv* checker_env(Checker* checker) {
+    assert(checker != NULL);
+    assert(checker->env != NULL);
     return checker->env;
 }
 
 void checker_define(Checker* checker, String* name, Type* type) {
+    assert(checker != NULL);
+    assert(name != NULL);
     type_env_define(checker->env, name, type);
 }
 
 void checker_push_scope(Checker* checker) {
+    assert(checker != NULL);
+    assert(checker->env != NULL);
     type_env_push_scope(checker->env);
 }
 
 void checker_pop_scope(Checker* checker) {
+    assert(checker != NULL);
+    assert(checker->env != NULL);
     type_env_pop_scope(checker->env);
 }

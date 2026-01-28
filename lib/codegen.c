@@ -28,6 +28,8 @@ struct Codegen {
 
 /* Append text to the output buffer */
 static void emit(Codegen* cg, const char* fmt, ...) {
+    assert(cg != NULL);
+    assert(fmt != NULL);
     char buf[1024];
     va_list args;
     va_start(args, fmt);
@@ -39,6 +41,8 @@ static void emit(Codegen* cg, const char* fmt, ...) {
 
 /* Generate a fresh temporary name */
 static String* fresh_temp(Codegen* cg) {
+    assert(cg != NULL);
+    assert(cg->temp_counter >= 0);
     char buf[32];
     snprintf(buf, sizeof(buf), "%%t%d", cg->temp_counter++);
     return string_new(cg->arena, buf);
@@ -46,6 +50,8 @@ static String* fresh_temp(Codegen* cg) {
 
 /* Generate a fresh label name */
 static String* fresh_label(Codegen* cg) {
+    assert(cg != NULL);
+    assert(cg->label_counter >= 0);
     char buf[32];
     snprintf(buf, sizeof(buf), "@L%d", cg->label_counter++);
     return string_new(cg->arena, buf);
@@ -54,7 +60,9 @@ static String* fresh_label(Codegen* cg) {
 /* ========== Codegen Creation ========== */
 
 Codegen* codegen_new(Arena* arena) {
+    assert(arena != NULL);
     Codegen* cg = arena_alloc(arena, sizeof(Codegen));
+    assert(cg != NULL);
     cg->arena = arena;
     cg->output = string_new(arena, "");
     cg->data_section = string_new(arena, "");
@@ -66,6 +74,8 @@ Codegen* codegen_new(Arena* arena) {
 
 /* Emit to data section */
 static void emit_data(Codegen* cg, const char* fmt, ...) {
+    assert(cg != NULL);
+    assert(fmt != NULL);
     char buf[1024];
     va_list args;
     va_start(args, fmt);
@@ -77,6 +87,8 @@ static void emit_data(Codegen* cg, const char* fmt, ...) {
 
 /* Generate a fresh string label */
 static String* fresh_string_label(Codegen* cg) {
+    assert(cg != NULL);
+    assert(cg->string_counter >= 0);
     char buf[32];
     snprintf(buf, sizeof(buf), "$str%d", cg->string_counter++);
     return string_new(cg->arena, buf);
@@ -551,6 +563,7 @@ void codegen_stmt(Codegen* cg, Stmt* stmt) {
 
 void codegen_program(Codegen* cg, StmtVec* stmts) {
     assert(cg != NULL);
+    assert(cg->arena != NULL);
     
     if (!stmts) return;
     
@@ -563,6 +576,7 @@ void codegen_program(Codegen* cg, StmtVec* stmts) {
 
 String* codegen_output(Codegen* cg) {
     assert(cg != NULL);
+    assert(cg->output != NULL);
     /* Combine functions and data section */
     return string_concat(cg->arena, cg->output, cg->data_section);
 }

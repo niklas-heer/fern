@@ -1,4 +1,8 @@
-/* Arena Allocator Implementation */
+/* Arena Allocator Implementation
+ *
+ * NOTE: This file intentionally uses malloc/free because it implements
+ * the arena allocator itself. All other code should use arena_alloc().
+ */
 
 #include "arena.h"
 #include <stdlib.h>
@@ -8,6 +12,7 @@
 
 #define ARENA_MIN_BLOCK_SIZE 4096
 #define ARENA_ALIGNMENT 16
+#define ARENA_MAX_BLOCKS 10000  /* Limit to prevent infinite loops */
 
 typedef struct ArenaBlock {
     struct ArenaBlock* next;
@@ -24,10 +29,15 @@ struct Arena {
 };
 
 static size_t align_up(size_t n, size_t alignment) {
+    assert(alignment > 0);
+    assert((alignment & (alignment - 1)) == 0);  /* Must be power of 2. */
     return (n + alignment - 1) & ~(alignment - 1);
 }
 
 static ArenaBlock* arena_block_create(size_t size) {
+    assert(size > 0);
+    assert(size <= SIZE_MAX - sizeof(ArenaBlock));  /* Prevent overflow. */
+    
     size_t block_size = sizeof(ArenaBlock) + size;
     ArenaBlock* block = malloc(block_size);
     if (!block) {
@@ -42,6 +52,9 @@ static ArenaBlock* arena_block_create(size_t size) {
 }
 
 Arena* arena_create(size_t block_size) {
+    assert(block_size > 0);
+    assert(block_size <= SIZE_MAX / 2);  /* Reasonable upper bound. */
+    
     if (block_size < ARENA_MIN_BLOCK_SIZE) {
         block_size = ARENA_MIN_BLOCK_SIZE;
     }
@@ -114,15 +127,20 @@ void* arena_alloc_aligned(Arena* arena, size_t size, size_t alignment) {
 }
 
 void* arena_alloc(Arena* arena, size_t size) {
+    assert(arena != NULL);
+    assert(size > 0);
     return arena_alloc_aligned(arena, size, ARENA_ALIGNMENT);
 }
 
 void arena_reset(Arena* arena) {
     assert(arena != NULL);
+    assert(arena->first != NULL);
     
-    // Reset all blocks to unused
-    for (ArenaBlock* block = arena->first; block != NULL; block = block->next) {
+    /* Reset all blocks to unused. */
+    size_t block_count = 0;
+    for (ArenaBlock* block = arena->first; block != NULL && block_count < ARENA_MAX_BLOCKS; block = block->next) {
         block->used = 0;
+        block_count++;
     }
     
     arena->current = arena->first;
@@ -133,18 +151,24 @@ void arena_destroy(Arena* arena) {
     if (!arena) {
         return;
     }
+    assert(arena->first != NULL || arena->current == NULL);
     
+    /* Free all blocks with explicit limit. */
     ArenaBlock* block = arena->first;
-    while (block) {
+    size_t block_count = 0;
+    while (block && block_count < ARENA_MAX_BLOCKS) {
         ArenaBlock* next = block->next;
         free(block);
         block = next;
+        block_count++;
     }
+    assert(block == NULL);  /* Should have freed all blocks. */
     
     free(arena);
 }
 
 size_t arena_total_allocated(Arena* arena) {
     assert(arena != NULL);
+    assert(arena->total_allocated <= SIZE_MAX);  /* Sanity check. */
     return arena->total_allocated;
 }

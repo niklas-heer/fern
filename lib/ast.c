@@ -7,6 +7,7 @@
 /* Create integer literal expression */
 Expr* expr_int_lit(Arena* arena, int64_t value, SourceLoc loc) {
     assert(arena != NULL);
+    assert(loc.line >= 0);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
     expr->type = EXPR_INT_LIT;
@@ -19,6 +20,7 @@ Expr* expr_int_lit(Arena* arena, int64_t value, SourceLoc loc) {
 /* Create float literal expression */
 Expr* expr_float_lit(Arena* arena, double value, SourceLoc loc) {
     assert(arena != NULL);
+    assert(loc.line >= 0);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
     expr->type = EXPR_FLOAT_LIT;
@@ -44,6 +46,7 @@ Expr* expr_string_lit(Arena* arena, String* value, SourceLoc loc) {
 /* Create boolean literal expression */
 Expr* expr_bool_lit(Arena* arena, bool value, SourceLoc loc) {
     assert(arena != NULL);
+    assert(loc.line >= 0);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
     expr->type = EXPR_BOOL_LIT;
@@ -532,11 +535,12 @@ Stmt* stmt_module(Arena* arena, StringVec* path, SourceLoc loc) {
 
 Stmt* stmt_break(Arena* arena, Expr* value, SourceLoc loc) {
     assert(arena != NULL);
+    assert(loc.line >= 0);
 
     Stmt* stmt = arena_alloc(arena, sizeof(Stmt));
     stmt->type = STMT_BREAK;
     stmt->loc = loc;
-    stmt->data.break_stmt.value = value; // Can be NULL
+    stmt->data.break_stmt.value = value;  /* Can be NULL. */
 
     return stmt;
 }
@@ -544,6 +548,7 @@ Stmt* stmt_break(Arena* arena, Expr* value, SourceLoc loc) {
 /* Create continue statement */
 Stmt* stmt_continue(Arena* arena, SourceLoc loc) {
     assert(arena != NULL);
+    assert(loc.line >= 0);
 
     Stmt* stmt = arena_alloc(arena, sizeof(Stmt));
     stmt->type = STMT_CONTINUE;
@@ -605,11 +610,12 @@ Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, 
 /* Create return statement */
 Stmt* stmt_return(Arena* arena, Expr* value, SourceLoc loc) {
     assert(arena != NULL);
+    assert(loc.line >= 0);
     
     Stmt* stmt = arena_alloc(arena, sizeof(Stmt));
     stmt->type = STMT_RETURN;
     stmt->loc = loc;
-    stmt->data.return_stmt.value = value;
+    stmt->data.return_stmt.value = value;  /* Can be NULL. */
     stmt->data.return_stmt.condition = NULL;
     
     return stmt;
@@ -644,6 +650,7 @@ Pattern* pattern_ident(Arena* arena, String* name, SourceLoc loc) {
 /* Create wildcard pattern */
 Pattern* pattern_wildcard(Arena* arena, SourceLoc loc) {
     assert(arena != NULL);
+    assert(loc.line >= 0);
     
     Pattern* pat = arena_alloc(arena, sizeof(Pattern));
     pat->type = PATTERN_WILDCARD;
@@ -666,7 +673,8 @@ Pattern* pattern_tuple(Arena* arena, PatternVec* elements, SourceLoc loc) {
 
 Pattern* pattern_rest(Arena* arena, String* name, SourceLoc loc) {
     assert(arena != NULL);
-    // name can be NULL for .._
+    assert(loc.line >= 0);
+    /* name can be NULL for .._ */
 
     Pattern* pat = arena_alloc(arena, sizeof(Pattern));
     pat->type = PATTERN_REST;
