@@ -48,6 +48,7 @@ typedef enum {
     EXPR_INTERP_STRING, // "Hello, {name}!"
     EXPR_MAP,           // %{ key: value, ... }
     EXPR_TUPLE,         // (a, b, c)
+    EXPR_RECORD_UPDATE, // { user | age: 31 }
 } ExprType;
 
 /* Binary operators */
@@ -235,6 +236,20 @@ typedef struct {
     ExprVec* elements;
 } TupleExpr;
 
+/* Record field update: name: value */
+typedef struct {
+    String* name;
+    Expr* value;
+} RecordField;
+
+VEC_TYPE(RecordFieldVec, RecordField)
+
+/* Record update expression: { base | field: value, ... } */
+typedef struct {
+    Expr* base;
+    RecordFieldVec* fields;
+} RecordUpdateExpr;
+
 /* Map entry: key: value */
 typedef struct {
     Expr* key;
@@ -276,6 +291,7 @@ struct Expr {
         InterpStringExpr interp_string;
         MapExpr map;
         TupleExpr tuple;
+        RecordUpdateExpr record_update;
     } data;
 };
 
@@ -509,6 +525,7 @@ Expr* expr_lambda(Arena* arena, StringVec* params, Expr* body, SourceLoc loc);
 Expr* expr_interp_string(Arena* arena, ExprVec* parts, SourceLoc loc);
 Expr* expr_map(Arena* arena, MapEntryVec* entries, SourceLoc loc);
 Expr* expr_tuple(Arena* arena, ExprVec* elements, SourceLoc loc);
+Expr* expr_record_update(Arena* arena, Expr* base, RecordFieldVec* fields, SourceLoc loc);
 
 /* Create statements */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc);

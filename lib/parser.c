@@ -565,9 +565,49 @@ static Expr* parse_primary_internal(Parser* parser) {
         return expr_if(parser->arena, condition, then_branch, else_branch, loc);
     }
     
-    // Block expression
+    // Block expression or record update
     if (match(parser, TOKEN_LBRACE)) {
         SourceLoc loc = parser->previous.loc;
+        
+        // Try record update: { expr | field: value, ... }
+        // Save state and try parsing expr followed by |
+        LexerState saved_lex = lexer_save(parser->lexer);
+        Token saved_current = parser->current;
+        Token saved_previous = parser->previous;
+        
+        // Only attempt if not obviously a statement or empty block
+        if (!check(parser, TOKEN_LET) && !check(parser, TOKEN_RETURN) &&
+            !check(parser, TOKEN_DEFER) && !check(parser, TOKEN_BREAK) &&
+            !check(parser, TOKEN_CONTINUE) && !check(parser, TOKEN_RBRACE)) {
+            
+            Expr* maybe_base = parse_expression(parser);
+            
+            if (check(parser, TOKEN_BAR)) {
+                advance(parser); // consume |
+                
+                // Parse field updates: name: value, name: value, ...
+                RecordFieldVec* fields = RecordFieldVec_new(parser->arena);
+                do {
+                    Token name_tok = parser->current;
+                    consume(parser, TOKEN_IDENT, "Expected field name in record update");
+                    consume(parser, TOKEN_COLON, "Expected ':' after field name");
+                    Expr* value = parse_expression(parser);
+                    
+                    RecordField field;
+                    field.name = name_tok.text;
+                    field.value = value;
+                    RecordFieldVec_push(parser->arena, fields, field);
+                } while (match(parser, TOKEN_COMMA));
+                
+                consume(parser, TOKEN_RBRACE, "Expected '}' after record update");
+                return expr_record_update(parser->arena, maybe_base, fields, loc);
+            }
+            
+            // Not a record update — restore and parse as block
+            lexer_restore(parser->lexer, saved_lex);
+            parser->current = saved_current;
+            parser->previous = saved_previous;
+        }
         
         StmtVec* stmts = StmtVec_new(parser->arena);
         Expr* final_expr = NULL;

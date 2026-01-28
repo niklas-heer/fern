@@ -76,6 +76,7 @@ typedef enum {
     TOKEN_ASSIGN,       // =
     TOKEN_BIND,         // <-
     TOKEN_PIPE,         // |>
+    TOKEN_BAR,          // |
     TOKEN_ARROW,        // ->
     TOKEN_FAT_ARROW,    // =>
     

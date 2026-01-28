@@ -373,8 +373,7 @@ Token lexer_next(Lexer* lex) {
             
         case '|':
             if (match(lex, '>')) return make_token(lex, TOKEN_PIPE, lex->current - 2, lex->current);
-            // TODO: Error - '|' alone might be valid for match patterns later
-            break;
+            return make_token(lex, TOKEN_BAR, lex->current - 1, lex->current);
             
         case '*':
             if (match(lex, '*')) return make_token(lex, TOKEN_POWER, lex->current - 2, lex->current);

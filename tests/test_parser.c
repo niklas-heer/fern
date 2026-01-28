@@ -2336,6 +2336,42 @@ void test_parse_match_condition_complex(void) {
     arena_destroy(arena);
 }
 
+/* Test: { user | age: 31 } — record update single field */
+void test_parse_record_update(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "{ user | age: 31 }");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_RECORD_UPDATE);
+    ASSERT_EQ(expr->data.record_update.base->type, EXPR_IDENT);
+    ASSERT_STR_EQ(string_cstr(expr->data.record_update.base->data.ident.name), "user");
+
+    RecordFieldVec* fields = expr->data.record_update.fields;
+    ASSERT_EQ(fields->len, 1);
+    ASSERT_STR_EQ(string_cstr(RecordFieldVec_get(fields, 0).name), "age");
+    ASSERT_EQ(RecordFieldVec_get(fields, 0).value->type, EXPR_INT_LIT);
+
+    arena_destroy(arena);
+}
+
+/* Test: { user | age: 31, name: "Nik" } — record update multiple fields */
+void test_parse_record_update_multi(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "{ user | age: 31, name: \"Nik\" }");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_RECORD_UPDATE);
+
+    RecordFieldVec* fields = expr->data.record_update.fields;
+    ASSERT_EQ(fields->len, 2);
+    ASSERT_STR_EQ(string_cstr(RecordFieldVec_get(fields, 0).name), "age");
+    ASSERT_STR_EQ(string_cstr(RecordFieldVec_get(fields, 1).name), "name");
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -2455,4 +2491,6 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_let_destructure_triple);
     TEST_RUN(test_parse_match_condition_only);
     TEST_RUN(test_parse_match_condition_complex);
+    TEST_RUN(test_parse_record_update);
+    TEST_RUN(test_parse_record_update_multi);
 }

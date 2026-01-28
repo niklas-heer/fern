@@ -310,6 +310,20 @@ Expr* expr_tuple(Arena* arena, ExprVec* elements, SourceLoc loc) {
     return expr;
 }
 
+Expr* expr_record_update(Arena* arena, Expr* base, RecordFieldVec* fields, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(base != NULL);
+    assert(fields != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_RECORD_UPDATE;
+    expr->loc = loc;
+    expr->data.record_update.base = base;
+    expr->data.record_update.fields = fields;
+
+    return expr;
+}
+
 Expr* expr_map(Arena* arena, MapEntryVec* entries, SourceLoc loc) {
     assert(arena != NULL);
     assert(entries != NULL);

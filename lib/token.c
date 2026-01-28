@@ -65,6 +65,7 @@ const char* token_type_name(TokenType type) {
         case TOKEN_ASSIGN: return "ASSIGN";
         case TOKEN_BIND: return "BIND";
         case TOKEN_PIPE: return "PIPE";
+        case TOKEN_BAR: return "BAR";
         case TOKEN_ARROW: return "ARROW";
         case TOKEN_FAT_ARROW: return "FAT_ARROW";
         
