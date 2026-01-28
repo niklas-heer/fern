@@ -1255,7 +1255,7 @@ Ready for next task.
 ## Iteration 13: With Expression Parsing
 
 **Agent Turn**: CONTROLLER
-**Status**: COMPLETE
+**Status**: COMPLETE ✅ VERIFIED
 **Task**: Implement with expression parsing for chained Result handling
 
 ### Task Requirements
@@ -1342,6 +1342,122 @@ Test Results:
 Total:  82
 Passed: 82
 ```
+
+### Verification Notes
+
+**Written by**: CONTROLLER (Sonnet 4.5)
+**Time**: 2026-01-28
+
+✅ ACCEPTED - With expression parsing implementation
+
+Verification Results:
+- Tests: 82/82 passing ✓
+- Code quality: Excellent ✓
+- No compiler warnings ✓
+- Uses arena allocation correctly ✓
+- TDD workflow followed correctly ✓
+- Smart reuse of MatchArm infrastructure ✓
+
+Success Criteria Met:
+- [x] All 4 new tests pass
+- [x] No regression (78 → 82 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows TDD workflow (RED → GREEN)
+
+Code Review:
+- AST changes (WithBinding, WithBindingVec, WithExpr): Clean design ✓
+- expr_with() helper: Proper null handling for optional else clause ✓
+- Parser implementation: Clear parsing logic with proper error messages ✓
+- Constructor pattern handling (Err(e)): Creative solution using PATTERN_LIT + call expr ✓
+- Reuses MatchArmVec for else clause: Excellent architectural decision ✓
+
+Commits reviewed:
+- 74bfe5a: Tests (RED phase) ✓
+- b744b75: Implementation (GREEN phase) ✓
+
+**Parser Milestone Progress:**
+Completed 13 iterations with 82/82 tests passing. The parser now handles:
+- Basic expressions (literals, identifiers, binary/unary ops, function calls)
+- Control flow (if/else, match with comprehensive patterns)
+- Data structures (blocks, lists, nested combinations)
+- Statements (let with optional type annotations, return, expression statements)
+- Result handling (← bind operator, **with expressions**)
+- Function composition (|> pipe operator)
+- Type annotations (simple, parameterized, function types)
+- Function definitions (single-clause typed, multi-clause pattern-based)
+- Pattern matching (literals, wildcards, identifier bindings)
+
+**With expression** adds powerful chained error handling:
+```fern
+with
+    x <- f(),
+    y <- g(x)
+do
+    Ok(y)
+else
+    Err(e) -> handle(e)
+```
+
+This completes the Result handling story: single bind (`<-`) for inline error propagation,
+and `with` expressions for multiple chained operations with centralized error handling.
+
+Ready for next task.
+
+---
+
+## Iteration 14: Module and Import Declarations
+
+**Agent Turn**: IMPLEMENTER
+**Status**: READY
+**Task**: Implement module and import declaration parsing
+
+### Task Requirements
+
+Implement parsing for module visibility and imports:
+```fern
+# Public function (visible to other modules)
+pub fn add(x: Int, y: Int) -> Int:
+    x + y
+
+# Private function (default, only visible within module)
+fn helper() -> Int:
+    42
+
+# Import entire module
+import math.geometry
+
+# Import specific items
+import http.server.{cors, auth}
+
+# Import with alias
+import math.geometry as geo
+```
+
+**Tests to Write** (TDD - RED phase first):
+- test_parse_pub_function() - Parse: `pub fn add(x: Int, y: Int) -> Int: x + y`
+- test_parse_private_function() - Parse: `fn helper() -> Int: 42` (verify no pub)
+- test_parse_import_module() - Parse: `import math.geometry`
+- test_parse_import_items() - Parse: `import http.server.{cors, auth}`
+- test_parse_import_alias() - Parse: `import math.geometry as geo`
+
+**Expected Changes**:
+- tests/test_parser.c (add 5+ new tests)
+- include/ast.h (add ImportDecl struct, ImportItem, visibility flag to FunctionDef)
+- lib/ast.c (add import_decl helper, modify stmt_fn to include is_public)
+- lib/parser.c (add import parsing, enhance function parsing for pub keyword)
+
+**Success Criteria**:
+- [ ] All 5+ new tests pass
+- [ ] No regression in existing 82 tests (82 → 87+ tests, all passing)
+- [ ] No compiler warnings
+- [ ] Follows TDD workflow (RED → GREEN → update ROADMAP)
+
+**Key Design Considerations**:
+- `pub` keyword is optional prefix for function definitions
+- Import statements have module path (dot-separated identifiers)
+- Import can have: entire module, specific items `{item, item}`, or alias `as name`
+- Parser should create STMT_IMPORT statement type
+- FunctionDef needs `is_public` boolean field
 
 ---
 
