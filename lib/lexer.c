@@ -205,16 +205,25 @@ static Token lex_identifier(Lexer* lex) {
     return make_token(lex, type, start, lex->current);
 }
 
-/* Lex number (integer for now, float TODO) */
+/* Lex number (integer or float) */
 static Token lex_number(Lexer* lex) {
     const char* start = lex->current - 1;  // We already consumed first digit
-    
+
     while (isdigit(peek(lex))) {
         advance(lex);
     }
-    
-    // TODO: Handle floats, hex, binary, octal
-    
+
+    // Check for float: digits followed by '.' and more digits
+    if (peek(lex) == '.' && isdigit(lex->current[1])) {
+        advance(lex);  // consume '.'
+        while (isdigit(peek(lex))) {
+            advance(lex);
+        }
+        return make_token(lex, TOKEN_FLOAT, start, lex->current);
+    }
+
+    // TODO: Handle hex, binary, octal
+
     return make_token(lex, TOKEN_INT, start, lex->current);
 }
 

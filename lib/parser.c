@@ -291,7 +291,15 @@ static Expr* parse_primary_internal(Parser* parser) {
         }
         return expr_int_lit(parser->arena, value, tok.loc);
     }
-    
+
+    // Float literal
+    if (match(parser, TOKEN_FLOAT)) {
+        Token tok = parser->previous;
+        const char* text = string_cstr(tok.text);
+        double value = strtod(text, NULL);
+        return expr_float_lit(parser->arena, value, tok.loc);
+    }
+
     // String literal
     if (match(parser, TOKEN_STRING)) {
         Token tok = parser->previous;

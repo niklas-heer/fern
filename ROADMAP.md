@@ -120,7 +120,7 @@ tests/lexer/
 - [x] Implement lexer.c (lib/lexer.c)
   - [x] Keyword recognition (let, fn, if, match, true, false, etc.)
   - [x] Operator recognition (<-, ->, ==, !=, <, <=, >, >=, etc.)
-  - [x] Numeric literals (Int) - Float TODO
+  - [x] Numeric literals (Int, Float)
   - [x] String literals (basic) - Interpolation TODO
   - [x] Comment handling (#) - Block comments /* */ TODO
   - [ ] Indentation tracking (indent/dedent tokens) - TODO
@@ -1652,8 +1652,8 @@ Ready for Milestone 3 (Type System) or additional parser refinements.
 
 ## Iteration 16: Lexer Enhancement - Float Literals
 
-**Agent Turn**: IMPLEMENTER
-**Status**: IN PROGRESS
+**Agent Turn**: CONTROLLER
+**Status**: COMPLETE ✅
 **Task**: Implement float literal lexing and parsing
 
 ### Task Requirements
@@ -1667,25 +1667,25 @@ Implement lexing and parsing for float literals:
 ```
 
 **Tests to Write** (TDD - RED phase first):
-- test_lex_float_simple() - Lex: `3.14` → TOKEN_FLOAT
-- test_lex_float_leading_zero() - Lex: `0.5` → TOKEN_FLOAT
-- test_lex_float_trailing_zero() - Lex: `1.0` → TOKEN_FLOAT
-- test_parse_float_literal() - Parse: `3.14` → EXPR_FLOAT
-- test_parse_float_in_expr() - Parse: `x + 3.14` → binary expression with float
+- test_lex_float_simple() - Lex: `3.14` → TOKEN_FLOAT ✓
+- test_lex_float_leading_zero() - Lex: `0.5` → TOKEN_FLOAT ✓
+- test_lex_float_trailing_zero() - Lex: `1.0` → TOKEN_FLOAT ✓
+- test_parse_float_literal() - Parse: `3.14` → EXPR_FLOAT_LIT ✓
+- test_parse_float_in_expr() - Parse: `x + 3.14` → binary expression with float ✓
 
 **Expected Changes**:
 - tests/test_lexer.c (add 3 new float lexer tests)
 - tests/test_parser.c (add 2 new float parser tests)
 - lib/lexer.c (enhance lex_number to detect and lex floats)
 - lib/parser.c (add EXPR_FLOAT case in parse_primary_internal)
-- include/ast.h (add EXPR_FLOAT expression type)
-- lib/ast.c (add expr_float helper)
+- include/ast.h (add expr_float_lit declaration)
+- lib/ast.c (add expr_float_lit helper)
 
 **Success Criteria**:
-- [ ] All 5 new tests pass
-- [ ] No regression in existing 91 tests (91 → 96 tests, all passing)
-- [ ] No compiler warnings
-- [ ] Follows TDD workflow (RED → GREEN → update ROADMAP)
+- [x] All 5 new tests pass
+- [x] No regression in existing 91 tests (91 → 96 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows TDD workflow (RED → GREEN → update ROADMAP)
 
 **Key Design Considerations**:
 - Float literals must contain a decimal point: `3.14`, not `3`
@@ -1693,8 +1693,54 @@ Implement lexing and parsing for float literals:
 - Leading zero allowed: `0.5`
 - Trailing zero allowed: `1.0`
 - No exponential notation for now (future enhancement)
-- Lexer stores float value as `double` in Token
-- Parser creates EXPR_FLOAT AST node
+- Lexer stores float text as String* in Token (same as other tokens)
+- Parser converts text to double via strtod() and creates EXPR_FLOAT_LIT AST node
+
+### Implementation Notes
+
+**Written by**: IMPLEMENTER (Opus 4.5)
+**Time**: 2026-01-28
+
+Implementation completed with TDD workflow:
+1. RED phase: Added 5 failing tests for float literal lexing and parsing (2832c3d)
+2. GREEN phase: Implemented float lexing and parsing
+
+**Tests Written**:
+- test_lex_float_simple() - Lex: `3.14` → TOKEN_FLOAT ✓
+- test_lex_float_leading_zero() - Lex: `0.5` → TOKEN_FLOAT ✓
+- test_lex_float_trailing_zero() - Lex: `1.0` → TOKEN_FLOAT ✓
+- test_parse_float_literal() - Parse: `3.14` → EXPR_FLOAT_LIT ✓
+- test_parse_float_in_expr() - Parse: `x + 3.14` → binary with float ✓
+
+**Files Modified**:
+- tests/test_lexer.c (added 3 new float lexer tests)
+- tests/test_parser.c (added 2 new float parser tests)
+- lib/lexer.c (enhanced lex_number to detect decimal point and lex floats)
+- lib/parser.c (added TOKEN_FLOAT case in parse_primary_internal using strtod)
+- include/ast.h (added expr_float_lit declaration)
+- lib/ast.c (added expr_float_lit helper function)
+
+**Lexer Changes:**
+Enhanced `lex_number()` to detect float literals. After consuming integer digits, checks for
+a decimal point followed by at least one digit (`peek == '.' && isdigit(current[1])`). This
+two-character lookahead prevents `42.method()` from being misread as a float. If a decimal
+point with trailing digits is found, consumes the dot and fractional digits and returns
+TOKEN_FLOAT instead of TOKEN_INT.
+
+**Parser Changes:**
+Added `TOKEN_FLOAT` handling in `parse_primary_internal()` right after the `TOKEN_INT` case.
+Uses `strtod()` to convert the token text to a `double` value, then creates an EXPR_FLOAT_LIT
+node via the new `expr_float_lit()` helper.
+
+**AST Changes:**
+- Added `expr_float_lit()` helper function (declaration in ast.h, implementation in ast.c)
+- Uses existing `EXPR_FLOAT_LIT` type and `FloatLit` struct already defined in ast.h
+
+Test Results:
+```
+Total:  96
+Passed: 96
+```
 
 ---
 
@@ -1702,8 +1748,8 @@ Implement lexing and parsing for float literals:
 
 **Current Milestone**: 2 - Parser (+ Lexer enhancements)
 **Current Iteration**: 16
-**Agent Turn**: IMPLEMENTER
-**Status**: IN PROGRESS
+**Agent Turn**: CONTROLLER
+**Status**: COMPLETE - awaiting verification
 **Started**: 2026-01-28
 **Last Updated**: 2026-01-28
 

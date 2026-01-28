@@ -16,6 +16,18 @@ Expr* expr_int_lit(Arena* arena, int64_t value, SourceLoc loc) {
     return expr;
 }
 
+/* Create float literal expression */
+Expr* expr_float_lit(Arena* arena, double value, SourceLoc loc) {
+    assert(arena != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_FLOAT_LIT;
+    expr->loc = loc;
+    expr->data.float_lit.value = value;
+
+    return expr;
+}
+
 /* Create string literal expression */
 Expr* expr_string_lit(Arena* arena, String* value, SourceLoc loc) {
     assert(arena != NULL);

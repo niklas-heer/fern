@@ -343,6 +343,7 @@ struct TypeExpr {
 
 /* Create expressions */
 Expr* expr_int_lit(Arena* arena, int64_t value, SourceLoc loc);
+Expr* expr_float_lit(Arena* arena, double value, SourceLoc loc);
 Expr* expr_string_lit(Arena* arena, String* value, SourceLoc loc);
 Expr* expr_bool_lit(Arena* arena, bool value, SourceLoc loc);
 Expr* expr_ident(Arena* arena, String* name, SourceLoc loc);
