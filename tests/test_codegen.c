@@ -558,6 +558,42 @@ void test_codegen_defer_multiple(void) {
     arena_destroy(arena);
 }
 
+/* ========== With Expression Tests ========== */
+
+void test_codegen_with_simple(void) {
+    Arena* arena = arena_create(8192);
+    
+    /* Simple with expression - binds result and continues */
+    const char* qbe = generate_qbe(arena,
+        "fn process() -> Int: with x <- get_value() do x");
+    
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "$process") != NULL);
+    /* Should call get_value */
+    ASSERT_TRUE(strstr(qbe, "$get_value") != NULL);
+    /* Should have conditional jump for Ok/Err check */
+    ASSERT_TRUE(strstr(qbe, "jnz") != NULL);
+    
+    arena_destroy(arena);
+}
+
+void test_codegen_with_multiple_bindings(void) {
+    Arena* arena = arena_create(8192);
+    
+    /* Multiple bindings - each checked for Ok/Err */
+    const char* qbe = generate_qbe(arena,
+        "fn process() -> Int: with x <- get_a(), y <- get_b() do x");
+    
+    ASSERT_NOT_NULL(qbe);
+    /* Should call both get_a and get_b */
+    ASSERT_TRUE(strstr(qbe, "$get_a") != NULL);
+    ASSERT_TRUE(strstr(qbe, "$get_b") != NULL);
+    /* Should check results */
+    ASSERT_TRUE(strstr(qbe, "$fern_result_is_ok") != NULL);
+    
+    arena_destroy(arena);
+}
+
 /* ========== Test Runner ========== */
 
 void run_codegen_tests(void) {
@@ -636,4 +672,8 @@ void run_codegen_tests(void) {
     /* Defer statements */
     TEST_RUN(test_codegen_defer_simple);
     TEST_RUN(test_codegen_defer_multiple);
+    
+    /* With expressions */
+    TEST_RUN(test_codegen_with_simple);
+    TEST_RUN(test_codegen_with_multiple_bindings);
 }

@@ -594,6 +594,71 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             
             return result;
         }
+        
+        case EXPR_WITH: {
+            /* With expression: with x <- f(), y <- g(x) do body [else arms]
+             *
+             * Generated code pattern for each binding:
+             *   result = f()                  # Get Result value
+             *   is_ok = fern_result_is_ok(result)
+             *   jnz is_ok, @ok_label, @err_label
+             * @err_label
+             *   # Error path: return error or match else arms
+             *   ret result (or handle else arms)
+             * @ok_label
+             *   x = fern_result_unwrap(result)
+             *   ... continue to next binding or body ...
+             */
+            WithExpr* with = &expr->data.with_expr;
+            String* result = fresh_temp(cg);
+            String* err_label = fresh_label(cg);
+            String* end_label = fresh_label(cg);
+            
+            /* Process each binding */
+            for (size_t i = 0; i < with->bindings->len; i++) {
+                WithBinding* binding = &with->bindings->data[i];
+                String* ok_label = fresh_label(cg);
+                
+                /* Evaluate the binding's value (returns a Result) */
+                String* res_val = codegen_expr(cg, binding->value);
+                
+                /* Check if Ok */
+                String* is_ok = fresh_temp(cg);
+                emit(cg, "    %s =w call $fern_result_is_ok(l %s)\n",
+                    string_cstr(is_ok), string_cstr(res_val));
+                
+                /* Branch: if Err, jump to error handling */
+                emit(cg, "    jnz %s, %s, %s\n",
+                    string_cstr(is_ok), string_cstr(ok_label), string_cstr(err_label));
+                
+                /* Ok path: unwrap and bind */
+                emit(cg, "%s\n", string_cstr(ok_label));
+                String* unwrapped = fresh_temp(cg);
+                emit(cg, "    %s =w call $fern_result_unwrap(l %s)\n",
+                    string_cstr(unwrapped), string_cstr(res_val));
+                emit(cg, "    %%%s =w copy %s\n",
+                    string_cstr(binding->name), string_cstr(unwrapped));
+            }
+            
+            /* All bindings succeeded: evaluate do body */
+            String* body_val = codegen_expr(cg, with->body);
+            emit(cg, "    %s =w copy %s\n", string_cstr(result), string_cstr(body_val));
+            emit(cg, "    jmp %s\n", string_cstr(end_label));
+            
+            /* Error path */
+            emit(cg, "%s\n", string_cstr(err_label));
+            if (with->else_arms && with->else_arms->len > 0) {
+                /* TODO: Match else arms against error */
+                emit(cg, "    # TODO: else arm matching\n");
+                emit(cg, "    %s =w copy 0\n", string_cstr(result));
+            } else {
+                /* No else clause: return the error as-is */
+                emit(cg, "    %s =w copy 0\n", string_cstr(result));
+            }
+            
+            emit(cg, "%s\n", string_cstr(end_label));
+            return result;
+        }
             
         default:
             emit(cg, "    # TODO: codegen for expr type %d\n", expr->type);
