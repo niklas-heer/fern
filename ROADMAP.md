@@ -772,75 +772,75 @@ make test
 ## Ralph Loop Status
 
 **Current Milestone**: 2 - Parser
-**Current Iteration**: 1
-**Agent Turn**: CONTROLLER
-**Status**: WAITING_VERIFICATION
+**Current Iteration**: 2
+**Agent Turn**: IMPLEMENTER
+**Status**: IN_PROGRESS
 **Started**: 2026-01-28 02:00:00
-**Last Updated**: 2026-01-28 02:15:00
+**Last Updated**: 2026-01-28 02:20:00
+
+### Previous Task
+
+- [x] Implement if expression parsing ✅ VERIFIED
 
 ### Current Task
 
-- [ ] Implement if expression parsing
+- [ ] Implement match expression parsing
 
 **Expected Tests**:
-- test_parse_if_simple() - Parse simple if: "if true: 42"
-- test_parse_if_else() - Parse if-else: "if x > 0: 1 else: 0"
+- test_parse_match_simple() - Parse: match x: 1 -> "one", 2 -> "two"
+- test_parse_match_with_default() - Parse: match x: 1 -> "a", _ -> "default"
 
 **Expected Files**:
 - tests/test_parser.c (add 2 new tests)
-- lib/parser.c (add if parsing in parse_primary_internal)
-- lib/ast.c (add expr_if helper function)
-- include/ast.h (add expr_if declaration)
+- lib/parser.c (add match parsing)
+- lib/ast.c (add expr_match helper)
+- include/ast.h (add expr_match declaration)
 
 **Success Criteria**:
 - Both new tests pass
-- No regression in existing 36 tests (should be 38/38 total)
+- No regression in existing 38 tests (should be 40/40 total)
 - No compiler warnings
 - Follows existing parser patterns
 
 **Context**:
-This is the first real Ralph Loop iteration. The task is small and well-defined.
-If expressions use syntax: if <condition>: <then_expr> [else: <else_expr>]
+Match expressions are pattern matching constructs.
+Syntax: match <value>: <pattern> -> <expr>, <pattern> -> <expr>, ...
 
 ### Implementation Notes
 
-**Written by**: IMPLEMENTER (Sonnet 4.5)
-**Time**: 2026-01-28 02:15:00
+(IMPLEMENTER will fill this after completing the task)
 
-Implemented if expression parsing following strict TDD workflow.
+### Verification Notes from Iteration 1
 
-**RED Phase (Tests First)**:
-- Added test_parse_if_simple() - tests simple if without else
-- Added test_parse_if_else() - tests if with else branch
-- Tests failed as expected (36/38 passing)
-- Committed: test(parser): add if expression tests (RED) - 0674f57
+**Written by**: CONTROLLER (Sonnet 4.5)
+**Time**: 2026-01-28 02:20:00
 
-**GREEN Phase (Implementation)**:
-- Added expr_if() helper function in lib/ast.c
-- Added if parsing in parse_primary_internal() in lib/parser.c
-- Handles optional else branch correctly
-- All tests passing (38/38)
-- Committed: feat(parser): implement if expressions (GREEN) - 3e725f3
+✅ ACCEPTED - If expression implementation
 
-**Results**:
+Verification Results:
 - Tests: 38/38 passing ✓
+- Code quality: Excellent ✓
 - No compiler warnings ✓
+- Uses arena allocation correctly ✓
+- Error handling appropriate ✓
 - Follows existing parser patterns ✓
-- Uses arena allocation ✓
 
-**Commits**:
-- 0674f57: test(parser): add if expression tests (TDD - RED phase)
-- 3e725f3: feat(parser): implement if expression parsing (TDD - GREEN phase)
+Success Criteria Met:
+- [x] Both new tests pass (test_parse_if_simple, test_parse_if_else)
+- [x] No regression (36 → 38 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows existing patterns
 
-**Files Changed**:
-- tests/test_parser.c (+37 lines, 2 new tests)
-- lib/parser.c (+17 lines, if parsing)
-- lib/ast.c (+17 lines, expr_if helper)
-- include/ast.h (+1 line, expr_if declaration)
+Code Review:
+- expr_if() helper: Clean implementation ✓
+- Parser integration: Proper precedence ✓
+- Optional else branch: Handled correctly ✓
 
-### Verification Notes
+Commits reviewed:
+- 0674f57: Tests (RED phase) ✓
+- 3e725f3: Implementation (GREEN phase) ✓
 
-(CONTROLLER will fill this after verification)
+Ready for next task: Match expressions
 
 ### Blockers
 
