@@ -755,6 +755,58 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         string_cstr(result), string_cstr(list));
                     return result;
                 }
+
+                /* ===== File I/O Functions ===== */
+
+                /* Handle read_file(path) -> Result(String, Int) */
+                if (strcmp(fn_name, "read_file") == 0 && call->args->len == 1) {
+                    String* path = codegen_expr(cg, call->args->data[0].value);
+                    emit(cg, "    %s =l call $fern_read_file(l %s)\n",
+                        string_cstr(result), string_cstr(path));
+                    return result;
+                }
+
+                /* Handle write_file(path, contents) -> Result(Int, Int) */
+                if (strcmp(fn_name, "write_file") == 0 && call->args->len == 2) {
+                    String* path = codegen_expr(cg, call->args->data[0].value);
+                    String* contents = codegen_expr(cg, call->args->data[1].value);
+                    emit(cg, "    %s =l call $fern_write_file(l %s, l %s)\n",
+                        string_cstr(result), string_cstr(path), string_cstr(contents));
+                    return result;
+                }
+
+                /* Handle append_file(path, contents) -> Result(Int, Int) */
+                if (strcmp(fn_name, "append_file") == 0 && call->args->len == 2) {
+                    String* path = codegen_expr(cg, call->args->data[0].value);
+                    String* contents = codegen_expr(cg, call->args->data[1].value);
+                    emit(cg, "    %s =l call $fern_append_file(l %s, l %s)\n",
+                        string_cstr(result), string_cstr(path), string_cstr(contents));
+                    return result;
+                }
+
+                /* Handle file_exists(path) -> Bool */
+                if (strcmp(fn_name, "file_exists") == 0 && call->args->len == 1) {
+                    String* path = codegen_expr(cg, call->args->data[0].value);
+                    emit(cg, "    %s =w call $fern_file_exists(l %s)\n",
+                        string_cstr(result), string_cstr(path));
+                    return result;
+                }
+
+                /* Handle delete_file(path) -> Result(Int, Int) */
+                if (strcmp(fn_name, "delete_file") == 0 && call->args->len == 1) {
+                    String* path = codegen_expr(cg, call->args->data[0].value);
+                    emit(cg, "    %s =l call $fern_delete_file(l %s)\n",
+                        string_cstr(result), string_cstr(path));
+                    return result;
+                }
+
+                /* Handle file_size(path) -> Result(Int, Int) */
+                if (strcmp(fn_name, "file_size") == 0 && call->args->len == 1) {
+                    String* path = codegen_expr(cg, call->args->data[0].value);
+                    emit(cg, "    %s =l call $fern_file_size(l %s)\n",
+                        string_cstr(result), string_cstr(path));
+                    return result;
+                }
             }
 
             /* Generate code for arguments */

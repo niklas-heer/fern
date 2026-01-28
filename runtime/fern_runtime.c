@@ -1056,3 +1056,165 @@ int64_t fern_option_unwrap_or(int64_t option, int64_t default_val) {
     }
     return default_val;
 }
+
+/* ========== File I/O Functions ========== */
+
+/**
+ * Read entire file contents as a string.
+ * @param path The file path.
+ * @return Result: Ok(string pointer) or Err(error code).
+ */
+int64_t fern_read_file(const char* path) {
+    assert(path != NULL);
+    
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        return fern_result_err(FERN_ERR_FILE_NOT_FOUND);
+    }
+    
+    /* Get file size */
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return fern_result_err(FERN_ERR_IO);
+    }
+    
+    long size = ftell(f);
+    if (size < 0) {
+        fclose(f);
+        return fern_result_err(FERN_ERR_IO);
+    }
+    
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return fern_result_err(FERN_ERR_IO);
+    }
+    
+    /* Allocate buffer for contents + null terminator */
+    char* contents = malloc((size_t)size + 1);
+    if (!contents) {
+        fclose(f);
+        return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+    }
+    
+    /* Read file contents */
+    size_t read_size = fread(contents, 1, (size_t)size, f);
+    fclose(f);
+    
+    if ((long)read_size != size) {
+        free(contents);
+        return fern_result_err(FERN_ERR_IO);
+    }
+    
+    contents[size] = '\0';
+    
+    /* Return Ok with pointer cast to int64_t */
+    return fern_result_ok((int64_t)(intptr_t)contents);
+}
+
+/**
+ * Write string to file (overwrites if exists).
+ * @param path The file path.
+ * @param contents The string to write.
+ * @return Result: Ok(bytes written) or Err(error code).
+ */
+int64_t fern_write_file(const char* path, const char* contents) {
+    assert(path != NULL);
+    assert(contents != NULL);
+    
+    FILE* f = fopen(path, "wb");
+    if (!f) {
+        return fern_result_err(FERN_ERR_PERMISSION);
+    }
+    
+    size_t len = strlen(contents);
+    size_t written = fwrite(contents, 1, len, f);
+    fclose(f);
+    
+    if (written != len) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+    
+    return fern_result_ok((int64_t)written);
+}
+
+/**
+ * Append string to file (creates if not exists).
+ * @param path The file path.
+ * @param contents The string to append.
+ * @return Result: Ok(bytes written) or Err(error code).
+ */
+int64_t fern_append_file(const char* path, const char* contents) {
+    assert(path != NULL);
+    assert(contents != NULL);
+    
+    FILE* f = fopen(path, "ab");
+    if (!f) {
+        return fern_result_err(FERN_ERR_PERMISSION);
+    }
+    
+    size_t len = strlen(contents);
+    size_t written = fwrite(contents, 1, len, f);
+    fclose(f);
+    
+    if (written != len) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+    
+    return fern_result_ok((int64_t)written);
+}
+
+/**
+ * Check if file exists.
+ * @param path The file path.
+ * @return 1 if exists, 0 otherwise.
+ */
+int64_t fern_file_exists(const char* path) {
+    assert(path != NULL);
+    FILE* f = fopen(path, "r");
+    if (f) {
+        fclose(f);
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * Delete a file.
+ * @param path The file path.
+ * @return Result: Ok(0) if deleted, Err(error code) otherwise.
+ */
+int64_t fern_delete_file(const char* path) {
+    assert(path != NULL);
+    if (remove(path) == 0) {
+        return fern_result_ok(0);
+    }
+    return fern_result_err(FERN_ERR_FILE_NOT_FOUND);
+}
+
+/**
+ * Get file size in bytes.
+ * @param path The file path.
+ * @return Result: Ok(size) or Err(error code).
+ */
+int64_t fern_file_size(const char* path) {
+    assert(path != NULL);
+    
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        return fern_result_err(FERN_ERR_FILE_NOT_FOUND);
+    }
+    
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return fern_result_err(FERN_ERR_IO);
+    }
+    
+    long size = ftell(f);
+    fclose(f);
+    
+    if (size < 0) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+    
+    return fern_result_ok((int64_t)size);
+}

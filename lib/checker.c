@@ -353,6 +353,71 @@ static void register_list_builtins(Checker* checker) {
     register_builtin(checker, "list_is_empty", type_fn(arena, params, type_bool(arena)));
 }
 
+/**
+ * Register built-in file I/O functions.
+ * @param checker The type checker context.
+ */
+static void register_file_builtins(Checker* checker) {
+    assert(checker != NULL);
+    assert(checker->arena != NULL);
+    Arena* arena = checker->arena;
+    TypeVec* params;
+    TypeVec* result_args;
+    Type* result_type;
+
+    /* read_file(String) -> Result(String, Int) */
+    params = TypeVec_new(arena);
+    TypeVec_push(arena, params, type_string(arena));
+    result_args = TypeVec_new(arena);
+    TypeVec_push(arena, result_args, type_string(arena));
+    TypeVec_push(arena, result_args, type_int(arena));
+    result_type = type_con(arena, string_new(arena, "Result"), result_args);
+    register_builtin(checker, "read_file", type_fn(arena, params, result_type));
+
+    /* write_file(String, String) -> Result(Int, Int) */
+    params = TypeVec_new(arena);
+    TypeVec_push(arena, params, type_string(arena));
+    TypeVec_push(arena, params, type_string(arena));
+    result_args = TypeVec_new(arena);
+    TypeVec_push(arena, result_args, type_int(arena));
+    TypeVec_push(arena, result_args, type_int(arena));
+    result_type = type_con(arena, string_new(arena, "Result"), result_args);
+    register_builtin(checker, "write_file", type_fn(arena, params, result_type));
+
+    /* append_file(String, String) -> Result(Int, Int) */
+    params = TypeVec_new(arena);
+    TypeVec_push(arena, params, type_string(arena));
+    TypeVec_push(arena, params, type_string(arena));
+    result_args = TypeVec_new(arena);
+    TypeVec_push(arena, result_args, type_int(arena));
+    TypeVec_push(arena, result_args, type_int(arena));
+    result_type = type_con(arena, string_new(arena, "Result"), result_args);
+    register_builtin(checker, "append_file", type_fn(arena, params, result_type));
+
+    /* file_exists(String) -> Bool */
+    params = TypeVec_new(arena);
+    TypeVec_push(arena, params, type_string(arena));
+    register_builtin(checker, "file_exists", type_fn(arena, params, type_bool(arena)));
+
+    /* delete_file(String) -> Result(Int, Int) */
+    params = TypeVec_new(arena);
+    TypeVec_push(arena, params, type_string(arena));
+    result_args = TypeVec_new(arena);
+    TypeVec_push(arena, result_args, type_int(arena));
+    TypeVec_push(arena, result_args, type_int(arena));
+    result_type = type_con(arena, string_new(arena, "Result"), result_args);
+    register_builtin(checker, "delete_file", type_fn(arena, params, result_type));
+
+    /* file_size(String) -> Result(Int, Int) */
+    params = TypeVec_new(arena);
+    TypeVec_push(arena, params, type_string(arena));
+    result_args = TypeVec_new(arena);
+    TypeVec_push(arena, result_args, type_int(arena));
+    TypeVec_push(arena, result_args, type_int(arena));
+    result_type = type_con(arena, string_new(arena, "Result"), result_args);
+    register_builtin(checker, "file_size", type_fn(arena, params, result_type));
+}
+
 /* ========== Checker Creation ========== */
 
 /**
@@ -373,6 +438,7 @@ Checker* checker_new(Arena* arena) {
     register_io_builtins(checker);
     register_string_builtins(checker);
     register_list_builtins(checker);
+    register_file_builtins(checker);
 
     return checker;
 }

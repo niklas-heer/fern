@@ -498,4 +498,65 @@ void* fern_alloc(size_t size);
  */
 void fern_free(void* ptr);
 
+/* ========== File I/O Functions ========== */
+
+/**
+ * Fern file handle.
+ */
+typedef struct FernFile {
+    void* handle;   /* FILE* internally */
+    int64_t error;  /* Last error code, 0 if none */
+} FernFile;
+
+/**
+ * Read entire file contents as a string.
+ * @param path The file path.
+ * @return Result: Ok(string contents) or Err(error code).
+ *         Returns packed Result where Ok contains pointer to string.
+ */
+int64_t fern_read_file(const char* path);
+
+/**
+ * Write string to file (overwrites if exists).
+ * @param path The file path.
+ * @param contents The string to write.
+ * @return Result: Ok(bytes written) or Err(error code).
+ */
+int64_t fern_write_file(const char* path, const char* contents);
+
+/**
+ * Append string to file (creates if not exists).
+ * @param path The file path.
+ * @param contents The string to append.
+ * @return Result: Ok(bytes written) or Err(error code).
+ */
+int64_t fern_append_file(const char* path, const char* contents);
+
+/**
+ * Check if file exists.
+ * @param path The file path.
+ * @return 1 if exists, 0 otherwise.
+ */
+int64_t fern_file_exists(const char* path);
+
+/**
+ * Delete a file.
+ * @param path The file path.
+ * @return Result: Ok(0) if deleted, Err(error code) otherwise.
+ */
+int64_t fern_delete_file(const char* path);
+
+/**
+ * Get file size in bytes.
+ * @param path The file path.
+ * @return Result: Ok(size) or Err(error code).
+ */
+int64_t fern_file_size(const char* path);
+
+/* Error codes for file operations */
+#define FERN_ERR_FILE_NOT_FOUND  1
+#define FERN_ERR_PERMISSION      2
+#define FERN_ERR_IO              3
+#define FERN_ERR_OUT_OF_MEMORY   4
+
 #endif /* FERN_RUNTIME_H */
