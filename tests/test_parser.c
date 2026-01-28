@@ -2557,6 +2557,47 @@ void test_parse_fn_no_where(void) {
     arena_destroy(arena);
 }
 
+void test_parse_trait_with_constraint(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "trait Ord(a) with Eq(a): fn compare(x: a, y: a) -> Int: 0");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_TRAIT);
+    ASSERT_STR_EQ(string_cstr(stmt->data.trait_def.name), "Ord");
+    ASSERT_NOT_NULL(stmt->data.trait_def.constraints);
+    ASSERT_EQ(stmt->data.trait_def.constraints->len, (size_t)1);
+
+    arena_destroy(arena);
+}
+
+void test_parse_trait_multi_constraints(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "trait Sortable(a) with Eq(a), Ord(a): fn sort(x: a) -> a: x");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_TRAIT);
+    ASSERT_STR_EQ(string_cstr(stmt->data.trait_def.name), "Sortable");
+    ASSERT_NOT_NULL(stmt->data.trait_def.constraints);
+    ASSERT_EQ(stmt->data.trait_def.constraints->len, (size_t)2);
+
+    arena_destroy(arena);
+}
+
+void test_parse_trait_no_constraint(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "trait Show(a): fn show(x: a) -> String: x");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_TRAIT);
+    ASSERT_STR_EQ(string_cstr(stmt->data.trait_def.name), "Show");
+    ASSERT_NULL(stmt->data.trait_def.constraints);
+
+    arena_destroy(arena);
+}
+
 void test_parse_rest_pattern(void) {
     Arena* arena = arena_create(4096);
     Parser* parser = parser_new(arena, "let [first, ..rest] = items");
@@ -2812,6 +2853,9 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_fn_no_where);
     TEST_RUN(test_parse_newtype);
     TEST_RUN(test_parse_pub_newtype);
+    TEST_RUN(test_parse_trait_with_constraint);
+    TEST_RUN(test_parse_trait_multi_constraints);
+    TEST_RUN(test_parse_trait_no_constraint);
     TEST_RUN(test_parse_rest_pattern);
     TEST_RUN(test_parse_rest_pattern_ignore);
     TEST_RUN(test_parse_spawn);

@@ -543,7 +543,7 @@ Stmt* stmt_continue(Arena* arena, SourceLoc loc) {
 }
 
 /* Create trait definition */
-Stmt* stmt_trait(Arena* arena, String* name, StringVec* type_params, StmtVec* methods, SourceLoc loc) {
+Stmt* stmt_trait(Arena* arena, String* name, StringVec* type_params, TypeExprVec* constraints, StmtVec* methods, SourceLoc loc) {
     assert(arena != NULL);
     assert(name != NULL);
     assert(methods != NULL);
@@ -553,6 +553,7 @@ Stmt* stmt_trait(Arena* arena, String* name, StringVec* type_params, StmtVec* me
     stmt->loc = loc;
     stmt->data.trait_def.name = name;
     stmt->data.trait_def.type_params = type_params;
+    stmt->data.trait_def.constraints = constraints;
     stmt->data.trait_def.methods = methods;
 
     return stmt;

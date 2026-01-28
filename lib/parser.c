@@ -1101,7 +1101,15 @@ Stmt* parse_stmt(Parser* parser) {
             consume(parser, TOKEN_RPAREN, "Expected ')' after trait type parameters");
         }
 
-        // TODO: parse optional "with Constraint(a)" super-trait clause
+        // Optional super-trait constraints: with Eq(a), Show(a)
+        TypeExprVec* constraints = NULL;
+        if (match(parser, TOKEN_WITH)) {
+            constraints = TypeExprVec_new(parser->arena);
+            do {
+                TypeExpr* constraint = parse_type(parser);
+                TypeExprVec_push(parser->arena, constraints, constraint);
+            } while (match(parser, TOKEN_COMMA));
+        }
 
         consume(parser, TOKEN_COLON, "Expected ':' after trait declaration");
 
@@ -1112,7 +1120,7 @@ Stmt* parse_stmt(Parser* parser) {
             StmtVec_push(parser->arena, methods, method);
         }
 
-        return stmt_trait(parser->arena, name_tok.text, type_params, methods, loc);
+        return stmt_trait(parser->arena, name_tok.text, type_params, constraints, methods, loc);
     }
 
     // Impl block: impl Trait(Type): methods

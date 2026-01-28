@@ -450,6 +450,7 @@ typedef struct {
 typedef struct {
     String* name;
     StringVec* type_params;     // e.g., (a) in trait Show(a)
+    TypeExprVec* constraints;   // e.g., with Eq(a) — NULL if no constraints
     StmtVec* methods;           // List of STMT_FN
 } TraitDef;
 
@@ -592,7 +593,7 @@ Stmt* stmt_type_def(Arena* arena, String* name, bool is_public, StringVec* type_
 Stmt* stmt_newtype(Arena* arena, String* name, bool is_public, String* constructor, TypeExpr* inner_type, SourceLoc loc);
 Stmt* stmt_break(Arena* arena, Expr* value, SourceLoc loc);
 Stmt* stmt_continue(Arena* arena, SourceLoc loc);
-Stmt* stmt_trait(Arena* arena, String* name, StringVec* type_params, StmtVec* methods, SourceLoc loc);
+Stmt* stmt_trait(Arena* arena, String* name, StringVec* type_params, TypeExprVec* constraints, StmtVec* methods, SourceLoc loc);
 Stmt* stmt_impl(Arena* arena, String* trait_name, TypeExprVec* type_args, StmtVec* methods, SourceLoc loc);
 
 /* Create patterns */
