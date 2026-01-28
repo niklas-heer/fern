@@ -330,6 +330,39 @@ void test_lex_string_no_interpolation(void) {
     arena_destroy(arena);
 }
 
+void test_lex_hex_literal(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "0xFF");
+
+    Token t1 = lexer_next(lex);
+    ASSERT_EQ(t1.type, TOKEN_INT);
+    ASSERT_STR_EQ(string_cstr(t1.text), "0xFF");
+
+    arena_destroy(arena);
+}
+
+void test_lex_binary_literal(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "0b1010");
+
+    Token t1 = lexer_next(lex);
+    ASSERT_EQ(t1.type, TOKEN_INT);
+    ASSERT_STR_EQ(string_cstr(t1.text), "0b1010");
+
+    arena_destroy(arena);
+}
+
+void test_lex_octal_literal(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "0o755");
+
+    Token t1 = lexer_next(lex);
+    ASSERT_EQ(t1.type, TOKEN_INT);
+    ASSERT_STR_EQ(string_cstr(t1.text), "0o755");
+
+    arena_destroy(arena);
+}
+
 void run_lexer_tests(void) {
     printf("\n=== Lexer Tests ===\n");
     TEST_RUN(test_lex_integer);
@@ -349,4 +382,7 @@ void run_lexer_tests(void) {
     TEST_RUN(test_lex_loop_keywords);
     TEST_RUN(test_lex_string_interpolation);
     TEST_RUN(test_lex_string_no_interpolation);
+    TEST_RUN(test_lex_hex_literal);
+    TEST_RUN(test_lex_binary_literal);
+    TEST_RUN(test_lex_octal_literal);
 }

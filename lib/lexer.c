@@ -234,6 +234,32 @@ static Token lex_identifier(Lexer* lex) {
 static Token lex_number(Lexer* lex) {
     const char* start = lex->current - 1;  // We already consumed first digit
 
+    // Check for hex (0x), binary (0b), octal (0o)
+    if (start[0] == '0' && peek(lex) != '\0') {
+        char next = peek(lex);
+        if (next == 'x' || next == 'X') {
+            advance(lex);  // consume 'x'
+            while (isxdigit(peek(lex)) || peek(lex) == '_') {
+                advance(lex);
+            }
+            return make_token(lex, TOKEN_INT, start, lex->current);
+        }
+        if (next == 'b' || next == 'B') {
+            advance(lex);  // consume 'b'
+            while (peek(lex) == '0' || peek(lex) == '1' || peek(lex) == '_') {
+                advance(lex);
+            }
+            return make_token(lex, TOKEN_INT, start, lex->current);
+        }
+        if (next == 'o' || next == 'O') {
+            advance(lex);  // consume 'o'
+            while ((peek(lex) >= '0' && peek(lex) <= '7') || peek(lex) == '_') {
+                advance(lex);
+            }
+            return make_token(lex, TOKEN_INT, start, lex->current);
+        }
+    }
+
     while (isdigit(peek(lex))) {
         advance(lex);
     }
@@ -246,8 +272,6 @@ static Token lex_number(Lexer* lex) {
         }
         return make_token(lex, TOKEN_FLOAT, start, lex->current);
     }
-
-    // TODO: Handle hex, binary, octal
 
     return make_token(lex, TOKEN_INT, start, lex->current);
 }
