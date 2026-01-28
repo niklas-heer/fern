@@ -1116,8 +1116,8 @@ Parser Milestone 2 is nearly complete. Remaining work:
 
 ## Iteration 12: Multi-Clause Function Definitions
 
-**Agent Turn**: IMPLEMENTER
-**Status**: READY
+**Agent Turn**: CONTROLLER
+**Status**: COMPLETE ✅ VERIFIED
 **Task**: Implement multi-clause function definitions (pattern-based dispatch)
 
 ### Task Requirements
@@ -1201,14 +1201,108 @@ Total:  78
 Passed: 78
 ```
 
+### Verification Notes
+
+**Written by**: CONTROLLER (Sonnet 4.5)
+**Time**: 2026-01-28
+
+✅ ACCEPTED - Multi-clause function definition implementation
+
+Verification Results:
+- Tests: 78/78 passing ✓
+- Code quality: Excellent ✓
+- No compiler warnings ✓
+- Complex feature with proper architecture ✓
+- TDD workflow followed correctly ✓
+- Adjacent clause validation working ✓
+
+Success Criteria Met:
+- [x] All 4 new tests pass
+- [x] No regression (74 → 78 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows TDD workflow (RED → GREEN)
+
+Code Review:
+- AST changes (FunctionClause, PatternVec): Clean design ✓
+- parse_pattern() extraction: Good refactoring ✓
+- is_typed_params() lookahead: Smart disambiguation ✓
+- parse_stmts() clause grouping: Correct implementation ✓
+- Adjacent clause validation: Proper error handling ✓
+- 2-token lookahead with lexer_peek: Efficient ✓
+
+Commits reviewed:
+- bb00f66: Tests (RED phase) ✓
+- 33c86e2: Implementation (GREEN phase) ✓
+
+**Parser Milestone Progress:**
+Completed 12 iterations with 78/78 tests passing. The parser now handles:
+- Basic expressions (literals, identifiers, binary/unary ops, function calls)
+- Control flow (if/else, match with comprehensive patterns)
+- Data structures (blocks, lists, nested combinations)
+- Statements (let with optional type annotations, return, expression statements)
+- Result handling (← bind operator)
+- Function composition (|> pipe operator)
+- Type annotations (simple, parameterized, function types)
+- Function definitions (single-clause typed, multi-clause pattern-based)
+- Pattern matching (literals, wildcards, identifier bindings)
+
+This completes a major milestone: **full function definition support** including both typed single-clause functions and pattern-based multi-clause functions. The parser architecture is now robust enough for more advanced features.
+
+Ready for next task.
+
+---
+
+## Iteration 13: With Expression Parsing
+
+**Agent Turn**: IMPLEMENTER
+**Status**: READY
+**Task**: Implement with expression parsing for chained Result handling
+
+### Task Requirements
+
+Implement parsing for `with` expressions that handle multiple Result-returning operations:
+```fern
+with
+    x <- f(),
+    y <- g(x)
+do
+    Ok(y)
+else
+    Err(e) -> handle(e)
+```
+
+**Tests to Write** (TDD - RED phase first):
+- test_parse_with_simple() - Parse: `with x <- f() do Ok(x)`
+- test_parse_with_multiple_bindings() - Parse: `with x <- f(), y <- g(x) do Ok(y)`
+- test_parse_with_else_clause() - Parse: `with x <- f() do Ok(x) else Err(e) -> e`
+- test_parse_with_in_block() - Parse: `{ let z = with x <- f() do Ok(x), z }`
+
+**Expected Changes**:
+- tests/test_parser.c (add 4 new tests)
+- include/ast.h (add WithExpr struct, BindingVec for with bindings)
+- lib/ast.c (add expr_with helper)
+- lib/parser.c (add with expression parsing in parse_primary_internal)
+
+**Success Criteria**:
+- [ ] All 4 new tests pass
+- [ ] No regression in existing 78 tests (78 → 82 tests, all passing)
+- [ ] No compiler warnings
+- [ ] Follows TDD workflow (RED → GREEN → update ROADMAP)
+
+**Key Design Considerations**:
+- `with` is followed by one or more comma-separated bindings (`name <- expr`)
+- `do` keyword separates bindings from success body
+- `else` keyword is optional and introduces error handling patterns
+- Syntax: `with <binding>, <binding> do <expr> [else <pattern> -> <expr>]`
+
 ---
 
 ## Ralph Loop Status
 
 **Current Milestone**: 2 - Parser
-**Current Iteration**: 12
-**Agent Turn**: CONTROLLER
-**Status**: COMPLETE
+**Current Iteration**: 13
+**Agent Turn**: IMPLEMENTER
+**Status**: READY
 **Started**: 2026-01-28 13:10:00
 **Last Updated**: 2026-01-28
 
