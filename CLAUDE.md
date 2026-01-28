@@ -65,7 +65,8 @@ Token lexer_next(Lexer* lex) {
 
 1. **design.md** - Source of truth for Fern language features
 2. **ROADMAP.md** - Current milestone and task status
-3. **CLAUDE.md** (this file) - Safety guidelines and patterns
+3. **DECISIONS.md** - Record of architectural decisions
+4. **CLAUDE.md** (this file) - Safety guidelines and patterns
 
 **Before writing ANY code:**
 - [ ] Read relevant section of design.md
@@ -73,6 +74,46 @@ Token lexer_next(Lexer* lex) {
 - [ ] Write test based on design.md spec
 - [ ] Verify test fails (red)
 - [ ] Then implement
+
+### When to Add a Decision
+
+**ALWAYS document significant decisions in DECISIONS.md using `/decision`**
+
+Add a decision when you:
+- Choose between multiple valid approaches
+- Make a design trade-off (performance vs simplicity, etc.)
+- Deviate from common patterns or conventions
+- Add/remove a major feature
+- Change an existing design decision
+
+**Examples of decisions to document:**
+- ✅ "Should we use garbage collection or manual memory management?"
+- ✅ "Should we support null values or use Option types?"
+- ✅ "Should we use tabs or spaces for indentation?"
+- ✅ "Should we add a REPL or focus on compiled execution?"
+- ❌ "Should this variable be named 'count' or 'total'?" (too minor)
+- ❌ "Should we add a comment here?" (too trivial)
+
+**How to add a decision:**
+
+```bash
+# Use the /decision skill
+/decision DECISIONS.md | Title | Brief description
+
+# Example:
+/decision DECISIONS.md | Using tabs for indentation | We decided to enforce tabs instead of spaces
+```
+
+The skill will guide you through:
+1. Status (Adopted, Accepted, Deprecated, Supersedes)
+2. Decision statement ("I will...")
+3. Context (why? what alternatives?)
+4. Consequences (what follows from this?)
+
+**During implementation, if you face a choice:**
+1. Pause implementation
+2. Document the decision with `/decision`
+3. Continue implementation following the decision
 
 ### Updating ROADMAP.md
 
@@ -105,6 +146,7 @@ Before every commit, verify:
 - [ ] Code follows design.md specification
 - [ ] Test was written BEFORE implementation
 - [ ] Commit message follows conventional commits
+- [ ] Significant decisions are documented in DECISIONS.md
 
 ### Commit Message Format
 
@@ -176,11 +218,14 @@ Refs: design.md section 3.2.2 (with expression)
 fern/
 ├── design.md           # ← SPECIFICATION (read this FIRST)
 ├── ROADMAP.md          # ← TASKS (update after each task)
+├── DECISIONS.md        # ← DECISIONS (document choices with /decision)
 ├── CLAUDE.md           # ← THIS FILE (safety guidelines)
+├── BUILD.md            # ← Build instructions
 ├── src/                # Implementation code
 ├── tests/              # Tests (write FIRST)
 ├── lib/                # Safety libraries
-└── include/            # Header files
+├── include/            # Header files
+└── scripts/            # Development scripts
 ```
 
 ## Language: C with Safety Libraries

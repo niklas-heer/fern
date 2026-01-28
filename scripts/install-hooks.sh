@@ -95,14 +95,26 @@ if echo "$CODE_FILES" | xargs grep -n "enum.*kind\|\.kind\s*=" 2>/dev/null | gre
     echo -e "${YELLOW}⚠${NC}  Warning: Found manual tagged union - consider using Result macros"
 fi
 
-# 6. Verify ROADMAP.md updates if this is a feature commit
+# 6. Verify ROADMAP.md and DECISIONS.md updates
 COMMIT_MSG_FILE=".git/COMMIT_EDITMSG"
 if [ -f "$COMMIT_MSG_FILE" ]; then
     COMMIT_MSG=$(cat "$COMMIT_MSG_FILE" 2>/dev/null || echo "")
+
+    # Check for ROADMAP.md update on feat/fix commits
     if echo "$COMMIT_MSG" | grep -q "^feat\|^fix"; then
         if ! git diff --cached --name-only | grep -q "ROADMAP.md"; then
             echo -e "\n${YELLOW}⚠${NC}  Warning: feat/fix commit without ROADMAP.md update"
             echo "   Consider updating ROADMAP.md to track progress"
+        fi
+    fi
+
+    # Remind about DECISIONS.md for architectural changes
+    if echo "$COMMIT_MSG" | grep -q "^feat"; then
+        if git diff --cached --name-only | grep -qE "include/|design.md"; then
+            if ! git diff --cached --name-only | grep -q "DECISIONS.md"; then
+                echo -e "${YELLOW}⚠${NC}  Reminder: Did you make a design decision?"
+                echo "   If yes, document it: /decision DECISIONS.md | Title | Description"
+            fi
         fi
     fi
 fi
