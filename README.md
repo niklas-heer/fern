@@ -2,17 +2,17 @@
 
 > A statically-typed, functional language with Python aesthetics that compiles to single binaries.
 
-**Status:** 🚧 In active development - Milestone 2 (Parser) in progress, 36/36 tests passing
+**Status:** 🚧 In active development - Milestone 4 (Code Generation) in progress, 331 tests passing
 
 ## What is Fern?
 
 Fern is a programming language designed to make both **fast CLI tools** (<1 MB) and **full-stack applications** (2-4 MB) with the same elegant syntax. No runtime dependencies, no crashes, predictable behavior.
 
 ```fern
-# Clean, readable syntax
-content <- read_file("config.txt")
-config <- parse_config(content)
-validated <- validate(config)
+# Clean, readable syntax with explicit error handling
+let content = read_file("config.txt")?
+let config = parse_config(content)?
+let validated = validate(config)?
 Ok(process(validated))
 ```
 
@@ -40,42 +40,41 @@ We're implementing the compiler using test-driven development. See [DESIGN.md](D
 
 **Completed:**
 - ✅ Milestone 0: Project Setup
-  - Build system and test infrastructure  
+  - Build system and test infrastructure
   - Safety libraries (arena, strings, collections)
   - Development workflow and pre-commit hooks
   - CI/CD pipeline
-- ✅ Milestone 1: Lexer (core complete)
+- ✅ Milestone 1: Lexer
   - All keywords, operators, literals
-  - Critical `<-` operator working
-  - 23/23 tests passing
+  - `?` operator for Result propagation
+  - Block comments (`/* */`)
+- ✅ Milestone 2: Parser
+  - Expression parsing with Pratt precedence
+  - Statement parsing (let, fn, return, if, match, for)
+  - Pattern matching, type annotations
+  - Function definitions with clauses
+- ✅ Milestone 3: Type Checker
+  - Hindley-Milner type inference
+  - Generic types, Result/Option handling
+  - Pipe operator type checking
 
 **In Progress:**
-- 🚧 Milestone 2: Parser
-  - Core parser complete (36/36 tests passing)
-  - Expression parsing with operator precedence
-  - Statement parsing (let, return)
-  - Function calls, binary/unary operators
-  - Remaining: function definitions, blocks, type annotations
+- 🚧 Milestone 4: Code Generation
+  - QBE IR generation from AST
+  - Runtime library (Result, List, String operations)
+  - 331 tests passing
 
-**Next:**
-- Complete Milestone 2 (Parser)
-- Milestone 3: Type System
+**Planned:**
+- FernFuzz: Grammar-based fuzzing for compiler testing
+- FernDoc: HexDocs-style documentation generation
 - See [ROADMAP.md](ROADMAP.md) for full plan
-
-## Autonomous Development (Ralph Loop)
-
-We're using an autonomous agent system called **Ralph Loop** for systematic development:
-- Two agents (IMPLEMENTER and CONTROLLER) work together
-- Communication via ROADMAP.md
-- Strict TDD: tests first, implementation second, verification third
-- See [RALPH.md](RALPH.md) for architecture details
 
 ## Documentation
 
 - [Language Design](DESIGN.md) - Complete specification
-- [Implementation Roadmap](ROADMAP.md) - Development plan with Ralph Loop status
-- [Ralph Loop System](RALPH.md) - Autonomous development architecture
+- [Implementation Roadmap](ROADMAP.md) - Development plan and progress
 - [Decision Log](DECISIONS.md) - Architectural decisions
+- [Coding Standards](FERN_STYLE.md) - TigerBeetle-inspired style guide
 - [Development Guidelines](CLAUDE.md) - For AI-assisted development
 
 ## Inspiration
@@ -83,7 +82,7 @@ We're using an autonomous agent system called **Ralph Loop** for systematic deve
 Fern takes inspiration from the best features of:
 - **Gleam** - Type system, simplicity
 - **Elixir** - Pattern matching, actors, pragmatic design
-- **Roc** - Result binding, backpassing clarity
+- **Rust** - `?` operator, Result types
 - **Zig** - Comptime, defer, minimalism
 - **Python** - Readability, aesthetics
 - **Go** - Single binary deployment
@@ -93,25 +92,42 @@ Fern takes inspiration from the best features of:
 **Replace your infrastructure:**
 ```fern
 # No Redis, no RabbitMQ, no separate database
-fn main() -> Result((), Error):
-    db = sql.open("app.db")?              # Embedded database
-    cache = spawn(cache_actor)            # In-memory cache (actor)
-    queue = spawn(job_queue)              # Job queue (actor)
-    
+fn main() -> Result[(), Error]:
+    let db = sql.open("app.db")?           # Embedded database
+    let cache = spawn(cache_actor)          # In-memory cache (actor)
+    let queue = spawn(job_queue)            # Job queue (actor)
+
     http.serve(8080, handler(db, cache, queue))
-    
+
 # One 3.5MB binary, no external dependencies
 ```
 
 **CLI tools stay tiny:**
 ```fern
 # Fast, small, no runtime
-fn main() -> Result((), Error):
-    data <- read_file("data.csv")
-    processed <- process(data)
-    write_file("output.csv", processed)
-    
+fn main() -> Result[(), Error]:
+    let data = read_file("data.csv")?
+    let processed = process(data)?
+    write_file("output.csv", processed)?
+    Ok(())
+
 # 600KB binary, <5ms startup
+```
+
+## Building
+
+```bash
+# Build the compiler
+make
+
+# Run tests
+make test
+
+# Build with debug symbols
+make debug
+
+# Check code style (FERN_STYLE compliance)
+make style
 ```
 
 ## License
@@ -124,13 +140,13 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 We're actively implementing the compiler using AI-assisted test-driven development. See [CLAUDE.md](CLAUDE.md) for development workflow and guidelines.
 
-To get started:
 ```bash
-# Install git hooks
-./scripts/install-hooks.sh
-
 # Build and test
 make test
 
-# See ROADMAP.md for current tasks
+# Check style compliance
+make style
+
+# See current progress
+cat ROADMAP.md
 ```
