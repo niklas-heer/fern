@@ -2557,6 +2557,62 @@ void test_parse_fn_no_where(void) {
     arena_destroy(arena);
 }
 
+void test_parse_spawn(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "spawn(worker_loop)");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_SPAWN);
+    ASSERT_NOT_NULL(expr->data.spawn_expr.func);
+    ASSERT_EQ(expr->data.spawn_expr.func->type, EXPR_IDENT);
+
+    arena_destroy(arena);
+}
+
+void test_parse_send(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "send(pid, Request(\"get\", \"/users\"))");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_SEND);
+    ASSERT_NOT_NULL(expr->data.send_expr.pid);
+    ASSERT_EQ(expr->data.send_expr.pid->type, EXPR_IDENT);
+    ASSERT_NOT_NULL(expr->data.send_expr.message);
+    ASSERT_EQ(expr->data.send_expr.message->type, EXPR_CALL);
+
+    arena_destroy(arena);
+}
+
+void test_parse_receive(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "receive: Ping -> pong(), Shutdown -> cleanup()");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_RECEIVE);
+    ASSERT_EQ(expr->data.receive_expr.arms->len, (size_t)2);
+    ASSERT_NULL(expr->data.receive_expr.after_timeout);
+    ASSERT_NULL(expr->data.receive_expr.after_body);
+
+    arena_destroy(arena);
+}
+
+void test_parse_receive_after(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "receive: Msg(x) -> handle(x), _ after 5000 -> timeout()");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_RECEIVE);
+    ASSERT_EQ(expr->data.receive_expr.arms->len, (size_t)1);
+    ASSERT_NOT_NULL(expr->data.receive_expr.after_timeout);
+    ASSERT_NOT_NULL(expr->data.receive_expr.after_body);
+
+    arena_destroy(arena);
+}
+
 void test_parse_newtype(void) {
     Arena* arena = arena_create(4096);
     Parser* parser = parser_new(arena, "newtype UserId = UserId(Int)");
@@ -2722,4 +2778,8 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_fn_no_where);
     TEST_RUN(test_parse_newtype);
     TEST_RUN(test_parse_pub_newtype);
+    TEST_RUN(test_parse_spawn);
+    TEST_RUN(test_parse_send);
+    TEST_RUN(test_parse_receive);
+    TEST_RUN(test_parse_receive_after);
 }

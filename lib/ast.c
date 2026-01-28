@@ -341,6 +341,46 @@ Expr* expr_list_comp(Arena* arena, Expr* body, String* var_name, Expr* iterable,
     return expr;
 }
 
+Expr* expr_spawn(Arena* arena, Expr* func, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(func != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_SPAWN;
+    expr->loc = loc;
+    expr->data.spawn_expr.func = func;
+
+    return expr;
+}
+
+Expr* expr_send(Arena* arena, Expr* pid, Expr* message, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(pid != NULL);
+    assert(message != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_SEND;
+    expr->loc = loc;
+    expr->data.send_expr.pid = pid;
+    expr->data.send_expr.message = message;
+
+    return expr;
+}
+
+Expr* expr_receive(Arena* arena, MatchArmVec* arms, Expr* after_timeout, Expr* after_body, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(arms != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_RECEIVE;
+    expr->loc = loc;
+    expr->data.receive_expr.arms = arms;
+    expr->data.receive_expr.after_timeout = after_timeout;
+    expr->data.receive_expr.after_body = after_body;
+
+    return expr;
+}
+
 Expr* expr_map(Arena* arena, MapEntryVec* entries, SourceLoc loc) {
     assert(arena != NULL);
     assert(entries != NULL);

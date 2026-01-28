@@ -61,6 +61,7 @@ typedef enum {
     TOKEN_SPAWN,        // spawn
     TOKEN_SEND,         // send
     TOKEN_RECEIVE,      // receive
+    TOKEN_AFTER,        // after
     
     /* Operators */
     TOKEN_PLUS,         // +

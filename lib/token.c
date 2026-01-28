@@ -51,6 +51,7 @@ const char* token_type_name(TokenType type) {
         case TOKEN_SPAWN: return "SPAWN";
         case TOKEN_SEND: return "SEND";
         case TOKEN_RECEIVE: return "RECEIVE";
+        case TOKEN_AFTER: return "AFTER";
         
         case TOKEN_PLUS: return "PLUS";
         case TOKEN_MINUS: return "MINUS";
@@ -101,7 +102,7 @@ const char* token_type_name(TokenType type) {
 }
 
 bool token_is_keyword(TokenType type) {
-    return type >= TOKEN_LET && type <= TOKEN_RECEIVE;
+    return type >= TOKEN_LET && type <= TOKEN_AFTER;
 }
 
 bool token_is_operator(TokenType type) {

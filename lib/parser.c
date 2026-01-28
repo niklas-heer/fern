@@ -502,6 +502,87 @@ static Expr* parse_primary_internal(Parser* parser) {
         return expr_ident(parser->arena, tok.text, tok.loc);
     }
     
+    // Spawn expression: spawn(expr)
+    if (match(parser, TOKEN_SPAWN)) {
+        SourceLoc loc = parser->previous.loc;
+        consume(parser, TOKEN_LPAREN, "Expected '(' after 'spawn'");
+        Expr* func = parse_expression(parser);
+        consume(parser, TOKEN_RPAREN, "Expected ')' after spawn argument");
+        return expr_spawn(parser->arena, func, loc);
+    }
+
+    // Send expression: send(pid, msg)
+    if (match(parser, TOKEN_SEND)) {
+        SourceLoc loc = parser->previous.loc;
+        consume(parser, TOKEN_LPAREN, "Expected '(' after 'send'");
+        Expr* pid = parse_expression(parser);
+        consume(parser, TOKEN_COMMA, "Expected ',' after pid in send");
+        Expr* message = parse_expression(parser);
+        consume(parser, TOKEN_RPAREN, "Expected ')' after send arguments");
+        return expr_send(parser->arena, pid, message, loc);
+    }
+
+    // Receive expression: receive: pattern -> body, ...
+    if (match(parser, TOKEN_RECEIVE)) {
+        SourceLoc loc = parser->previous.loc;
+        consume(parser, TOKEN_COLON, "Expected ':' after 'receive'");
+
+        MatchArmVec* arms = MatchArmVec_new(parser->arena);
+        Expr* after_timeout = NULL;
+        Expr* after_body = NULL;
+
+        do {
+            // Check for _ after timeout -> body
+            if (match(parser, TOKEN_UNDERSCORE)) {
+                if (match(parser, TOKEN_AFTER)) {
+                    after_timeout = parse_expression(parser);
+                    consume(parser, TOKEN_ARROW, "Expected '->' after timeout value");
+                    after_body = parse_expression(parser);
+                    break;
+                }
+                // Plain wildcard pattern arm
+                consume(parser, TOKEN_ARROW, "Expected '->' after '_'");
+                Expr* body = parse_expression(parser);
+                MatchArm arm;
+                arm.pattern = pattern_wildcard(parser->arena, parser->previous.loc);
+                arm.guard = NULL;
+                arm.body = body;
+                MatchArmVec_push(parser->arena, arms, arm);
+            } else {
+                Pattern* pattern = parse_pattern(parser);
+
+                Expr* guard = NULL;
+                if (match(parser, TOKEN_IF)) {
+                    guard = parse_expression(parser);
+                }
+
+                // Check for after on this arm
+                if (match(parser, TOKEN_AFTER)) {
+                    after_timeout = parse_expression(parser);
+                    consume(parser, TOKEN_ARROW, "Expected '->' after timeout value");
+                    after_body = parse_expression(parser);
+                    // Store the pattern arm too
+                    MatchArm arm;
+                    arm.pattern = pattern;
+                    arm.guard = guard;
+                    arm.body = after_body;
+                    MatchArmVec_push(parser->arena, arms, arm);
+                    break;
+                }
+
+                consume(parser, TOKEN_ARROW, "Expected '->' after receive pattern");
+                Expr* body = parse_expression(parser);
+                MatchArm arm;
+                arm.pattern = pattern;
+                arm.guard = guard;
+                arm.body = body;
+                MatchArmVec_push(parser->arena, arms, arm);
+            }
+        } while (match(parser, TOKEN_COMMA));
+
+        return expr_receive(parser->arena, arms, after_timeout, after_body, loc);
+    }
+
     // Match expression
     if (match(parser, TOKEN_MATCH)) {
         SourceLoc loc = parser->previous.loc;

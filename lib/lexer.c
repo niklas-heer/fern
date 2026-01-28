@@ -109,6 +109,7 @@ static TokenType identifier_type(const char* start, size_t length) {
         case 'a':
             if (length == 2) return check_keyword(start, length, "as", TOKEN_AS);
             if (length == 3) return check_keyword(start, length, "and", TOKEN_AND);
+            if (length == 5) return check_keyword(start, length, "after", TOKEN_AFTER);
             break;
         case 'd':
             if (length > 1) {
