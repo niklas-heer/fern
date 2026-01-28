@@ -2,6 +2,187 @@
 
 This guide contains critical information for AI-assisted development of the Fern compiler.
 
+## Development Workflow
+
+### CRITICAL: Test-Driven Development (TDD)
+
+**ALWAYS write tests BEFORE implementation. This is non-negotiable.**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ TDD Workflow (MUST FOLLOW)                              │
+├─────────────────────────────────────────────────────────┤
+│ 1. Read design.md - Understand the feature spec        │
+│ 2. Write test FIRST - What should the code do?         │
+│ 3. Run test - It should FAIL (red)                     │
+│ 4. Implement - Make it pass                            │
+│ 5. Run test - It should PASS (green)                   │
+│ 6. Update ROADMAP.md - Mark task complete              │
+│ 7. Commit - One feature at a time                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Example TDD Cycle:**
+
+```c
+// Step 1: Read design.md - "<- operator binds Result values"
+
+// Step 2: Write test FIRST (tests/test_lexer.c)
+void test_lex_bind_operator(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "content <- read_file(\"test\")");
+    
+    Token t1 = lexer_next(lex);
+    ASSERT_STR_EQ(string_cstr(t1.text), "content");
+    ASSERT_EQ(t1.type, TOKEN_IDENT);
+    
+    Token t2 = lexer_next(lex);
+    ASSERT_EQ(t2.type, TOKEN_BIND);  // <-
+    ASSERT_STR_EQ(string_cstr(t2.text), "<-");
+    
+    arena_destroy(arena);
+}
+
+// Step 3: Run test - FAILS (TOKEN_BIND doesn't exist yet)
+
+// Step 4: Implement
+typedef enum {
+    TOKEN_IDENT,
+    TOKEN_BIND,    // Add <- token
+    // ...
+} TokenType;
+
+Token lexer_next(Lexer* lex) {
+    // ... implementation to recognize <-
+}
+
+// Step 5: Run test - PASSES
+// Step 6: Update ROADMAP.md milestone progress
+// Step 7: Commit with message: "feat(lexer): add <- bind operator token"
+```
+
+### Required Reading Before Every Task
+
+1. **design.md** - Source of truth for Fern language features
+2. **ROADMAP.md** - Current milestone and task status
+3. **CLAUDE.md** (this file) - Safety guidelines and patterns
+
+**Before writing ANY code:**
+- [ ] Read relevant section of design.md
+- [ ] Check ROADMAP.md for current milestone
+- [ ] Write test based on design.md spec
+- [ ] Verify test fails (red)
+- [ ] Then implement
+
+### Updating ROADMAP.md
+
+**After completing each task:**
+
+```markdown
+<!-- Before -->
+- [ ] Implement <- operator lexing
+
+<!-- After -->
+- [x] Implement <- operator lexing (test_lex_bind_operator passes)
+```
+
+**After completing each milestone:**
+
+```markdown
+## Milestone 1: Lexer ✓ COMPLETE
+
+**Status**: ✓ All tests passing (45/45)
+**Completed**: 2024-01-28
+```
+
+### Pre-Commit Checklist
+
+Before every commit, verify:
+
+- [ ] All tests pass: `make test`
+- [ ] No compiler warnings: `make clean && make`
+- [ ] ROADMAP.md is updated with progress
+- [ ] Code follows design.md specification
+- [ ] Test was written BEFORE implementation
+- [ ] Commit message follows conventional commits
+
+### Commit Message Format
+
+```
+<type>(<scope>): <short summary>
+
+<detailed description>
+
+Tests:
+- test_name_1 passes
+- test_name_2 passes
+
+Refs: design.md section X.Y
+```
+
+**Types:**
+- `feat`: New feature implementation
+- `fix`: Bug fix
+- `test`: Adding tests (without implementation)
+- `refactor`: Code restructuring
+- `docs`: Documentation only
+- `chore`: Build system, tooling
+
+**Examples:**
+
+```
+feat(lexer): add <- bind operator token
+
+Implement lexing for the <- operator used in Result binding.
+This operator comes before the function call to make error
+handling visible at the call site.
+
+Tests:
+- test_lex_bind_operator passes
+
+Refs: design.md section 3.2 (Error Handling)
+```
+
+```
+test(parser): add tests for with expression
+
+Add comprehensive tests for with expression parsing before
+implementing the feature. All tests currently fail as expected.
+
+Tests:
+- test_parse_with_expression (FAILING - expected)
+- test_parse_with_else_clause (FAILING - expected)
+
+Refs: design.md section 3.2.2 (with expression)
+```
+
+### When Tests Fail
+
+**DO NOT:**
+- Modify the test to make it pass
+- Skip the failing test
+- Comment out assertions
+- Commit failing tests
+
+**DO:**
+- Fix the implementation to match the spec in design.md
+- If design.md is unclear, ask for clarification
+- Add more tests to isolate the issue
+- Use debugging tools (gdb, AddressSanitizer)
+
+### Directory Structure Reminder
+
+```
+fern/
+├── design.md           # ← SPECIFICATION (read this FIRST)
+├── ROADMAP.md          # ← TASKS (update after each task)
+├── CLAUDE.md           # ← THIS FILE (safety guidelines)
+├── src/                # Implementation code
+├── tests/              # Tests (write FIRST)
+├── lib/                # Safety libraries
+└── include/            # Header files
+```
+
 ## Language: C with Safety Libraries
 
 The Fern compiler is written in **C11** with modern safety libraries. This provides:

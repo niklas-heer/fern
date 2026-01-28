@@ -78,10 +78,27 @@ All tests should pass. If any test fails, please report it as a bug.
 
 ## Development Workflow
 
+### First Time Setup
+
+```bash
+# Install git hooks for automatic quality checks
+./scripts/install-hooks.sh
+```
+
+This installs a pre-commit hook that automatically:
+- Compiles code with strict warnings
+- Runs all tests
+- Checks for common mistakes (malloc/free, manual unions, etc.)
+- Reminds you to update ROADMAP.md
+
+### Daily Development
+
 1. Make changes to source code
-2. Run `make clean && make test` to verify
-3. Use `make memcheck` to check for memory leaks
-4. Format code with `make fmt` before committing
+2. Run `make test` to verify (or rely on pre-commit hook)
+3. Commit changes (pre-commit hook runs automatically)
+4. Update ROADMAP.md to track progress
+
+**Note:** The pre-commit hook will prevent commits if tests fail or code doesn't compile.
 
 ## Compiler Flags
 
