@@ -105,7 +105,7 @@ typedef struct {
     Expr* value;
 } CallArg;
 
-VEC_TYPE(CallArgVec, CallArg);
+VEC_TYPE(CallArgVec, CallArg)
 
 /* Function call */
 typedef struct {
@@ -126,7 +126,7 @@ typedef struct {
     Expr* body;
 } MatchArm;
 
-VEC_TYPE(MatchArmVec, MatchArm);
+VEC_TYPE(MatchArmVec, MatchArm)
 
 /* Match expression */
 typedef struct {
@@ -135,7 +135,7 @@ typedef struct {
 } MatchExpr;
 
 /* Block (sequence of statements + optional final expression) */
-VEC_TYPE(StmtVec, Stmt*);
+VEC_TYPE(StmtVec, Stmt*)
 
 typedef struct {
     StmtVec* stmts;
@@ -143,7 +143,7 @@ typedef struct {
 } BlockExpr;
 
 /* List literal */
-VEC_TYPE(ExprVec, Expr*);
+VEC_TYPE(ExprVec, Expr*)
 
 typedef struct {
     ExprVec* elements;
@@ -242,7 +242,7 @@ Expr* expr_bool_lit(Arena* arena, bool value, SourceLoc loc);
 Expr* expr_ident(Arena* arena, String* name, SourceLoc loc);
 Expr* expr_binary(Arena* arena, BinaryOp op, Expr* left, Expr* right, SourceLoc loc);
 Expr* expr_unary(Arena* arena, UnaryOp op, Expr* operand, SourceLoc loc);
-Expr* expr_call(Arena* arena, Expr* func, CallArgVec* args, SourceLoc loc);
+Expr* expr_call(Arena* arena, Expr* func, Expr** args, size_t num_args, SourceLoc loc);
 
 /* Create statements */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc);

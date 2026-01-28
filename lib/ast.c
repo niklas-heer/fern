@@ -85,16 +85,24 @@ Expr* expr_unary(Arena* arena, UnaryOp op, Expr* operand, SourceLoc loc) {
 }
 
 /* Create call expression */
-Expr* expr_call(Arena* arena, Expr* func, CallArgVec* args, SourceLoc loc) {
+Expr* expr_call(Arena* arena, Expr* func, Expr** args, size_t num_args, SourceLoc loc) {
     assert(arena != NULL);
     assert(func != NULL);
-    assert(args != NULL);
+    
+    // Create CallArgVec and populate with positional arguments
+    CallArgVec* arg_vec = CallArgVec_new(arena);
+    for (size_t i = 0; i < num_args; i++) {
+        CallArg arg;
+        arg.label = NULL;  // Positional argument
+        arg.value = args[i];
+        CallArgVec_push(arena, arg_vec, arg);
+    }
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
     expr->type = EXPR_CALL;
     expr->loc = loc;
     expr->data.call.func = func;
-    expr->data.call.args = args;
+    expr->data.call.args = arg_vec;
     
     return expr;
 }
