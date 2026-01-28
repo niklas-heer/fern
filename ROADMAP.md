@@ -544,7 +544,7 @@ tests/test_codegen.c       # All codegen tests in single file
   - [x] Ok/Err constructors (via runtime functions)
   - [x] for loops (iteration over lists)
   - [x] defer statements (LIFO cleanup before returns)
-  - [ ] with expressions
+  - [x] with expressions (Result binding with error paths)
   - [ ] Actor primitives (spawn, send, receive)
 
 - [x] Runtime library
@@ -558,7 +558,7 @@ tests/test_codegen.c       # All codegen tests in single file
   - [ ] libSQL bindings (if sql.open used)
 
 **Success Criteria:**
-- [x] Core codegen tests pass (36/36)
+- [x] Core codegen tests pass (38/38)
 - [ ] `fern build file.fn` creates executable
 - [ ] Generated code runs correctly
 - [ ] Binary sizes match targets (CLI <1MB, server <4MB)
