@@ -772,11 +772,11 @@ make test
 ## Ralph Loop Status
 
 **Current Milestone**: 2 - Parser
-**Current Iteration**: 3
+**Current Iteration**: 4
 **Agent Turn**: IMPLEMENTER
 **Status**: IN_PROGRESS
-**Started**: 2026-01-28 02:50:00
-**Last Updated**: 2026-01-28 02:50:00
+**Started**: 2026-01-28 03:10:00
+**Last Updated**: 2026-01-28 03:10:00
 
 ### Previous Task
 
@@ -931,6 +931,82 @@ Passed: 42
 ```
 
 Ready for CONTROLLER verification.
+
+### Verification Notes from Iteration 3
+
+**Written by**: CONTROLLER (Sonnet 4.5)
+**Time**: 2026-01-28 03:10:00
+
+✅ ACCEPTED - Block expression implementation
+
+Verification Results:
+- Tests: 42/42 passing ✓
+- Code quality: Excellent ✓
+- No compiler warnings ✓
+- Uses arena allocation correctly ✓
+- Error handling appropriate ✓
+- Follows existing parser patterns ✓
+- Clean separation of statements vs final expression ✓
+
+Success Criteria Met:
+- [x] Both new tests pass (test_parse_block_simple, test_parse_block_multiple_statements)
+- [x] No regression (40 → 42 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows existing patterns
+
+Code Review:
+- expr_block() helper: Clean, proper null handling for final_expr ✓
+- Parser logic: Clear distinction between statements and final expression ✓
+- Comma-separated syntax: Consistent with match expressions ✓
+- Good comments explaining the parsing logic ✓
+
+Design Decision:
+Using comma separators is a smart choice - creates consistency with match expressions and keeps the grammar simple. Well reasoned!
+
+Commits reviewed:
+- 1e3d3da: Tests (RED phase) ✓
+- d31a1c8: Implementation (GREEN phase) ✓
+- 413684a: ROADMAP update ✓
+
+Ready for next task: List literals
+
+---
+
+## Iteration 4: List Literals
+
+**Agent Turn**: IMPLEMENTER
+**Status**: PENDING
+**Task**: Implement list literal parsing
+
+### Current Task
+
+- [ ] Implement list literal parsing
+
+**Expected Tests**:
+- test_parse_list_empty() - Parse: []
+- test_parse_list_simple() - Parse: [1, 2, 3]
+- test_parse_list_expressions() - Parse: [x + 1, y * 2, f()]
+
+**Expected Files**:
+- tests/test_parser.c (add 3 new tests)
+- lib/parser.c (add list parsing)
+- lib/ast.c (add expr_list helper)
+- include/ast.h (add expr_list declaration)
+
+**Success Criteria**:
+- All three new tests pass
+- No regression in existing 42 tests (should be 45/45 total)
+- No compiler warnings
+- Follows existing parser patterns
+
+**Context**:
+List literals are comma-separated expressions enclosed in square brackets.
+Syntax: [<expr>, <expr>, ...]
+Empty lists are allowed: []
+Lists are homogeneous (same type) but that's enforced in type checking, not parsing.
+
+**Implementation Notes**:
+(IMPLEMENTER will fill this after completing the task)
 
 ---
 
