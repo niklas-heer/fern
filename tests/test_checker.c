@@ -363,6 +363,168 @@ void test_check_undefined_variable(void) {
     arena_destroy(arena);
 }
 
+/* ========== Function Call Tests ========== */
+
+/* Helper to type check with a pre-defined function in the environment */
+static Type* check_expr_with_fn(Arena* arena, const char* src,
+                                 const char* fn_name, Type* fn_type) {
+    Parser* parser = parser_new(arena, src);
+    Expr* expr = parse_expr(parser);
+    if (!expr || parser->had_error) return NULL;
+    
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, fn_name), fn_type);
+    return checker_infer_expr(checker, expr);
+}
+
+void test_check_call_no_args(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Define: fn get_value() -> Int
+    TypeVec* params = TypeVec_new(arena);
+    Type* fn_type = type_fn(arena, params, type_int(arena));
+    
+    Type* t = check_expr_with_fn(arena, "get_value()", "get_value", fn_type);
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_INT);
+    
+    arena_destroy(arena);
+}
+
+void test_check_call_with_args(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Define: fn add(Int, Int) -> Int
+    TypeVec* params = TypeVec_new(arena);
+    TypeVec_push(arena, params, type_int(arena));
+    TypeVec_push(arena, params, type_int(arena));
+    Type* fn_type = type_fn(arena, params, type_int(arena));
+    
+    Type* t = check_expr_with_fn(arena, "add(1, 2)", "add", fn_type);
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_INT);
+    
+    arena_destroy(arena);
+}
+
+void test_check_call_wrong_arg_count(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Define: fn add(Int, Int) -> Int
+    TypeVec* params = TypeVec_new(arena);
+    TypeVec_push(arena, params, type_int(arena));
+    TypeVec_push(arena, params, type_int(arena));
+    Type* fn_type = type_fn(arena, params, type_int(arena));
+    
+    Parser* parser = parser_new(arena, "add(1)");
+    Expr* expr = parse_expr(parser);
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "add"), fn_type);
+    Type* t = checker_infer_expr(checker, expr);
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_ERROR);
+    
+    arena_destroy(arena);
+}
+
+void test_check_call_wrong_arg_type(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Define: fn greet(String) -> String
+    TypeVec* params = TypeVec_new(arena);
+    TypeVec_push(arena, params, type_string(arena));
+    Type* fn_type = type_fn(arena, params, type_string(arena));
+    
+    Parser* parser = parser_new(arena, "greet(42)");
+    Expr* expr = parse_expr(parser);
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "greet"), fn_type);
+    Type* t = checker_infer_expr(checker, expr);
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_ERROR);
+    
+    arena_destroy(arena);
+}
+
+void test_check_call_not_a_function(void) {
+    Arena* arena = arena_create(4096);
+    
+    Parser* parser = parser_new(arena, "x(1)");
+    Expr* expr = parse_expr(parser);
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "x"), type_int(arena));
+    Type* t = checker_infer_expr(checker, expr);
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_ERROR);
+    
+    arena_destroy(arena);
+}
+
+/* ========== If Expression Tests ========== */
+
+void test_check_if_simple(void) {
+    Arena* arena = arena_create(4096);
+    
+    Type* t = check_expr(arena, "if true: 1 else: 2");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_INT);
+    
+    arena_destroy(arena);
+}
+
+void test_check_if_branch_mismatch(void) {
+    Arena* arena = arena_create(4096);
+    
+    const char* err = check_expr_error(arena, "if true: 1 else: \"hello\"");
+    
+    ASSERT_NOT_NULL(err);
+    // Should report that branches have different types
+    
+    arena_destroy(arena);
+}
+
+void test_check_if_non_bool_condition(void) {
+    Arena* arena = arena_create(4096);
+    
+    const char* err = check_expr_error(arena, "if 42: 1 else: 2");
+    
+    ASSERT_NOT_NULL(err);
+    // Should report that condition must be Bool
+    
+    arena_destroy(arena);
+}
+
+void test_check_if_no_else(void) {
+    Arena* arena = arena_create(4096);
+    
+    // if without else returns Unit
+    Type* t = check_expr(arena, "if true: 42");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_UNIT);
+    
+    arena_destroy(arena);
+}
+
+/* ========== Block Expression Tests ========== */
+
+void test_check_block_returns_final(void) {
+    Arena* arena = arena_create(4096);
+    
+    Type* t = check_expr(arena, "{ 42 }");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_INT);
+    
+    arena_destroy(arena);
+}
+
 /* ========== Test Runner ========== */
 
 void run_checker_tests(void) {
@@ -407,4 +569,20 @@ void run_checker_tests(void) {
     
     // Variables
     TEST_RUN(test_check_undefined_variable);
+    
+    // Function calls
+    TEST_RUN(test_check_call_no_args);
+    TEST_RUN(test_check_call_with_args);
+    TEST_RUN(test_check_call_wrong_arg_count);
+    TEST_RUN(test_check_call_wrong_arg_type);
+    TEST_RUN(test_check_call_not_a_function);
+    
+    // If expressions
+    TEST_RUN(test_check_if_simple);
+    TEST_RUN(test_check_if_branch_mismatch);
+    TEST_RUN(test_check_if_non_bool_condition);
+    TEST_RUN(test_check_if_no_else);
+    
+    // Block expressions
+    TEST_RUN(test_check_block_returns_final);
 }

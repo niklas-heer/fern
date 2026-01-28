@@ -261,6 +261,110 @@ static Type* check_tuple_expr(Checker* checker, TupleExpr* expr) {
     return type_tuple(checker->arena, elem_types);
 }
 
+/* ========== Function Call Type Checking ========== */
+
+static Type* check_call_expr(Checker* checker, CallExpr* expr) {
+    /* Infer the type of the callee */
+    Type* callee_type = checker_infer_expr(checker, expr->func);
+    if (callee_type->kind == TYPE_ERROR) return callee_type;
+    
+    /* Callee must be a function type */
+    if (callee_type->kind != TYPE_FN) {
+        return error_type(checker, "Cannot call non-function type %s",
+            string_cstr(type_to_string(checker->arena, callee_type)));
+    }
+    
+    TypeFn* fn = &callee_type->data.fn;
+    
+    /* Check argument count */
+    size_t expected_count = fn->params->len;
+    size_t actual_count = expr->args->len;
+    
+    if (actual_count != expected_count) {
+        return error_type(checker, "Expected %zu arguments, got %zu",
+            expected_count, actual_count);
+    }
+    
+    /* Check argument types */
+    for (size_t i = 0; i < actual_count; i++) {
+        Type* expected = fn->params->data[i];
+        Type* actual = checker_infer_expr(checker, expr->args->data[i].value);
+        
+        if (actual->kind == TYPE_ERROR) return actual;
+        
+        if (!type_assignable(actual, expected)) {
+            return error_type(checker, "Argument %zu: expected %s, got %s",
+                i + 1,
+                string_cstr(type_to_string(checker->arena, expected)),
+                string_cstr(type_to_string(checker->arena, actual)));
+        }
+    }
+    
+    return fn->result;
+}
+
+/* ========== If Expression Type Checking ========== */
+
+static Type* check_if_expr(Checker* checker, IfExpr* expr) {
+    /* Check condition is Bool */
+    Type* cond_type = checker_infer_expr(checker, expr->condition);
+    if (cond_type->kind == TYPE_ERROR) return cond_type;
+    
+    if (cond_type->kind != TYPE_BOOL) {
+        return error_type(checker, "If condition must be Bool, got %s",
+            string_cstr(type_to_string(checker->arena, cond_type)));
+    }
+    
+    /* Check then branch */
+    Type* then_type = checker_infer_expr(checker, expr->then_branch);
+    if (then_type->kind == TYPE_ERROR) return then_type;
+    
+    /* If no else branch, the whole expression returns Unit */
+    if (expr->else_branch == NULL) {
+        return type_unit(checker->arena);
+    }
+    
+    /* Check else branch */
+    Type* else_type = checker_infer_expr(checker, expr->else_branch);
+    if (else_type->kind == TYPE_ERROR) return else_type;
+    
+    /* Both branches must have the same type */
+    if (!type_equals(then_type, else_type)) {
+        return error_type(checker, "If branches have different types: %s vs %s",
+            string_cstr(type_to_string(checker->arena, then_type)),
+            string_cstr(type_to_string(checker->arena, else_type)));
+    }
+    
+    return then_type;
+}
+
+/* ========== Block Expression Type Checking ========== */
+
+static Type* check_block_expr(Checker* checker, BlockExpr* expr) {
+    /* Push a new scope for the block */
+    checker_push_scope(checker);
+    
+    /* Type check all statements in the block */
+    for (size_t i = 0; i < expr->stmts->len; i++) {
+        if (!checker_check_stmt(checker, expr->stmts->data[i])) {
+            checker_pop_scope(checker);
+            return type_error(checker->arena, 
+                string_new(checker->arena, "Statement type check failed"));
+        }
+    }
+    
+    /* The block's type is the type of the final expression, or Unit if none */
+    Type* result;
+    if (expr->final_expr != NULL) {
+        result = checker_infer_expr(checker, expr->final_expr);
+    } else {
+        result = type_unit(checker->arena);
+    }
+    
+    checker_pop_scope(checker);
+    return result;
+}
+
 /* ========== Main Type Inference ========== */
 
 Type* checker_infer_expr(Checker* checker, Expr* expr) {
@@ -298,11 +402,17 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
         case EXPR_TUPLE:
             return check_tuple_expr(checker, &expr->data.tuple);
             
-        /* TODO: Implement remaining expression types */
         case EXPR_CALL:
+            return check_call_expr(checker, &expr->data.call);
+            
         case EXPR_IF:
-        case EXPR_MATCH:
+            return check_if_expr(checker, &expr->data.if_expr);
+            
         case EXPR_BLOCK:
+            return check_block_expr(checker, &expr->data.block);
+            
+        /* TODO: Implement remaining expression types */
+        case EXPR_MATCH:
         case EXPR_BIND:
         case EXPR_WITH:
         case EXPR_DOT:
