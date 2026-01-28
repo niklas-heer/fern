@@ -176,11 +176,28 @@ struct Expr {
     } data;
 };
 
+/* Function parameter: name with type annotation */
+typedef struct {
+    String* name;
+    TypeExpr* type_ann;
+} Parameter;
+
+VEC_TYPE(ParameterVec, Parameter)
+
+/* Function definition */
+typedef struct {
+    String* name;
+    ParameterVec* params;
+    TypeExpr* return_type;  // NULL if no return type annotation
+    Expr* body;
+} FunctionDef;
+
 /* Statement types */
 typedef enum {
     STMT_LET,           // let x = expr
     STMT_RETURN,        // return expr
     STMT_EXPR,          // expression statement
+    STMT_FN,            // fn name(params) -> type: body
 } StmtType;
 
 /* Let statement */
@@ -208,6 +225,7 @@ struct Stmt {
         LetStmt let;
         ReturnStmt return_stmt;
         ExprStmt expr;
+        FunctionDef fn;
     } data;
 };
 
@@ -278,6 +296,7 @@ Expr* expr_bind(Arena* arena, String* name, Expr* value, SourceLoc loc);
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc);
 Stmt* stmt_return(Arena* arena, Expr* value, SourceLoc loc);
 Stmt* stmt_expr(Arena* arena, Expr* expr, SourceLoc loc);
+Stmt* stmt_fn(Arena* arena, String* name, ParameterVec* params, TypeExpr* return_type, Expr* body, SourceLoc loc);
 
 /* Create patterns */
 Pattern* pattern_ident(Arena* arena, String* name, SourceLoc loc);

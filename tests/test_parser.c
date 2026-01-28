@@ -721,6 +721,99 @@ void test_parse_bind_in_block(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse function definition with no parameters */
+void test_parse_function_no_params(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "fn main() -> (): Ok(())");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_FN);
+    ASSERT_STR_EQ(string_cstr(stmt->data.fn.name), "main");
+    ASSERT_NOT_NULL(stmt->data.fn.params);
+    ASSERT_EQ(stmt->data.fn.params->len, 0);
+
+    // Return type should be () - unit type
+    ASSERT_NOT_NULL(stmt->data.fn.return_type);
+
+    // Body should be a call expression: Ok(())
+    ASSERT_NOT_NULL(stmt->data.fn.body);
+    ASSERT_EQ(stmt->data.fn.body->type, EXPR_CALL);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse function definition with parameters */
+void test_parse_function_with_params(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "fn add(x: Int, y: Int) -> Int: x + y");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_FN);
+    ASSERT_STR_EQ(string_cstr(stmt->data.fn.name), "add");
+    ASSERT_NOT_NULL(stmt->data.fn.params);
+    ASSERT_EQ(stmt->data.fn.params->len, 2);
+
+    // First parameter: x: Int
+    Parameter p1 = ParameterVec_get(stmt->data.fn.params, 0);
+    ASSERT_STR_EQ(string_cstr(p1.name), "x");
+    ASSERT_NOT_NULL(p1.type_ann);
+    ASSERT_EQ(p1.type_ann->kind, TYPE_NAMED);
+    ASSERT_STR_EQ(string_cstr(p1.type_ann->data.named.name), "Int");
+
+    // Second parameter: y: Int
+    Parameter p2 = ParameterVec_get(stmt->data.fn.params, 1);
+    ASSERT_STR_EQ(string_cstr(p2.name), "y");
+    ASSERT_NOT_NULL(p2.type_ann);
+    ASSERT_EQ(p2.type_ann->kind, TYPE_NAMED);
+    ASSERT_STR_EQ(string_cstr(p2.type_ann->data.named.name), "Int");
+
+    // Return type: Int
+    ASSERT_NOT_NULL(stmt->data.fn.return_type);
+    ASSERT_EQ(stmt->data.fn.return_type->kind, TYPE_NAMED);
+    ASSERT_STR_EQ(string_cstr(stmt->data.fn.return_type->data.named.name), "Int");
+
+    // Body: x + y (binary expression)
+    ASSERT_NOT_NULL(stmt->data.fn.body);
+    ASSERT_EQ(stmt->data.fn.body->type, EXPR_BINARY);
+    ASSERT_EQ(stmt->data.fn.body->data.binary.op, BINOP_ADD);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse function definition with block body */
+void test_parse_function_with_body(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "fn double(x: Int) -> Int: { let result = x * 2, result }");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_FN);
+    ASSERT_STR_EQ(string_cstr(stmt->data.fn.name), "double");
+    ASSERT_NOT_NULL(stmt->data.fn.params);
+    ASSERT_EQ(stmt->data.fn.params->len, 1);
+
+    // Parameter: x: Int
+    Parameter p1 = ParameterVec_get(stmt->data.fn.params, 0);
+    ASSERT_STR_EQ(string_cstr(p1.name), "x");
+    ASSERT_NOT_NULL(p1.type_ann);
+    ASSERT_EQ(p1.type_ann->kind, TYPE_NAMED);
+    ASSERT_STR_EQ(string_cstr(p1.type_ann->data.named.name), "Int");
+
+    // Return type: Int
+    ASSERT_NOT_NULL(stmt->data.fn.return_type);
+    ASSERT_EQ(stmt->data.fn.return_type->kind, TYPE_NAMED);
+
+    // Body should be a block expression
+    ASSERT_NOT_NULL(stmt->data.fn.body);
+    ASSERT_EQ(stmt->data.fn.body->type, EXPR_BLOCK);
+    ASSERT_EQ(stmt->data.fn.body->data.block.stmts->len, 1);
+    ASSERT_NOT_NULL(stmt->data.fn.body->data.block.final_expr);
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -761,4 +854,7 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_type_result);
     TEST_RUN(test_parse_type_list);
     TEST_RUN(test_parse_type_function);
+    TEST_RUN(test_parse_function_no_params);
+    TEST_RUN(test_parse_function_with_params);
+    TEST_RUN(test_parse_function_with_body);
 }
