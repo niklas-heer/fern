@@ -139,7 +139,6 @@ Expr* expr_if(Arena* arena, Expr* condition, Expr* then_branch, Expr* else_branc
 /* Create match expression */
 Expr* expr_match(Arena* arena, Expr* value, MatchArmVec* arms, SourceLoc loc) {
     assert(arena != NULL);
-    assert(value != NULL);
     assert(arms != NULL);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));

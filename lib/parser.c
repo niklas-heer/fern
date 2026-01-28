@@ -489,30 +489,60 @@ static Expr* parse_primary_internal(Parser* parser) {
     if (match(parser, TOKEN_MATCH)) {
         SourceLoc loc = parser->previous.loc;
         
-        Expr* value = parse_expression(parser);
-        consume(parser, TOKEN_COLON, "Expected ':' after match value");
+        // Condition-only match: match: cond -> body, ...
+        // Value-based match: match value: pattern -> body, ...
+        Expr* value = NULL;
+        bool condition_only = false;
         
-        // Parse match arms: pattern -> expr, pattern -> expr, ...
+        if (match(parser, TOKEN_COLON)) {
+            // match: — no value, conditions as guards
+            condition_only = true;
+        } else {
+            value = parse_expression(parser);
+            consume(parser, TOKEN_COLON, "Expected ':' after match value");
+        }
+        
+        // Parse match arms
         MatchArmVec* arms = MatchArmVec_new(parser->arena);
         
         do {
-            Pattern* pattern = parse_pattern(parser);
-            
-            // Optional guard: pattern if condition -> body
-            Expr* guard = NULL;
-            if (match(parser, TOKEN_IF)) {
-                guard = parse_expression(parser);
-            }
+            if (condition_only) {
+                // Condition-only: each arm is condition -> body
+                // _ -> body is the default (wildcard, no guard)
+                Pattern* pattern = pattern_wildcard(parser->arena, parser->current.loc);
+                Expr* guard = NULL;
+                
+                if (!match(parser, TOKEN_UNDERSCORE)) {
+                    // Parse the condition as the guard
+                    guard = parse_expression(parser);
+                }
+                
+                consume(parser, TOKEN_ARROW, "Expected '->' after condition");
+                Expr* body = parse_expression(parser);
+                
+                MatchArm arm;
+                arm.pattern = pattern;
+                arm.guard = guard;
+                arm.body = body;
+                MatchArmVec_push(parser->arena, arms, arm);
+            } else {
+                Pattern* pattern = parse_pattern(parser);
+                
+                // Optional guard: pattern if condition -> body
+                Expr* guard = NULL;
+                if (match(parser, TOKEN_IF)) {
+                    guard = parse_expression(parser);
+                }
 
-            consume(parser, TOKEN_ARROW, "Expected '->' after match pattern");
-            Expr* body = parse_expression(parser);
-            
-            MatchArm arm;
-            arm.pattern = pattern;
-            arm.guard = guard;
-            arm.body = body;
-            MatchArmVec_push(parser->arena, arms, arm);
-            
+                consume(parser, TOKEN_ARROW, "Expected '->' after match pattern");
+                Expr* body = parse_expression(parser);
+                
+                MatchArm arm;
+                arm.pattern = pattern;
+                arm.guard = guard;
+                arm.body = body;
+                MatchArmVec_push(parser->arena, arms, arm);
+            }
         } while (match(parser, TOKEN_COMMA));
         
         return expr_match(parser->arena, value, arms, loc);

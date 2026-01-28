@@ -2285,6 +2285,57 @@ void test_parse_let_destructure_triple(void) {
     arena_destroy(arena);
 }
 
+/* Test: match: (condition-only, no value) */
+void test_parse_match_condition_only(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "match: x > 0 -> \"positive\", x < 0 -> \"negative\", _ -> \"zero\"");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_MATCH);
+    // value is NULL for condition-only match
+    ASSERT_NULL(expr->data.match_expr.value);
+
+    MatchArmVec* arms = expr->data.match_expr.arms;
+    ASSERT_EQ(arms->len, 3);
+
+    // First arm: x > 0 -> "positive" (wildcard pattern + guard)
+    MatchArm arm0 = MatchArmVec_get(arms, 0);
+    ASSERT_EQ(arm0.pattern->type, PATTERN_WILDCARD);
+    ASSERT_NOT_NULL(arm0.guard);
+    ASSERT_EQ(arm0.guard->type, EXPR_BINARY);
+    ASSERT_EQ(arm0.body->type, EXPR_STRING_LIT);
+
+    // Third arm: _ -> "zero" (wildcard, no guard)
+    MatchArm arm2 = MatchArmVec_get(arms, 2);
+    ASSERT_EQ(arm2.pattern->type, PATTERN_WILDCARD);
+    ASSERT_NULL(arm2.guard);
+
+    arena_destroy(arena);
+}
+
+/* Test: match: with complex conditions */
+void test_parse_match_condition_complex(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "match: x > 10 and y > 10 -> \"both\", _ -> \"other\"");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_MATCH);
+    ASSERT_NULL(expr->data.match_expr.value);
+
+    MatchArmVec* arms = expr->data.match_expr.arms;
+    ASSERT_EQ(arms->len, 2);
+
+    // First arm has a complex guard expression
+    MatchArm arm0 = MatchArmVec_get(arms, 0);
+    ASSERT_EQ(arm0.pattern->type, PATTERN_WILDCARD);
+    ASSERT_NOT_NULL(arm0.guard);
+    ASSERT_EQ(arm0.body->type, EXPR_STRING_LIT);
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -2402,4 +2453,6 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_let_destructure_tuple);
     TEST_RUN(test_parse_let_destructure_constructor);
     TEST_RUN(test_parse_let_destructure_triple);
+    TEST_RUN(test_parse_match_condition_only);
+    TEST_RUN(test_parse_match_condition_complex);
 }
