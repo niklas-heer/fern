@@ -599,7 +599,28 @@ void test_codegen_defer() {
 
 ## Milestone 5: Standard Library Core
 
+**Status:** 🚧 In Progress - Runtime library complete, stdlib modules pending
+**Tests:** 346 total
+
 **Goal:** Implement core stdlib modules
+
+### Completed Work
+
+**Runtime Library** (runtime/fern_runtime.c, runtime/fern_runtime.h):
+- [x] I/O functions: fern_print_int, fern_println_int, fern_print_str, fern_println_str
+- [x] String functions: fern_str_len, fern_str_concat, fern_str_eq
+- [x] List functions: fern_list_new, fern_list_push, fern_list_get, fern_list_len
+- [x] Built-in print/println registered in type checker
+- [x] Code generator emits calls to runtime functions
+- [x] Makefile builds libfern_runtime.a and links it automatically
+
+**Parser Indentation Support** (lib/parser.c):
+- [x] parse_indented_block() for multi-statement function bodies
+- [x] if/else branches use indented blocks
+- [x] match arms accept newline separation
+- [x] for loop bodies use indented blocks
+- [x] with expression bodies use indented blocks
+- [x] Fixed advance() to preserve token values when skipping layout tokens
 
 ### Priority Modules
 
