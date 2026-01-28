@@ -397,7 +397,8 @@ static Expr* parse_primary_internal(Parser* parser) {
         // Parse comma-separated statements/expressions: { stmt, stmt, expr }
         while (!check(parser, TOKEN_RBRACE)) {
             // Check if this is a statement (let/return) or expression
-            if (check(parser, TOKEN_LET) || check(parser, TOKEN_RETURN) || check(parser, TOKEN_DEFER)) {
+            if (check(parser, TOKEN_LET) || check(parser, TOKEN_RETURN) || check(parser, TOKEN_DEFER) ||
+                check(parser, TOKEN_BREAK) || check(parser, TOKEN_CONTINUE)) {
                 Stmt* stmt = parse_stmt(parser);
                 StmtVec_push(parser->arena, stmts, stmt);
                 
@@ -530,6 +531,34 @@ static Expr* parse_primary_internal(Parser* parser) {
         }
 
         return expr_with(parser->arena, bindings, body, else_arms, loc);
+    }
+
+    // For loop: for var in iterable: body
+    if (match(parser, TOKEN_FOR)) {
+        SourceLoc loc = parser->previous.loc;
+        Token var_tok = consume(parser, TOKEN_IDENT, "Expected variable name after 'for'");
+        consume(parser, TOKEN_IN, "Expected 'in' after for variable");
+        Expr* iterable = parse_expression(parser);
+        consume(parser, TOKEN_COLON, "Expected ':' after for iterable");
+        Expr* body = parse_expression(parser);
+        return expr_for(parser->arena, var_tok.text, iterable, body, loc);
+    }
+
+    // While loop: while condition: body
+    if (match(parser, TOKEN_WHILE)) {
+        SourceLoc loc = parser->previous.loc;
+        Expr* condition = parse_expression(parser);
+        consume(parser, TOKEN_COLON, "Expected ':' after while condition");
+        Expr* body = parse_expression(parser);
+        return expr_while(parser->arena, condition, body, loc);
+    }
+
+    // Infinite loop: loop: body
+    if (match(parser, TOKEN_LOOP)) {
+        SourceLoc loc = parser->previous.loc;
+        consume(parser, TOKEN_COLON, "Expected ':' after 'loop'");
+        Expr* body = parse_expression(parser);
+        return expr_loop(parser->arena, body, loc);
     }
 
     // Grouped expression
@@ -674,6 +703,24 @@ Stmt* parse_stmt(Parser* parser) {
         }
 
         return stmt_import(parser->arena, path, items, alias, loc);
+    }
+
+    // Break statement: break [value]
+    if (match(parser, TOKEN_BREAK)) {
+        SourceLoc loc = parser->previous.loc;
+        Expr* value = NULL;
+        // break can optionally have a value expression
+        if (!check(parser, TOKEN_EOF) && !check(parser, TOKEN_RBRACE) &&
+            !check(parser, TOKEN_COMMA)) {
+            value = parse_expression(parser);
+        }
+        return stmt_break(parser->arena, value, loc);
+    }
+
+    // Continue statement
+    if (match(parser, TOKEN_CONTINUE)) {
+        SourceLoc loc = parser->previous.loc;
+        return stmt_continue(parser->arena, loc);
     }
 
     // Defer statement: defer <expression>

@@ -38,6 +38,12 @@ const char* token_type_name(TokenType type) {
         case TOKEN_NOT: return "NOT";
         case TOKEN_AS: return "AS";
         case TOKEN_MODULE: return "MODULE";
+        case TOKEN_FOR: return "FOR";
+        case TOKEN_WHILE: return "WHILE";
+        case TOKEN_LOOP: return "LOOP";
+        case TOKEN_BREAK: return "BREAK";
+        case TOKEN_CONTINUE: return "CONTINUE";
+        case TOKEN_IN: return "IN";
         case TOKEN_SPAWN: return "SPAWN";
         case TOKEN_SEND: return "SEND";
         case TOKEN_RECEIVE: return "RECEIVE";

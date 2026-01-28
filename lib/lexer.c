@@ -117,11 +117,14 @@ static TokenType identifier_type(const char* start, size_t length) {
             }
             break;
         case 'e': return check_keyword(start, length, "else", TOKEN_ELSE);
+        case 'b': return check_keyword(start, length, "break", TOKEN_BREAK);
+        case 'c': return check_keyword(start, length, "continue", TOKEN_CONTINUE);
         case 'f':
             if (length > 1) {
                 switch (start[1]) {
                     case 'a': return check_keyword(start, length, "false", TOKEN_FALSE);
                     case 'n': return check_keyword(start, length, "fn", TOKEN_FN);
+                    case 'o': return check_keyword(start, length, "for", TOKEN_FOR);
                 }
             }
             break;
@@ -139,10 +142,14 @@ static TokenType identifier_type(const char* start, size_t length) {
                             }
                         }
                         break;
+                    case 'n': return check_keyword(start, length, "in", TOKEN_IN);
                 }
             }
             break;
-        case 'l': return check_keyword(start, length, "let", TOKEN_LET);
+        case 'l':
+            if (length == 3) return check_keyword(start, length, "let", TOKEN_LET);
+            if (length == 4) return check_keyword(start, length, "loop", TOKEN_LOOP);
+            break;
         case 'm':
             if (length == 5) return check_keyword(start, length, "match", TOKEN_MATCH);
             if (length == 6) return check_keyword(start, length, "module", TOKEN_MODULE);
@@ -179,7 +186,10 @@ static TokenType identifier_type(const char* start, size_t length) {
                 }
             }
             break;
-        case 'w': return check_keyword(start, length, "with", TOKEN_WITH);
+        case 'w':
+            if (length == 4) return check_keyword(start, length, "with", TOKEN_WITH);
+            if (length == 5) return check_keyword(start, length, "while", TOKEN_WHILE);
+            break;
     }
     
     return TOKEN_IDENT;

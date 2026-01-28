@@ -35,6 +35,9 @@ typedef enum {
     EXPR_LIST,          // [1, 2, 3]
     EXPR_BIND,          // x <- operation()
     EXPR_WITH,          // with x <- f(), y <- g(x) do Ok(y) else Err(e) -> e
+    EXPR_FOR,           // for item in iterable: body
+    EXPR_WHILE,         // while condition: body
+    EXPR_LOOP,          // loop: body
 } ExprType;
 
 /* Binary operators */
@@ -171,6 +174,24 @@ typedef struct {
     MatchArmVec* else_arms;  // NULL if no else clause
 } WithExpr;
 
+/* For loop expression: for var_name in iterable: body */
+typedef struct {
+    String* var_name;
+    Expr* iterable;
+    Expr* body;
+} ForExpr;
+
+/* While loop expression: while condition: body */
+typedef struct {
+    Expr* condition;
+    Expr* body;
+} WhileExpr;
+
+/* Loop expression (infinite): loop: body */
+typedef struct {
+    Expr* body;
+} LoopExpr;
+
 /* Expression node */
 struct Expr {
     ExprType type;
@@ -190,6 +211,9 @@ struct Expr {
         ListExpr list;
         BindExpr bind;
         WithExpr with_expr;
+        ForExpr for_loop;
+        WhileExpr while_loop;
+        LoopExpr loop;
     } data;
 };
 
@@ -273,6 +297,8 @@ typedef enum {
     STMT_IMPORT,        // import path.to.module
     STMT_DEFER,         // defer expr
     STMT_TYPE_DEF,      // type Name: variants/fields
+    STMT_BREAK,         // break [expr]
+    STMT_CONTINUE,      // continue
 } StmtType;
 
 /* Let statement */
@@ -304,6 +330,11 @@ typedef struct {
     Expr* expr;
 } DeferStmt;
 
+/* Break statement: break [value] */
+typedef struct {
+    Expr* value;        // NULL for bare break
+} BreakStmt;
+
 /* Statement node */
 struct Stmt {
     StmtType type;
@@ -316,6 +347,7 @@ struct Stmt {
         ImportDecl import;
         DeferStmt defer_stmt;
         TypeDef type_def;
+        BreakStmt break_stmt;
     } data;
 };
 
@@ -383,6 +415,9 @@ Expr* expr_block(Arena* arena, StmtVec* stmts, Expr* final_expr, SourceLoc loc);
 Expr* expr_list(Arena* arena, ExprVec* elements, SourceLoc loc);
 Expr* expr_bind(Arena* arena, String* name, Expr* value, SourceLoc loc);
 Expr* expr_with(Arena* arena, WithBindingVec* bindings, Expr* body, MatchArmVec* else_arms, SourceLoc loc);
+Expr* expr_for(Arena* arena, String* var_name, Expr* iterable, Expr* body, SourceLoc loc);
+Expr* expr_while(Arena* arena, Expr* condition, Expr* body, SourceLoc loc);
+Expr* expr_loop(Arena* arena, Expr* body, SourceLoc loc);
 
 /* Create statements */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc);
@@ -393,6 +428,8 @@ Stmt* stmt_import(Arena* arena, StringVec* path, StringVec* items, String* alias
 Stmt* stmt_defer(Arena* arena, Expr* expr, SourceLoc loc);
 Stmt* stmt_type_def(Arena* arena, String* name, bool is_public, StringVec* type_params,
                     TypeVariantVec* variants, TypeFieldVec* record_fields, SourceLoc loc);
+Stmt* stmt_break(Arena* arena, Expr* value, SourceLoc loc);
+Stmt* stmt_continue(Arena* arena, SourceLoc loc);
 
 /* Create patterns */
 Pattern* pattern_ident(Arena* arena, String* name, SourceLoc loc);

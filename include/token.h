@@ -48,6 +48,12 @@ typedef enum {
     TOKEN_NOT,          // not
     TOKEN_AS,           // as
     TOKEN_MODULE,       // module
+    TOKEN_FOR,          // for
+    TOKEN_WHILE,        // while
+    TOKEN_LOOP,         // loop
+    TOKEN_BREAK,        // break
+    TOKEN_CONTINUE,     // continue
+    TOKEN_IN,           // in
     TOKEN_SPAWN,        // spawn
     TOKEN_SEND,         // send
     TOKEN_RECEIVE,      // receive

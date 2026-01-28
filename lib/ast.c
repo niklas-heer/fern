@@ -209,6 +209,51 @@ Expr* expr_with(Arena* arena, WithBindingVec* bindings, Expr* body, MatchArmVec*
     return expr;
 }
 
+/* Create for loop expression */
+Expr* expr_for(Arena* arena, String* var_name, Expr* iterable, Expr* body, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(var_name != NULL);
+    assert(iterable != NULL);
+    assert(body != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_FOR;
+    expr->loc = loc;
+    expr->data.for_loop.var_name = var_name;
+    expr->data.for_loop.iterable = iterable;
+    expr->data.for_loop.body = body;
+
+    return expr;
+}
+
+/* Create while loop expression */
+Expr* expr_while(Arena* arena, Expr* condition, Expr* body, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(condition != NULL);
+    assert(body != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_WHILE;
+    expr->loc = loc;
+    expr->data.while_loop.condition = condition;
+    expr->data.while_loop.body = body;
+
+    return expr;
+}
+
+/* Create infinite loop expression */
+Expr* expr_loop(Arena* arena, Expr* body, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(body != NULL);
+
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_LOOP;
+    expr->loc = loc;
+    expr->data.loop.body = body;
+
+    return expr;
+}
+
 /* Create named type expression */
 TypeExpr* type_named(Arena* arena, String* name, TypeExprVec* args, SourceLoc loc) {
     assert(arena != NULL);
@@ -300,6 +345,29 @@ Stmt* stmt_type_def(Arena* arena, String* name, bool is_public, StringVec* type_
     stmt->data.type_def.type_params = type_params;
     stmt->data.type_def.variants = variants;
     stmt->data.type_def.record_fields = record_fields;
+
+    return stmt;
+}
+
+/* Create break statement */
+Stmt* stmt_break(Arena* arena, Expr* value, SourceLoc loc) {
+    assert(arena != NULL);
+
+    Stmt* stmt = arena_alloc(arena, sizeof(Stmt));
+    stmt->type = STMT_BREAK;
+    stmt->loc = loc;
+    stmt->data.break_stmt.value = value; // Can be NULL
+
+    return stmt;
+}
+
+/* Create continue statement */
+Stmt* stmt_continue(Arena* arena, SourceLoc loc) {
+    assert(arena != NULL);
+
+    Stmt* stmt = arena_alloc(arena, sizeof(Stmt));
+    stmt->type = STMT_CONTINUE;
+    stmt->loc = loc;
 
     return stmt;
 }
