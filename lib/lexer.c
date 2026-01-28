@@ -88,6 +88,7 @@ static void skip_horizontal_whitespace(Lexer* lex) {
 
 /* Helper: Skip a single-line comment (# ...) */
 static void skip_line_comment(Lexer* lex) {
+    // FERN_STYLE: allow(assertion-density) trivial loop bounded by line end
     assert(lex != NULL);
     while (!is_at_end(lex) && peek(lex) != '\n') {
         advance(lex);
@@ -96,6 +97,7 @@ static void skip_line_comment(Lexer* lex) {
 
 /* Helper: Skip a block comment */
 static void skip_block_comment(Lexer* lex) {
+    // FERN_STYLE: allow(assertion-density) trivial loop bounded by comment end
     assert(lex != NULL);
     advance(lex); // consume '/'
     advance(lex); // consume '*'
@@ -111,6 +113,7 @@ static void skip_block_comment(Lexer* lex) {
 
 /* Helper: Count indentation (spaces/tabs) at current position */
 static int count_indentation(Lexer* lex) {
+    // FERN_STYLE: allow(assertion-density) simple loop counting whitespace
     assert(lex != NULL);
     int indent = 0;
     const char* p = lex->current;
@@ -128,6 +131,7 @@ static int count_indentation(Lexer* lex) {
 
 /* Helper: Advance past indentation whitespace */
 static void consume_indentation(Lexer* lex) {
+    // FERN_STYLE: allow(assertion-density) simple whitespace consumer
     assert(lex != NULL);
     while (!is_at_end(lex) && (peek(lex) == ' ' || peek(lex) == '\t')) {
         advance(lex);
@@ -136,6 +140,7 @@ static void consume_indentation(Lexer* lex) {
 
 /* Helper: Check if byte starts a multi-byte UTF-8 sequence */
 static bool is_utf8_start(unsigned char c) {
+    // FERN_STYLE: allow(assertion-density) pure predicate with no state
     // UTF-8 multi-byte sequences start with 0b11xxxxxx (>= 0xC0)
     // Single-byte ASCII starts with 0b0xxxxxxx (< 0x80)
     return c >= 0xC0;
@@ -143,12 +148,14 @@ static bool is_utf8_start(unsigned char c) {
 
 /* Helper: Check if byte is a UTF-8 continuation byte */
 static bool is_utf8_cont(unsigned char c) {
+    // FERN_STYLE: allow(assertion-density) pure predicate with no state
     // UTF-8 continuation bytes are 0b10xxxxxx (0x80-0xBF)
     return (c & 0xC0) == 0x80;
 }
 
 /* Helper: Check if character is valid at start of identifier */
 static bool is_ident_start(char c) {
+    // FERN_STYLE: allow(assertion-density) pure predicate with no state
     unsigned char uc = (unsigned char)c;
     // ASCII letters and underscore
     if (isalpha(c) || c == '_') return true;
@@ -159,6 +166,7 @@ static bool is_ident_start(char c) {
 
 /* Helper: Check if character is valid in identifier (continuation) */
 static bool is_ident_cont(char c) {
+    // FERN_STYLE: allow(assertion-density) pure predicate with no state
     unsigned char uc = (unsigned char)c;
     // ASCII letters, digits, and underscore
     if (isalnum(c) || c == '_') return true;
@@ -442,6 +450,7 @@ static Token lex_string(Lexer* lex) {
 
 /* Helper: Skip all whitespace including newlines (for backward compatibility) */
 static void skip_whitespace(Lexer* lex) {
+    // FERN_STYLE: allow(assertion-density) simple whitespace skipper
     assert(lex != NULL);
     while (!is_at_end(lex)) {
         char c = peek(lex);
@@ -623,6 +632,7 @@ Token lexer_next(Lexer* lex) {
         
         // Skip blank lines and comment-only lines
         // Important: We must count indentation BEFORE consuming whitespace
+        // FERN_STYLE: allow(bounded-loops) loop bounded by source length via is_at_end
         while (!is_at_end(lex)) {
             // Count indentation at this line (before consuming anything)
             int line_indent = count_indentation(lex);

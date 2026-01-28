@@ -13,6 +13,9 @@ Checks:
 2. Maximum 70 lines per function
 3. No direct malloc/free usage (use arena)
 4. No unbounded loops (must have explicit limit)
+5. Function documentation required (doc comment before function)
+6. No manual tagged unions (use Datatype99)
+7. No raw char* for strings (use sds)
 
 Inline Exceptions:
     Add a comment in your function to suppress specific rules:
@@ -21,6 +24,8 @@ Inline Exceptions:
     // FERN_STYLE: allow(function-length) complex but cohesive logic
     // FERN_STYLE: allow(no-malloc) this IS the allocator
     // FERN_STYLE: allow(bounded-loops) loop bounded by input length
+    // FERN_STYLE: allow(doc-comment) trivial getter
+    // FERN_STYLE: allow(no-raw-char) interop with C library
 
 Usage:
     uv run scripts/check_style.py src/ lib/
@@ -66,6 +71,8 @@ class Function:
     has_unbounded_loop: bool
     has_malloc: bool
     has_free: bool
+    has_doc_comment: bool = False
+    has_raw_char_params: bool = False  # char* in parameters (should use sds)
     allowed_rules: set = field(default_factory=set)  # Rules to skip via inline comments
 
 
@@ -125,6 +132,82 @@ def find_c_files(directories: list[str]) -> Iterator[Path]:
 ALLOW_PATTERN = re.compile(r"(?://|/\*)\s*FERN_STYLE:\s*allow\(([^)]+)\)")
 
 
+def has_doc_comment_before(lines: list[str], func_line_idx: int) -> bool:
+    """Check if there's a documentation comment before the function.
+
+    Looks for:
+    - /** ... */ style (Doxygen/Javadoc)
+    - /* ... */ style multi-line comments
+    - /// style single-line doc comments
+
+    Returns True if a doc comment is found within 10 lines before the function.
+    """
+    # Look backwards from function definition
+    search_start = max(0, func_line_idx - 10)
+
+    for i in range(func_line_idx - 1, search_start - 1, -1):
+        line = lines[i].strip()
+
+        # Skip empty lines
+        if not line:
+            continue
+
+        # Found a doc comment ending
+        if line.endswith("*/"):
+            # Check if it's a proper doc comment (has content)
+            # Look for the start of this comment
+            for j in range(i, search_start - 1, -1):
+                check_line = lines[j].strip()
+                if check_line.startswith("/**") or check_line.startswith("/*"):
+                    # Found the start - check if it has meaningful content
+                    # A doc comment should have at least a description
+                    comment_lines = lines[j : i + 1]
+                    comment_text = " ".join(comment_lines)
+                    # Must have more than just /* */
+                    if len(comment_text.replace("/*", "").replace("*/", "").replace("*", "").strip()) > 5:
+                        return True
+                    return False
+            return False
+
+        # /// style doc comment
+        if line.startswith("///"):
+            return True
+
+        # If we hit actual code (not a comment), stop looking
+        if not line.startswith("//") and not line.startswith("*"):
+            return False
+
+    return False
+
+
+def check_raw_char_params(line: str) -> bool:
+    """Check if function has raw char* parameters (should use sds instead).
+
+    Excludes:
+    - const char* (acceptable for read-only strings from literals)
+    - char (single char, not pointer)
+    - argv patterns (main function)
+    """
+    # Extract the parameter list
+    param_match = re.search(r"\(([^)]*)\)", line)
+    if not param_match:
+        return False
+
+    params = param_match.group(1)
+
+    # Skip main function
+    if "argv" in params or "argc" in params:
+        return False
+
+    # Look for char* that isn't const char*
+    # Pattern: char followed by optional spaces and *
+    # But not preceded by "const "
+    if re.search(r"(?<!const\s)char\s*\*", params):
+        return True
+
+    return False
+
+
 def extract_functions(content: str, filepath: Path) -> list[Function]:
     """Extract function definitions from C source code."""
     functions = []
@@ -153,6 +236,12 @@ def extract_functions(content: str, filepath: Path) -> list[Function]:
         if match:
             func_name = match.group(1)
             start_line = i + 1  # 1-indexed
+
+            # Check for doc comment before function
+            has_doc = has_doc_comment_before(lines, i)
+
+            # Check for raw char* parameters
+            has_raw_char = check_raw_char_params(line)
 
             # Find the matching closing brace
             brace_count = 1
@@ -224,6 +313,8 @@ def extract_functions(content: str, filepath: Path) -> list[Function]:
                     has_unbounded_loop=has_unbounded_loop,
                     has_malloc=has_malloc,
                     has_free=has_free,
+                    has_doc_comment=has_doc,
+                    has_raw_char_params=has_raw_char,
                     allowed_rules=allowed_rules,
                 )
             )
@@ -233,6 +324,45 @@ def extract_functions(content: str, filepath: Path) -> list[Function]:
             i += 1
 
     return functions
+
+
+def check_manual_tagged_unions(content: str, filepath: Path) -> list[Violation]:
+    """Check for manual tagged union patterns (should use Datatype99).
+
+    Detects patterns like:
+        typedef struct {
+            enum { KIND_A, KIND_B } kind;
+            union { ... } data;
+        } MyType;
+
+    Or struct with 'tag' or 'kind' field followed by union.
+    """
+    violations = []
+    lines = content.split("\n")
+
+    # Look for suspicious patterns
+    for i, line in enumerate(lines):
+        # Check for file-level allow comment
+        if "FERN_STYLE: allow(no-tagged-union)" in content:
+            break
+
+        # Pattern 1: enum { ... } kind/tag/type inside struct
+        if re.search(r"\benum\s*\{[^}]+\}\s*(kind|tag|type)\s*;", line):
+            violations.append(
+                Violation(
+                    file=filepath,
+                    line=i + 1,
+                    function="",
+                    rule="no-tagged-union",
+                    message="Manual tagged union detected - use Datatype99 instead",
+                    severity="warning",
+                )
+            )
+
+        # Pattern 2: struct with .kind = or ->kind = assignment with union
+        # This is harder to detect reliably, skip for now
+
+    return violations
 
 
 def check_file(filepath: Path) -> list[Violation]:
@@ -252,6 +382,9 @@ def check_file(filepath: Path) -> list[Violation]:
             )
         )
         return violations
+
+    # File-level checks
+    violations.extend(check_manual_tagged_unions(content, filepath))
 
     functions = extract_functions(content, filepath)
 
@@ -314,6 +447,32 @@ def check_file(filepath: Path) -> list[Violation]:
                     function=func.name,
                     rule="bounded-loops",
                     message="Unbounded loop detected - add explicit limit",
+                    severity="warning",
+                )
+            )
+
+        # Rule 5: Function documentation required
+        if not func.has_doc_comment and "doc-comment" not in func.allowed_rules:
+            violations.append(
+                Violation(
+                    file=filepath,
+                    line=func.start_line,
+                    function=func.name,
+                    rule="doc-comment",
+                    message="Missing doc comment (add /** ... */ before function)",
+                    severity="warning",
+                )
+            )
+
+        # Rule 6: No raw char* parameters (use sds)
+        if func.has_raw_char_params and "no-raw-char" not in func.allowed_rules:
+            violations.append(
+                Violation(
+                    file=filepath,
+                    line=func.start_line,
+                    function=func.name,
+                    rule="no-raw-char",
+                    message="Raw char* parameter - use sds or const char* instead",
                     severity="warning",
                 )
             )
@@ -408,20 +567,25 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 FERN_STYLE Rules (TigerBeetle-inspired):
-  1. Minimum 2 assertions per function
-  2. Maximum 70 lines per function
-  3. No malloc/free (use arena allocation)
-  4. No unbounded loops (add explicit limits)
+  1. Minimum 2 assertions per function       [error]
+  2. Maximum 70 lines per function           [error]
+  3. No malloc/free (use arena allocation)   [error]
+  4. No unbounded loops (add explicit limits)[warning]
+  5. Function doc comments required          [warning]
+  6. No raw char* params (use sds)           [warning]
 
 Inline Exceptions:
   Add a comment inside the function to suppress specific rules:
     // FERN_STYLE: allow(assertion-density) simple helper
     // FERN_STYLE: allow(no-malloc, no-free) this IS the allocator
+    // FERN_STYLE: allow(doc-comment) trivial getter
+    // FERN_STYLE: allow(no-raw-char) C library interop
 
 Examples:
   uv run %(prog)s src/ lib/           Check all .c files
   uv run %(prog)s src/lexer.c         Check specific file
   uv run %(prog)s --summary src/      Show only summary
+  uv run %(prog)s --strict src/       Treat warnings as errors
         """,
     )
     parser.add_argument(

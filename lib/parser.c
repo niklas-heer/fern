@@ -48,6 +48,7 @@ bool parser_had_error(Parser* parser) {
 
 // Helper: Check if token is a layout token (NEWLINE/INDENT/DEDENT)
 static bool is_layout_token(TokenType type) {
+    // FERN_STYLE: allow(assertion-density) pure predicate with no state
     return type == TOKEN_NEWLINE || type == TOKEN_INDENT || type == TOKEN_DEDENT;
 }
 

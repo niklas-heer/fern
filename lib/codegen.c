@@ -91,8 +91,10 @@ static void push_defer(Codegen* cg, Expr* expr) {
 /* Emit all deferred expressions in reverse order (LIFO) */
 static void emit_defers(Codegen* cg) {
     assert(cg != NULL);
+    assert(cg->defer_count >= 0 && cg->defer_count <= MAX_DEFERS);
     /* Emit in reverse order: last defer runs first */
     for (int i = cg->defer_count - 1; i >= 0; i--) {
+        assert(cg->defer_stack[i] != NULL);
         codegen_expr(cg, cg->defer_stack[i]);
     }
 }
@@ -100,6 +102,7 @@ static void emit_defers(Codegen* cg) {
 /* Clear the defer stack (called at function boundaries) */
 static void clear_defers(Codegen* cg) {
     assert(cg != NULL);
+    assert(cg->defer_count >= 0);
     cg->defer_count = 0;
 }
 
@@ -668,6 +671,38 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
 
 /* ========== Statement Code Generation ========== */
 
+/* Generate code for a function definition */
+static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
+    assert(cg != NULL);
+    assert(fn != NULL);
+    
+    /* Clear defer stack at function start */
+    clear_defers(cg);
+    
+    /* Function header */
+    emit(cg, "export function w $%s(", string_cstr(fn->name));
+    
+    /* Parameters */
+    if (fn->params) {
+        for (size_t i = 0; i < fn->params->len; i++) {
+            if (i > 0) emit(cg, ", ");
+            emit(cg, "w %%%s", string_cstr(fn->params->data[i].name));
+        }
+    }
+    
+    emit(cg, ") {\n");
+    emit(cg, "@start\n");
+    
+    /* Function body */
+    String* result = codegen_expr(cg, fn->body);
+    
+    /* Emit deferred expressions before final return */
+    emit_defers(cg);
+    emit(cg, "    ret %s\n", string_cstr(result));
+    
+    emit(cg, "}\n\n");
+}
+
 void codegen_stmt(Codegen* cg, Stmt* stmt) {
     assert(cg != NULL);
     assert(stmt != NULL);
@@ -714,33 +749,7 @@ void codegen_stmt(Codegen* cg, Stmt* stmt) {
         }
         
         case STMT_FN: {
-            FunctionDef* fn = &stmt->data.fn;
-            
-            /* Clear defer stack at function start */
-            clear_defers(cg);
-            
-            /* Function header */
-            emit(cg, "export function w $%s(", string_cstr(fn->name));
-            
-            /* Parameters */
-            if (fn->params) {
-                for (size_t i = 0; i < fn->params->len; i++) {
-                    if (i > 0) emit(cg, ", ");
-                    emit(cg, "w %%%s", string_cstr(fn->params->data[i].name));
-                }
-            }
-            
-            emit(cg, ") {\n");
-            emit(cg, "@start\n");
-            
-            /* Function body */
-            String* result = codegen_expr(cg, fn->body);
-            
-            /* Emit deferred expressions before final return */
-            emit_defers(cg);
-            emit(cg, "    ret %s\n", string_cstr(result));
-            
-            emit(cg, "}\n\n");
+            codegen_fn_def(cg, &stmt->data.fn);
             break;
         }
         
