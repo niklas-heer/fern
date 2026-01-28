@@ -2,7 +2,7 @@
 
 > A statically-typed, functional language with Python aesthetics that compiles to single binaries.
 
-**Status:** 🚧 In active design phase - language specification in progress
+**Status:** 🚧 In active development - Milestone 0 complete, implementing lexer next
 
 ## What is Fern?
 
@@ -36,19 +36,26 @@ Ok(process(validated))
 
 ## Current Status
 
-We're currently designing the language specification. See [design.md](design.md) for the complete language design.
+We're implementing the compiler using test-driven development. See [DESIGN.md](DESIGN.md) for the complete language specification.
 
-**Next steps:**
-- [ ] Finalize language specification
-- [ ] Implement lexer and parser
-- [ ] Build type system
-- [ ] QBE code generation
-- [ ] Standard library
+**Completed:**
+- ✅ Language specification (DESIGN.md)
+- ✅ Build system and test infrastructure
+- ✅ Safety libraries (arena, strings, collections)
+- ✅ Development workflow and pre-commit hooks
+
+**Next:**
+- Lexer implementation (Milestone 1)
+- Parser implementation (Milestone 2)
+- See [ROADMAP.md](ROADMAP.md) for full plan
 
 ## Documentation
 
-- [Language Design](design.md) - Complete specification
-- [Development Guidelines](CLAUDE.md) - For contributors
+- [Language Design](DESIGN.md) - Complete specification
+- [Implementation Roadmap](ROADMAP.md) - Development plan
+- [Decision Log](DECISIONS.md) - Architectural decisions
+- [Development Guidelines](CLAUDE.md) - For AI-assisted development
+- [Build Instructions](BUILD.md) - How to build and test
 
 ## Inspiration
 
@@ -92,4 +99,15 @@ fn main() -> Result((), Error):
 
 ## Contributing
 
-Currently in design phase. Contributions to the language design are welcome via issues and discussions.
+We're actively implementing the compiler using AI-assisted test-driven development. See [CLAUDE.md](CLAUDE.md) for development workflow and guidelines.
+
+To get started:
+```bash
+# Install git hooks
+./scripts/install-hooks.sh
+
+# Build and test
+make test
+
+# See ROADMAP.md for current tasks
+```

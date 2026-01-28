@@ -110,7 +110,7 @@ if [ -f "$COMMIT_MSG_FILE" ]; then
 
     # Remind about DECISIONS.md for architectural changes
     if echo "$COMMIT_MSG" | grep -q "^feat"; then
-        if git diff --cached --name-only | grep -qE "include/|design.md"; then
+        if git diff --cached --name-only | grep -qE "include/|DESIGN.md"; then
             if ! git diff --cached --name-only | grep -q "DECISIONS.md"; then
                 echo -e "${YELLOW}⚠${NC}  Reminder: Did you make a design decision?"
                 echo "   If yes, document it: /decision DECISIONS.md | Title | Description"

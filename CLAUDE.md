@@ -12,7 +12,7 @@ This guide contains critical information for AI-assisted development of the Fern
 ┌─────────────────────────────────────────────────────────┐
 │ TDD Workflow (MUST FOLLOW)                              │
 ├─────────────────────────────────────────────────────────┤
-│ 1. Read design.md - Understand the feature spec        │
+│ 1. Read DESIGN.md - Understand the feature spec        │
 │ 2. Write test FIRST - What should the code do?         │
 │ 3. Run test - It should FAIL (red)                     │
 │ 4. Implement - Make it pass                            │
@@ -25,7 +25,7 @@ This guide contains critical information for AI-assisted development of the Fern
 **Example TDD Cycle:**
 
 ```c
-// Step 1: Read design.md - "<- operator binds Result values"
+// Step 1: Read DESIGN.md - "<- operator binds Result values"
 
 // Step 2: Write test FIRST (tests/test_lexer.c)
 void test_lex_bind_operator(void) {
@@ -63,15 +63,15 @@ Token lexer_next(Lexer* lex) {
 
 ### Required Reading Before Every Task
 
-1. **design.md** - Source of truth for Fern language features
+1. **DESIGN.md** - Source of truth for Fern language features
 2. **ROADMAP.md** - Current milestone and task status
 3. **DECISIONS.md** - Record of architectural decisions
 4. **CLAUDE.md** (this file) - Safety guidelines and patterns
 
 **Before writing ANY code:**
-- [ ] Read relevant section of design.md
+- [ ] Read relevant section of DESIGN.md
 - [ ] Check ROADMAP.md for current milestone
-- [ ] Write test based on design.md spec
+- [ ] Write test based on DESIGN.md spec
 - [ ] Verify test fails (red)
 - [ ] Then implement
 
@@ -143,7 +143,7 @@ Before every commit, verify:
 - [ ] All tests pass: `make test`
 - [ ] No compiler warnings: `make clean && make`
 - [ ] ROADMAP.md is updated with progress
-- [ ] Code follows design.md specification
+- [ ] Code follows DESIGN.md specification
 - [ ] Test was written BEFORE implementation
 - [ ] Commit message follows conventional commits
 - [ ] Significant decisions are documented in DECISIONS.md
@@ -159,7 +159,7 @@ Tests:
 - test_name_1 passes
 - test_name_2 passes
 
-Refs: design.md section X.Y
+Refs: DESIGN.md section X.Y
 ```
 
 **Types:**
@@ -182,7 +182,7 @@ handling visible at the call site.
 Tests:
 - test_lex_bind_operator passes
 
-Refs: design.md section 3.2 (Error Handling)
+Refs: DESIGN.md section 3.2 (Error Handling)
 ```
 
 ```
@@ -195,7 +195,7 @@ Tests:
 - test_parse_with_expression (FAILING - expected)
 - test_parse_with_else_clause (FAILING - expected)
 
-Refs: design.md section 3.2.2 (with expression)
+Refs: DESIGN.md section 3.2.2 (with expression)
 ```
 
 ### When Tests Fail
@@ -207,8 +207,8 @@ Refs: design.md section 3.2.2 (with expression)
 - Commit failing tests
 
 **DO:**
-- Fix the implementation to match the spec in design.md
-- If design.md is unclear, ask for clarification
+- Fix the implementation to match the spec in DESIGN.md
+- If DESIGN.md is unclear, ask for clarification
 - Add more tests to isolate the issue
 - Use debugging tools (gdb, AddressSanitizer)
 
@@ -216,11 +216,12 @@ Refs: design.md section 3.2.2 (with expression)
 
 ```
 fern/
-├── design.md           # ← SPECIFICATION (read this FIRST)
+├── DESIGN.md           # ← SPECIFICATION (read this FIRST)
 ├── ROADMAP.md          # ← TASKS (update after each task)
 ├── DECISIONS.md        # ← DECISIONS (document choices with /decision)
 ├── CLAUDE.md           # ← THIS FILE (safety guidelines)
 ├── BUILD.md            # ← Build instructions
+├── README.md           # ← Project overview
 ├── src/                # Implementation code
 ├── tests/              # Tests (write FIRST)
 ├── lib/                # Safety libraries

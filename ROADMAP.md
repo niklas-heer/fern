@@ -8,7 +8,7 @@ Each milestone follows this pattern:
 3. Iterate until tests pass
 4. Move to next milestone
 
-## Milestone 0: Project Setup (Week 1)
+## Milestone 0: Project Setup
 
 **Goal:** Set up build system and testing infrastructure
 
@@ -54,7 +54,7 @@ Each milestone follows this pattern:
 
 ---
 
-## Milestone 1: Lexer (Week 2-3)
+## Milestone 1: Lexer
 
 **Goal:** Tokenize Fern source code
 
@@ -124,7 +124,7 @@ tests/lexer/
 - All lexer tests pass
 - `fern lex file.fn` prints tokens
 - Error messages show correct position
-- Handles all syntax elements from design.md
+- Handles all syntax elements from DESIGN.md
 
 **Test Examples:**
 
@@ -160,7 +160,7 @@ void test_lex_string_interpolation() {
 
 ---
 
-## Milestone 2: Parser (Week 4-6)
+## Milestone 2: Parser
 
 **Goal:** Build AST from tokens
 
@@ -232,7 +232,7 @@ tests/parser/
 - All parser tests pass
 - `fern parse file.fn` prints AST
 - Error messages show parse issues
-- Handles all syntax from design.md
+- Handles all syntax from DESIGN.md
 
 **Test Examples:**
 
@@ -277,7 +277,7 @@ void test_parse_function_clauses_adjacent() {
 
 ---
 
-## Milestone 3: Type System (Week 7-10)
+## Milestone 3: Type System
 
 **Goal:** Type checking and inference
 
@@ -386,7 +386,7 @@ void test_infer_generic_list() {
 
 ---
 
-## Milestone 4: QBE Code Generation (Week 11-14)
+## Milestone 4: QBE Code Generation
 
 **Goal:** Generate QBE IR from AST
 
@@ -465,7 +465,7 @@ void test_codegen_defer() {
 
 ---
 
-## Milestone 5: Standard Library Core (Week 15-18)
+## Milestone 5: Standard Library Core
 
 **Goal:** Implement core stdlib modules
 
@@ -516,7 +516,7 @@ stdlib/
 
 ---
 
-## Milestone 6: CLI Tool (Week 19-20)
+## Milestone 6: CLI Tool
 
 **Goal:** Complete `fern` command-line interface
 
@@ -535,7 +535,7 @@ stdlib/
   ```
 
 - [ ] Implement helpful error messages
-  - [ ] All error types from design.md
+  - [ ] All error types from DESIGN.md
   - [ ] Color output
   - [ ] Code snippets with indicators
 
@@ -547,11 +547,11 @@ stdlib/
 **Success Criteria:**
 - Can compile and run Fern programs
 - Error messages are helpful
-- All examples from design.md work
+- All examples from DESIGN.md work
 
 ---
 
-## Milestone 7: Extended Standard Library (Week 21-24)
+## Milestone 7: Extended Standard Library
 
 **Goal:** Implement commonly-needed stdlib modules
 
@@ -576,7 +576,7 @@ stdlib/
 
 ---
 
-## Milestone 8: Actor Runtime (Week 25-28)
+## Milestone 8: Actor Runtime
 
 **Goal:** Implement actor-based concurrency
 
@@ -595,13 +595,13 @@ stdlib/
   - [ ] Supervision
 
 **Success Criteria:**
-- Actor examples from design.md work
+- Actor examples from DESIGN.md work
 - Binary includes runtime only when needed
 - Performance targets met
 
 ---
 
-## Milestone 9: Polish & Optimization (Week 29-32)
+## Milestone 9: Polish & Optimization
 
 **Goal:** Production-ready compiler
 
@@ -708,7 +708,7 @@ For each feature:
 ### Milestone 4-6 (Compiler)
 - [ ] Can compile to binary
 - [ ] Binary size < 1MB (CLI mode)
-- [ ] All examples from design.md work
+- [ ] All examples from DESIGN.md work
 
 ### Milestone 7-9 (Complete)
 - [ ] Standard library complete
