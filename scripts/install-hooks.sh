@@ -75,7 +75,24 @@ PASSED=$(grep "Passed:" /tmp/fern_test.log | awk '{print $2}')
 
 print_status 0 "All tests passing ($PASSED tests)"
 
-# 5. Check for common mistakes
+# 5. Run FERN_STYLE checker
+echo -e "\n📐 Checking FERN_STYLE compliance..."
+if command -v uv &> /dev/null; then
+    if ! uv run scripts/check_style.py lib/ src/ 2>&1 | tee /tmp/fern_style.log | grep -q "All files pass"; then
+        # Check if there are actual errors (not just warnings)
+        if grep -q "error" /tmp/fern_style.log 2>/dev/null; then
+            echo -e "${RED}✗ FERN_STYLE violations found${NC}"
+            cat /tmp/fern_style.log
+            exit 1
+        fi
+    fi
+    print_status 0 "FERN_STYLE compliance"
+else
+    echo -e "${YELLOW}⚠${NC}  Warning: uv not installed, skipping FERN_STYLE check"
+    echo "   Install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+fi
+
+# 6. Check for common mistakes
 echo -e "\n🔎 Checking for common mistakes..."
 
 # Check for malloc/free (should use arena)
@@ -95,7 +112,7 @@ if echo "$CODE_FILES" | xargs grep -n "enum.*kind\|\.kind\s*=" 2>/dev/null | gre
     echo -e "${YELLOW}⚠${NC}  Warning: Found manual tagged union - consider using Result macros"
 fi
 
-# 6. Verify ROADMAP.md and DECISIONS.md updates
+# 7. Verify ROADMAP.md and DECISIONS.md updates
 COMMIT_MSG_FILE=".git/COMMIT_EDITMSG"
 if [ -f "$COMMIT_MSG_FILE" ]; then
     COMMIT_MSG=$(cat "$COMMIT_MSG_FILE" 2>/dev/null || echo "")
@@ -119,7 +136,7 @@ if [ -f "$COMMIT_MSG_FILE" ]; then
     fi
 fi
 
-# 7. Summary
+# 8. Summary
 echo -e "\n${GREEN}✓ All pre-commit checks passed!${NC}"
 echo ""
 echo "Summary:"
@@ -138,6 +155,7 @@ echo ""
 echo "The hook will run automatically on every commit and check:"
 echo "  - Code compiles without warnings"
 echo "  - All tests pass"
+echo "  - FERN_STYLE compliance (requires uv)"
 echo "  - No common mistakes (malloc/free, char*, etc.)"
 echo "  - ROADMAP.md is updated for feature commits"
 echo ""
