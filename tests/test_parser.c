@@ -328,6 +328,61 @@ void test_parse_block_multiple_statements(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse empty list */
+void test_parse_list_empty(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "[]");
+    
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_LIST);
+    ASSERT_NOT_NULL(expr->data.list.elements);
+    ASSERT_EQ(expr->data.list.elements->len, 0);
+    
+    arena_destroy(arena);
+}
+
+/* Test: Parse simple list */
+void test_parse_list_simple(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "[1, 2, 3]");
+    
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_LIST);
+    ASSERT_NOT_NULL(expr->data.list.elements);
+    ASSERT_EQ(expr->data.list.elements->len, 3);
+    
+    // Check first element
+    Expr* first = ExprVec_get(expr->data.list.elements, 0);
+    ASSERT_EQ(first->type, EXPR_INT_LIT);
+    ASSERT_EQ(first->data.int_lit.value, 1);
+    
+    arena_destroy(arena);
+}
+
+/* Test: Parse list with expressions */
+void test_parse_list_expressions(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "[x + 1, y * 2, f()]");
+    
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_LIST);
+    ASSERT_NOT_NULL(expr->data.list.elements);
+    ASSERT_EQ(expr->data.list.elements->len, 3);
+    
+    // Check first element is binary expression
+    Expr* first = ExprVec_get(expr->data.list.elements, 0);
+    ASSERT_EQ(first->type, EXPR_BINARY);
+    
+    // Check third element is function call
+    Expr* third = ExprVec_get(expr->data.list.elements, 2);
+    ASSERT_EQ(third->type, EXPR_CALL);
+    
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -349,4 +404,7 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_match_with_default);
     TEST_RUN(test_parse_block_simple);
     TEST_RUN(test_parse_block_multiple_statements);
+    TEST_RUN(test_parse_list_empty);
+    TEST_RUN(test_parse_list_simple);
+    TEST_RUN(test_parse_list_expressions);
 }
