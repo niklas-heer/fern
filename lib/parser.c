@@ -312,6 +312,43 @@ static Expr* parse_primary_internal(Parser* parser) {
         return expr_ident(parser->arena, tok.text, tok.loc);
     }
     
+    // Match expression
+    if (match(parser, TOKEN_MATCH)) {
+        SourceLoc loc = parser->previous.loc;
+        
+        Expr* value = parse_expression(parser);
+        consume(parser, TOKEN_COLON, "Expected ':' after match value");
+        
+        // Parse match arms: pattern -> expr, pattern -> expr, ...
+        MatchArmVec* arms = MatchArmVec_new(parser->arena);
+        
+        do {
+            // Parse pattern
+            Pattern* pattern;
+            if (match(parser, TOKEN_UNDERSCORE)) {
+                pattern = pattern_wildcard(parser->arena, parser->previous.loc);
+            } else {
+                // For now, just parse literal patterns
+                Expr* pattern_expr = parse_primary_internal(parser);
+                pattern = arena_alloc(parser->arena, sizeof(Pattern));
+                pattern->type = PATTERN_LIT;
+                pattern->loc = pattern_expr->loc;
+                pattern->data.literal = pattern_expr;
+            }
+            
+            consume(parser, TOKEN_ARROW, "Expected '->' after match pattern");
+            Expr* body = parse_expression(parser);
+            
+            MatchArm arm;
+            arm.pattern = pattern;
+            arm.body = body;
+            MatchArmVec_push(parser->arena, arms, arm);
+            
+        } while (match(parser, TOKEN_COMMA));
+        
+        return expr_match(parser->arena, value, arms, loc);
+    }
+    
     // If expression
     if (match(parser, TOKEN_IF)) {
         SourceLoc loc = parser->previous.loc;

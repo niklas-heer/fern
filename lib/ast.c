@@ -124,6 +124,21 @@ Expr* expr_if(Arena* arena, Expr* condition, Expr* then_branch, Expr* else_branc
     return expr;
 }
 
+/* Create match expression */
+Expr* expr_match(Arena* arena, Expr* value, MatchArmVec* arms, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(value != NULL);
+    assert(arms != NULL);
+    
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_MATCH;
+    expr->loc = loc;
+    expr->data.match_expr.value = value;
+    expr->data.match_expr.arms = arms;
+    
+    return expr;
+}
+
 /* Create let statement */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc) {
     assert(arena != NULL);

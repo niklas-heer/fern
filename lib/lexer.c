@@ -188,6 +188,12 @@ static Token lex_identifier(Lexer* lex) {
     }
     
     size_t length = lex->current - start;
+    
+    // Special case: bare underscore is TOKEN_UNDERSCORE, not an identifier
+    if (length == 1 && start[0] == '_') {
+        return make_token(lex, TOKEN_UNDERSCORE, start, lex->current);
+    }
+    
     TokenType type = identifier_type(start, length);
     
     return make_token(lex, type, start, lex->current);
