@@ -1247,7 +1247,13 @@ Stmt* parse_stmt(Parser* parser) {
         // Parse value
         Expr* value = parse_expression(parser);
         
-        return stmt_let(parser->arena, pattern, type_ann, value, loc);
+        // Optional else clause: let Some(x) = val else: fallback
+        Stmt* let_stmt = stmt_let(parser->arena, pattern, type_ann, value, loc);
+        if (match(parser, TOKEN_ELSE)) {
+            consume(parser, TOKEN_COLON, "Expected ':' after else");
+            let_stmt->data.let.else_expr = parse_expression(parser);
+        }
+        return let_stmt;
     }
     
     // Return statement

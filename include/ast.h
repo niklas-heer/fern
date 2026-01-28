@@ -393,6 +393,7 @@ typedef struct {
     Pattern* pattern;
     TypeExpr* type_ann;  // NULL if no type annotation
     Expr* value;
+    Expr* else_expr;     // NULL unless let-else: let Some(x) = val else: fallback
 } LetStmt;
 
 /* Return statement */

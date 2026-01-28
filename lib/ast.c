@@ -527,6 +527,7 @@ Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, 
     stmt->data.let.pattern = pattern;
     stmt->data.let.type_ann = type_ann;
     stmt->data.let.value = value;
+    stmt->data.let.else_expr = NULL;
     
     return stmt;
 }

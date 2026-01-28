@@ -2452,6 +2452,37 @@ void test_parse_list_comp_filter(void) {
     arena_destroy(arena);
 }
 
+/* Test: let Some(x) = val else: fallback — let-else pattern */
+void test_parse_let_else(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "let Some(x) = input else: default_val");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_LET);
+    ASSERT_EQ(stmt->data.let.pattern->type, PATTERN_CONSTRUCTOR);
+    ASSERT_STR_EQ(string_cstr(stmt->data.let.pattern->data.constructor.name), "Some");
+    ASSERT_NOT_NULL(stmt->data.let.value);
+    ASSERT_NOT_NULL(stmt->data.let.else_expr);
+    ASSERT_EQ(stmt->data.let.else_expr->type, EXPR_IDENT);
+
+    arena_destroy(arena);
+}
+
+/* Test: let (a, b) = pair else: fallback — let-else with tuple pattern */
+void test_parse_let_else_tuple(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "let (a, b) = val else: default_val");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_LET);
+    ASSERT_EQ(stmt->data.let.pattern->type, PATTERN_TUPLE);
+    ASSERT_NOT_NULL(stmt->data.let.else_expr);
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -2578,4 +2609,6 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_tuple_field_chain);
     TEST_RUN(test_parse_list_comp);
     TEST_RUN(test_parse_list_comp_filter);
+    TEST_RUN(test_parse_let_else);
+    TEST_RUN(test_parse_let_else_tuple);
 }
