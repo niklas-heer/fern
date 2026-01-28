@@ -282,6 +282,11 @@ static Token lex_string_segment(Lexer* lex, TokenType if_interp, TokenType if_en
     const char* start = lex->current;
 
     while (!is_at_end(lex) && peek(lex) != '"' && peek(lex) != '{') {
+        if (peek(lex) == '\\') {
+            advance(lex);  // consume backslash
+            if (!is_at_end(lex)) advance(lex);  // consume escaped char
+            continue;
+        }
         advance(lex);
     }
 
@@ -307,6 +312,11 @@ static Token lex_string(Lexer* lex) {
     const char* start = lex->current;  // After opening quote
 
     while (!is_at_end(lex) && peek(lex) != '"' && peek(lex) != '{') {
+        if (peek(lex) == '\\') {
+            advance(lex);  // consume backslash
+            if (!is_at_end(lex)) advance(lex);  // consume escaped char
+            continue;
+        }
         advance(lex);
     }
 

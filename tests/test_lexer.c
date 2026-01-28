@@ -330,6 +330,39 @@ void test_lex_string_no_interpolation(void) {
     arena_destroy(arena);
 }
 
+void test_lex_string_escape(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "\"hello\\nworld\"");
+
+    Token t1 = lexer_next(lex);
+    ASSERT_EQ(t1.type, TOKEN_STRING);
+    ASSERT_STR_EQ(string_cstr(t1.text), "hello\\nworld");
+
+    arena_destroy(arena);
+}
+
+void test_lex_string_escaped_quote(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "\"say \\\"hi\\\"\"");
+
+    Token t1 = lexer_next(lex);
+    ASSERT_EQ(t1.type, TOKEN_STRING);
+    ASSERT_STR_EQ(string_cstr(t1.text), "say \\\"hi\\\"");
+
+    arena_destroy(arena);
+}
+
+void test_lex_string_escaped_brace(void) {
+    Arena* arena = arena_create(4096);
+    Lexer* lex = lexer_new(arena, "\"\\{not interp}\"");
+
+    Token t1 = lexer_next(lex);
+    ASSERT_EQ(t1.type, TOKEN_STRING);
+    ASSERT_STR_EQ(string_cstr(t1.text), "\\{not interp}");
+
+    arena_destroy(arena);
+}
+
 void test_lex_hex_literal(void) {
     Arena* arena = arena_create(4096);
     Lexer* lex = lexer_new(arena, "0xFF");
@@ -382,6 +415,9 @@ void run_lexer_tests(void) {
     TEST_RUN(test_lex_loop_keywords);
     TEST_RUN(test_lex_string_interpolation);
     TEST_RUN(test_lex_string_no_interpolation);
+    TEST_RUN(test_lex_string_escape);
+    TEST_RUN(test_lex_string_escaped_quote);
+    TEST_RUN(test_lex_string_escaped_brace);
     TEST_RUN(test_lex_hex_literal);
     TEST_RUN(test_lex_binary_literal);
     TEST_RUN(test_lex_octal_literal);
