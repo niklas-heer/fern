@@ -468,6 +468,75 @@ void test_parse_block_in_list(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse simple pipe expression (x |> f()) */
+void test_parse_pipe_simple(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "x |> double()");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_BINARY);
+    ASSERT_EQ(expr->data.binary.op, BINOP_PIPE);
+
+    // Left side: identifier x
+    ASSERT_EQ(expr->data.binary.left->type, EXPR_IDENT);
+    ASSERT_STR_EQ(string_cstr(expr->data.binary.left->data.ident.name), "x");
+
+    // Right side: function call double()
+    ASSERT_EQ(expr->data.binary.right->type, EXPR_CALL);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse chained pipe expression (x |> f() |> g()) */
+void test_parse_pipe_chain(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "data |> parse() |> validate()");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+
+    // Should parse as left-associative: (data |> parse()) |> validate()
+    ASSERT_EQ(expr->type, EXPR_BINARY);
+    ASSERT_EQ(expr->data.binary.op, BINOP_PIPE);
+
+    // Right side: validate() call
+    ASSERT_EQ(expr->data.binary.right->type, EXPR_CALL);
+
+    // Left side: data |> parse()
+    Expr* left = expr->data.binary.left;
+    ASSERT_EQ(left->type, EXPR_BINARY);
+    ASSERT_EQ(left->data.binary.op, BINOP_PIPE);
+    ASSERT_EQ(left->data.binary.left->type, EXPR_IDENT);
+    ASSERT_STR_EQ(string_cstr(left->data.binary.left->data.ident.name), "data");
+    ASSERT_EQ(left->data.binary.right->type, EXPR_CALL);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse pipe expression inside block */
+void test_parse_pipe_in_block(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "{ let result = x |> double(), result }");
+
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+    ASSERT_EQ(expr->type, EXPR_BLOCK);
+    ASSERT_EQ(expr->data.block.stmts->len, 1);
+
+    // The let statement value should be a pipe expression
+    Stmt* let_stmt = StmtVec_get(expr->data.block.stmts, 0);
+    ASSERT_EQ(let_stmt->type, STMT_LET);
+    ASSERT_EQ(let_stmt->data.let.value->type, EXPR_BINARY);
+    ASSERT_EQ(let_stmt->data.let.value->data.binary.op, BINOP_PIPE);
+
+    // Final expression should be the identifier
+    ASSERT_NOT_NULL(expr->data.block.final_expr);
+    ASSERT_EQ(expr->data.block.final_expr->type, EXPR_IDENT);
+
+    arena_destroy(arena);
+}
+
 /* Test: Parse simple bind expression (x <- f()) */
 void test_parse_bind_simple(void) {
     Arena* arena = arena_create(4096);
@@ -552,6 +621,9 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_nested_lists);
     TEST_RUN(test_parse_list_in_block);
     TEST_RUN(test_parse_block_in_list);
+    TEST_RUN(test_parse_pipe_simple);
+    TEST_RUN(test_parse_pipe_chain);
+    TEST_RUN(test_parse_pipe_in_block);
     TEST_RUN(test_parse_bind_simple);
     TEST_RUN(test_parse_bind_with_call);
     TEST_RUN(test_parse_bind_in_block);
