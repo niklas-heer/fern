@@ -19,3 +19,7 @@ vgcore.*
 
 # Test outputs
 *.log
+
+# Python
+__pycache__/
+*.pyc
