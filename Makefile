@@ -107,6 +107,16 @@ memcheck: debug
 fmt:
 	clang-format -i $(SRC_DIR)/*.c $(INCLUDE_DIR)/*.h $(TEST_DIR)/*.c
 
+# Check FERN_STYLE compliance
+.PHONY: style
+style:
+	@python3 scripts/check_style.py $(SRC_DIR) $(LIB_DIR)
+
+# Check FERN_STYLE with strict mode (warnings are errors)
+.PHONY: style-strict
+style-strict:
+	@python3 scripts/check_style.py --strict $(SRC_DIR) $(LIB_DIR)
+
 # Help
 .PHONY: help
 help:
@@ -121,4 +131,6 @@ help:
 	@echo "  make uninstall    - Remove installed fern"
 	@echo "  make memcheck     - Run with Valgrind"
 	@echo "  make fmt          - Format code with clang-format"
+	@echo "  make style        - Check FERN_STYLE compliance"
+	@echo "  make style-strict - Check FERN_STYLE (warnings are errors)"
 	@echo "  make help         - Show this help message"
