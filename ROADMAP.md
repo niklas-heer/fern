@@ -1813,10 +1813,77 @@ Passed: 101
 
 ---
 
+## Iteration 18: Loop Constructs
+
+**Agent Turn**: CONTROLLER + IMPLEMENTER
+**Status**: COMPLETE ✅ VERIFIED
+**Task**: Implement loop constructs (for, while, loop, break, continue)
+
+### Completed Task
+
+- [x] Implement loop construct lexing and parsing ✅ VERIFIED
+
+**Tests Written**:
+- test_lex_loop_keywords() - Lex: for, while, loop, break, continue, in keywords ✓
+- test_parse_for_loop() - Parse: `for item in items: process(item)` ✓
+- test_parse_while_loop() - Parse: `while x < 10: process(x)` ✓
+- test_parse_loop() - Parse: `loop: process()` ✓
+- test_parse_break() - Parse: `break` (bare) ✓
+- test_parse_break_with_value() - Parse: `break 42` (with value) ✓
+- test_parse_continue() - Parse: `continue` ✓
+
+**Files Modified**:
+- tests/test_lexer.c (added 1 new test)
+- tests/test_parser.c (added 6 new tests)
+- include/token.h (added TOKEN_FOR, TOKEN_WHILE, TOKEN_LOOP, TOKEN_BREAK, TOKEN_CONTINUE, TOKEN_IN)
+- lib/token.c (added token name strings)
+- lib/lexer.c (added keyword recognition for 6 new keywords)
+- include/ast.h (added ForExpr, WhileExpr, LoopExpr, BreakStmt, EXPR_FOR/WHILE/LOOP, STMT_BREAK/CONTINUE)
+- lib/ast.c (added expr_for, expr_while, expr_loop, stmt_break, stmt_continue helpers)
+- lib/parser.c (added loop expression and break/continue statement parsing)
+
+**Success Criteria Met**:
+- [x] All 7 new tests pass
+- [x] No regression in existing tests (101 → 108 tests, all passing)
+- [x] No compiler warnings
+- [x] Follows TDD workflow (RED → GREEN)
+
+### Implementation Notes
+
+**Written by**: IMPLEMENTER (Opus 4.5)
+**Time**: 2026-01-28
+
+Implementation completed with TDD workflow:
+1. RED phase: Added 7 failing tests for loop constructs (6303edf)
+2. GREEN phase: Implemented loop lexing and parsing (8dad7a8)
+
+**Lexer Changes:**
+- Added 6 new keyword tokens: for, while, loop, break, continue, in
+- Added keyword recognition in identifier_type() for b/c/f/i/l/w cases
+
+**AST Changes:**
+- Added ForExpr (var_name, iterable, body), WhileExpr (condition, body), LoopExpr (body)
+- Added BreakStmt (optional value) for break with value expressions
+- Added EXPR_FOR, EXPR_WHILE, EXPR_LOOP expression types
+- Added STMT_BREAK, STMT_CONTINUE statement types
+
+**Parser Changes:**
+- For/while/loop parsed as expressions in parse_primary_internal()
+- Break/continue parsed as statements in parse_stmt()
+- Added break/continue to block statement detection condition
+
+Test Results:
+```
+Total:  108
+Passed: 108
+```
+
+---
+
 ## Ralph Loop Status
 
 **Current Milestone**: 2 - Parser (+ Lexer enhancements)
-**Current Iteration**: 17
+**Current Iteration**: 18
 **Agent Turn**: COMPLETE
 **Status**: COMPLETE ✅
 **Started**: 2026-01-28
@@ -1824,7 +1891,7 @@ Passed: 101
 
 ### Previous Task
 
-- [x] Implement float literal lexing and parsing ✅ VERIFIED
+- [x] Implement type definition parsing ✅ VERIFIED
 
 ### Completed Task
 
