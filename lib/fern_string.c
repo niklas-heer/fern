@@ -12,6 +12,13 @@ struct String {
     char data[];
 };
 
+/**
+ * Create a new string from data with explicit length.
+ * @param arena The arena for allocation.
+ * @param data The source data.
+ * @param len The length in bytes.
+ * @return The new string or NULL on failure.
+ */
 String* string_new_len(Arena* arena, const char* data, size_t len) {
     assert(arena != NULL);
     assert(data != NULL || len == 0);
@@ -30,6 +37,12 @@ String* string_new_len(Arena* arena, const char* data, size_t len) {
     return s;
 }
 
+/**
+ * Create a new string from a null-terminated C string.
+ * @param arena The arena for allocation.
+ * @param cstr The null-terminated source string.
+ * @return The new string or NULL on failure.
+ */
 String* string_new(Arena* arena, const char* cstr) {
     assert(arena != NULL);
     assert(cstr != NULL);
@@ -37,6 +50,11 @@ String* string_new(Arena* arena, const char* cstr) {
     return string_new_len(arena, cstr, strlen(cstr));
 }
 
+/**
+ * Create an empty string.
+ * @param arena The arena for allocation.
+ * @return The new empty string.
+ */
 String* string_empty(Arena* arena) {
     assert(arena != NULL);
     String* result = string_new_len(arena, "", 0);
@@ -44,24 +62,46 @@ String* string_empty(Arena* arena) {
     return result;
 }
 
+/**
+ * Get the null-terminated C string data.
+ * @param s The string.
+ * @return The C string data.
+ */
 const char* string_cstr(const String* s) {
     assert(s != NULL);
     assert(s->data != NULL);
     return s->data;
 }
 
+/**
+ * Get the length of the string in bytes.
+ * @param s The string.
+ * @return The length in bytes.
+ */
 size_t string_len(const String* s) {
     assert(s != NULL);
     assert(s->data != NULL);
     return s->len;
 }
 
+/**
+ * Check if the string is empty.
+ * @param s The string.
+ * @return True if empty.
+ */
 bool string_is_empty(const String* s) {
     assert(s != NULL);
     assert(s->data != NULL);
     return s->len == 0;
 }
 
+/**
+ * Concatenate two strings into a new string.
+ * @param arena The arena for allocation.
+ * @param a The first string.
+ * @param b The second string.
+ * @return The concatenated string or NULL on failure.
+ */
 String* string_concat(Arena* arena, const String* a, const String* b) {
     assert(arena != NULL);
     assert(a != NULL);
@@ -81,6 +121,12 @@ String* string_concat(Arena* arena, const String* a, const String* b) {
     return result;
 }
 
+/**
+ * Check if two strings are equal.
+ * @param a The first string.
+ * @param b The second string.
+ * @return True if equal.
+ */
 bool string_equal(const String* a, const String* b) {
     assert(a != NULL);
     assert(b != NULL);
@@ -92,6 +138,12 @@ bool string_equal(const String* a, const String* b) {
     return memcmp(a->data, b->data, a->len) == 0;
 }
 
+/**
+ * Compare two strings lexicographically.
+ * @param a The first string.
+ * @param b The second string.
+ * @return Negative if a < b, 0 if equal, positive if a > b.
+ */
 int string_compare(const String* a, const String* b) {
     assert(a != NULL);
     assert(b != NULL);
@@ -113,6 +165,13 @@ int string_compare(const String* a, const String* b) {
     }
 }
 
+/**
+ * Create a formatted string using printf-style format.
+ * @param arena The arena for allocation.
+ * @param fmt The format string.
+ * @param ... The format arguments.
+ * @return The formatted string or NULL on failure.
+ */
 String* string_format(Arena* arena, const char* fmt, ...) {
     assert(arena != NULL);
     assert(fmt != NULL);

@@ -25,7 +25,12 @@ static Token consume(Parser* parser, TokenType type, const char* message);
 static void error_at_current(Parser* parser, const char* message);
 static Pattern* parse_pattern(Parser* parser);
 
-// Parser lifecycle
+/**
+ * Create a new parser for the given source code.
+ * @param arena The arena to allocate from.
+ * @param source The source code to parse.
+ * @return The new parser.
+ */
 Parser* parser_new(Arena* arena, const char* source) {
     // FERN_STYLE: allow(assertion-density) simple constructor with obvious invariants
     Parser* parser = arena_alloc(arena, sizeof(Parser));
@@ -41,18 +46,30 @@ Parser* parser_new(Arena* arena, const char* source) {
     return parser;
 }
 
+/**
+ * Check if the parser encountered any errors.
+ * @param parser The parser to check.
+ * @return True if errors occurred, false otherwise.
+ */
 bool parser_had_error(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) trivial accessor
     return parser->had_error;
 }
 
-// Helper: Check if token is a layout token (NEWLINE/INDENT/DEDENT)
+/**
+ * Check if token is a layout token (NEWLINE/INDENT/DEDENT).
+ * @param type The token type to check.
+ * @return True if it is a layout token, false otherwise.
+ */
 static bool is_layout_token(TokenType type) {
     // FERN_STYLE: allow(assertion-density) pure predicate with no state
     return type == TOKEN_NEWLINE || type == TOKEN_INDENT || type == TOKEN_DEDENT;
 }
 
-// Helper functions
+/**
+ * Advance to the next token.
+ * @param parser The parser to advance.
+ */
 static void advance(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) trivial state update
     parser->previous = parser->current;
@@ -65,11 +82,23 @@ static void advance(Parser* parser) {
     }
 }
 
+/**
+ * Check if current token is of the given type.
+ * @param parser The parser to check.
+ * @param type The expected token type.
+ * @return True if current token matches, false otherwise.
+ */
 static bool check(Parser* parser, TokenType type) {
     // FERN_STYLE: allow(assertion-density) trivial token check
     return parser->current.type == type;
 }
 
+/**
+ * Match and consume a token if it's of the given type.
+ * @param parser The parser to use.
+ * @param type The expected token type.
+ * @return True if matched and consumed, false otherwise.
+ */
 static bool match(Parser* parser, TokenType type) {
     // FERN_STYLE: allow(assertion-density) trivial token match
     if (!check(parser, type)) return false;
@@ -77,6 +106,13 @@ static bool match(Parser* parser, TokenType type) {
     return true;
 }
 
+/**
+ * Consume a token of the given type, or report an error.
+ * @param parser The parser to use.
+ * @param type The expected token type.
+ * @param message The error message if token doesn't match.
+ * @return The consumed token.
+ */
 static Token consume(Parser* parser, TokenType type, const char* message) {
     // FERN_STYLE: allow(assertion-density) simple consume-or-error pattern
     if (parser->current.type == type) {
@@ -95,7 +131,12 @@ static Token consume(Parser* parser, TokenType type, const char* message) {
     return parser->current;
 }
 
-// Get the start of line N (1-indexed) in source
+/**
+ * Get the start of line N (1-indexed) in source.
+ * @param source The source code string.
+ * @param target_line The line number to find (1-indexed).
+ * @return Pointer to the start of the target line.
+ */
 static const char* get_line_start(const char* source, size_t target_line) {
     // FERN_STYLE: allow(assertion-density) simple string scan helper
     if (target_line <= 1) return source;
@@ -109,7 +150,11 @@ static const char* get_line_start(const char* source, size_t target_line) {
     return p;
 }
 
-// Get the length of the current line (up to newline or EOF)
+/**
+ * Get the length of the current line (up to newline or EOF).
+ * @param line_start Pointer to the start of the line.
+ * @return The length of the line.
+ */
 static size_t get_line_length(const char* line_start) {
     // FERN_STYLE: allow(assertion-density) simple string length helper
     size_t len = 0;
@@ -119,6 +164,11 @@ static size_t get_line_length(const char* line_start) {
     return len;
 }
 
+/**
+ * Report an error at the current token.
+ * @param parser The parser reporting the error.
+ * @param message The error message to display.
+ */
 static void error_at_current(Parser* parser, const char* message) {
     // FERN_STYLE: allow(assertion-density) error reporting function
     if (parser->panic_mode) return;
@@ -161,13 +211,20 @@ static void error_at_current(Parser* parser, const char* message) {
 
 // Expression parsing (operator precedence climbing)
 
-// Binary operator mapping for generic operator parsing
+/** Binary operator mapping for generic operator parsing. */
 typedef struct {
     TokenType token;
     BinaryOp op;
 } BinOpMapping;
 
-// Generic left-associative binary operator parser
+/**
+ * Generic left-associative binary operator parser.
+ * @param parser The parser to use.
+ * @param next_prec Function to parse the next precedence level.
+ * @param ops Array of operator mappings.
+ * @param op_count Number of operators in the array.
+ * @return The parsed expression.
+ */
 static Expr* parse_binary_left(
     Parser* parser,
     Expr* (*next_prec)(Parser*),
@@ -193,24 +250,42 @@ static Expr* parse_binary_left(
     return expr;
 }
 
+/**
+ * Parse an expression (top-level entry point).
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 Expr* parse_expr(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) trivial delegation
     return parse_expression(parser);
 }
 
+/**
+ * Parse an expression with full precedence.
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 static Expr* parse_expression(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) trivial delegation
     return parse_pipe(parser);
 }
 
-// Precedence: pipe (lowest)
+/**
+ * Parse pipe expressions (lowest precedence).
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 static Expr* parse_pipe(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) simple precedence level
     static const BinOpMapping ops[] = {{TOKEN_PIPE, BINOP_PIPE}};
     return parse_binary_left(parser, parse_range, ops, 1);
 }
 
-// Precedence: range (above logical, below pipe)
+/**
+ * Parse range expressions (a..b or a..=b).
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 static Expr* parse_range(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) simple precedence level
     Expr* expr = parse_logical_or(parser);
@@ -228,21 +303,33 @@ static Expr* parse_range(Parser* parser) {
     return expr;
 }
 
-// Precedence: or
+/**
+ * Parse logical OR expressions.
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 static Expr* parse_logical_or(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) simple precedence level
     static const BinOpMapping ops[] = {{TOKEN_OR, BINOP_OR}};
     return parse_binary_left(parser, parse_logical_and, ops, 1);
 }
 
-// Precedence: and
+/**
+ * Parse logical AND expressions.
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 static Expr* parse_logical_and(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) simple precedence level
     static const BinOpMapping ops[] = {{TOKEN_AND, BINOP_AND}};
     return parse_binary_left(parser, parse_equality, ops, 1);
 }
 
-// Precedence: == !=
+/**
+ * Parse equality expressions (== !=).
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 static Expr* parse_equality(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) simple precedence level
     static const BinOpMapping ops[] = {
@@ -252,7 +339,11 @@ static Expr* parse_equality(Parser* parser) {
     return parse_binary_left(parser, parse_comparison, ops, 2);
 }
 
-// Precedence: < <= > >=
+/**
+ * Parse comparison expressions (< <= > >=).
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 static Expr* parse_comparison(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) simple precedence level
     static const BinOpMapping ops[] = {
@@ -264,7 +355,11 @@ static Expr* parse_comparison(Parser* parser) {
     return parse_binary_left(parser, parse_term, ops, 4);
 }
 
-// Precedence: + -
+/**
+ * Parse additive expressions (+ -).
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 static Expr* parse_term(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) simple precedence level
     static const BinOpMapping ops[] = {
@@ -274,9 +369,13 @@ static Expr* parse_term(Parser* parser) {
     return parse_binary_left(parser, parse_factor, ops, 2);
 }
 
-// Precedence: * / %
 static Expr* parse_power(Parser* parser);
 
+/**
+ * Parse multiplicative expressions (* / %).
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 static Expr* parse_factor(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) simple precedence level
     static const BinOpMapping ops[] = {
@@ -287,7 +386,11 @@ static Expr* parse_factor(Parser* parser) {
     return parse_binary_left(parser, parse_power, ops, 3);
 }
 
-// Precedence: ** (right-associative)
+/**
+ * Parse power expressions (** right-associative).
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 static Expr* parse_power(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) simple precedence level
     Expr* expr = parse_unary(parser);
@@ -301,7 +404,11 @@ static Expr* parse_power(Parser* parser) {
     return expr;
 }
 
-// Precedence: unary - !
+/**
+ * Parse unary expressions (- !).
+ * @param parser The parser to use.
+ * @return The parsed expression.
+ */
 static Expr* parse_unary(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) simple precedence level
     if (match(parser, TOKEN_MINUS)) {
@@ -319,14 +426,24 @@ static Expr* parse_unary(Parser* parser) {
     return parse_call(parser);
 }
 
-// Postfix operator: try (?)
+/**
+ * Parse postfix try operator (?).
+ * @param parser The parser to use.
+ * @param expr The expression to apply the operator to.
+ * @return The try expression.
+ */
 static Expr* parse_postfix_try(Parser* parser, Expr* expr) {
     // FERN_STYLE: allow(assertion-density) trivial postfix operator
     SourceLoc loc = parser->previous.loc;
     return expr_try(parser->arena, expr, loc);
 }
 
-// Postfix operator: index access ([])
+/**
+ * Parse postfix index access ([]).
+ * @param parser The parser to use.
+ * @param expr The expression being indexed.
+ * @return The index expression.
+ */
 static Expr* parse_postfix_index(Parser* parser, Expr* expr) {
     // FERN_STYLE: allow(assertion-density) trivial postfix operator
     SourceLoc loc = parser->previous.loc;
@@ -335,7 +452,12 @@ static Expr* parse_postfix_index(Parser* parser, Expr* expr) {
     return expr_index(parser->arena, expr, index, loc);
 }
 
-// Postfix operator: dot access (.)
+/**
+ * Parse postfix dot access (.).
+ * @param parser The parser to use.
+ * @param expr The expression being accessed.
+ * @return The dot access expression.
+ */
 static Expr* parse_postfix_dot(Parser* parser, Expr* expr) {
     // FERN_STYLE: allow(assertion-density) trivial postfix operator
     SourceLoc loc = parser->previous.loc;
@@ -363,7 +485,12 @@ static Expr* parse_postfix_dot(Parser* parser, Expr* expr) {
     return expr_dot(parser->arena, expr, field_tok.text, loc);
 }
 
-// Postfix operator: function call (())
+/**
+ * Parse postfix function call (()).
+ * @param parser The parser to use.
+ * @param expr The function expression being called.
+ * @return The call expression.
+ */
 static Expr* parse_postfix_call(Parser* parser, Expr* expr) {
     // FERN_STYLE: allow(assertion-density, bounded-loops) loop bounded by argument count
     SourceLoc loc = parser->previous.loc;
@@ -401,7 +528,11 @@ static Expr* parse_postfix_call(Parser* parser, Expr* expr) {
     return call;
 }
 
-// Precedence: postfix operators (call, dot, index, try)
+/**
+ * Parse postfix operators (call, dot, index, try).
+ * @param parser The parser to use.
+ * @return The parsed expression with all postfix operators applied.
+ */
 static Expr* parse_call(Parser* parser) {
     // FERN_STYLE: allow(assertion-density, bounded-loops) loop bounded by postfix chain length
     Expr* expr = parse_primary_internal(parser);
@@ -423,13 +554,21 @@ static Expr* parse_call(Parser* parser) {
     return expr;
 }
 
-// Primary expressions
+/**
+ * Parse primary expressions (entry point for primary parsing).
+ * @param parser The parser to use.
+ * @return The parsed primary expression.
+ */
 Expr* parse_primary(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) trivial delegation
     return parse_primary_internal(parser);
 }
 
-// Parse a pattern: _, identifier, literal, or constructor (Name(sub_patterns))
+/**
+ * Parse a pattern: _, identifier, literal, or constructor.
+ * @param parser The parser to use.
+ * @return The parsed pattern.
+ */
 static Pattern* parse_pattern(Parser* parser) {
     // FERN_STYLE: allow(assertion-density, function-length, bounded-loops) complex pattern parsing
     if (match(parser, TOKEN_UNDERSCORE)) {
@@ -504,6 +643,11 @@ static Pattern* parse_pattern(Parser* parser) {
     return pat;
 }
 
+/**
+ * Parse primary expressions (internal implementation).
+ * @param parser The parser to use.
+ * @return The parsed primary expression.
+ */
 static Expr* parse_primary_internal(Parser* parser) {
     // FERN_STYLE: allow(assertion-density, function-length, bounded-loops) main parsing entry point handles all expression types
     // Integer literal
@@ -1000,8 +1144,11 @@ static Expr* parse_primary_internal(Parser* parser) {
     return expr_int_lit(parser->arena, 0, parser->current.loc);
 }
 
-// Type parsing
-// Parses type annotations: Int, String, Result(String, Error), (Int, String) -> Bool
+/**
+ * Parse type annotations (Int, Result(T, E), (A, B) -> C).
+ * @param parser The parser to use.
+ * @return The parsed type expression.
+ */
 TypeExpr* parse_type(Parser* parser) {
     // Parenthesized type: either () unit type or (params) -> return function type
     if (match(parser, TOKEN_LPAREN)) {
@@ -1050,9 +1197,11 @@ TypeExpr* parse_type(Parser* parser) {
     return type_named(parser->arena, name_tok.text, args, loc);
 }
 
-// Detect whether the current fn parameter list uses typed params (name: Type)
-// or pattern params (pattern-based dispatch). Call after consuming '('.
-// Returns true if params are typed (single-clause style).
+/**
+ * Detect if fn params are typed (name: Type) or pattern-based.
+ * @param parser The parser to check.
+ * @return True if params are typed, false if pattern-based.
+ */
 static bool is_typed_params(Parser* parser) {
     // Empty params: () — treat as single-clause
     if (check(parser, TOKEN_RPAREN)) return true;
@@ -1067,7 +1216,11 @@ static bool is_typed_params(Parser* parser) {
     return false;
 }
 
-// Statement parsing
+/**
+ * Parse a single statement.
+ * @param parser The parser to use.
+ * @return The parsed statement.
+ */
 Stmt* parse_stmt(Parser* parser) {
     // Module declaration: module math.geometry
     if (match(parser, TOKEN_MODULE)) {
@@ -1500,9 +1653,11 @@ Stmt* parse_stmt(Parser* parser) {
     return stmt_expr(parser->arena, expr, expr->loc);
 }
 
-// Parse multiple statements until EOF.
-// Groups adjacent fn definitions with the same name into multi-clause functions.
-// Emits an error if non-adjacent clauses share the same name.
+/**
+ * Parse multiple statements until EOF, grouping multi-clause functions.
+ * @param parser The parser to use.
+ * @return A vector of parsed statements.
+ */
 StmtVec* parse_stmts(Parser* parser) {
     StmtVec* stmts = StmtVec_new(parser->arena);
 

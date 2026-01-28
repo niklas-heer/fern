@@ -4,9 +4,13 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Global counter for fresh type variables */
+/** Global counter for fresh type variables. */
 static int g_type_var_counter = 0;
 
+/**
+ * Generate a fresh unique type variable ID.
+ * @return A new unique type variable ID.
+ */
 int type_fresh_var_id(void) {
     // FERN_STYLE: allow(assertion-density) trivial counter increment
     return g_type_var_counter++;
@@ -14,6 +18,11 @@ int type_fresh_var_id(void) {
 
 /* ========== Primitive Types ========== */
 
+/**
+ * Create an Int type.
+ * @param arena The arena to allocate from.
+ * @return The Int type.
+ */
 Type* type_int(Arena* arena) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor
     Type* t = arena_alloc(arena, sizeof(Type));
@@ -21,6 +30,11 @@ Type* type_int(Arena* arena) {
     return t;
 }
 
+/**
+ * Create a Float type.
+ * @param arena The arena to allocate from.
+ * @return The Float type.
+ */
 Type* type_float(Arena* arena) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor
     Type* t = arena_alloc(arena, sizeof(Type));
@@ -28,6 +42,11 @@ Type* type_float(Arena* arena) {
     return t;
 }
 
+/**
+ * Create a String type.
+ * @param arena The arena to allocate from.
+ * @return The String type.
+ */
 Type* type_string(Arena* arena) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor
     Type* t = arena_alloc(arena, sizeof(Type));
@@ -35,6 +54,11 @@ Type* type_string(Arena* arena) {
     return t;
 }
 
+/**
+ * Create a Bool type.
+ * @param arena The arena to allocate from.
+ * @return The Bool type.
+ */
 Type* type_bool(Arena* arena) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor
     Type* t = arena_alloc(arena, sizeof(Type));
@@ -42,6 +66,11 @@ Type* type_bool(Arena* arena) {
     return t;
 }
 
+/**
+ * Create a Unit type (()).
+ * @param arena The arena to allocate from.
+ * @return The Unit type.
+ */
 Type* type_unit(Arena* arena) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor
     Type* t = arena_alloc(arena, sizeof(Type));
@@ -51,6 +80,13 @@ Type* type_unit(Arena* arena) {
 
 /* ========== Type Variable ========== */
 
+/**
+ * Create a type variable with given name and ID.
+ * @param arena The arena to allocate from.
+ * @param name The variable name.
+ * @param id The unique variable ID.
+ * @return The type variable.
+ */
 Type* type_var(Arena* arena, String* name, int id) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor
     Type* t = arena_alloc(arena, sizeof(Type));
@@ -63,6 +99,13 @@ Type* type_var(Arena* arena, String* name, int id) {
 
 /* ========== Type Constructor ========== */
 
+/**
+ * Create a type constructor (e.g., List, Result).
+ * @param arena The arena to allocate from.
+ * @param name The constructor name.
+ * @param args The type arguments (may be NULL).
+ * @return The type constructor.
+ */
 Type* type_con(Arena* arena, String* name, TypeVec* args) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor
     Type* t = arena_alloc(arena, sizeof(Type));
@@ -74,6 +117,13 @@ Type* type_con(Arena* arena, String* name, TypeVec* args) {
 
 /* ========== Function Type ========== */
 
+/**
+ * Create a function type with parameters and result type.
+ * @param arena The arena to allocate from.
+ * @param params The parameter types.
+ * @param result The result type.
+ * @return The function type.
+ */
 Type* type_fn(Arena* arena, TypeVec* params, Type* result) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor
     Type* t = arena_alloc(arena, sizeof(Type));
@@ -85,6 +135,12 @@ Type* type_fn(Arena* arena, TypeVec* params, Type* result) {
 
 /* ========== Tuple Type ========== */
 
+/**
+ * Create a tuple type with element types.
+ * @param arena The arena to allocate from.
+ * @param elements The element types.
+ * @return The tuple type.
+ */
 Type* type_tuple(Arena* arena, TypeVec* elements) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor
     Type* t = arena_alloc(arena, sizeof(Type));
@@ -95,6 +151,12 @@ Type* type_tuple(Arena* arena, TypeVec* elements) {
 
 /* ========== Error Type ========== */
 
+/**
+ * Create an error type with a message.
+ * @param arena The arena to allocate from.
+ * @param message The error message.
+ * @return The error type.
+ */
 Type* type_error(Arena* arena, String* message) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor
     Type* t = arena_alloc(arena, sizeof(Type));
@@ -105,6 +167,12 @@ Type* type_error(Arena* arena, String* message) {
 
 /* ========== Common Type Constructors ========== */
 
+/**
+ * Create a List type with given element type.
+ * @param arena The arena to allocate from.
+ * @param elem_type The element type.
+ * @return The List type.
+ */
 Type* type_list(Arena* arena, Type* elem_type) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor wrapper
     TypeVec* args = TypeVec_new(arena);
@@ -112,6 +180,13 @@ Type* type_list(Arena* arena, Type* elem_type) {
     return type_con(arena, string_new(arena, "List"), args);
 }
 
+/**
+ * Create a Map type with key and value types.
+ * @param arena The arena to allocate from.
+ * @param key_type The key type.
+ * @param value_type The value type.
+ * @return The Map type.
+ */
 Type* type_map(Arena* arena, Type* key_type, Type* value_type) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor wrapper
     TypeVec* args = TypeVec_new(arena);
@@ -120,6 +195,12 @@ Type* type_map(Arena* arena, Type* key_type, Type* value_type) {
     return type_con(arena, string_new(arena, "Map"), args);
 }
 
+/**
+ * Create an Option type with inner type.
+ * @param arena The arena to allocate from.
+ * @param inner_type The inner type.
+ * @return The Option type.
+ */
 Type* type_option(Arena* arena, Type* inner_type) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor wrapper
     TypeVec* args = TypeVec_new(arena);
@@ -127,6 +208,13 @@ Type* type_option(Arena* arena, Type* inner_type) {
     return type_con(arena, string_new(arena, "Option"), args);
 }
 
+/**
+ * Create a Result type with Ok and Err types.
+ * @param arena The arena to allocate from.
+ * @param ok_type The Ok type.
+ * @param err_type The Err type.
+ * @return The Result type.
+ */
 Type* type_result(Arena* arena, Type* ok_type, Type* err_type) {
     // FERN_STYLE: allow(assertion-density) trivial type constructor wrapper
     TypeVec* args = TypeVec_new(arena);
@@ -137,6 +225,11 @@ Type* type_result(Arena* arena, Type* ok_type, Type* err_type) {
 
 /* ========== Type Predicates ========== */
 
+/**
+ * Check if type is a primitive (Int, Float, String, Bool, Unit).
+ * @param type The type to check.
+ * @return True if primitive, false otherwise.
+ */
 bool type_is_primitive(Type* type) {
     // FERN_STYLE: allow(assertion-density) simple predicate check
     if (!type) return false;
@@ -147,12 +240,22 @@ bool type_is_primitive(Type* type) {
            type->kind == TYPE_UNIT;
 }
 
+/**
+ * Check if type is numeric (Int or Float).
+ * @param type The type to check.
+ * @return True if numeric, false otherwise.
+ */
 bool type_is_numeric(Type* type) {
     // FERN_STYLE: allow(assertion-density) simple predicate check
     if (!type) return false;
     return type->kind == TYPE_INT || type->kind == TYPE_FLOAT;
 }
 
+/**
+ * Check if type is comparable (not function or error).
+ * @param type The type to check.
+ * @return True if comparable, false otherwise.
+ */
 bool type_is_comparable(Type* type) {
     assert(type == NULL || type->kind >= TYPE_INT);
     if (!type) return false;
@@ -161,6 +264,11 @@ bool type_is_comparable(Type* type) {
     return type->kind != TYPE_FN && type->kind != TYPE_ERROR;
 }
 
+/**
+ * Check if type is a Result type constructor.
+ * @param type The type to check.
+ * @return True if Result type, false otherwise.
+ */
 bool type_is_result(Type* type) {
     assert(type == NULL || type->kind >= TYPE_INT);
     if (!type || type->kind != TYPE_CON) return false;
@@ -168,6 +276,11 @@ bool type_is_result(Type* type) {
     return strcmp(string_cstr(type->data.con.name), "Result") == 0;
 }
 
+/**
+ * Check if type is an Option type constructor.
+ * @param type The type to check.
+ * @return True if Option type, false otherwise.
+ */
 bool type_is_option(Type* type) {
     assert(type == NULL || type->kind >= TYPE_INT);
     if (!type || type->kind != TYPE_CON) return false;
@@ -177,6 +290,12 @@ bool type_is_option(Type* type) {
 
 /* ========== Type Comparison ========== */
 
+/**
+ * Check if two types are structurally equal.
+ * @param a The first type.
+ * @param b The second type.
+ * @return True if equal, false otherwise.
+ */
 bool type_equals(Type* a, Type* b) {
     assert(a == NULL || a->kind >= TYPE_INT);
     assert(b == NULL || b->kind >= TYPE_INT);
@@ -238,6 +357,12 @@ bool type_equals(Type* a, Type* b) {
     return false;
 }
 
+/**
+ * Check if a value of type 'from' can be assigned to type 'to'.
+ * @param from The source type.
+ * @param to The target type.
+ * @return True if assignable, false otherwise.
+ */
 bool type_assignable(Type* from, Type* to) {
     assert(from == NULL || from->kind >= TYPE_INT);
     assert(to == NULL || to->kind >= TYPE_INT);
@@ -248,6 +373,12 @@ bool type_assignable(Type* from, Type* to) {
 
 /* ========== Type Utilities ========== */
 
+/**
+ * Convert a type to its string representation.
+ * @param arena The arena to allocate from.
+ * @param type The type to convert.
+ * @return The string representation.
+ */
 String* type_to_string(Arena* arena, Type* type) {
     // FERN_STYLE: allow(function-length) one case per type kind
     assert(arena != NULL);
@@ -328,6 +459,12 @@ String* type_to_string(Arena* arena, Type* type) {
     return string_new(arena, "<unknown>");
 }
 
+/**
+ * Create a deep copy of a type.
+ * @param arena The arena to allocate from.
+ * @param type The type to clone.
+ * @return The cloned type.
+ */
 Type* type_clone(Arena* arena, Type* type) {
     assert(arena != NULL);
     if (!type) return NULL;

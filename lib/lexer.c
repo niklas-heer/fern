@@ -25,22 +25,35 @@ struct Lexer {
     bool emit_newline;                     // True if we need to emit a NEWLINE
 };
 
-/* Helper: Check if at end of source */
+/**
+ * Check if at end of source.
+ * @param lex The lexer.
+ * @return True if at end.
+ */
 static bool is_at_end(Lexer* lex) {
     assert(lex != NULL);
     assert(lex->current != NULL);
     return *lex->current == '\0';
 }
 
-/* Helper: Peek current character */
+/**
+ * Peek current character.
+ * @param lex The lexer.
+ * @return The current character.
+ */
 static char peek(Lexer* lex) {
     assert(lex != NULL);
     assert(lex->current != NULL);
     return *lex->current;
 }
 
-/* Helper: Peek next character */
 static char peek_next(Lexer* lex) __attribute__((unused));
+
+/**
+ * Peek at the next character without consuming.
+ * @param lex The lexer.
+ * @return The next character.
+ */
 static char peek_next(Lexer* lex) {
     assert(lex != NULL);
     assert(lex->current != NULL);
@@ -48,7 +61,11 @@ static char peek_next(Lexer* lex) {
     return lex->current[1];
 }
 
-/* Helper: Advance to next character */
+/**
+ * Advance to next character.
+ * @param lex The lexer.
+ * @return The consumed character.
+ */
 static char advance(Lexer* lex) {
     assert(lex != NULL);
     assert(lex->current != NULL);
@@ -62,7 +79,12 @@ static char advance(Lexer* lex) {
     return c;
 }
 
-/* Helper: Match expected character */
+/**
+ * Match expected character.
+ * @param lex The lexer.
+ * @param expected The expected character.
+ * @return True if matched and consumed.
+ */
 static bool match(Lexer* lex, char expected) {
     assert(lex != NULL);
     assert(lex->current != NULL);
@@ -72,7 +94,10 @@ static bool match(Lexer* lex, char expected) {
     return true;
 }
 
-/* Helper: Skip horizontal whitespace only (spaces, tabs, carriage return) */
+/**
+ * Skip horizontal whitespace only (spaces, tabs, carriage return).
+ * @param lex The lexer.
+ */
 static void skip_horizontal_whitespace(Lexer* lex) {
     assert(lex != NULL);
     assert(lex->current != NULL);
@@ -86,7 +111,10 @@ static void skip_horizontal_whitespace(Lexer* lex) {
     }
 }
 
-/* Helper: Skip a single-line comment (# ...) */
+/**
+ * Skip a single-line comment (# ...).
+ * @param lex The lexer.
+ */
 static void skip_line_comment(Lexer* lex) {
     // FERN_STYLE: allow(assertion-density) trivial loop bounded by line end
     assert(lex != NULL);
@@ -95,7 +123,10 @@ static void skip_line_comment(Lexer* lex) {
     }
 }
 
-/* Helper: Skip a block comment */
+/**
+ * Skip a block comment.
+ * @param lex The lexer.
+ */
 static void skip_block_comment(Lexer* lex) {
     // FERN_STYLE: allow(assertion-density) trivial loop bounded by comment end
     assert(lex != NULL);
@@ -111,7 +142,11 @@ static void skip_block_comment(Lexer* lex) {
     }
 }
 
-/* Helper: Count indentation (spaces/tabs) at current position */
+/**
+ * Count indentation (spaces/tabs) at current position.
+ * @param lex The lexer.
+ * @return The indentation level.
+ */
 static int count_indentation(Lexer* lex) {
     // FERN_STYLE: allow(assertion-density) simple loop counting whitespace
     assert(lex != NULL);
@@ -129,7 +164,10 @@ static int count_indentation(Lexer* lex) {
     return indent;
 }
 
-/* Helper: Advance past indentation whitespace */
+/**
+ * Advance past indentation whitespace.
+ * @param lex The lexer.
+ */
 static void consume_indentation(Lexer* lex) {
     // FERN_STYLE: allow(assertion-density) simple whitespace consumer
     assert(lex != NULL);
@@ -138,7 +176,11 @@ static void consume_indentation(Lexer* lex) {
     }
 }
 
-/* Helper: Check if byte starts a multi-byte UTF-8 sequence */
+/**
+ * Check if byte starts a multi-byte UTF-8 sequence.
+ * @param c The byte to check.
+ * @return True if UTF-8 start byte.
+ */
 static bool is_utf8_start(unsigned char c) {
     // FERN_STYLE: allow(assertion-density) pure predicate with no state
     // UTF-8 multi-byte sequences start with 0b11xxxxxx (>= 0xC0)
@@ -146,14 +188,22 @@ static bool is_utf8_start(unsigned char c) {
     return c >= 0xC0;
 }
 
-/* Helper: Check if byte is a UTF-8 continuation byte */
+/**
+ * Check if byte is a UTF-8 continuation byte.
+ * @param c The byte to check.
+ * @return True if UTF-8 continuation byte.
+ */
 static bool is_utf8_cont(unsigned char c) {
     // FERN_STYLE: allow(assertion-density) pure predicate with no state
     // UTF-8 continuation bytes are 0b10xxxxxx (0x80-0xBF)
     return (c & 0xC0) == 0x80;
 }
 
-/* Helper: Check if character is valid at start of identifier */
+/**
+ * Check if character is valid at start of identifier.
+ * @param c The character to check.
+ * @return True if valid identifier start.
+ */
 static bool is_ident_start(char c) {
     // FERN_STYLE: allow(assertion-density) pure predicate with no state
     unsigned char uc = (unsigned char)c;
@@ -164,7 +214,11 @@ static bool is_ident_start(char c) {
     return false;
 }
 
-/* Helper: Check if character is valid in identifier (continuation) */
+/**
+ * Check if character is valid in identifier (continuation).
+ * @param c The character to check.
+ * @return True if valid identifier continuation.
+ */
 static bool is_ident_cont(char c) {
     // FERN_STYLE: allow(assertion-density) pure predicate with no state
     unsigned char uc = (unsigned char)c;
@@ -177,7 +231,14 @@ static bool is_ident_cont(char c) {
     return false;
 }
 
-/* Helper: Create token */
+/**
+ * Create token.
+ * @param lex The lexer.
+ * @param type The token type.
+ * @param start Start of token text.
+ * @param end End of token text.
+ * @return The new token.
+ */
 static Token make_token(Lexer* lex, TokenType type, const char* start, const char* end) {
     assert(lex != NULL);
     assert(start != NULL && end != NULL && end >= start);
@@ -194,7 +255,14 @@ static Token make_token(Lexer* lex, TokenType type, const char* start, const cha
     return tok;
 }
 
-/* Helper: Check if string matches keyword */
+/**
+ * Check if string matches keyword.
+ * @param start Start of string.
+ * @param length Length of string.
+ * @param rest The keyword to match.
+ * @param type The token type if matched.
+ * @return The token type.
+ */
 static TokenType check_keyword(const char* start, size_t length, const char* rest, TokenType type) {
     assert(start != NULL);
     assert(rest != NULL);
@@ -204,7 +272,12 @@ static TokenType check_keyword(const char* start, size_t length, const char* res
     return TOKEN_IDENT;
 }
 
-/* Helper: Identify keyword or identifier */
+/**
+ * Identify keyword or identifier.
+ * @param start Start of identifier.
+ * @param length Length of identifier.
+ * @return The token type.
+ */
 static TokenType identifier_type(const char* start, size_t length) {
     // FERN_STYLE: allow(function-length) keyword lookup requires one case per keyword
     assert(start != NULL);
@@ -309,7 +382,11 @@ static TokenType identifier_type(const char* start, size_t length) {
     return TOKEN_IDENT;
 }
 
-/* Lex identifier or keyword */
+/**
+ * Lex identifier or keyword.
+ * @param lex The lexer.
+ * @return The token.
+ */
 static Token lex_identifier(Lexer* lex) {
     // FERN_STYLE: allow(bounded-loops) loop bounded by input source length
     assert(lex != NULL);
@@ -332,7 +409,11 @@ static Token lex_identifier(Lexer* lex) {
     return make_token(lex, type, start, lex->current);
 }
 
-/* Lex number (integer or float) */
+/**
+ * Lex number (integer or float).
+ * @param lex The lexer.
+ * @return The token.
+ */
 static Token lex_number(Lexer* lex) {
     // FERN_STYLE: allow(bounded-loops) loop bounded by input source length
     assert(lex != NULL);
@@ -381,8 +462,13 @@ static Token lex_number(Lexer* lex) {
     return make_token(lex, TOKEN_INT, start, lex->current);
 }
 
-/* Lex string literal */
-/* Lex a string segment: from current position to next { or closing " */
+/**
+ * Lex a string segment: from current position to next { or closing ".
+ * @param lex The lexer.
+ * @param if_interp Token type if interpolation found.
+ * @param if_end Token type if string ends.
+ * @return The token.
+ */
 static Token lex_string_segment(Lexer* lex, TokenType if_interp, TokenType if_end) {
     assert(lex != NULL);
     assert(lex->current != NULL);
@@ -415,6 +501,11 @@ static Token lex_string_segment(Lexer* lex, TokenType if_interp, TokenType if_en
     return make_token(lex, if_end, start, end);
 }
 
+/**
+ * Lex a string literal, handling interpolation.
+ * @param lex The lexer.
+ * @return The token.
+ */
 static Token lex_string(Lexer* lex) {
     assert(lex != NULL);
     assert(lex->current != NULL);
@@ -448,7 +539,10 @@ static Token lex_string(Lexer* lex) {
     return make_token(lex, TOKEN_STRING, start, end);
 }
 
-/* Helper: Skip all whitespace including newlines (for backward compatibility) */
+/**
+ * Skip all whitespace including newlines (for backward compatibility).
+ * @param lex The lexer.
+ */
 static void skip_whitespace(Lexer* lex) {
     // FERN_STYLE: allow(assertion-density) simple whitespace skipper
     assert(lex != NULL);
@@ -466,6 +560,12 @@ static void skip_whitespace(Lexer* lex) {
     }
 }
 
+/**
+ * Create a new lexer for the given source code.
+ * @param arena The arena for allocations.
+ * @param source The source code.
+ * @return The new lexer.
+ */
 Lexer* lexer_new(Arena* arena, const char* source) {
     assert(arena != NULL);
     assert(source != NULL);
@@ -490,7 +590,11 @@ Lexer* lexer_new(Arena* arena, const char* source) {
     return lex;
 }
 
-/* Helper: Lex a single token (without indentation handling) */
+/**
+ * Lex a single token (without indentation handling).
+ * @param lex The lexer.
+ * @return The token.
+ */
 static Token lex_token(Lexer* lex) {
     // FERN_STYLE: allow(function-length) token lexing requires many cases
     assert(lex != NULL);
@@ -608,6 +712,11 @@ static Token lex_token(Lexer* lex) {
     return make_token(lex, TOKEN_ERROR, lex->current - 1, lex->current);
 }
 
+/**
+ * Get the next token from the lexer.
+ * @param lex The lexer.
+ * @return The next token.
+ */
 Token lexer_next(Lexer* lex) {
     // FERN_STYLE: allow(function-length) indentation state machine is complex
     assert(lex != NULL);
@@ -723,6 +832,11 @@ Token lexer_next(Lexer* lex) {
     return tok;
 }
 
+/**
+ * Peek at the next token without consuming it.
+ * @param lex The lexer.
+ * @return The next token.
+ */
 Token lexer_peek(Lexer* lex) {
     assert(lex != NULL);
     assert(lex->current != NULL);
@@ -741,6 +855,11 @@ Token lexer_peek(Lexer* lex) {
     return tok;
 }
 
+/**
+ * Save the current lexer state for later restoration.
+ * @param lex The lexer.
+ * @return The saved state.
+ */
 LexerState lexer_save(Lexer* lex) {
     assert(lex != NULL);
     assert(lex->current != NULL);
@@ -751,6 +870,11 @@ LexerState lexer_save(Lexer* lex) {
     };
 }
 
+/**
+ * Restore the lexer to a previously saved state.
+ * @param lex The lexer.
+ * @param state The state to restore.
+ */
 void lexer_restore(Lexer* lex, LexerState state) {
     assert(lex != NULL);
     assert(state.current != NULL);
@@ -759,6 +883,11 @@ void lexer_restore(Lexer* lex, LexerState state) {
     lex->column = state.column;
 }
 
+/**
+ * Check if the lexer has reached end of file.
+ * @param lex The lexer.
+ * @return True if at end of file.
+ */
 bool lexer_is_eof(Lexer* lex) {
     assert(lex != NULL);
     assert(lex->current != NULL);

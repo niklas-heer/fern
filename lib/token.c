@@ -4,6 +4,11 @@
 #include <assert.h>
 #include <string.h>
 
+/**
+ * Get the human-readable name of a token type.
+ * @param type The token type to get the name of.
+ * @return The human-readable name string.
+ */
 const char* token_type_name(TokenType type) {
     // FERN_STYLE: allow(function-length) one case per token type
     assert(type >= TOKEN_EOF);
@@ -105,18 +110,33 @@ const char* token_type_name(TokenType type) {
     }
 }
 
+/**
+ * Check if the token type is a keyword.
+ * @param type The token type to check.
+ * @return True if the type is a keyword, false otherwise.
+ */
 bool token_is_keyword(TokenType type) {
     assert(type >= TOKEN_EOF);
     assert(type <= TOKEN_DOC_COMMENT || type == TOKEN_IDENT);
     return type >= TOKEN_LET && type <= TOKEN_AFTER;
 }
 
+/**
+ * Check if the token type is an operator.
+ * @param type The token type to check.
+ * @return True if the type is an operator, false otherwise.
+ */
 bool token_is_operator(TokenType type) {
     assert(type >= TOKEN_EOF);
     assert(type <= TOKEN_DOC_COMMENT || type == TOKEN_IDENT);
     return type >= TOKEN_PLUS && type <= TOKEN_FAT_ARROW;
 }
 
+/**
+ * Check if the token type is a literal.
+ * @param type The token type to check.
+ * @return True if the type is a literal, false otherwise.
+ */
 bool token_is_literal(TokenType type) {
     assert(type >= TOKEN_EOF);
     assert(type <= TOKEN_DOC_COMMENT || type == TOKEN_IDENT);

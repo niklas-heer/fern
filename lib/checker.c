@@ -7,13 +7,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Error message storage */
+/**
+ * Error message storage node.
+ */
 typedef struct ErrorNode {
     String* message;
     struct ErrorNode* next;
 } ErrorNode;
 
-/* The type checker context */
+/**
+ * The type checker context.
+ */
 struct Checker {
     Arena* arena;
     TypeEnv* env;
@@ -28,7 +32,9 @@ static bool unify(Type* a, Type* b);
 static Type* substitute(Arena* arena, Type* type);
 static Type* check_pipe_expr(Checker* checker, BinaryExpr* expr);
 
-/* Map from old var id to new type variable */
+/**
+ * Map from old var id to new type variable for instantiation.
+ */
 typedef struct VarMapping {
     int old_id;
     Type* new_var;
@@ -39,6 +45,12 @@ static Type* instantiate_type(Arena* arena, Type* type, VarMapping** map);
 
 /* ========== Helper Functions ========== */
 
+/**
+ * Add an error message to the checker's error list.
+ * @param checker The type checker context.
+ * @param fmt The format string.
+ * @param ... The format arguments.
+ */
 static void add_error(Checker* checker, const char* fmt, ...) {
     assert(checker != NULL);
     assert(fmt != NULL);
@@ -63,6 +75,13 @@ static void add_error(Checker* checker, const char* fmt, ...) {
     }
 }
 
+/**
+ * Create an error type and add error message.
+ * @param checker The type checker context.
+ * @param fmt The format string.
+ * @param ... The format arguments.
+ * @return The error type.
+ */
 static Type* error_type(Checker* checker, const char* fmt, ...) {
     assert(checker != NULL);
     assert(fmt != NULL);
@@ -77,7 +96,14 @@ static Type* error_type(Checker* checker, const char* fmt, ...) {
     return type_error(checker->arena, string_new(checker->arena, buf));
 }
 
-/* Error with source location */
+/**
+ * Create an error type with source location.
+ * @param checker The type checker context.
+ * @param loc The source location.
+ * @param fmt The format string.
+ * @param ... The format arguments.
+ * @return The error type.
+ */
 static Type* error_type_at(Checker* checker, SourceLoc loc, const char* fmt, ...) {
     assert(checker != NULL);
     assert(fmt != NULL);
@@ -106,6 +132,11 @@ static Type* error_type_at(Checker* checker, SourceLoc loc, const char* fmt, ...
 
 /* ========== Checker Creation ========== */
 
+/**
+ * Create a new type checker.
+ * @param arena The arena for allocations.
+ * @return The new type checker.
+ */
 Checker* checker_new(Arena* arena) {
     assert(arena != NULL);
     Checker* checker = arena_alloc(arena, sizeof(Checker));
@@ -119,6 +150,14 @@ Checker* checker_new(Arena* arena) {
 
 /* ========== Binary Operator Type Checking ========== */
 
+/**
+ * Check types for arithmetic operators (+, -, *, /, %, **).
+ * @param checker The type checker context.
+ * @param left The left operand type.
+ * @param right The right operand type.
+ * @param op_name The operator name for error messages.
+ * @return The result type.
+ */
 static Type* check_arithmetic_op(Checker* checker, Type* left, Type* right, 
                                   const char* op_name) {
     /* Handle type variables through unification */
@@ -164,6 +203,14 @@ static Type* check_arithmetic_op(Checker* checker, Type* left, Type* right,
         string_cstr(type_to_string(checker->arena, right)));
 }
 
+/**
+ * Check types for comparison operators (<, <=, >, >=).
+ * @param checker The type checker context.
+ * @param left The left operand type.
+ * @param right The right operand type.
+ * @param op_name The operator name for error messages.
+ * @return The result type (Bool).
+ */
 static Type* check_comparison_op(Checker* checker, Type* left, Type* right,
                                   const char* op_name) {
     /* Both operands must be the same comparable type */
@@ -182,6 +229,14 @@ static Type* check_comparison_op(Checker* checker, Type* left, Type* right,
     return type_bool(checker->arena);
 }
 
+/**
+ * Check types for equality operators (==, !=).
+ * @param checker The type checker context.
+ * @param left The left operand type.
+ * @param right The right operand type.
+ * @param op_name The operator name for error messages.
+ * @return The result type (Bool).
+ */
 static Type* check_equality_op(Checker* checker, Type* left, Type* right,
                                 const char* op_name) {
     (void)op_name;  /* Used for future error messages */
@@ -196,6 +251,14 @@ static Type* check_equality_op(Checker* checker, Type* left, Type* right,
     return type_bool(checker->arena);
 }
 
+/**
+ * Check types for logical operators (and, or).
+ * @param checker The type checker context.
+ * @param left The left operand type.
+ * @param right The right operand type.
+ * @param op_name The operator name for error messages.
+ * @return The result type (Bool).
+ */
 static Type* check_logical_op(Checker* checker, Type* left, Type* right,
                                const char* op_name) {
     /* Both operands must be Bool */
@@ -213,6 +276,12 @@ static Type* check_logical_op(Checker* checker, Type* left, Type* right,
 
 /* ========== Pipe Operator Type Checking ========== */
 
+/**
+ * Check types for pipe operator (|>).
+ * @param checker The type checker context.
+ * @param expr The binary expression with pipe operator.
+ * @return The result type.
+ */
 static Type* check_pipe_expr(Checker* checker, BinaryExpr* expr) {
     // FERN_STYLE: allow(function-length) pipe checking requires handling multiple cases cohesively
     assert(checker != NULL);
@@ -291,6 +360,12 @@ static Type* check_pipe_expr(Checker* checker, BinaryExpr* expr) {
     return substitute(checker->arena, fn->result);
 }
 
+/**
+ * Check types for binary expressions.
+ * @param checker The type checker context.
+ * @param expr The binary expression to check.
+ * @return The result type.
+ */
 static Type* check_binary_expr(Checker* checker, BinaryExpr* expr) {
     assert(checker != NULL);
     assert(expr != NULL);
@@ -349,6 +424,12 @@ static Type* check_binary_expr(Checker* checker, BinaryExpr* expr) {
 
 /* ========== Unary Operator Type Checking ========== */
 
+/**
+ * Check types for unary expressions (-, not).
+ * @param checker The type checker context.
+ * @param expr The unary expression to check.
+ * @return The result type.
+ */
 static Type* check_unary_expr(Checker* checker, UnaryExpr* expr) {
     assert(checker != NULL);
     assert(expr != NULL);
@@ -380,6 +461,12 @@ static Type* check_unary_expr(Checker* checker, UnaryExpr* expr) {
 
 /* ========== Collection Type Checking ========== */
 
+/**
+ * Check types for list expressions.
+ * @param checker The type checker context.
+ * @param expr The list expression to check.
+ * @return The list type.
+ */
 static Type* check_list_expr(Checker* checker, ListExpr* expr) {
     assert(checker != NULL);
     assert(expr != NULL);
@@ -412,6 +499,12 @@ static Type* check_list_expr(Checker* checker, ListExpr* expr) {
     return type_list(checker->arena, elem_type);
 }
 
+/**
+ * Check types for tuple expressions.
+ * @param checker The type checker context.
+ * @param expr The tuple expression to check.
+ * @return The tuple type.
+ */
 static Type* check_tuple_expr(Checker* checker, TupleExpr* expr) {
     assert(checker != NULL);
     assert(expr != NULL);
@@ -428,7 +521,12 @@ static Type* check_tuple_expr(Checker* checker, TupleExpr* expr) {
 
 /* ========== Type Unification ========== */
 
-/* Check if a type contains a specific type variable */
+/**
+ * Check if a type contains a specific type variable (occurs check).
+ * @param type The type to check.
+ * @param var_id The variable ID to look for.
+ * @return True if the variable is contained.
+ */
 static bool type_contains_var(Type* type, int var_id) {
     assert(var_id >= 0);
     if (!type) return false;
@@ -472,8 +570,12 @@ static bool type_contains_var(Type* type, int var_id) {
     }
 }
 
-/* Unify two types, binding type variables as needed
- * Returns true if unification succeeded */
+/**
+ * Unify two types, binding type variables as needed.
+ * @param a The first type.
+ * @param b The second type.
+ * @return True if unification succeeded.
+ */
 static bool unify(Type* a, Type* b) {
     // FERN_STYLE: allow(function-length) type unification requires handling all type combinations
     /* NULL types are equal only to each other. */
@@ -568,7 +670,12 @@ static bool unify(Type* a, Type* b) {
     return false;
 }
 
-/* Substitute bound type variables with their concrete types */
+/**
+ * Substitute bound type variables with their concrete types.
+ * @param arena The arena for allocations.
+ * @param type The type to substitute in.
+ * @return The substituted type.
+ */
 static Type* substitute(Arena* arena, Type* type) {
     assert(arena != NULL);
     if (!type) return NULL;
@@ -619,7 +726,12 @@ static Type* substitute(Arena* arena, Type* type) {
 
 /* ========== Type Instantiation ========== */
 
-/* Find a mapping for a type variable ID */
+/**
+ * Find a mapping for a type variable ID.
+ * @param map The variable mapping list.
+ * @param var_id The variable ID to find.
+ * @return The mapped type or NULL if not found.
+ */
 static Type* find_var_mapping(VarMapping* map, int var_id) {
     assert(var_id >= 0);
     /* map may be NULL on first call - that's valid. */
@@ -632,9 +744,13 @@ static Type* find_var_mapping(VarMapping* map, int var_id) {
     return NULL;
 }
 
-/* Instantiate a type, replacing type variables with fresh ones.
- * This maintains sharing: if the same type variable appears multiple times,
- * it will be replaced with the same fresh variable each time. */
+/**
+ * Instantiate a type by replacing type variables with fresh ones.
+ * @param arena The arena for allocations.
+ * @param type The type to instantiate.
+ * @param map The variable mapping (updated in place).
+ * @return The instantiated type.
+ */
 static Type* instantiate_type(Arena* arena, Type* type, VarMapping** map) {
     assert(arena != NULL);
     assert(map != NULL);
@@ -700,6 +816,12 @@ static Type* instantiate_type(Arena* arena, Type* type, VarMapping** map) {
 
 /* ========== Function Call Type Checking ========== */
 
+/**
+ * Check types for function call expressions.
+ * @param checker The type checker context.
+ * @param expr The call expression to check.
+ * @return The return type of the call.
+ */
 static Type* check_call_expr(Checker* checker, CallExpr* expr) {
     assert(checker != NULL);
     assert(expr != NULL);
@@ -751,6 +873,12 @@ static Type* check_call_expr(Checker* checker, CallExpr* expr) {
 
 /* ========== If Expression Type Checking ========== */
 
+/**
+ * Check types for if expressions.
+ * @param checker The type checker context.
+ * @param expr The if expression to check.
+ * @return The result type.
+ */
 static Type* check_if_expr(Checker* checker, IfExpr* expr) {
     assert(checker != NULL);
     assert(expr != NULL);
@@ -788,6 +916,12 @@ static Type* check_if_expr(Checker* checker, IfExpr* expr) {
 
 /* ========== Block Expression Type Checking ========== */
 
+/**
+ * Check types for block expressions.
+ * @param checker The type checker context.
+ * @param expr The block expression to check.
+ * @return The result type.
+ */
 static Type* check_block_expr(Checker* checker, BlockExpr* expr) {
     assert(checker != NULL);
     assert(expr != NULL);
@@ -817,6 +951,12 @@ static Type* check_block_expr(Checker* checker, BlockExpr* expr) {
 
 /* ========== Match Expression Type Checking ========== */
 
+/**
+ * Check types for match expressions.
+ * @param checker The type checker context.
+ * @param expr The match expression to check.
+ * @return The result type.
+ */
 static Type* check_match_expr(Checker* checker, MatchExpr* expr) {
     // FERN_STYLE: allow(function-length) match expression checking requires handling all pattern types
     assert(checker != NULL);
@@ -894,6 +1034,12 @@ static Type* check_match_expr(Checker* checker, MatchExpr* expr) {
 
 /* ========== Main Type Inference ========== */
 
+/**
+ * Infer the type of an expression.
+ * @param checker The type checker context.
+ * @param expr The expression to type check.
+ * @return The inferred type.
+ */
 Type* checker_infer_expr(Checker* checker, Expr* expr) {
     // FERN_STYLE: allow(function-length) main type inference handles all expression types in one switch
     assert(checker != NULL);
@@ -1329,7 +1475,12 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
 
 /* ========== Type Expression Resolution ========== */
 
-/* Convert a TypeExpr (AST type annotation) to a Type */
+/**
+ * Convert a TypeExpr (AST type annotation) to a Type.
+ * @param checker The type checker context.
+ * @param type_expr The type expression to resolve.
+ * @return The resolved type.
+ */
 static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
     // FERN_STYLE: allow(function-length) type expression resolution handles all type forms
     assert(checker != NULL);
@@ -1417,7 +1568,12 @@ static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
     return error_type(checker, "Unknown type expression kind");
 }
 
-/* Strict version that errors on unknown types (used for type definitions) */
+/**
+ * Resolve type expression strictly, erroring on unknown types.
+ * @param checker The type checker context.
+ * @param type_expr The type expression to resolve.
+ * @return The resolved type or error.
+ */
 static Type* resolve_type_expr_strict(Checker* checker, TypeExpr* type_expr) {
     assert(checker != NULL);
     if (!type_expr) return NULL;
@@ -1467,7 +1623,13 @@ static Type* resolve_type_expr_strict(Checker* checker, TypeExpr* type_expr) {
 
 /* ========== Statement Type Checking ========== */
 
-/* Bind a pattern to a type in the environment */
+/**
+ * Bind a pattern to a type in the environment.
+ * @param checker The type checker context.
+ * @param pattern The pattern to bind.
+ * @param type The type to bind to.
+ * @return True if binding succeeded.
+ */
 static bool bind_pattern(Checker* checker, Pattern* pattern, Type* type) {
     // FERN_STYLE: allow(function-length) pattern binding handles all pattern types recursively
     assert(checker != NULL);
@@ -1561,6 +1723,12 @@ static bool bind_pattern(Checker* checker, Pattern* pattern, Type* type) {
     return false;
 }
 
+/**
+ * Check types for let statements.
+ * @param checker The type checker context.
+ * @param stmt The let statement to check.
+ * @return True if type checking succeeded.
+ */
 static bool check_let_stmt(Checker* checker, LetStmt* stmt) {
     assert(checker != NULL);
     assert(stmt != NULL);
@@ -1592,6 +1760,12 @@ static bool check_let_stmt(Checker* checker, LetStmt* stmt) {
     return bind_pattern(checker, stmt->pattern, value_type);
 }
 
+/**
+ * Check types for a single statement.
+ * @param checker The type checker context.
+ * @param stmt The statement to check.
+ * @return True if type checking succeeded.
+ */
 bool checker_check_stmt(Checker* checker, Stmt* stmt) {
     // FERN_STYLE: allow(function-length) statement checking handles all statement types
     assert(checker != NULL);
@@ -1726,6 +1900,12 @@ bool checker_check_stmt(Checker* checker, Stmt* stmt) {
     return false;
 }
 
+/**
+ * Check types for a list of statements.
+ * @param checker The type checker context.
+ * @param stmts The statements to check.
+ * @return True if type checking succeeded.
+ */
 bool checker_check_stmts(Checker* checker, StmtVec* stmts) {
     assert(checker != NULL);
     assert(stmts != NULL);
@@ -1739,12 +1919,22 @@ bool checker_check_stmts(Checker* checker, StmtVec* stmts) {
 
 /* ========== Error Handling ========== */
 
+/**
+ * Check if the checker has recorded any errors.
+ * @param checker The type checker context.
+ * @return True if there are errors.
+ */
 bool checker_has_errors(Checker* checker) {
     assert(checker != NULL);
     assert(checker->arena != NULL);
     return checker->errors != NULL;
 }
 
+/**
+ * Get the first error message, or NULL if none.
+ * @param checker The type checker context.
+ * @return The first error message or NULL.
+ */
 const char* checker_first_error(Checker* checker) {
     assert(checker != NULL);
     assert(checker->arena != NULL);
@@ -1754,24 +1944,43 @@ const char* checker_first_error(Checker* checker) {
 
 /* ========== Environment Access ========== */
 
+/**
+ * Get the checker's type environment.
+ * @param checker The type checker context.
+ * @return The type environment.
+ */
 TypeEnv* checker_env(Checker* checker) {
     assert(checker != NULL);
     assert(checker->env != NULL);
     return checker->env;
 }
 
+/**
+ * Define a variable with a type in the current scope.
+ * @param checker The type checker context.
+ * @param name The variable name.
+ * @param type The variable type.
+ */
 void checker_define(Checker* checker, String* name, Type* type) {
     assert(checker != NULL);
     assert(name != NULL);
     type_env_define(checker->env, name, type);
 }
 
+/**
+ * Push a new scope onto the checker's environment.
+ * @param checker The type checker context.
+ */
 void checker_push_scope(Checker* checker) {
     assert(checker != NULL);
     assert(checker->env != NULL);
     type_env_push_scope(checker->env);
 }
 
+/**
+ * Pop the current scope from the checker's environment.
+ * @param checker The type checker context.
+ */
 void checker_pop_scope(Checker* checker) {
     assert(checker != NULL);
     assert(checker->env != NULL);

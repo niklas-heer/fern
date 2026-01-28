@@ -6,7 +6,11 @@
 
 #define MAX_INDENT 100  /* Prevent infinite recursion. */
 
-/* Helper to print indentation. */
+/**
+ * Print indentation spaces.
+ * @param out The output file.
+ * @param indent The indentation level.
+ */
 static void print_indent(FILE* out, int indent) {
     assert(out != NULL);
     assert(indent >= 0 && indent < MAX_INDENT);
@@ -19,7 +23,11 @@ static void print_indent(FILE* out, int indent) {
 void ast_print_expr(FILE* out, Expr* expr, int indent);
 void ast_print_stmt(FILE* out, Stmt* stmt, int indent);
 
-/* Binary operator names. */
+/**
+ * Get the string name for a binary operator.
+ * @param op The binary operator.
+ * @return The operator name string.
+ */
 static const char* binop_name(BinaryOp op) {
     assert(op >= BINOP_ADD);
     assert(op <= BINOP_PIPE);
@@ -43,7 +51,11 @@ static const char* binop_name(BinaryOp op) {
     }
 }
 
-/* Unary operator names. */
+/**
+ * Get the string name for a unary operator.
+ * @param op The unary operator.
+ * @return The operator name string.
+ */
 static const char* unop_name(UnaryOp op) {
     assert(op >= UNOP_NEG);
     assert(op <= UNOP_NOT);
@@ -54,6 +66,12 @@ static const char* unop_name(UnaryOp op) {
     }
 }
 
+/**
+ * Print a type expression.
+ * @param out The output file.
+ * @param type The type expression to print.
+ * @param indent The indentation level.
+ */
 void ast_print_type(FILE* out, TypeExpr* type, int indent) {
     assert(out != NULL);
     assert(indent >= 0 && indent < MAX_INDENT);
@@ -94,6 +112,12 @@ void ast_print_type(FILE* out, TypeExpr* type, int indent) {
     }
 }
 
+/**
+ * Print a pattern.
+ * @param out The output file.
+ * @param pattern The pattern to print.
+ * @param indent The indentation level.
+ */
 void ast_print_pattern(FILE* out, Pattern* pattern, int indent) {
     assert(out != NULL);
     assert(indent >= 0 && indent < MAX_INDENT);
@@ -146,6 +170,12 @@ void ast_print_pattern(FILE* out, Pattern* pattern, int indent) {
 
 /* Helper functions for printing specific expression types. */
 
+/**
+ * Print a call expression.
+ * @param out The output file.
+ * @param expr The call expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_call(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_CALL);
@@ -167,6 +197,12 @@ static void print_expr_call(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print an if expression.
+ * @param out The output file.
+ * @param expr The if expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_if(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_IF);
@@ -184,6 +220,12 @@ static void print_expr_if(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print a match expression.
+ * @param out The output file.
+ * @param expr The match expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_match(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_MATCH);
@@ -211,6 +253,12 @@ static void print_expr_match(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print a block expression.
+ * @param out The output file.
+ * @param expr The block expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_block(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_BLOCK);
@@ -225,6 +273,12 @@ static void print_expr_block(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print a with expression.
+ * @param out The output file.
+ * @param expr The with expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_with(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_WITH);
@@ -242,6 +296,12 @@ static void print_expr_with(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.with_expr.body, indent + 2);
 }
 
+/**
+ * Print a map expression.
+ * @param out The output file.
+ * @param expr The map expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_map(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_MAP);
@@ -257,6 +317,12 @@ static void print_expr_map(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print a record update expression.
+ * @param out The output file.
+ * @param expr The record update expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_record_update(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_RECORD_UPDATE);
@@ -274,6 +340,12 @@ static void print_expr_record_update(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print a list comprehension expression.
+ * @param out The output file.
+ * @param expr The list comprehension expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_list_comp(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_LIST_COMP);
@@ -291,6 +363,12 @@ static void print_expr_list_comp(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print a receive expression.
+ * @param out The output file.
+ * @param expr The receive expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_receive(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_RECEIVE);
@@ -310,6 +388,12 @@ static void print_expr_receive(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print a list expression.
+ * @param out The output file.
+ * @param expr The list expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_list(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_LIST);
@@ -319,6 +403,12 @@ static void print_expr_list(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print a for loop expression.
+ * @param out The output file.
+ * @param expr The for loop expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_for(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_FOR);
@@ -329,6 +419,12 @@ static void print_expr_for(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.for_loop.body, indent + 2);
 }
 
+/**
+ * Print a lambda expression.
+ * @param out The output file.
+ * @param expr The lambda expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_lambda(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_LAMBDA);
@@ -341,6 +437,12 @@ static void print_expr_lambda(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.lambda.body, indent + 1);
 }
 
+/**
+ * Print an interpolated string expression.
+ * @param out The output file.
+ * @param expr The interpolated string expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_interp_string(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_INTERP_STRING);
@@ -350,6 +452,12 @@ static void print_expr_interp_string(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print a tuple expression.
+ * @param out The output file.
+ * @param expr The tuple expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_tuple(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_TUPLE);
@@ -359,6 +467,12 @@ static void print_expr_tuple(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print an index expression.
+ * @param out The output file.
+ * @param expr The index expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_index(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_INDEX);
@@ -369,6 +483,12 @@ static void print_expr_index(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.index_expr.index, indent + 2);
 }
 
+/**
+ * Print a send expression.
+ * @param out The output file.
+ * @param expr The send expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_send(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_SEND);
@@ -381,6 +501,12 @@ static void print_expr_send(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.send_expr.message, indent + 2);
 }
 
+/**
+ * Print a binary expression.
+ * @param out The output file.
+ * @param expr The binary expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_binary(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_BINARY);
@@ -389,6 +515,12 @@ static void print_expr_binary(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.binary.right, indent + 1);
 }
 
+/**
+ * Print a unary expression.
+ * @param out The output file.
+ * @param expr The unary expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_unary(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_UNARY);
@@ -396,6 +528,12 @@ static void print_expr_unary(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.unary.operand, indent + 1);
 }
 
+/**
+ * Print a bind expression.
+ * @param out The output file.
+ * @param expr The bind expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_bind(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_BIND);
@@ -403,6 +541,12 @@ static void print_expr_bind(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.bind.value, indent + 1);
 }
 
+/**
+ * Print a dot expression.
+ * @param out The output file.
+ * @param expr The dot expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_dot(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_DOT);
@@ -410,6 +554,12 @@ static void print_expr_dot(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.dot.object, indent + 1);
 }
 
+/**
+ * Print a range expression.
+ * @param out The output file.
+ * @param expr The range expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_range(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_RANGE);
@@ -418,6 +568,12 @@ static void print_expr_range(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.range.end, indent + 1);
 }
 
+/**
+ * Print a spawn expression.
+ * @param out The output file.
+ * @param expr The spawn expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_spawn(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_SPAWN);
@@ -425,6 +581,12 @@ static void print_expr_spawn(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.spawn_expr.func, indent + 1);
 }
 
+/**
+ * Print a try expression (?).
+ * @param out The output file.
+ * @param expr The try expression.
+ * @param indent The indentation level.
+ */
 static void print_expr_try(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL && expr->type == EXPR_TRY);
@@ -432,7 +594,11 @@ static void print_expr_try(FILE* out, Expr* expr, int indent) {
     ast_print_expr(out, expr->data.try_expr.operand, indent + 1);
 }
 
-/* Print literal expressions (int, float, string, bool, ident). */
+/**
+ * Print literal expressions (int, float, string, bool, ident).
+ * @param out The output file.
+ * @param expr The literal expression.
+ */
 static void print_expr_literal(FILE* out, Expr* expr) {
     assert(out != NULL);
     assert(expr != NULL);
@@ -457,7 +623,12 @@ static void print_expr_literal(FILE* out, Expr* expr) {
     }
 }
 
-/* Dispatch helper for complex expression types (part 1). */
+/**
+ * Dispatch helper for complex expression types (part 1).
+ * @param out The output file.
+ * @param expr The expression to dispatch.
+ * @param indent The indentation level.
+ */
 static void print_expr_dispatch_1(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL);
@@ -478,7 +649,12 @@ static void print_expr_dispatch_1(FILE* out, Expr* expr, int indent) {
     }
 }
 
-/* Dispatch helper for complex expression types (part 2). */
+/**
+ * Dispatch helper for complex expression types (part 2).
+ * @param out The output file.
+ * @param expr The expression to dispatch.
+ * @param indent The indentation level.
+ */
 static void print_expr_dispatch_2(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(expr != NULL);
@@ -498,6 +674,12 @@ static void print_expr_dispatch_2(FILE* out, Expr* expr, int indent) {
     }
 }
 
+/**
+ * Print an expression with indentation.
+ * @param out The output file.
+ * @param expr The expression to print.
+ * @param indent The indentation level.
+ */
 void ast_print_expr(FILE* out, Expr* expr, int indent) {
     assert(out != NULL);
     assert(indent >= 0 && indent < MAX_INDENT);
@@ -522,6 +704,12 @@ void ast_print_expr(FILE* out, Expr* expr, int indent) {
 
 /* Helper functions for printing specific statement types. */
 
+/**
+ * Print a let statement.
+ * @param out The output file.
+ * @param stmt The let statement.
+ * @param indent The indentation level.
+ */
 static void print_stmt_let(FILE* out, Stmt* stmt, int indent) {
     assert(out != NULL);
     assert(stmt != NULL && stmt->type == STMT_LET);
@@ -544,6 +732,12 @@ static void print_stmt_let(FILE* out, Stmt* stmt, int indent) {
     }
 }
 
+/**
+ * Print a function statement.
+ * @param out The output file.
+ * @param stmt The function statement.
+ * @param indent The indentation level.
+ */
 static void print_stmt_fn(FILE* out, Stmt* stmt, int indent) {
     assert(out != NULL);
     assert(stmt != NULL && stmt->type == STMT_FN);
@@ -579,6 +773,12 @@ static void print_stmt_fn(FILE* out, Stmt* stmt, int indent) {
     }
 }
 
+/**
+ * Print an import statement.
+ * @param out The output file.
+ * @param stmt The import statement.
+ * @param indent The indentation level.
+ */
 static void print_stmt_import(FILE* out, Stmt* stmt, int indent) {
     assert(out != NULL);
     assert(stmt != NULL && stmt->type == STMT_IMPORT);
@@ -602,7 +802,12 @@ static void print_stmt_import(FILE* out, Stmt* stmt, int indent) {
     fprintf(out, "\n");
 }
 
-/* Print simple statement types inline. */
+/**
+ * Print simple statement types inline (return, expr, defer, etc.).
+ * @param out The output file.
+ * @param stmt The statement to print.
+ * @param indent The indentation level.
+ */
 static void print_stmt_simple(FILE* out, Stmt* stmt, int indent) {
     assert(out != NULL);
     assert(stmt != NULL);
@@ -643,7 +848,12 @@ static void print_stmt_simple(FILE* out, Stmt* stmt, int indent) {
     }
 }
 
-/* Print type definition statements. */
+/**
+ * Print type definition statements (type, trait, impl, etc.).
+ * @param out The output file.
+ * @param stmt The type definition statement.
+ * @param indent The indentation level.
+ */
 static void print_stmt_type_defs(FILE* out, Stmt* stmt, int indent) {
     assert(out != NULL);
     assert(stmt != NULL);
@@ -678,6 +888,12 @@ static void print_stmt_type_defs(FILE* out, Stmt* stmt, int indent) {
     }
 }
 
+/**
+ * Print a statement with indentation.
+ * @param out The output file.
+ * @param stmt The statement to print.
+ * @param indent The indentation level.
+ */
 void ast_print_stmt(FILE* out, Stmt* stmt, int indent) {
     assert(out != NULL);
     assert(indent >= 0 && indent < MAX_INDENT);
@@ -714,13 +930,20 @@ void ast_print_stmt(FILE* out, Stmt* stmt, int indent) {
     }
 }
 
-/* Convenience functions for debugging. */
+/**
+ * Dump an expression to stdout for debugging.
+ * @param expr The expression to dump.
+ */
 void ast_dump_expr(Expr* expr) {
     assert(expr != NULL);
     assert(stdout != NULL);
     ast_print_expr(stdout, expr, 0);
 }
 
+/**
+ * Dump a statement to stdout for debugging.
+ * @param stmt The statement to dump.
+ */
 void ast_dump_stmt(Stmt* stmt) {
     assert(stmt != NULL);
     assert(stdout != NULL);

@@ -5,6 +5,9 @@
 
 TestStats g_test_stats = {0, 0, 0};
 
+/**
+ * Initialize the test framework, resetting all counters.
+ */
 void test_init(void) {
     assert(g_test_stats.total >= 0);
     assert(g_test_stats.failed >= 0);
@@ -13,6 +16,10 @@ void test_init(void) {
     g_test_stats.failed = 0;
 }
 
+/**
+ * Finish testing and print results.
+ * @return 0 on success, 1 on failure.
+ */
 int test_finish(void) {
     assert(g_test_stats.total >= 0);
     assert(g_test_stats.passed + g_test_stats.failed == g_test_stats.total);

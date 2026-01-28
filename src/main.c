@@ -5,6 +5,12 @@
 #include "arena.h"
 #include "fern_string.h"
 
+/**
+ * Main entry point for the Fern compiler.
+ * @param argc The argument count.
+ * @param argv The argument values.
+ * @return Exit code (0 on success, non-zero on error).
+ */
 int main(int argc, char** argv) {
     // FERN_STYLE: allow(assertion-density) main entry point - handles args and setup
     printf("Fern Compiler v0.0.1\n");

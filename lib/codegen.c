@@ -33,7 +33,12 @@ struct Codegen {
 
 /* ========== Helper Functions ========== */
 
-/* Append text to the output buffer */
+/**
+ * Append text to the output buffer.
+ * @param cg The codegen context.
+ * @param fmt The format string.
+ * @param ... The format arguments.
+ */
 static void emit(Codegen* cg, const char* fmt, ...) {
     assert(cg != NULL);
     assert(fmt != NULL);
@@ -46,7 +51,11 @@ static void emit(Codegen* cg, const char* fmt, ...) {
     cg->output = string_concat(cg->arena, cg->output, string_new(cg->arena, buf));
 }
 
-/* Generate a fresh temporary name */
+/**
+ * Generate a fresh temporary name.
+ * @param cg The codegen context.
+ * @return The new temporary name.
+ */
 static String* fresh_temp(Codegen* cg) {
     assert(cg != NULL);
     assert(cg->temp_counter >= 0);
@@ -55,7 +64,11 @@ static String* fresh_temp(Codegen* cg) {
     return string_new(cg->arena, buf);
 }
 
-/* Generate a fresh label name */
+/**
+ * Generate a fresh label name.
+ * @param cg The codegen context.
+ * @return The new label name.
+ */
 static String* fresh_label(Codegen* cg) {
     assert(cg != NULL);
     assert(cg->label_counter >= 0);
@@ -66,6 +79,11 @@ static String* fresh_label(Codegen* cg) {
 
 /* ========== Codegen Creation ========== */
 
+/**
+ * Create a new code generator.
+ * @param arena The arena for allocations.
+ * @return The new codegen context.
+ */
 Codegen* codegen_new(Arena* arena) {
     assert(arena != NULL);
     Codegen* cg = arena_alloc(arena, sizeof(Codegen));
@@ -80,7 +98,11 @@ Codegen* codegen_new(Arena* arena) {
     return cg;
 }
 
-/* Push a deferred expression onto the stack */
+/**
+ * Push a deferred expression onto the stack.
+ * @param cg The codegen context.
+ * @param expr The expression to defer.
+ */
 static void push_defer(Codegen* cg, Expr* expr) {
     assert(cg != NULL);
     assert(expr != NULL);
@@ -88,7 +110,10 @@ static void push_defer(Codegen* cg, Expr* expr) {
     cg->defer_stack[cg->defer_count++] = expr;
 }
 
-/* Emit all deferred expressions in reverse order (LIFO) */
+/**
+ * Emit all deferred expressions in reverse order (LIFO).
+ * @param cg The codegen context.
+ */
 static void emit_defers(Codegen* cg) {
     assert(cg != NULL);
     assert(cg->defer_count >= 0 && cg->defer_count <= MAX_DEFERS);
@@ -99,14 +124,22 @@ static void emit_defers(Codegen* cg) {
     }
 }
 
-/* Clear the defer stack (called at function boundaries) */
+/**
+ * Clear the defer stack (called at function boundaries).
+ * @param cg The codegen context.
+ */
 static void clear_defers(Codegen* cg) {
     assert(cg != NULL);
     assert(cg->defer_count >= 0);
     cg->defer_count = 0;
 }
 
-/* Emit to data section */
+/**
+ * Emit to data section.
+ * @param cg The codegen context.
+ * @param fmt The format string.
+ * @param ... The format arguments.
+ */
 static void emit_data(Codegen* cg, const char* fmt, ...) {
     assert(cg != NULL);
     assert(fmt != NULL);
@@ -119,7 +152,11 @@ static void emit_data(Codegen* cg, const char* fmt, ...) {
     cg->data_section = string_concat(cg->arena, cg->data_section, string_new(cg->arena, buf));
 }
 
-/* Generate a fresh string label */
+/**
+ * Generate a fresh string label.
+ * @param cg The codegen context.
+ * @return The new string label.
+ */
 static String* fresh_string_label(Codegen* cg) {
     assert(cg != NULL);
     assert(cg->string_counter >= 0);
@@ -130,6 +167,12 @@ static String* fresh_string_label(Codegen* cg) {
 
 /* ========== Expression Code Generation ========== */
 
+/**
+ * Generate QBE IR code for an expression.
+ * @param cg The codegen context.
+ * @param expr The expression to compile.
+ * @return The temporary holding the result.
+ */
 String* codegen_expr(Codegen* cg, Expr* expr) {
     // FERN_STYLE: allow(function-length) code generation handles all expression types in one switch
     assert(cg != NULL);
@@ -671,7 +714,11 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
 
 /* ========== Statement Code Generation ========== */
 
-/* Generate code for a function definition */
+/**
+ * Generate code for a function definition.
+ * @param cg The codegen context.
+ * @param fn The function definition.
+ */
 static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
     assert(cg != NULL);
     assert(fn != NULL);
@@ -703,6 +750,11 @@ static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
     emit(cg, "}\n\n");
 }
 
+/**
+ * Generate QBE IR code for a statement.
+ * @param cg The codegen context.
+ * @param stmt The statement to compile.
+ */
 void codegen_stmt(Codegen* cg, Stmt* stmt) {
     assert(cg != NULL);
     assert(stmt != NULL);
@@ -760,6 +812,11 @@ void codegen_stmt(Codegen* cg, Stmt* stmt) {
 
 /* ========== Program Code Generation ========== */
 
+/**
+ * Generate code for a complete program.
+ * @param cg The codegen context.
+ * @param stmts The program statements.
+ */
 void codegen_program(Codegen* cg, StmtVec* stmts) {
     assert(cg != NULL);
     assert(cg->arena != NULL);
@@ -773,6 +830,11 @@ void codegen_program(Codegen* cg, StmtVec* stmts) {
 
 /* ========== Output ========== */
 
+/**
+ * Get the generated output as a string.
+ * @param cg The codegen context.
+ * @return The generated QBE IR.
+ */
 String* codegen_output(Codegen* cg) {
     assert(cg != NULL);
     assert(cg->output != NULL);
@@ -780,6 +842,12 @@ String* codegen_output(Codegen* cg) {
     return string_concat(cg->arena, cg->output, cg->data_section);
 }
 
+/**
+ * Write the generated code to a file.
+ * @param cg The codegen context.
+ * @param filename The output filename.
+ * @return True on success.
+ */
 bool codegen_write(Codegen* cg, const char* filename) {
     assert(cg != NULL);
     assert(filename != NULL);
@@ -792,6 +860,11 @@ bool codegen_write(Codegen* cg, const char* filename) {
     return true;
 }
 
+/**
+ * Emit the generated code to a file stream.
+ * @param cg The codegen context.
+ * @param out The output file stream.
+ */
 void codegen_emit(Codegen* cg, FILE* out) {
     assert(cg != NULL);
     assert(out != NULL);
