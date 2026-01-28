@@ -341,7 +341,7 @@ tests/parser/
   - [x] Pattern parsing (identifier, wildcard, int/string/bool literals)
   - [x] Type parsing (simple, parameterized, function types)
   - [x] Function definitions (basic — single clause with parameters and return type)
-  - [ ] Module declarations
+  - [x] Module declarations (module, import with path/items/alias)
   - [ ] Error recovery
 
 - [ ] Parser utilities
