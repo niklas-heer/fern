@@ -11,6 +11,8 @@ int main(int argc, char** argv) {
     
     if (argc < 2) {
         fprintf(stderr, "Usage: fern <source.fn>\n");
+        fprintf(stderr, "       fern <source.🌿>\n");
+        fprintf(stderr, "\nBoth .fn and .🌿 file extensions are supported.\n");
         return 1;
     }
     
