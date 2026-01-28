@@ -19,6 +19,10 @@ struct Checker {
     ErrorNode* errors_tail;
 };
 
+/* ========== Forward Declarations ========== */
+
+static bool bind_pattern(Checker* checker, Pattern* pattern, Type* type);
+
 /* ========== Helper Functions ========== */
 
 static void add_error(Checker* checker, const char* fmt, ...) {
@@ -365,6 +369,80 @@ static Type* check_block_expr(Checker* checker, BlockExpr* expr) {
     return result;
 }
 
+/* ========== Match Expression Type Checking ========== */
+
+static Type* check_match_expr(Checker* checker, MatchExpr* expr) {
+    /* Infer type of the scrutinee */
+    Type* scrutinee_type = checker_infer_expr(checker, expr->value);
+    if (scrutinee_type->kind == TYPE_ERROR) return scrutinee_type;
+    
+    if (expr->arms->len == 0) {
+        return error_type(checker, "Match expression must have at least one arm");
+    }
+    
+    /* Type check the first arm to get the expected result type */
+    MatchArm first_arm = expr->arms->data[0];
+    
+    /* Push scope for pattern bindings */
+    checker_push_scope(checker);
+    bind_pattern(checker, first_arm.pattern, scrutinee_type);
+    
+    /* Check guard if present */
+    if (first_arm.guard) {
+        Type* guard_type = checker_infer_expr(checker, first_arm.guard);
+        if (guard_type->kind == TYPE_ERROR) {
+            checker_pop_scope(checker);
+            return guard_type;
+        }
+        if (guard_type->kind != TYPE_BOOL) {
+            checker_pop_scope(checker);
+            return error_type(checker, "Match guard must be Bool, got %s",
+                string_cstr(type_to_string(checker->arena, guard_type)));
+        }
+    }
+    
+    Type* result_type = checker_infer_expr(checker, first_arm.body);
+    checker_pop_scope(checker);
+    
+    if (result_type->kind == TYPE_ERROR) return result_type;
+    
+    /* Check remaining arms match the result type */
+    for (size_t i = 1; i < expr->arms->len; i++) {
+        MatchArm arm = expr->arms->data[i];
+        
+        /* Push scope for pattern bindings */
+        checker_push_scope(checker);
+        bind_pattern(checker, arm.pattern, scrutinee_type);
+        
+        /* Check guard if present */
+        if (arm.guard) {
+            Type* guard_type = checker_infer_expr(checker, arm.guard);
+            if (guard_type->kind == TYPE_ERROR) {
+                checker_pop_scope(checker);
+                return guard_type;
+            }
+            if (guard_type->kind != TYPE_BOOL) {
+                checker_pop_scope(checker);
+                return error_type(checker, "Match guard must be Bool, got %s",
+                    string_cstr(type_to_string(checker->arena, guard_type)));
+            }
+        }
+        
+        Type* arm_type = checker_infer_expr(checker, arm.body);
+        checker_pop_scope(checker);
+        
+        if (arm_type->kind == TYPE_ERROR) return arm_type;
+        
+        if (!type_equals(arm_type, result_type)) {
+            return error_type(checker, "Match arm types must be equal: expected %s, got %s",
+                string_cstr(type_to_string(checker->arena, result_type)),
+                string_cstr(type_to_string(checker->arena, arm_type)));
+        }
+    }
+    
+    return result_type;
+}
+
 /* ========== Main Type Inference ========== */
 
 Type* checker_infer_expr(Checker* checker, Expr* expr) {
@@ -411,8 +489,10 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
         case EXPR_BLOCK:
             return check_block_expr(checker, &expr->data.block);
             
-        /* TODO: Implement remaining expression types */
         case EXPR_MATCH:
+            return check_match_expr(checker, &expr->data.match_expr);
+            
+        /* TODO: Implement remaining expression types */
         case EXPR_BIND:
         case EXPR_WITH:
         case EXPR_DOT:

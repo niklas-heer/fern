@@ -587,6 +587,45 @@ void test_check_let_shadowing(void) {
     arena_destroy(arena);
 }
 
+/* ========== Match Expression Tests ========== */
+
+void test_check_match_simple(void) {
+    Arena* arena = arena_create(4096);
+    
+    // match 1: 1 -> "one", _ -> "other"
+    Type* t = check_expr(arena, "match 1: 1 -> \"one\", _ -> \"other\"");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_STRING);
+    
+    arena_destroy(arena);
+}
+
+void test_check_match_branch_types_must_match(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Different branch types should error
+    const char* err = check_expr_error(arena, "match 1: 1 -> \"one\", _ -> 42");
+    
+    ASSERT_NOT_NULL(err);
+    // Should report that branches have different types
+    
+    arena_destroy(arena);
+}
+
+void test_check_match_binds_pattern_var(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Pattern variable should be bound in body
+    // match 42: x -> x + 1
+    Type* t = check_expr(arena, "match 42: x -> x + 1");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_INT);
+    
+    arena_destroy(arena);
+}
+
 /* ========== Test Runner ========== */
 
 void run_checker_tests(void) {
@@ -654,4 +693,9 @@ void run_checker_tests(void) {
     TEST_RUN(test_check_let_type_mismatch);
     TEST_RUN(test_check_let_multiple);
     TEST_RUN(test_check_let_shadowing);
+    
+    // Match expressions
+    TEST_RUN(test_check_match_simple);
+    TEST_RUN(test_check_match_branch_types_must_match);
+    TEST_RUN(test_check_match_binds_pattern_var);
 }
