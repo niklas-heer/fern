@@ -153,6 +153,19 @@ Expr* expr_block(Arena* arena, StmtVec* stmts, Expr* final_expr, SourceLoc loc) 
     return expr;
 }
 
+/* Create list expression */
+Expr* expr_list(Arena* arena, ExprVec* elements, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(elements != NULL);
+    
+    Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->type = EXPR_LIST;
+    expr->loc = loc;
+    expr->data.list.elements = elements;
+    
+    return expr;
+}
+
 /* Create let statement */
 Stmt* stmt_let(Arena* arena, Pattern* pattern, TypeExpr* type_ann, Expr* value, SourceLoc loc) {
     assert(arena != NULL);

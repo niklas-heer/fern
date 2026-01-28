@@ -404,6 +404,24 @@ static Expr* parse_primary_internal(Parser* parser) {
         return expr_block(parser->arena, stmts, final_expr, loc);
     }
     
+    // List literal
+    if (match(parser, TOKEN_LBRACKET)) {
+        SourceLoc loc = parser->previous.loc;
+        
+        ExprVec* elements = ExprVec_new(parser->arena);
+        
+        // Parse comma-separated expressions: [expr, expr, ...]
+        if (!check(parser, TOKEN_RBRACKET)) {
+            do {
+                Expr* elem = parse_expression(parser);
+                ExprVec_push(parser->arena, elements, elem);
+            } while (match(parser, TOKEN_COMMA));
+        }
+        
+        consume(parser, TOKEN_RBRACKET, "Expected ']' after list elements");
+        return expr_list(parser->arena, elements, loc);
+    }
+    
     // Grouped expression
     if (match(parser, TOKEN_LPAREN)) {
         Expr* expr = parse_expression(parser);
