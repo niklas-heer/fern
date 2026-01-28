@@ -1503,6 +1503,133 @@ void test_parse_float_in_expr(void) {
     arena_destroy(arena);
 }
 
+/* Test: Parse simple sum type definition */
+void test_parse_type_def_simple(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "type Status:\n    Active\n    Inactive");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    ASSERT_EQ(stmts->len, 1);
+
+    Stmt* stmt = StmtVec_get(stmts, 0);
+    ASSERT_EQ(stmt->type, STMT_TYPE_DEF);
+    ASSERT_STR_EQ(string_cstr(stmt->data.type_def.name), "Status");
+    ASSERT_NULL(stmt->data.type_def.type_params); // No type params
+    ASSERT_EQ(stmt->data.type_def.variants->len, 2);
+
+    // First variant: Active (no fields)
+    TypeVariant v1 = TypeVariantVec_get(stmt->data.type_def.variants, 0);
+    ASSERT_STR_EQ(string_cstr(v1.name), "Active");
+    ASSERT_NULL(v1.fields);
+
+    // Second variant: Inactive (no fields)
+    TypeVariant v2 = TypeVariantVec_get(stmt->data.type_def.variants, 1);
+    ASSERT_STR_EQ(string_cstr(v2.name), "Inactive");
+    ASSERT_NULL(v2.fields);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse sum type with variant fields */
+void test_parse_type_def_with_fields(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "type Shape:\n    Circle(radius: Float)\n    Rect(w: Int, h: Int)");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    ASSERT_EQ(stmts->len, 1);
+
+    Stmt* stmt = StmtVec_get(stmts, 0);
+    ASSERT_EQ(stmt->type, STMT_TYPE_DEF);
+    ASSERT_STR_EQ(string_cstr(stmt->data.type_def.name), "Shape");
+    ASSERT_EQ(stmt->data.type_def.variants->len, 2);
+
+    // Circle(radius: Float) — 1 field
+    TypeVariant v1 = TypeVariantVec_get(stmt->data.type_def.variants, 0);
+    ASSERT_STR_EQ(string_cstr(v1.name), "Circle");
+    ASSERT_NOT_NULL(v1.fields);
+    ASSERT_EQ(v1.fields->len, 1);
+
+    // Rect(w: Int, h: Int) — 2 fields
+    TypeVariant v2 = TypeVariantVec_get(stmt->data.type_def.variants, 1);
+    ASSERT_STR_EQ(string_cstr(v2.name), "Rect");
+    ASSERT_NOT_NULL(v2.fields);
+    ASSERT_EQ(v2.fields->len, 2);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse parameterized type definition */
+void test_parse_type_def_parameterized(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "type Option(a):\n    Some(a)\n    None");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    ASSERT_EQ(stmts->len, 1);
+
+    Stmt* stmt = StmtVec_get(stmts, 0);
+    ASSERT_EQ(stmt->type, STMT_TYPE_DEF);
+    ASSERT_STR_EQ(string_cstr(stmt->data.type_def.name), "Option");
+
+    // Type parameters: (a)
+    ASSERT_NOT_NULL(stmt->data.type_def.type_params);
+    ASSERT_EQ(stmt->data.type_def.type_params->len, 1);
+
+    // Variants: Some(a), None
+    ASSERT_EQ(stmt->data.type_def.variants->len, 2);
+
+    TypeVariant v1 = TypeVariantVec_get(stmt->data.type_def.variants, 0);
+    ASSERT_STR_EQ(string_cstr(v1.name), "Some");
+
+    TypeVariant v2 = TypeVariantVec_get(stmt->data.type_def.variants, 1);
+    ASSERT_STR_EQ(string_cstr(v2.name), "None");
+    ASSERT_NULL(v2.fields);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse record type definition */
+void test_parse_type_def_record(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "type User:\n    name: String\n    age: Int");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    ASSERT_EQ(stmts->len, 1);
+
+    Stmt* stmt = StmtVec_get(stmts, 0);
+    ASSERT_EQ(stmt->type, STMT_TYPE_DEF);
+    ASSERT_STR_EQ(string_cstr(stmt->data.type_def.name), "User");
+
+    // Record types have fields (stored as variants with a single variant matching the type name,
+    // or as a special record_fields list)
+    // For now, we represent record fields as a single variant with the type name
+    ASSERT_NOT_NULL(stmt->data.type_def.record_fields);
+    ASSERT_EQ(stmt->data.type_def.record_fields->len, 2);
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse pub type definition */
+void test_parse_type_def_pub(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "pub type Color:\n    Red\n    Green\n    Blue");
+
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    ASSERT_EQ(stmts->len, 1);
+
+    Stmt* stmt = StmtVec_get(stmts, 0);
+    ASSERT_EQ(stmt->type, STMT_TYPE_DEF);
+    ASSERT_TRUE(stmt->data.type_def.is_public);
+    ASSERT_STR_EQ(string_cstr(stmt->data.type_def.name), "Color");
+    ASSERT_EQ(stmt->data.type_def.variants->len, 3);
+
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
@@ -1575,4 +1702,9 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_defer_multiple);
     TEST_RUN(test_parse_float_literal);
     TEST_RUN(test_parse_float_in_expr);
+    TEST_RUN(test_parse_type_def_simple);
+    TEST_RUN(test_parse_type_def_with_fields);
+    TEST_RUN(test_parse_type_def_parameterized);
+    TEST_RUN(test_parse_type_def_record);
+    TEST_RUN(test_parse_type_def_pub);
 }
