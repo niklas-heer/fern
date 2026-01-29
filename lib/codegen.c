@@ -1129,6 +1129,10 @@ static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
     /* Clear defer stack at function start */
     clear_defers(cg);
     
+    /* Check if this is main() with no return type (Unit return) */
+    bool is_main_unit = (strcmp(string_cstr(fn->name), "main") == 0) 
+                        && (fn->return_type == NULL);
+    
     /* Function header */
     emit(cg, "export function w $%s(", string_cstr(fn->name));
     
@@ -1148,7 +1152,13 @@ static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
     
     /* Emit deferred expressions before final return */
     emit_defers(cg);
-    emit(cg, "    ret %s\n", string_cstr(result));
+    
+    /* For main() with Unit return, always return 0 (success exit code) */
+    if (is_main_unit) {
+        emit(cg, "    ret 0\n");
+    } else {
+        emit(cg, "    ret %s\n", string_cstr(result));
+    }
     
     emit(cg, "}\n\n");
 }

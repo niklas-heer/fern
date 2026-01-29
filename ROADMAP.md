@@ -781,7 +781,8 @@ Using lightweight built-in CLI structure (Command/Option arrays with auto-genera
 - [x] Core subcommands implemented: build, run, check, emit, lex, parse
 - [x] Global flags: `--help`, `--version`
 - [ ] Additional flags
-  - [ ] Build: `-o <output>`, `--mode=cli|full`, `--no-actors`, `--no-db`
+  - [x] Build: `-o <output>` (output file)
+  - [ ] Build: `--mode=cli|full`, `--no-actors`, `--no-db`
   - [ ] Check: `--explain <code>`, `--format=json`, `--errors-only`
   - [ ] Global: `--color=auto|always|never`, `--quiet`, `--verbose`
 - [ ] Additional subcommands: test, fmt, repl, lsp
@@ -830,10 +831,14 @@ Used by Redis and MongoDB. Provides readline-like editing in ~1800 lines.
   fern repl                 # Interactive mode
   ```
 
-- [ ] Implement helpful error messages
-  - [ ] All error types from DESIGN.md
-  - [ ] Color output
+- [x] Implement helpful error messages
+  - [x] Colored output (errors.h with ANSI colors, NO_COLOR/FORCE_COLOR support)
+  - [x] Source location in error messages
   - [ ] Code snippets with indicators
+  - [ ] All error types from DESIGN.md
+
+- [x] Language ergonomics
+  - [x] Allow `fn main():` shorthand (omit return type, defaults to Unit, auto-returns 0)
 
 - [ ] End-to-end tests
   - [ ] Test complete programs

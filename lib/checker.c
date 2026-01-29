@@ -2246,8 +2246,15 @@ bool checker_check_stmts(Checker* checker, StmtVec* stmts) {
                     return_type = type_var(checker->arena, string_new(checker->arena, "result"), type_fresh_var_id());
                 }
             } else {
-                /* No return type annotation: use fresh type variable */
-                return_type = type_var(checker->arena, string_new(checker->arena, "result"), type_fresh_var_id());
+                /* No return type annotation:
+                 * - For main(), default to Unit (allows `fn main():` shorthand)
+                 * - For other functions, use fresh type variable for inference
+                 */
+                if (strcmp(string_cstr(fn->name), "main") == 0) {
+                    return_type = type_unit(checker->arena);
+                } else {
+                    return_type = type_var(checker->arena, string_new(checker->arena, "result"), type_fresh_var_id());
+                }
             }
             
             /* Create function type and register it */

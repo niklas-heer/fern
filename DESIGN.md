@@ -409,6 +409,29 @@ fn greet(name: String) -> String:
     "Hello, {name}!"
 ```
 
+**Program Entry Point (`main`):**
+
+Every Fern program requires a `main` function. The return type can be omitted or explicit:
+
+```fern
+# Shorthand: omit return type (defaults to Unit, auto-returns 0)
+fn main():
+    println("Hello, world!")
+
+# Explicit: return an Int exit code
+fn main() -> Int:
+    println("Hello, world!")
+    0
+
+# With Result for error handling
+fn main() -> Result((), Error):
+    let content = read_file("config.txt")?
+    println(content)
+    Ok(())
+```
+
+The shorthand `fn main():` is equivalent to `fn main() -> (): 0` — it defaults to Unit return type and automatically returns exit code 0 (success). This special case applies **only to main()**.
+
 **Labeled arguments:**
 
 ```fern
