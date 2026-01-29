@@ -1,0 +1,63 @@
+# TUI Demo - showcasing Fern's terminal UI capabilities
+# This demonstrates Panel, Table, and Style modules
+
+fn main():
+    # Create a welcome panel
+    let welcome = Panel.new("Welcome to Fern TUI Demo!")
+    let welcome = Panel.title(welcome, "Fern")
+    let welcome = Panel.subtitle(welcome, "A friendly language")
+    let welcome = Panel.border(welcome, "rounded")
+    println(Panel.render(welcome))
+    
+    # Show styled text
+    println("")
+    println(Style.bold("Text Styling Examples:"))
+    println("  " + Style.red("Red text"))
+    println("  " + Style.green("Green text"))
+    println("  " + Style.blue("Blue text"))
+    println("  " + Style.yellow("Yellow text"))
+    println("  " + Style.cyan("Cyan text"))
+    println("  " + Style.magenta("Magenta text"))
+    println("")
+    println("  " + Style.bold("Bold text"))
+    println("  " + Style.dim("Dim text"))
+    println("  " + Style.italic("Italic text"))
+    println("  " + Style.underline("Underlined text"))
+    println("")
+    
+    # Show system info in a panel
+    let user = System.user()
+    let home = System.home()
+    let cwd = System.cwd()
+    let hostname = System.hostname()
+    let info = "User: " + user + "\nHome: " + home + "\nCWD: " + cwd + "\nHost: " + hostname
+    let info_panel = Panel.new(info)
+    let info_panel = Panel.title(info_panel, "System Info")
+    let info_panel = Panel.border(info_panel, "double")
+    println(Panel.render(info_panel))
+    
+    # Create a table with system info
+    let table = Table.new()
+    let table = Table.title(table, "Environment")
+    let table = Table.add_column(table, "Variable")
+    let table = Table.add_column(table, "Value")
+    let table = Table.border(table, "rounded")
+    
+    let row1 = ["USER", System.getenv("USER")]
+    let table = Table.add_row(table, row1)
+    
+    let row2 = ["SHELL", System.getenv("SHELL")]
+    let table = Table.add_row(table, row2)
+    
+    let row3 = ["TERM", System.getenv("TERM")]
+    let table = Table.add_row(table, row3)
+    
+    println("")
+    println(Table.render(table))
+    
+    # Colorful goodbye
+    println("")
+    let goodbye = Style.bold(Style.green("Demo complete!"))
+    println(goodbye)
+    
+    0
