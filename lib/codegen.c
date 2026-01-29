@@ -199,6 +199,28 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
         
         case EXPR_CALL: {
             CallExpr* call = &expr->data.call;
+            /* Check for module.function calls that return strings */
+            if (call->func->type == EXPR_DOT) {
+                DotExpr* dot = &call->func->data.dot;
+                if (dot->object->type == EXPR_IDENT) {
+                    const char* module = string_cstr(dot->object->data.ident.name);
+                    const char* func = string_cstr(dot->field);
+                    /* String module functions that return String */
+                    if (strcmp(module, "String") == 0) {
+                        if (strcmp(func, "concat") == 0 ||
+                            strcmp(func, "slice") == 0 ||
+                            strcmp(func, "trim") == 0 ||
+                            strcmp(func, "trim_start") == 0 ||
+                            strcmp(func, "trim_end") == 0 ||
+                            strcmp(func, "to_upper") == 0 ||
+                            strcmp(func, "to_lower") == 0 ||
+                            strcmp(func, "replace") == 0 ||
+                            strcmp(func, "repeat") == 0) {
+                            return PRINT_STRING;
+                        }
+                    }
+                }
+            }
             if (call->func->type == EXPR_IDENT) {
                 const char* fn_name = string_cstr(call->func->data.ident.name);
                 /* String functions return strings */
@@ -221,6 +243,7 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
  * @return 'l' for 64-bit, 'w' for 32-bit.
  */
 static char qbe_type_for_expr(Expr* expr) {
+    // FERN_STYLE: allow(function-length) type dispatch handles all module return types
     /* FERN_STYLE: allow(assertion-density) - simple type lookup */
     if (expr == NULL) return 'w';
     
@@ -238,6 +261,49 @@ static char qbe_type_for_expr(Expr* expr) {
         /* Check if function call returns pointer type */
         case EXPR_CALL: {
             CallExpr* call = &expr->data.call;
+            /* Check module.function calls */
+            if (call->func->type == EXPR_DOT) {
+                DotExpr* dot = &call->func->data.dot;
+                if (dot->object->type == EXPR_IDENT) {
+                    const char* module = string_cstr(dot->object->data.ident.name);
+                    const char* func = string_cstr(dot->field);
+                    /* String module functions returning String (pointer) */
+                    if (strcmp(module, "String") == 0) {
+                        if (strcmp(func, "concat") == 0 ||
+                            strcmp(func, "slice") == 0 ||
+                            strcmp(func, "trim") == 0 ||
+                            strcmp(func, "trim_start") == 0 ||
+                            strcmp(func, "trim_end") == 0 ||
+                            strcmp(func, "to_upper") == 0 ||
+                            strcmp(func, "to_lower") == 0 ||
+                            strcmp(func, "replace") == 0 ||
+                            strcmp(func, "repeat") == 0 ||
+                            strcmp(func, "split") == 0 ||
+                            strcmp(func, "lines") == 0) {
+                            return 'l';
+                        }
+                    }
+                    /* List module functions returning List (pointer) */
+                    if (strcmp(module, "List") == 0) {
+                        if (strcmp(func, "push") == 0 ||
+                            strcmp(func, "reverse") == 0 ||
+                            strcmp(func, "concat") == 0 ||
+                            strcmp(func, "tail") == 0) {
+                            return 'l';
+                        }
+                    }
+                    /* File module functions returning Result (pointer) */
+                    if (strcmp(module, "File") == 0) {
+                        if (strcmp(func, "read") == 0 ||
+                            strcmp(func, "write") == 0 ||
+                            strcmp(func, "append") == 0 ||
+                            strcmp(func, "delete") == 0 ||
+                            strcmp(func, "size") == 0) {
+                            return 'l';
+                        }
+                    }
+                }
+            }
             if (call->func->type == EXPR_IDENT) {
                 const char* fn_name = string_cstr(call->func->data.ident.name);
                 if (fn_returns_pointer(fn_name)) {
@@ -651,6 +717,260 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
         case EXPR_CALL: {
             CallExpr* call = &expr->data.call;
             String* result = fresh_temp(cg);
+            
+            /* Check for module.function calls (e.g., String.len, List.get) */
+            if (call->func->type == EXPR_DOT) {
+                DotExpr* dot = &call->func->data.dot;
+                if (dot->object->type == EXPR_IDENT) {
+                    const char* module = string_cstr(dot->object->data.ident.name);
+                    const char* func = string_cstr(dot->field);
+                    
+                    /* ===== String module ===== */
+                    if (strcmp(module, "String") == 0) {
+                        /* String.len(s) -> Int */
+                        if (strcmp(func, "len") == 0 && call->args->len == 1) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =w call $fern_str_len(l %s)\n",
+                                string_cstr(result), string_cstr(s));
+                            return result;
+                        }
+                        /* String.concat(a, b) -> String */
+                        if (strcmp(func, "concat") == 0 && call->args->len == 2) {
+                            String* a = codegen_expr(cg, call->args->data[0].value);
+                            String* b = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_str_concat(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(a), string_cstr(b));
+                            return result;
+                        }
+                        /* String.eq(a, b) -> Bool */
+                        if (strcmp(func, "eq") == 0 && call->args->len == 2) {
+                            String* a = codegen_expr(cg, call->args->data[0].value);
+                            String* b = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =w call $fern_str_eq(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(a), string_cstr(b));
+                            return result;
+                        }
+                        /* String.starts_with(s, prefix) -> Bool */
+                        if (strcmp(func, "starts_with") == 0 && call->args->len == 2) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            String* prefix = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =w call $fern_str_starts_with(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(s), string_cstr(prefix));
+                            return result;
+                        }
+                        /* String.ends_with(s, suffix) -> Bool */
+                        if (strcmp(func, "ends_with") == 0 && call->args->len == 2) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            String* suffix = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =w call $fern_str_ends_with(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(s), string_cstr(suffix));
+                            return result;
+                        }
+                        /* String.contains(s, substr) -> Bool */
+                        if (strcmp(func, "contains") == 0 && call->args->len == 2) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            String* substr = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =w call $fern_str_contains(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(s), string_cstr(substr));
+                            return result;
+                        }
+                        /* String.slice(s, start, end) -> String */
+                        if (strcmp(func, "slice") == 0 && call->args->len == 3) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            String* start = codegen_expr(cg, call->args->data[1].value);
+                            String* end = codegen_expr(cg, call->args->data[2].value);
+                            emit(cg, "    %s =l call $fern_str_slice(l %s, w %s, w %s)\n",
+                                string_cstr(result), string_cstr(s), string_cstr(start), string_cstr(end));
+                            return result;
+                        }
+                        /* String.trim(s) -> String */
+                        if (strcmp(func, "trim") == 0 && call->args->len == 1) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_str_trim(l %s)\n",
+                                string_cstr(result), string_cstr(s));
+                            return result;
+                        }
+                        /* String.trim_start(s) -> String */
+                        if (strcmp(func, "trim_start") == 0 && call->args->len == 1) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_str_trim_start(l %s)\n",
+                                string_cstr(result), string_cstr(s));
+                            return result;
+                        }
+                        /* String.trim_end(s) -> String */
+                        if (strcmp(func, "trim_end") == 0 && call->args->len == 1) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_str_trim_end(l %s)\n",
+                                string_cstr(result), string_cstr(s));
+                            return result;
+                        }
+                        /* String.to_upper(s) -> String */
+                        if (strcmp(func, "to_upper") == 0 && call->args->len == 1) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_str_to_upper(l %s)\n",
+                                string_cstr(result), string_cstr(s));
+                            return result;
+                        }
+                        /* String.to_lower(s) -> String */
+                        if (strcmp(func, "to_lower") == 0 && call->args->len == 1) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_str_to_lower(l %s)\n",
+                                string_cstr(result), string_cstr(s));
+                            return result;
+                        }
+                        /* String.replace(s, old, new) -> String */
+                        if (strcmp(func, "replace") == 0 && call->args->len == 3) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            String* old_str = codegen_expr(cg, call->args->data[1].value);
+                            String* new_str = codegen_expr(cg, call->args->data[2].value);
+                            emit(cg, "    %s =l call $fern_str_replace(l %s, l %s, l %s)\n",
+                                string_cstr(result), string_cstr(s), string_cstr(old_str), string_cstr(new_str));
+                            return result;
+                        }
+                        /* String.repeat(s, n) -> String */
+                        if (strcmp(func, "repeat") == 0 && call->args->len == 2) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            String* n = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_str_repeat(l %s, w %s)\n",
+                                string_cstr(result), string_cstr(s), string_cstr(n));
+                            return result;
+                        }
+                        /* String.is_empty(s) -> Bool */
+                        if (strcmp(func, "is_empty") == 0 && call->args->len == 1) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =w call $fern_str_is_empty(l %s)\n",
+                                string_cstr(result), string_cstr(s));
+                            return result;
+                        }
+                        /* String.split(s, delim) -> List(String) */
+                        if (strcmp(func, "split") == 0 && call->args->len == 2) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            String* delim = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_str_split(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(s), string_cstr(delim));
+                            return result;
+                        }
+                        /* String.lines(s) -> List(String) */
+                        if (strcmp(func, "lines") == 0 && call->args->len == 1) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_str_lines(l %s)\n",
+                                string_cstr(result), string_cstr(s));
+                            return result;
+                        }
+                    }
+                    
+                    /* ===== List module ===== */
+                    if (strcmp(module, "List") == 0) {
+                        /* List.len(list) -> Int */
+                        if (strcmp(func, "len") == 0 && call->args->len == 1) {
+                            String* list = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =w call $fern_list_len(l %s)\n",
+                                string_cstr(result), string_cstr(list));
+                            return result;
+                        }
+                        /* List.get(list, index) -> elem */
+                        if (strcmp(func, "get") == 0 && call->args->len == 2) {
+                            String* list = codegen_expr(cg, call->args->data[0].value);
+                            String* index = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =w call $fern_list_get(l %s, w %s)\n",
+                                string_cstr(result), string_cstr(list), string_cstr(index));
+                            return result;
+                        }
+                        /* List.push(list, elem) -> List */
+                        if (strcmp(func, "push") == 0 && call->args->len == 2) {
+                            String* list = codegen_expr(cg, call->args->data[0].value);
+                            String* elem = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_list_push(l %s, w %s)\n",
+                                string_cstr(result), string_cstr(list), string_cstr(elem));
+                            return result;
+                        }
+                        /* List.reverse(list) -> List */
+                        if (strcmp(func, "reverse") == 0 && call->args->len == 1) {
+                            String* list = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_list_reverse(l %s)\n",
+                                string_cstr(result), string_cstr(list));
+                            return result;
+                        }
+                        /* List.concat(a, b) -> List */
+                        if (strcmp(func, "concat") == 0 && call->args->len == 2) {
+                            String* a = codegen_expr(cg, call->args->data[0].value);
+                            String* b = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_list_concat(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(a), string_cstr(b));
+                            return result;
+                        }
+                        /* List.head(list) -> elem */
+                        if (strcmp(func, "head") == 0 && call->args->len == 1) {
+                            String* list = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =w call $fern_list_head(l %s)\n",
+                                string_cstr(result), string_cstr(list));
+                            return result;
+                        }
+                        /* List.tail(list) -> List */
+                        if (strcmp(func, "tail") == 0 && call->args->len == 1) {
+                            String* list = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_list_tail(l %s)\n",
+                                string_cstr(result), string_cstr(list));
+                            return result;
+                        }
+                        /* List.is_empty(list) -> Bool */
+                        if (strcmp(func, "is_empty") == 0 && call->args->len == 1) {
+                            String* list = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =w call $fern_list_is_empty(l %s)\n",
+                                string_cstr(result), string_cstr(list));
+                            return result;
+                        }
+                    }
+                    
+                    /* ===== File module ===== */
+                    if (strcmp(module, "File") == 0) {
+                        /* File.read(path) -> Result(String, Int) */
+                        if (strcmp(func, "read") == 0 && call->args->len == 1) {
+                            String* path = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_read_file(l %s)\n",
+                                string_cstr(result), string_cstr(path));
+                            return result;
+                        }
+                        /* File.write(path, contents) -> Result(Int, Int) */
+                        if (strcmp(func, "write") == 0 && call->args->len == 2) {
+                            String* path = codegen_expr(cg, call->args->data[0].value);
+                            String* contents = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_write_file(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(path), string_cstr(contents));
+                            return result;
+                        }
+                        /* File.append(path, contents) -> Result(Int, Int) */
+                        if (strcmp(func, "append") == 0 && call->args->len == 2) {
+                            String* path = codegen_expr(cg, call->args->data[0].value);
+                            String* contents = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_append_file(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(path), string_cstr(contents));
+                            return result;
+                        }
+                        /* File.exists(path) -> Bool */
+                        if (strcmp(func, "exists") == 0 && call->args->len == 1) {
+                            String* path = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =w call $fern_file_exists(l %s)\n",
+                                string_cstr(result), string_cstr(path));
+                            return result;
+                        }
+                        /* File.delete(path) -> Result(Int, Int) */
+                        if (strcmp(func, "delete") == 0 && call->args->len == 1) {
+                            String* path = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_delete_file(l %s)\n",
+                                string_cstr(result), string_cstr(path));
+                            return result;
+                        }
+                        /* File.size(path) -> Result(Int, Int) */
+                        if (strcmp(func, "size") == 0 && call->args->len == 1) {
+                            String* path = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_file_size(l %s)\n",
+                                string_cstr(result), string_cstr(path));
+                            return result;
+                        }
+                    }
+                }
+            }
             
             /* Check for special Result constructors Ok and Err */
             if (call->func->type == EXPR_IDENT) {

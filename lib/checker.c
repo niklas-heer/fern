@@ -130,6 +130,313 @@ static Type* error_type_at(Checker* checker, SourceLoc loc, const char* fmt, ...
     return type_error(checker->arena, string_new(checker->arena, full_buf));
 }
 
+/* ========== Built-in Module System ========== */
+
+/**
+ * Check if a name is a built-in module.
+ * @param name The name to check.
+ * @return True if the name is a built-in module.
+ */
+static bool is_builtin_module(const char* name) {
+    assert(name != NULL);
+    assert(name[0] != '\0');  /* Name must be non-empty */
+    return strcmp(name, "String") == 0 ||
+           strcmp(name, "List") == 0 ||
+           strcmp(name, "File") == 0 ||
+           strcmp(name, "Result") == 0 ||
+           strcmp(name, "Option") == 0;
+}
+
+/**
+ * Look up a function type from a built-in module.
+ * @param checker The type checker context.
+ * @param module The module name (e.g., "String").
+ * @param func The function name (e.g., "len").
+ * @return The function type, or NULL if not found.
+ */
+static Type* lookup_module_function(Checker* checker, const char* module, const char* func) {
+    // FERN_STYLE: allow(function-length) module function lookup handles all built-in modules
+    assert(checker != NULL);
+    assert(module != NULL);
+    assert(func != NULL);
+    Arena* arena = checker->arena;
+    TypeVec* params;
+    Type* var;
+    TypeVec* type_args;
+    Type* list_type;
+    TypeVec* result_args;
+    Type* result_type;
+
+    /* ===== String module ===== */
+    if (strcmp(module, "String") == 0) {
+        /* String.len(String) -> Int */
+        if (strcmp(func, "len") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_int(arena));
+        }
+        /* String.concat(String, String) -> String */
+        if (strcmp(func, "concat") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
+        /* String.eq(String, String) -> Bool */
+        if (strcmp(func, "eq") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_bool(arena));
+        }
+        /* String.starts_with(String, String) -> Bool */
+        if (strcmp(func, "starts_with") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_bool(arena));
+        }
+        /* String.ends_with(String, String) -> Bool */
+        if (strcmp(func, "ends_with") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_bool(arena));
+        }
+        /* String.contains(String, String) -> Bool */
+        if (strcmp(func, "contains") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_bool(arena));
+        }
+        /* String.slice(String, Int, Int) -> String */
+        if (strcmp(func, "slice") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_int(arena));
+            TypeVec_push(arena, params, type_int(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
+        /* String.trim(String) -> String */
+        if (strcmp(func, "trim") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
+        /* String.trim_start(String) -> String */
+        if (strcmp(func, "trim_start") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
+        /* String.trim_end(String) -> String */
+        if (strcmp(func, "trim_end") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
+        /* String.to_upper(String) -> String */
+        if (strcmp(func, "to_upper") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
+        /* String.to_lower(String) -> String */
+        if (strcmp(func, "to_lower") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
+        /* String.replace(String, String, String) -> String */
+        if (strcmp(func, "replace") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
+        /* String.repeat(String, Int) -> String */
+        if (strcmp(func, "repeat") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_int(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
+        /* String.is_empty(String) -> Bool */
+        if (strcmp(func, "is_empty") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_bool(arena));
+        }
+        /* String.split(String, String) -> List(String) */
+        if (strcmp(func, "split") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_list(arena, type_string(arena)));
+        }
+        /* String.lines(String) -> List(String) */
+        if (strcmp(func, "lines") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_list(arena, type_string(arena)));
+        }
+    }
+
+    /* ===== List module ===== */
+    if (strcmp(module, "List") == 0) {
+        /* List.len(List(a)) -> Int */
+        if (strcmp(func, "len") == 0) {
+            params = TypeVec_new(arena);
+            var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+            type_args = TypeVec_new(arena);
+            TypeVec_push(arena, type_args, var);
+            list_type = type_con(arena, string_new(arena, "List"), type_args);
+            TypeVec_push(arena, params, list_type);
+            return type_fn(arena, params, type_int(arena));
+        }
+        /* List.get(List(a), Int) -> a */
+        if (strcmp(func, "get") == 0) {
+            params = TypeVec_new(arena);
+            var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+            type_args = TypeVec_new(arena);
+            TypeVec_push(arena, type_args, var);
+            list_type = type_con(arena, string_new(arena, "List"), type_args);
+            TypeVec_push(arena, params, list_type);
+            TypeVec_push(arena, params, type_int(arena));
+            return type_fn(arena, params, var);
+        }
+        /* List.push(List(a), a) -> List(a) */
+        if (strcmp(func, "push") == 0) {
+            params = TypeVec_new(arena);
+            var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+            type_args = TypeVec_new(arena);
+            TypeVec_push(arena, type_args, var);
+            list_type = type_con(arena, string_new(arena, "List"), type_args);
+            TypeVec_push(arena, params, list_type);
+            TypeVec_push(arena, params, var);
+            return type_fn(arena, params, list_type);
+        }
+        /* List.reverse(List(a)) -> List(a) */
+        if (strcmp(func, "reverse") == 0) {
+            params = TypeVec_new(arena);
+            var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+            type_args = TypeVec_new(arena);
+            TypeVec_push(arena, type_args, var);
+            list_type = type_con(arena, string_new(arena, "List"), type_args);
+            TypeVec_push(arena, params, list_type);
+            return type_fn(arena, params, list_type);
+        }
+        /* List.concat(List(a), List(a)) -> List(a) */
+        if (strcmp(func, "concat") == 0) {
+            params = TypeVec_new(arena);
+            var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+            type_args = TypeVec_new(arena);
+            TypeVec_push(arena, type_args, var);
+            list_type = type_con(arena, string_new(arena, "List"), type_args);
+            TypeVec_push(arena, params, list_type);
+            TypeVec_push(arena, params, list_type);
+            return type_fn(arena, params, list_type);
+        }
+        /* List.head(List(a)) -> a */
+        if (strcmp(func, "head") == 0) {
+            params = TypeVec_new(arena);
+            var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+            type_args = TypeVec_new(arena);
+            TypeVec_push(arena, type_args, var);
+            list_type = type_con(arena, string_new(arena, "List"), type_args);
+            TypeVec_push(arena, params, list_type);
+            return type_fn(arena, params, var);
+        }
+        /* List.tail(List(a)) -> List(a) */
+        if (strcmp(func, "tail") == 0) {
+            params = TypeVec_new(arena);
+            var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+            type_args = TypeVec_new(arena);
+            TypeVec_push(arena, type_args, var);
+            list_type = type_con(arena, string_new(arena, "List"), type_args);
+            TypeVec_push(arena, params, list_type);
+            return type_fn(arena, params, list_type);
+        }
+        /* List.is_empty(List(a)) -> Bool */
+        if (strcmp(func, "is_empty") == 0) {
+            params = TypeVec_new(arena);
+            var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+            type_args = TypeVec_new(arena);
+            TypeVec_push(arena, type_args, var);
+            list_type = type_con(arena, string_new(arena, "List"), type_args);
+            TypeVec_push(arena, params, list_type);
+            return type_fn(arena, params, type_bool(arena));
+        }
+    }
+
+    /* ===== File module ===== */
+    if (strcmp(module, "File") == 0) {
+        /* File.read(String) -> Result(String, Int) */
+        if (strcmp(func, "read") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            result_args = TypeVec_new(arena);
+            TypeVec_push(arena, result_args, type_string(arena));
+            TypeVec_push(arena, result_args, type_int(arena));
+            result_type = type_con(arena, string_new(arena, "Result"), result_args);
+            return type_fn(arena, params, result_type);
+        }
+        /* File.write(String, String) -> Result(Int, Int) */
+        if (strcmp(func, "write") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_string(arena));
+            result_args = TypeVec_new(arena);
+            TypeVec_push(arena, result_args, type_int(arena));
+            TypeVec_push(arena, result_args, type_int(arena));
+            result_type = type_con(arena, string_new(arena, "Result"), result_args);
+            return type_fn(arena, params, result_type);
+        }
+        /* File.append(String, String) -> Result(Int, Int) */
+        if (strcmp(func, "append") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_string(arena));
+            result_args = TypeVec_new(arena);
+            TypeVec_push(arena, result_args, type_int(arena));
+            TypeVec_push(arena, result_args, type_int(arena));
+            result_type = type_con(arena, string_new(arena, "Result"), result_args);
+            return type_fn(arena, params, result_type);
+        }
+        /* File.exists(String) -> Bool */
+        if (strcmp(func, "exists") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_bool(arena));
+        }
+        /* File.delete(String) -> Result(Int, Int) */
+        if (strcmp(func, "delete") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            result_args = TypeVec_new(arena);
+            TypeVec_push(arena, result_args, type_int(arena));
+            TypeVec_push(arena, result_args, type_int(arena));
+            result_type = type_con(arena, string_new(arena, "Result"), result_args);
+            return type_fn(arena, params, result_type);
+        }
+        /* File.size(String) -> Result(Int, Int) */
+        if (strcmp(func, "size") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            result_args = TypeVec_new(arena);
+            TypeVec_push(arena, result_args, type_int(arena));
+            TypeVec_push(arena, result_args, type_int(arena));
+            result_type = type_con(arena, string_new(arena, "Result"), result_args);
+            return type_fn(arena, params, result_type);
+        }
+    }
+
+    /* Not found */
+    return NULL;
+}
+
 /* ========== Built-in Function Registration ========== */
 
 /**
@@ -1564,10 +1871,28 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
             
         case EXPR_DOT: {
             /* Dot expression: object.field
+             * For built-in modules: String.len, List.get, etc.
              * For tuples: returns the field type at the given index
              * For records: would look up field type (not yet implemented)
              */
             DotExpr* dot = &expr->data.dot;
+            
+            /* Check for built-in module access: Module.function */
+            if (dot->object->type == EXPR_IDENT) {
+                const char* module_name = string_cstr(dot->object->data.ident.name);
+                if (is_builtin_module(module_name)) {
+                    const char* func_name = string_cstr(dot->field);
+                    Type* fn_type = lookup_module_function(checker, module_name, func_name);
+                    if (fn_type) {
+                        return fn_type;
+                    }
+                    return error_type_at(checker, expr->loc,
+                        "Unknown function '%s' in module '%s'",
+                        func_name, module_name);
+                }
+            }
+            
+            /* Not a module access - evaluate the left side as an expression */
             Type* obj_type = checker_infer_expr(checker, dot->object);
             if (obj_type->kind == TYPE_ERROR) return obj_type;
             
