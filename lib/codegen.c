@@ -247,6 +247,14 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
                     if (strcmp(module, "Table") == 0 && strcmp(func, "render") == 0) {
                         return PRINT_STRING;
                     }
+                    /* Progress.render() returns String */
+                    if (strcmp(module, "Progress") == 0 && strcmp(func, "render") == 0) {
+                        return PRINT_STRING;
+                    }
+                    /* Spinner.render() returns String */
+                    if (strcmp(module, "Spinner") == 0 && strcmp(func, "render") == 0) {
+                        return PRINT_STRING;
+                    }
                 }
             }
             if (call->func->type == EXPR_IDENT) {
@@ -371,6 +379,14 @@ static char qbe_type_for_expr(Expr* expr) {
                     }
                     /* Table module functions return Table or String (pointers) */
                     if (strcmp(module, "Table") == 0) {
+                        return 'l';
+                    }
+                    /* Progress module functions return Progress or String (pointers) */
+                    if (strcmp(module, "Progress") == 0) {
+                        return 'l';
+                    }
+                    /* Spinner module functions return Spinner or String (pointers) */
+                    if (strcmp(module, "Spinner") == 0) {
                         return 'l';
                     }
                 }
@@ -1402,6 +1418,94 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* table = codegen_expr(cg, call->args->data[0].value);
                             emit(cg, "    %s =l call $fern_table_render(l %s)\n",
                                 string_cstr(result), string_cstr(table));
+                            return result;
+                        }
+                    }
+
+                    /* ===== Progress module ===== */
+                    if (strcmp(module, "Progress") == 0) {
+                        /* Progress.new(total) -> Progress */
+                        if (strcmp(func, "new") == 0 && call->args->len == 1) {
+                            String* total = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_progress_new(w %s)\n",
+                                string_cstr(result), string_cstr(total));
+                            return result;
+                        }
+                        /* Progress.description(progress, desc) -> Progress */
+                        if (strcmp(func, "description") == 0 && call->args->len == 2) {
+                            String* prog = codegen_expr(cg, call->args->data[0].value);
+                            String* desc = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_progress_description(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(prog), string_cstr(desc));
+                            return result;
+                        }
+                        /* Progress.width(progress, width) -> Progress */
+                        if (strcmp(func, "width") == 0 && call->args->len == 2) {
+                            String* prog = codegen_expr(cg, call->args->data[0].value);
+                            String* width = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_progress_width(l %s, w %s)\n",
+                                string_cstr(result), string_cstr(prog), string_cstr(width));
+                            return result;
+                        }
+                        /* Progress.advance(progress) -> Progress */
+                        if (strcmp(func, "advance") == 0 && call->args->len == 1) {
+                            String* prog = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_progress_advance(l %s)\n",
+                                string_cstr(result), string_cstr(prog));
+                            return result;
+                        }
+                        /* Progress.set(progress, value) -> Progress */
+                        if (strcmp(func, "set") == 0 && call->args->len == 2) {
+                            String* prog = codegen_expr(cg, call->args->data[0].value);
+                            String* value = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_progress_set(l %s, w %s)\n",
+                                string_cstr(result), string_cstr(prog), string_cstr(value));
+                            return result;
+                        }
+                        /* Progress.render(progress) -> String */
+                        if (strcmp(func, "render") == 0 && call->args->len == 1) {
+                            String* prog = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_progress_render(l %s)\n",
+                                string_cstr(result), string_cstr(prog));
+                            return result;
+                        }
+                    }
+
+                    /* ===== Spinner module ===== */
+                    if (strcmp(module, "Spinner") == 0) {
+                        /* Spinner.new() -> Spinner */
+                        if (strcmp(func, "new") == 0 && call->args->len == 0) {
+                            emit(cg, "    %s =l call $fern_spinner_new()\n", string_cstr(result));
+                            return result;
+                        }
+                        /* Spinner.message(spinner, message) -> Spinner */
+                        if (strcmp(func, "message") == 0 && call->args->len == 2) {
+                            String* spin = codegen_expr(cg, call->args->data[0].value);
+                            String* msg = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_spinner_message(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(spin), string_cstr(msg));
+                            return result;
+                        }
+                        /* Spinner.style(spinner, style) -> Spinner */
+                        if (strcmp(func, "style") == 0 && call->args->len == 2) {
+                            String* spin = codegen_expr(cg, call->args->data[0].value);
+                            String* style = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_spinner_style(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(spin), string_cstr(style));
+                            return result;
+                        }
+                        /* Spinner.tick(spinner) -> Spinner */
+                        if (strcmp(func, "tick") == 0 && call->args->len == 1) {
+                            String* spin = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_spinner_tick(l %s)\n",
+                                string_cstr(result), string_cstr(spin));
+                            return result;
+                        }
+                        /* Spinner.render(spinner) -> String */
+                        if (strcmp(func, "render") == 0 && call->args->len == 1) {
+                            String* spin = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_spinner_render(l %s)\n",
+                                string_cstr(result), string_cstr(spin));
                             return result;
                         }
                     }

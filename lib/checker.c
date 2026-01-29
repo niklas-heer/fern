@@ -150,7 +150,9 @@ static bool is_builtin_module(const char* name) {
            strcmp(name, "Term") == 0 ||
            strcmp(name, "Panel") == 0 ||
            strcmp(name, "Table") == 0 ||
-           strcmp(name, "Style") == 0;
+           strcmp(name, "Style") == 0 ||
+           strcmp(name, "Progress") == 0 ||
+           strcmp(name, "Spinner") == 0;
 }
 
 /**
@@ -763,6 +765,86 @@ static Type* lookup_module_function(Checker* checker, const char* module, const 
         if (strcmp(func, "render") == 0) {
             params = TypeVec_new(arena);
             TypeVec_push(arena, params, table_type);
+            return type_fn(arena, params, type_string(arena));
+        }
+    }
+
+    /* ===== Progress module ===== */
+    if (strcmp(module, "Progress") == 0) {
+        Type* progress_type = type_con(arena, string_new(arena, "Progress"), NULL);
+        /* Progress.new(Int) -> Progress - create progress bar with total */
+        if (strcmp(func, "new") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_int(arena));
+            return type_fn(arena, params, progress_type);
+        }
+        /* Progress.description(Progress, String) -> Progress */
+        if (strcmp(func, "description") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, progress_type);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, progress_type);
+        }
+        /* Progress.width(Progress, Int) -> Progress */
+        if (strcmp(func, "width") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, progress_type);
+            TypeVec_push(arena, params, type_int(arena));
+            return type_fn(arena, params, progress_type);
+        }
+        /* Progress.advance(Progress) -> Progress */
+        if (strcmp(func, "advance") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, progress_type);
+            return type_fn(arena, params, progress_type);
+        }
+        /* Progress.set(Progress, Int) -> Progress */
+        if (strcmp(func, "set") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, progress_type);
+            TypeVec_push(arena, params, type_int(arena));
+            return type_fn(arena, params, progress_type);
+        }
+        /* Progress.render(Progress) -> String */
+        if (strcmp(func, "render") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, progress_type);
+            return type_fn(arena, params, type_string(arena));
+        }
+    }
+
+    /* ===== Spinner module ===== */
+    if (strcmp(module, "Spinner") == 0) {
+        Type* spinner_type = type_con(arena, string_new(arena, "Spinner"), NULL);
+        /* Spinner.new() -> Spinner */
+        if (strcmp(func, "new") == 0) {
+            params = TypeVec_new(arena);
+            return type_fn(arena, params, spinner_type);
+        }
+        /* Spinner.message(Spinner, String) -> Spinner */
+        if (strcmp(func, "message") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, spinner_type);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, spinner_type);
+        }
+        /* Spinner.style(Spinner, String) -> Spinner */
+        if (strcmp(func, "style") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, spinner_type);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, spinner_type);
+        }
+        /* Spinner.tick(Spinner) -> Spinner */
+        if (strcmp(func, "tick") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, spinner_type);
+            return type_fn(arena, params, spinner_type);
+        }
+        /* Spinner.render(Spinner) -> String */
+        if (strcmp(func, "render") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, spinner_type);
             return type_fn(arena, params, type_string(arena));
         }
     }

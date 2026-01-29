@@ -2831,3 +2831,243 @@ void fern_table_free(FernTable* table) {
         free(table);
     }
 }
+
+/* ========== Progress Bar Module ========== */
+
+FernProgress* fern_progress_new(int64_t total) {
+    FernProgress* p = malloc(sizeof(FernProgress));
+    if (!p) return NULL;
+    
+    p->total = total > 0 ? total : 100;
+    p->completed = 0;
+    p->width = 40;
+    p->description = NULL;
+    p->fill_char = strdup("█");
+    p->empty_char = strdup("░");
+    p->show_percentage = 1;
+    p->show_count = 0;
+    
+    return p;
+}
+
+FernProgress* fern_progress_description(FernProgress* p, const char* desc) {
+    if (!p) return NULL;
+    if (p->description) free(p->description);
+    p->description = desc ? strdup(desc) : NULL;
+    return p;
+}
+
+FernProgress* fern_progress_width(FernProgress* p, int64_t width) {
+    if (!p) return NULL;
+    p->width = width > 0 ? width : 40;
+    return p;
+}
+
+FernProgress* fern_progress_advance(FernProgress* p) {
+    if (!p) return NULL;
+    if (p->completed < p->total) {
+        p->completed++;
+    }
+    return p;
+}
+
+FernProgress* fern_progress_set(FernProgress* p, int64_t value) {
+    if (!p) return NULL;
+    if (value < 0) value = 0;
+    if (value > p->total) value = p->total;
+    p->completed = value;
+    return p;
+}
+
+char* fern_progress_render(FernProgress* p) {
+    if (!p) return strdup("");
+    
+    double ratio = p->total > 0 ? (double)p->completed / p->total : 0;
+    int filled = (int)(ratio * p->width);
+    int empty = (int)p->width - filled;
+    
+    /* Calculate buffer size */
+    size_t desc_len = p->description ? strlen(p->description) + 1 : 0;
+    size_t fill_len = strlen(p->fill_char);
+    size_t empty_len = strlen(p->empty_char);
+    size_t buf_size = desc_len + filled * fill_len + empty * empty_len + 50;
+    
+    char* result = malloc(buf_size);
+    if (!result) return strdup("");
+    result[0] = '\0';
+    
+    /* Description */
+    if (p->description) {
+        strcat(result, p->description);
+        strcat(result, " ");
+    }
+    
+    /* Opening bracket */
+    strcat(result, "[");
+    
+    /* Filled portion */
+    for (int i = 0; i < filled; i++) {
+        strcat(result, p->fill_char);
+    }
+    
+    /* Empty portion */
+    for (int i = 0; i < empty; i++) {
+        strcat(result, p->empty_char);
+    }
+    
+    /* Closing bracket */
+    strcat(result, "]");
+    
+    /* Percentage */
+    if (p->show_percentage) {
+        char pct[20];
+        snprintf(pct, sizeof(pct), " %3d%%", (int)(ratio * 100));
+        strcat(result, pct);
+    }
+    
+    /* Count */
+    if (p->show_count) {
+        char count[40];
+        snprintf(count, sizeof(count), " (%lld/%lld)", 
+            (long long)p->completed, (long long)p->total);
+        strcat(result, count);
+    }
+    
+    return result;
+}
+
+void fern_progress_free(FernProgress* p) {
+    if (p) {
+        free(p->description);
+        free(p->fill_char);
+        free(p->empty_char);
+        free(p);
+    }
+}
+
+/* ========== Spinner Module ========== */
+
+/* Spinner frame sequences */
+static const char* SPINNER_FRAMES_DOTS[] = {
+    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"
+};
+static const int SPINNER_FRAMES_DOTS_COUNT = 10;
+
+static const char* SPINNER_FRAMES_LINE[] = {
+    "-", "\\", "|", "/"
+};
+static const int SPINNER_FRAMES_LINE_COUNT = 4;
+
+static const char* SPINNER_FRAMES_CIRCLE[] = {
+    "◐", "◓", "◑", "◒"
+};
+static const int SPINNER_FRAMES_CIRCLE_COUNT = 4;
+
+static const char* SPINNER_FRAMES_SQUARE[] = {
+    "◰", "◳", "◲", "◱"
+};
+static const int SPINNER_FRAMES_SQUARE_COUNT = 4;
+
+static const char* SPINNER_FRAMES_ARROW[] = {
+    "←", "↖", "↑", "↗", "→", "↘", "↓", "↙"
+};
+static const int SPINNER_FRAMES_ARROW_COUNT = 8;
+
+static const char* SPINNER_FRAMES_BOUNCE[] = {
+    "⠁", "⠂", "⠄", "⠂"
+};
+static const int SPINNER_FRAMES_BOUNCE_COUNT = 4;
+
+static const char* SPINNER_FRAMES_CLOCK[] = {
+    "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚", "🕛"
+};
+static const int SPINNER_FRAMES_CLOCK_COUNT = 12;
+
+FernSpinner* fern_spinner_new(void) {
+    FernSpinner* s = malloc(sizeof(FernSpinner));
+    if (!s) return NULL;
+    
+    s->style = SPINNER_DOTS;
+    s->frame = 0;
+    s->message = NULL;
+    
+    return s;
+}
+
+FernSpinner* fern_spinner_message(FernSpinner* s, const char* message) {
+    if (!s) return NULL;
+    if (s->message) free(s->message);
+    s->message = message ? strdup(message) : NULL;
+    return s;
+}
+
+FernSpinner* fern_spinner_style(FernSpinner* s, const char* style) {
+    if (!s || !style) return s;
+    
+    if (strcmp(style, "dots") == 0) s->style = SPINNER_DOTS;
+    else if (strcmp(style, "line") == 0) s->style = SPINNER_LINE;
+    else if (strcmp(style, "circle") == 0) s->style = SPINNER_CIRCLE;
+    else if (strcmp(style, "square") == 0) s->style = SPINNER_SQUARE;
+    else if (strcmp(style, "arrow") == 0) s->style = SPINNER_ARROW;
+    else if (strcmp(style, "bounce") == 0) s->style = SPINNER_BOUNCE;
+    else if (strcmp(style, "clock") == 0) s->style = SPINNER_CLOCK;
+    
+    s->frame = 0;  /* Reset frame on style change */
+    return s;
+}
+
+FernSpinner* fern_spinner_tick(FernSpinner* s) {
+    if (!s) return NULL;
+    
+    int count = 0;
+    switch (s->style) {
+        case SPINNER_DOTS:   count = SPINNER_FRAMES_DOTS_COUNT; break;
+        case SPINNER_LINE:   count = SPINNER_FRAMES_LINE_COUNT; break;
+        case SPINNER_CIRCLE: count = SPINNER_FRAMES_CIRCLE_COUNT; break;
+        case SPINNER_SQUARE: count = SPINNER_FRAMES_SQUARE_COUNT; break;
+        case SPINNER_ARROW:  count = SPINNER_FRAMES_ARROW_COUNT; break;
+        case SPINNER_BOUNCE: count = SPINNER_FRAMES_BOUNCE_COUNT; break;
+        case SPINNER_CLOCK:  count = SPINNER_FRAMES_CLOCK_COUNT; break;
+    }
+    
+    s->frame = (s->frame + 1) % count;
+    return s;
+}
+
+char* fern_spinner_render(FernSpinner* s) {
+    if (!s) return strdup("");
+    
+    const char* frame = NULL;
+    switch (s->style) {
+        case SPINNER_DOTS:   frame = SPINNER_FRAMES_DOTS[s->frame]; break;
+        case SPINNER_LINE:   frame = SPINNER_FRAMES_LINE[s->frame]; break;
+        case SPINNER_CIRCLE: frame = SPINNER_FRAMES_CIRCLE[s->frame]; break;
+        case SPINNER_SQUARE: frame = SPINNER_FRAMES_SQUARE[s->frame]; break;
+        case SPINNER_ARROW:  frame = SPINNER_FRAMES_ARROW[s->frame]; break;
+        case SPINNER_BOUNCE: frame = SPINNER_FRAMES_BOUNCE[s->frame]; break;
+        case SPINNER_CLOCK:  frame = SPINNER_FRAMES_CLOCK[s->frame]; break;
+    }
+    
+    if (!frame) frame = "?";
+    
+    size_t msg_len = s->message ? strlen(s->message) : 0;
+    size_t buf_size = strlen(frame) + msg_len + 10;
+    
+    char* result = malloc(buf_size);
+    if (!result) return strdup("");
+    
+    if (s->message) {
+        snprintf(result, buf_size, "%s %s", frame, s->message);
+    } else {
+        strcpy(result, frame);
+    }
+    
+    return result;
+}
+
+void fern_spinner_free(FernSpinner* s) {
+    if (s) {
+        free(s->message);
+        free(s);
+    }
+}

@@ -1022,4 +1022,137 @@ char* fern_table_render(FernTable* table);
  */
 void fern_table_free(FernTable* table);
 
+/* ========== Progress Bar Module ========== */
+
+/**
+ * Progress bar structure for showing task progress.
+ */
+typedef struct {
+    int64_t total;           /* Total steps */
+    int64_t completed;       /* Completed steps */
+    int64_t width;           /* Bar width in characters */
+    char* description;       /* Description text */
+    char* fill_char;         /* Character for filled portion */
+    char* empty_char;        /* Character for empty portion */
+    int show_percentage;     /* Whether to show percentage */
+    int show_count;          /* Whether to show count (x/y) */
+} FernProgress;
+
+/**
+ * Create a new progress bar.
+ * @param total Total number of steps.
+ * @return New progress bar.
+ */
+FernProgress* fern_progress_new(int64_t total);
+
+/**
+ * Set progress bar description.
+ * @param progress The progress bar.
+ * @param description Description text.
+ * @return The progress bar (for chaining).
+ */
+FernProgress* fern_progress_description(FernProgress* progress, const char* description);
+
+/**
+ * Set progress bar width.
+ * @param progress The progress bar.
+ * @param width Width in characters.
+ * @return The progress bar (for chaining).
+ */
+FernProgress* fern_progress_width(FernProgress* progress, int64_t width);
+
+/**
+ * Advance progress bar by one step.
+ * @param progress The progress bar.
+ * @return The progress bar (for chaining).
+ */
+FernProgress* fern_progress_advance(FernProgress* progress);
+
+/**
+ * Set progress to a specific value.
+ * @param progress The progress bar.
+ * @param value The value to set.
+ * @return The progress bar (for chaining).
+ */
+FernProgress* fern_progress_set(FernProgress* progress, int64_t value);
+
+/**
+ * Render progress bar to string.
+ * @param progress The progress bar.
+ * @return Rendered progress bar as string.
+ */
+char* fern_progress_render(FernProgress* progress);
+
+/**
+ * Free progress bar.
+ * @param progress The progress bar to free.
+ */
+void fern_progress_free(FernProgress* progress);
+
+/* ========== Spinner Module ========== */
+
+/**
+ * Spinner style enumeration.
+ */
+typedef enum {
+    SPINNER_DOTS,       /* ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ */
+    SPINNER_LINE,       /* -\|/ */
+    SPINNER_CIRCLE,     /* ◐◓◑◒ */
+    SPINNER_SQUARE,     /* ◰◳◲◱ */
+    SPINNER_ARROW,      /* ←↖↑↗→↘↓↙ */
+    SPINNER_BOUNCE,     /* ⠁⠂⠄⠂ */
+    SPINNER_CLOCK,      /* 🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛 */
+} FernSpinnerStyle;
+
+/**
+ * Spinner structure for showing activity.
+ */
+typedef struct {
+    FernSpinnerStyle style;  /* Spinner style */
+    int frame;               /* Current animation frame */
+    char* message;           /* Message to display */
+} FernSpinner;
+
+/**
+ * Create a new spinner.
+ * @return New spinner.
+ */
+FernSpinner* fern_spinner_new(void);
+
+/**
+ * Set spinner message.
+ * @param spinner The spinner.
+ * @param message Message text.
+ * @return The spinner (for chaining).
+ */
+FernSpinner* fern_spinner_message(FernSpinner* spinner, const char* message);
+
+/**
+ * Set spinner style.
+ * @param spinner The spinner.
+ * @param style Style name ("dots", "line", "circle", etc.).
+ * @return The spinner (for chaining).
+ */
+FernSpinner* fern_spinner_style(FernSpinner* spinner, const char* style);
+
+/**
+ * Advance spinner to next frame.
+ * @param spinner The spinner.
+ * @return The spinner (for chaining).
+ */
+FernSpinner* fern_spinner_tick(FernSpinner* spinner);
+
+/**
+ * Render spinner to string.
+ * @param spinner The spinner.
+ * @return Rendered spinner as string.
+ */
+char* fern_spinner_render(FernSpinner* spinner);
+
+/**
+ * Free spinner.
+ * @param spinner The spinner to free.
+ */
+void fern_spinner_free(FernSpinner* spinner);
+
 #endif /* FERN_RUNTIME_H */
