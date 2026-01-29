@@ -1,0 +1,3 @@
+# Startup time benchmark - minimal program
+fn main() -> Int:
+    42
