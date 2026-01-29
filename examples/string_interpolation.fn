@@ -22,7 +22,7 @@ fn main():
 
     # String function results
     let greeting = "hello"
-    let upper = str_to_upper(greeting)
+    let upper = String.to_upper(greeting)
     println("Uppercase: {upper}")
 
     # Combining strings and numbers

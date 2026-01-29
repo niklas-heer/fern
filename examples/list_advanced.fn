@@ -1,5 +1,5 @@
 # Advanced list operations example
-# Demonstrates newly added list built-in functions
+# Demonstrates List module built-in functions
 
 fn bool_to_int(b: Bool) -> Int:
     if b: 1 else: 0
@@ -7,45 +7,45 @@ fn bool_to_int(b: Bool) -> Int:
 fn main():
     # Create a list
     let numbers = [1, 2, 3, 4, 5]
-    println(list_len(numbers))
+    println(List.len(numbers))
 
-    # Test list_head - get first element
-    let first = list_head(numbers)
+    # Test List.head - get first element
+    let first = List.head(numbers)
     println(first)
 
-    # Test list_tail - get all but first
-    let rest = list_tail(numbers)
-    println(list_len(rest))
-    println(list_head(rest))
+    # Test List.tail - get all but first
+    let rest = List.tail(numbers)
+    println(List.len(rest))
+    println(List.head(rest))
 
-    # Test list_is_empty
+    # Test List.is_empty
     # Note: Empty lists need elements to infer type, use tail of single-element list
     let single = [0]
-    let empty_list = list_tail(single)
-    println(bool_to_int(list_is_empty(empty_list)))
-    println(bool_to_int(list_is_empty(numbers)))
+    let empty_list = List.tail(single)
+    println(bool_to_int(List.is_empty(empty_list)))
+    println(bool_to_int(List.is_empty(numbers)))
 
-    # Test list_push - add element (returns new list)
-    let extended = list_push(numbers, 6)
-    println(list_len(extended))
-    println(list_get(extended, 5))
+    # Test List.push - add element (returns new list)
+    let extended = List.push(numbers, 6)
+    println(List.len(extended))
+    println(List.get(extended, 5))
 
-    # Test list_reverse
-    let reversed = list_reverse(numbers)
-    println(list_head(reversed))
-    println(list_get(reversed, 4))
+    # Test List.reverse
+    let reversed = List.reverse(numbers)
+    println(List.head(reversed))
+    println(List.get(reversed, 4))
 
-    # Test list_concat - join two lists
+    # Test List.concat - join two lists
     let a = [1, 2, 3]
     let b = [4, 5, 6]
-    let combined = list_concat(a, b)
-    println(list_len(combined))
-    println(list_get(combined, 0))
-    println(list_get(combined, 3))
-    println(list_get(combined, 5))
+    let combined = List.concat(a, b)
+    println(List.len(combined))
+    println(List.get(combined, 0))
+    println(List.get(combined, 3))
+    println(List.get(combined, 5))
 
     # Chained operations
     let nums = [10, 20, 30]
-    let with_40 = list_push(nums, 40)
-    let reversed_nums = list_reverse(with_40)
-    println(list_head(reversed_nums))
+    let with_40 = List.push(nums, 40)
+    let reversed_nums = List.reverse(with_40)
+    println(List.head(reversed_nums))

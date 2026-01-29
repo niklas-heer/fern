@@ -1,17 +1,17 @@
 # Data processing example
-# Demonstrates combining string and list operations
+# Demonstrates combining String and List module operations
 
 fn bool_to_int(b: Bool) -> Int:
     if b: 1 else: 0
 
 fn sum_list(xs: List(Int)) -> Int:
-    if list_is_empty(xs):
+    if List.is_empty(xs):
         0
     else:
-        list_head(xs) + sum_list(list_tail(xs))
+        List.head(xs) + sum_list(List.tail(xs))
 
 fn count_elements(xs: List(Int)) -> Int:
-    list_len(xs)
+    List.len(xs)
 
 fn main():
     # Create some data
@@ -26,29 +26,29 @@ fn main():
     println(count)
 
     # Add a new score and recalculate
-    let updated = list_push(scores, 90)
+    let updated = List.push(scores, 90)
     let new_total = sum_list(updated)
     println(new_total)
 
     # Check if list operations work
-    let first_score = list_head(scores)
-    let remaining = list_tail(scores)
+    let first_score = List.head(scores)
+    let remaining = List.tail(scores)
     println(first_score)
-    println(list_len(remaining))
+    println(List.len(remaining))
 
     # String processing
     let label = "  Total Score  "
-    let clean_label = str_trim(label)
-    println(str_len(clean_label))
+    let clean_label = String.trim(label)
+    println(String.len(clean_label))
 
-    let upper_label = str_to_upper(clean_label)
-    println(str_len(upper_label))
+    let upper_label = String.to_upper(clean_label)
+    println(String.len(upper_label))
 
     # Build a report header
-    let border = str_repeat("=", 20)
-    println(str_len(border))
+    let border = String.repeat("=", 20)
+    println(String.len(border))
 
     # Check string predicates
     let filename = "report.csv"
-    println(bool_to_int(str_ends_with(filename, ".csv")))
-    println(bool_to_int(str_contains(filename, "report")))
+    println(bool_to_int(String.ends_with(filename, ".csv")))
+    println(bool_to_int(String.contains(filename, "report")))

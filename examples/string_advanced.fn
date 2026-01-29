@@ -1,54 +1,54 @@
 # Advanced string operations example
-# Demonstrates newly added string built-in functions
+# Demonstrates String module built-in functions
 
 fn bool_to_int(b: Bool) -> Int:
     if b: 1 else: 0
 
 fn main():
-    # Test str_starts_with and str_ends_with
+    # Test String.starts_with and String.ends_with
     let filename = "document.txt"
-    println(bool_to_int(str_starts_with(filename, "doc")))
-    println(bool_to_int(str_ends_with(filename, ".txt")))
-    println(bool_to_int(str_ends_with(filename, ".pdf")))
+    println(bool_to_int(String.starts_with(filename, "doc")))
+    println(bool_to_int(String.ends_with(filename, ".txt")))
+    println(bool_to_int(String.ends_with(filename, ".pdf")))
 
-    # Test str_contains
+    # Test String.contains
     let sentence = "The quick brown fox"
-    println(bool_to_int(str_contains(sentence, "quick")))
-    println(bool_to_int(str_contains(sentence, "slow")))
+    println(bool_to_int(String.contains(sentence, "quick")))
+    println(bool_to_int(String.contains(sentence, "slow")))
 
-    # Test str_is_empty
+    # Test String.is_empty
     let empty = ""
     let nonempty = "hello"
-    println(bool_to_int(str_is_empty(empty)))
-    println(bool_to_int(str_is_empty(nonempty)))
+    println(bool_to_int(String.is_empty(empty)))
+    println(bool_to_int(String.is_empty(nonempty)))
 
-    # Test str_slice - extract substring
+    # Test String.slice - extract substring
     let text = "Hello, World!"
-    let hello = str_slice(text, 0, 5)
-    println(str_len(hello))
+    let hello = String.slice(text, 0, 5)
+    println(String.len(hello))
 
-    # Test str_repeat
+    # Test String.repeat
     let dash = "-"
-    let line = str_repeat(dash, 10)
-    println(str_len(line))
+    let line = String.repeat(dash, 10)
+    println(String.len(line))
 
-    # Test str_replace
+    # Test String.replace
     let greeting = "Hello, NAME!"
-    let personalized = str_replace(greeting, "NAME", "Alice")
-    println(str_len(personalized))
+    let personalized = String.replace(greeting, "NAME", "Alice")
+    println(String.len(personalized))
 
     # Test case conversion
     let mixed = "Hello World"
-    let upper = str_to_upper(mixed)
-    let lower = str_to_lower(mixed)
-    println(str_len(upper))
-    println(str_len(lower))
+    let upper = String.to_upper(mixed)
+    let lower = String.to_lower(mixed)
+    println(String.len(upper))
+    println(String.len(lower))
 
     # Test trim functions
     let padded = "   hello   "
-    let trimmed = str_trim(padded)
-    let trim_start = str_trim_start(padded)
-    let trim_end = str_trim_end(padded)
-    println(str_len(trimmed))
-    println(str_len(trim_start))
-    println(str_len(trim_end))
+    let trimmed = String.trim(padded)
+    let trim_start = String.trim_start(padded)
+    let trim_end = String.trim_end(padded)
+    println(String.len(trimmed))
+    println(String.len(trim_start))
+    println(String.len(trim_end))

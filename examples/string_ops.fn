@@ -1,5 +1,5 @@
 # String operations example
-# Demonstrates string built-in functions
+# Demonstrates String module built-in functions
 
 fn bool_to_int(b: Bool) -> Int:
     if b: 1 else: 0
@@ -7,15 +7,15 @@ fn bool_to_int(b: Bool) -> Int:
 fn main():
     # String length
     let greeting = "Hello, World!"
-    let len = str_len(greeting)
+    let len = String.len(greeting)
     println(len)
 
     # String concatenation
     let hello = "Hello"
     let space = " "
     let world = "World"
-    let message = str_concat(hello, str_concat(space, world))
-    let msg_len = str_len(message)
+    let message = String.concat(hello, String.concat(space, world))
+    let msg_len = String.len(message)
     println(msg_len)
 
     # String equality
@@ -23,6 +23,6 @@ fn main():
     let b = "test"
     let c = "other"
 
-    # str_eq returns true for equal, false for not equal
-    println(bool_to_int(str_eq(a, b)))
-    println(bool_to_int(str_eq(a, c)))
+    # String.eq returns true for equal, false for not equal
+    println(bool_to_int(String.eq(a, b)))
+    println(bool_to_int(String.eq(a, c)))

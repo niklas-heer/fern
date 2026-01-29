@@ -1,20 +1,20 @@
 # List operations example
-# Demonstrates list creation, access, and built-in functions
+# Demonstrates list creation, access, and List module functions
 
 fn main():
     # Create a list
     let numbers = [10, 20, 30, 40, 50]
 
     # Get list length
-    let len = list_len(numbers)
+    let len = List.len(numbers)
     println(len)
 
     # Access elements by index
-    let first = list_get(numbers, 0)
+    let first = List.get(numbers, 0)
     println(first)
 
-    let third = list_get(numbers, 2)
+    let third = List.get(numbers, 2)
     println(third)
 
-    let last = list_get(numbers, 4)
+    let last = List.get(numbers, 4)
     println(last)
