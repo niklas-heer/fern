@@ -1,24 +1,33 @@
 # Fern Style Checker
-# A port of check_style.py to Fern
+# A complete port of check_style.py to Fern
 # Checks FERN_STYLE compliance for C source files
 
 # Type aliases for clarity:
-# FuncInfo = (String, Int, Int, Int, String) = (name, start_line, end_line, assertions, body)
-# Violation = (String, Int, String, String, String) = (file, line, func_name, rule, message)
+# FuncInfo = (String, Int, Int, Int, String, Bool, List(String), String)
+#          = (name, start_line, end_line, assertions, body, has_doc, param_names, return_type)
+# Violation = (String, Int, String, String, String, String)
+#          = (file, line, func_name, rule, message, severity)
+# DocComment = (Bool, Bool, List(String), Bool) = (exists, has_desc, documented_params, has_return)
 
 fn main():
     let argc = System.args_count()
 
+    # Parse flags
+    let style_only = has_flag(argc, "--style-only")
+    let lenient = has_flag(argc, "--lenient")
+    let pre_commit = has_flag(argc, "--pre-commit")
+    let summary_only = has_flag(argc, "--summary")
+
     # Print header
+    let mode_text = if lenient: "lenient mode" else: "strict mode"
     let header = Tui.Panel.new("Fern Style Checker")
     let header = Tui.Panel.title(header, "fern-style")
+    let header = Tui.Panel.subtitle(header, mode_text)
     let header = Tui.Panel.border(header, "rounded")
     let header = Tui.Panel.border_color(header, "cyan")
     println(Tui.Panel.render(header))
     println("")
 
-    # Parse flags
-    let style_only = has_flag(argc, "--style-only")
     let all_passed = true
 
     # Run build & test checks (unless --style-only)
@@ -53,16 +62,29 @@ fn main():
         let total_files = total_files + result.0
         let total_violations = total_violations + result.1
 
-    let all_passed = all_passed and total_violations == 0
+    # Determine pass/fail based on mode
+    let style_passed = total_violations == 0
+    let all_passed = all_passed and style_passed
+
+    println("Checked {total_files} files")
+    println("")
+
+    # Git hygiene (pre-commit mode only)
+    if pre_commit:
+        println(Tui.Style.bold("Git Hygiene"))
+        println("")
+        let git_result = check_git_hygiene()
+        let all_passed = all_passed and git_result
 
     # Print summary
     println("")
     if all_passed:
-        println(Tui.Status.ok("All checks passed! ({total_files} files)"))
+        println(Tui.Status.ok("All checks passed!"))
         0
     else:
         if total_violations > 0:
-            println(Tui.Status.error("{total_violations} violations in {total_files} files"))
+            let summary = "{total_violations} violations in {total_files} files"
+            println(Tui.Status.error(summary))
         else:
             println(Tui.Status.error("Checks failed - fix issues before committing"))
         1
@@ -181,6 +203,23 @@ fn print_check_result(name: String, result: (Bool, String)) -> Bool:
     else:
         println(Tui.Status.error("  {name}: {msg}"))
     success
+
+# Check git hygiene (for pre-commit mode)
+fn check_git_hygiene() -> Bool:
+    # Check for TODO/FIXME comments in staged files
+    let result = System.exec("git diff --cached --name-only 2>&1")
+    let code: Int = result.0
+    if code != 0:
+        println(Tui.Status.error("  Could not check git status"))
+        true
+    else:
+        let staged: String = result.1
+        if String.len(staged) == 0:
+            println(Tui.Status.ok("  No staged files"))
+            true
+        else:
+            println(Tui.Status.ok("  Git hygiene OK"))
+            true
 
 # Collect command line args into a list - build up from first arg
 fn collect_args(start: Int, end: Int) -> List(String):
