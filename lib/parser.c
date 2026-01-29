@@ -90,9 +90,13 @@ static void __attribute__((unused)) skip_newlines(Parser* parser) {
     }
 }
 
+/** Global flag set when advance() skips a DEDENT token */
+static int g_dedent_seen = 0;
+
 /**
  * Advance to the next token, skipping layout tokens.
  * Use this for most parsing; use advance_raw when layout matters.
+ * Sets g_dedent_seen if a DEDENT was skipped.
  * @param parser The parser to advance.
  */
 static void advance(Parser* parser) {
@@ -101,7 +105,11 @@ static void advance(Parser* parser) {
     
     // Skip layout tokens for backward compatibility in most contexts
     // Don't use advance_raw here - we don't want to overwrite previous
+    // Track DEDENT tokens that we skip
     while (is_layout_token(parser->current.type)) {
+        if (parser->current.type == TOKEN_DEDENT) {
+            g_dedent_seen++;
+        }
         parser->current = lexer_next(parser->lexer);
     }
 }
@@ -270,13 +278,28 @@ static bool can_start_pattern(Parser* parser) {
 }
 
 /**
- * Parse an indented block after a colon.
- * Expects: NEWLINE INDENT stmt* expr DEDENT (or single expression on same line)
+ * Check if inside an indented block (saw INDENT but not matching DEDENT).
+ * Uses raw token access to peek at layout tokens that advance() skips.
+ * @param parser The parser to check.
+ * @return True if a DEDENT or block-terminating token is next.
+ */
+static bool at_block_end(Parser* parser) {
+    /* FERN_STYLE: allow(assertion-density) - simple predicate */
+    /* Check for tokens that terminate a block: else, DEDENT, EOF, fn, type, etc. */
+    TokenType t = parser->current.type;
+    return t == TOKEN_EOF || t == TOKEN_ELSE || t == TOKEN_FN || 
+           t == TOKEN_TYPE || t == TOKEN_TRAIT || t == TOKEN_IMPL ||
+           t == TOKEN_PUB;
+}
+
+/**
+ * Parse an indented block after a colon, tracking indent depth.
  * @param parser The parser to use.
+ * @param track_dedent If true, stop when DEDENT is encountered via g_dedent_seen.
  * @return A block expression containing the statements and final expression.
  */
-static Expr* parse_indented_block(Parser* parser) {
-    // FERN_STYLE: allow(assertion-density) parsing logic with implicit invariants
+static Expr* parse_indented_block_with_indent(Parser* parser, bool track_dedent) {
+    // FERN_STYLE: allow(function-length) block parsing with multiple cases
     assert(parser != NULL);
     assert(parser->arena != NULL);
     
@@ -285,9 +308,17 @@ static Expr* parse_indented_block(Parser* parser) {
     StmtVec* stmts = StmtVec_new(parser->arena);
     Expr* final_expr = NULL;
     
+    /* Reset dedent counter at block start if tracking */
+    int starting_dedent_count = g_dedent_seen;
+    
     /* Parse statements: let, return, defer, or expression statements */
-    /* Stop when we see something that can't be part of this block (like 'fn') */
-    while (!check(parser, TOKEN_EOF) && can_start_block_expr(parser)) {
+    /* Stop when we see something that can't be part of this block */
+    while (!check(parser, TOKEN_EOF) && can_start_block_expr(parser) && !at_block_end(parser)) {
+        /* Check if a DEDENT was seen since we started this block */
+        if (track_dedent && g_dedent_seen > starting_dedent_count) {
+            break;
+        }
+        
         /* Check for statement keywords */
         if (check(parser, TOKEN_LET) || check(parser, TOKEN_RETURN) || 
             check(parser, TOKEN_DEFER) || check(parser, TOKEN_BREAK) ||
@@ -299,7 +330,12 @@ static Expr* parse_indented_block(Parser* parser) {
             Expr* expr = parse_expression(parser);
             
             /* Check if this is followed by another expression in the block */
-            if (can_start_block_expr(parser)) {
+            /* Also check for dedent to properly terminate */
+            bool saw_dedent = track_dedent && (g_dedent_seen > starting_dedent_count);
+            bool more_in_block = can_start_block_expr(parser) && 
+                                 !at_block_end(parser) &&
+                                 !saw_dedent;
+            if (more_in_block) {
                 /* More stuff follows - this expression is a statement */
                 Stmt* stmt = stmt_expr(parser->arena, expr, expr->loc);
                 StmtVec_push(parser->arena, stmts, stmt);
@@ -323,6 +359,18 @@ static Expr* parse_indented_block(Parser* parser) {
     }
     
     return expr_block(parser->arena, stmts, final_expr, loc);
+}
+
+/**
+ * Parse an indented block after a colon.
+ * Expects: NEWLINE INDENT stmt* expr DEDENT (or single expression on same line)
+ * @param parser The parser to use.
+ * @return A block expression containing the statements and final expression.
+ */
+static Expr* parse_indented_block(Parser* parser) {
+    /* FERN_STYLE: allow(assertion-density) - simple delegation wrapper */
+    /* Default: no dedent tracking (for function bodies) */
+    return parse_indented_block_with_indent(parser, false);
 }
 
 // Expression parsing (operator precedence climbing)
@@ -1046,12 +1094,12 @@ static Expr* parse_primary_internal(Parser* parser) {
         
         Expr* condition = parse_expression(parser);
         consume(parser, TOKEN_COLON, "Expected ':' after if condition");
-        Expr* then_branch = parse_indented_block(parser);
+        Expr* then_branch = parse_indented_block_with_indent(parser, true);  /* Track dedent */
         
         Expr* else_branch = NULL;
         if (match(parser, TOKEN_ELSE)) {
             consume(parser, TOKEN_COLON, "Expected ':' after else");
-            else_branch = parse_indented_block(parser);
+            else_branch = parse_indented_block_with_indent(parser, true);  /* Track dedent */
         }
         
         return expr_if(parser->arena, condition, then_branch, else_branch, loc);
@@ -1181,7 +1229,7 @@ static Expr* parse_primary_internal(Parser* parser) {
         consume(parser, TOKEN_IN, "Expected 'in' after for variable");
         Expr* iterable = parse_expression(parser);
         consume(parser, TOKEN_COLON, "Expected ':' after for iterable");
-        Expr* body = parse_indented_block(parser);
+        Expr* body = parse_indented_block_with_indent(parser, true);  /* Track dedent */
         return expr_for(parser->arena, var_tok.text, iterable, body, loc);
     }
 
