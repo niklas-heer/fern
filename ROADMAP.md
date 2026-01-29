@@ -1136,63 +1136,63 @@ After fern-style, consider rewriting in Fern:
 
 **Modules to implement:**
 
-#### Term Module - Terminal Control
+#### Tui.Term Module - Terminal Control
 ```fern
-let (cols, rows) = Term.size()      # Terminal dimensions
-let is_tty = Term.is_tty()          # Check if stdout is a terminal  
-let colors = Term.color_support()    # 0, 16, 256, or 16777216 (truecolor)
+let (cols, rows) = Tui.Term.size()      # Terminal dimensions
+let is_tty = Tui.Term.is_tty()          # Check if stdout is a terminal  
+let colors = Tui.Term.color_support()    # 0, 16, 256, or 16777216 (truecolor)
 ```
 
-#### Style Module - Colors & Text Attributes
+#### Tui.Style Module - Colors & Text Attributes
 ```fern
 # Basic colors
-Style.red("error")
-Style.green("success")
-Style.yellow("warning")
-Style.cyan("info")
-Style.dim("subtle")
-Style.bold("important")
+Tui.Style.red("error")
+Tui.Style.green("success")
+Tui.Style.yellow("warning")
+Tui.Style.cyan("info")
+Tui.Style.dim("subtle")
+Tui.Style.bold("important")
 
 # Composition via pipes
-"Error!" |> Style.bold |> Style.red
+"Error!" |> Tui.Style.bold |> Tui.Style.red
 
 # 256-color and RGB
-Style.color("text", 196)            # 256-color palette
-Style.rgb("text", 255, 128, 0)      # True color
-Style.hex("text", "#ff8000")        # Hex color
+Tui.Style.color("text", 196)            # 256-color palette
+Tui.Style.rgb("text", 255, 128, 0)      # True color
+Tui.Style.hex("text", "#ff8000")        # Hex color
 ```
 
-#### Panel Module - Bordered Boxes
+#### Tui.Panel Module - Bordered Boxes
 ```fern
-Panel.new("Hello, World!")
-    |> Panel.title("My Panel")
-    |> Panel.border(Box.rounded)
-    |> Panel.render()
+Tui.Panel.new("Hello, World!")
+    |> Tui.Panel.title("My Panel")
+    |> Tui.Panel.border("rounded")
+    |> Tui.Panel.render()
 ```
 
-#### Table Module - Data Tables
+#### Tui.Table Module - Data Tables
 ```fern
-Table.new()
-    |> Table.add_column("Name")
-    |> Table.add_column("Status")
-    |> Table.add_row(["build", Style.green("OK")])
-    |> Table.add_row(["tests", Style.red("FAIL")])
-    |> Table.render()
+Tui.Table.new()
+    |> Tui.Table.add_column("Name")
+    |> Tui.Table.add_column("Status")
+    |> Tui.Table.add_row(["build", Tui.Style.green("OK")])
+    |> Tui.Table.add_row(["tests", Tui.Style.red("FAIL")])
+    |> Tui.Table.render()
 ```
 
 **Runtime functions needed (~400 lines C):**
-- [ ] `fern_term_size()` → (Int, Int)
-- [ ] `fern_term_is_tty()` → Bool
-- [ ] `fern_term_color_support()` → Int
-- [ ] `fern_style_*()` functions for all colors/attributes
-- [ ] `fern_panel_*()` functions for panel rendering
-- [ ] `fern_table_*()` functions for table rendering
+- [x] `fern_term_size()` → (Int, Int)
+- [x] `fern_term_is_tty()` → Bool
+- [x] `fern_term_color_support()` → Int
+- [x] `fern_style_*()` functions for all colors/attributes
+- [x] `fern_panel_*()` functions for panel rendering
+- [x] `fern_table_*()` functions for table rendering
 
 **Type checker additions:**
-- [ ] Term module (size, is_tty, color_support)
-- [ ] Style module (~25 functions)
-- [ ] Panel module (~10 functions)
-- [ ] Table module (~15 functions)
+- [x] Tui.Term module (size, is_tty, color_support)
+- [x] Tui.Style module (~25 functions)
+- [x] Tui.Panel module (~10 functions)
+- [x] Tui.Table module (~15 functions)
 
 **Success Criteria:**
 - [ ] Can print colored, styled text
@@ -1202,32 +1202,46 @@ Table.new()
 
 ### Phase 2: Progress & Interaction
 
-**Status:** Planned
+**Status:** 🚧 Partially Complete
 
 **Modules to implement:**
 
-#### Progress Module - Progress Bars
+#### Tui.Progress Module - Progress Bars ✅
 ```fern
-for item in Progress.track(items, description: "Processing"):
-    process(item)
+let progress = Tui.Progress.new(100)
+    |> Tui.Progress.description("Downloading")
+    |> Tui.Progress.width(40)
 
-# Or manual control
-let bar = Progress.new()
-    |> Progress.add_task("Downloading", total: 1000)
-    |> Progress.start()
-Progress.advance(bar, 10)
-Progress.stop(bar)
+for i in 0..100:
+    let progress = Tui.Progress.set(progress, i)
+    Tui.Live.update(Tui.Progress.render(progress))
+    Tui.Live.sleep(50)
+Tui.Live.done()
 ```
 
-#### Spinner Module - Activity Indicators
+#### Tui.Spinner Module - Activity Indicators ✅
 ```fern
-let spin = Spinner.new(Spinner.dots, "Loading...")
-Spinner.start(spin)
-# ... work ...
-Spinner.succeed(spin, "Done!")
+let spinner = Tui.Spinner.new()
+    |> Tui.Spinner.message("Loading...")
+    |> Tui.Spinner.style("dots")
+
+for i in 0..20:
+    let spinner = Tui.Spinner.tick(spinner)
+    Tui.Live.update(Tui.Spinner.render(spinner))
+    Tui.Live.sleep(100)
+Tui.Live.done()
 ```
 
-#### Prompt Module - User Input
+#### Tui.Status Module - Status Badges ✅
+```fern
+println(Tui.Status.ok("All systems operational"))
+println(Tui.Status.warn("Low disk space"))
+println(Tui.Status.error("Connection failed"))
+println(Tui.Status.info("Press Ctrl+C to cancel"))
+println(Tui.Status.debug("Verbose logging enabled"))
+```
+
+#### Prompt Module - User Input (Planned)
 ```fern
 let name = Prompt.ask("What is your name?")
 let ok = Prompt.confirm("Continue?")
@@ -1235,14 +1249,17 @@ let choice = Prompt.select("Pick one:", ["A", "B", "C"])
 ```
 
 **Runtime functions needed (~400 lines C):**
-- [ ] Progress bar rendering with cursor control
-- [ ] Spinner animation (requires terminal raw mode)
-- [ ] Input reading with line editing
+- [x] Progress bar rendering with cursor control
+- [x] Spinner animation
+- [x] Tui.Live for same-line updates
+- [x] Status badges (Tui.Status)
+- [ ] Input reading with line editing (Prompt module)
 - [ ] Terminal cursor control (move, hide, show)
 
 **Success Criteria:**
-- [ ] Can show progress bars for long operations
-- [ ] Can show spinners for indeterminate progress
+- [x] Can show progress bars for long operations
+- [x] Can show spinners for indeterminate progress
+- [x] Can display status badges
 - [ ] Can prompt for user input interactively
 
 ### Phase 3: Advanced
@@ -1251,32 +1268,23 @@ let choice = Prompt.select("Pick one:", ["A", "B", "C"])
 
 **Modules to implement:**
 
-#### Tree Module - Hierarchical Display
+#### Tui.Tree Module - Hierarchical Display (Planned)
 ```fern
-Tree.new("Root")
-    |> Tree.add("Child 1")
-    |> Tree.add("Child 2", children: [
-        Tree.leaf("Grandchild A"),
-        Tree.leaf("Grandchild B")
+Tui.Tree.new("Root")
+    |> Tui.Tree.add("Child 1")
+    |> Tui.Tree.add("Child 2", children: [
+        Tui.Tree.leaf("Grandchild A"),
+        Tui.Tree.leaf("Grandchild B")
     ])
-    |> Tree.render()
+    |> Tui.Tree.render()
 ```
 
-#### Live Module - Dynamic Updates
+#### Tui.Log Module - Styled Logging (Planned)
 ```fern
-let display = Live.new(render_dashboard())
-    |> Live.refresh_rate(4)
-    |> Live.start()
-# ... updates happen automatically ...
-Live.stop(display)
-```
-
-#### Log Module - Styled Logging
-```fern
-Log.info("Starting application")
-Log.success("Build complete")  
-Log.warning("Deprecated function used")
-Log.error("Connection failed")
+Tui.Log.info("Starting application")
+Tui.Log.success("Build complete")  
+Tui.Log.warning("Deprecated function used")
+Tui.Log.error("Connection failed")
 ```
 
 **Runtime functions needed (~200 lines C):**

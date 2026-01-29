@@ -2706,6 +2706,207 @@ fn main():
         1
 ```
 
+### Tui Module (Terminal UI)
+
+Fern provides a `Tui.*` namespace for terminal user interface components, inspired by Python's Rich library. All modules are nested under `Tui.` for clear organization.
+
+#### Tui.Term - Terminal Capabilities
+
+Query terminal properties and capabilities:
+
+```fern
+# Get terminal size (columns, rows)
+let size = Tui.Term.size()
+let cols = size.0
+let rows = size.1
+println("Terminal is {cols}x{rows}")
+
+# Check if running in a TTY (interactive terminal)
+if Tui.Term.is_tty():
+    println("Running interactively")
+else:
+    println("Running in a pipe or script")
+
+# Check color support level
+# Returns: 0 = no color, 1 = basic (8/16), 2 = 256 colors, 3 = truecolor
+let colors = Tui.Term.color_support()
+match colors:
+    0 -> println("No color support")
+    1 -> println("Basic colors (8/16)")
+    2 -> println("256 colors")
+    3 -> println("Truecolor (24-bit)")
+    _ -> println("Unknown")
+```
+
+#### Tui.Style - Text Styling
+
+Apply ANSI colors and styles to terminal text:
+
+```fern
+# Basic colors (foreground)
+println(Tui.Style.red("Error!"))
+println(Tui.Style.green("Success!"))
+println(Tui.Style.blue("Info"))
+println(Tui.Style.yellow("Warning"))
+println(Tui.Style.cyan("Cyan text"))
+println(Tui.Style.magenta("Magenta text"))
+
+# Bright colors
+println(Tui.Style.bright_red("Bright red"))
+println(Tui.Style.bright_green("Bright green"))
+
+# Background colors
+println(Tui.Style.on_red("Red background"))
+println(Tui.Style.on_blue("Blue background"))
+
+# Text attributes
+println(Tui.Style.bold("Bold text"))
+println(Tui.Style.dim("Dim text"))
+println(Tui.Style.italic("Italic text"))
+println(Tui.Style.underline("Underlined"))
+println(Tui.Style.strikethrough("Strikethrough"))
+
+# 256-color and RGB (for capable terminals)
+println(Tui.Style.color("Text", 208))              # 256-color code
+println(Tui.Style.rgb("Text", 255, 128, 0))        # RGB values
+println(Tui.Style.hex("Text", "#FF8000"))          # Hex color
+
+# Composable - nest for multiple styles
+println(Tui.Style.bold(Tui.Style.red("Bold red")))
+```
+
+#### Tui.Panel - Bordered Panels
+
+Create Rich-style bordered panels for content:
+
+```fern
+# Basic panel
+let panel = Tui.Panel.new("Hello, World!")
+println(Tui.Panel.render(panel))
+
+# Panel with title and subtitle
+let panel = Tui.Panel.new("Content goes here")
+let panel = Tui.Panel.title(panel, "My Panel")
+let panel = Tui.Panel.subtitle(panel, "Subtitle text")
+println(Tui.Panel.render(panel))
+
+# Border styles: "rounded", "heavy", "double", "ascii"
+let panel = Tui.Panel.border(panel, "rounded")
+
+# Colored borders
+let panel = Tui.Panel.border_color(panel, "cyan")   # "red", "green", "blue", "yellow", "cyan", "magenta"
+
+# Width and padding
+let panel = Tui.Panel.width(panel, 60)
+let panel = Tui.Panel.padding(panel, 2)
+
+println(Tui.Panel.render(panel))
+```
+
+#### Tui.Table - Data Tables
+
+Create formatted tables with headers and rows:
+
+```fern
+# Create table with columns
+let table = Tui.Table.new()
+let table = Tui.Table.title(table, "Users")
+let table = Tui.Table.add_column(table, "Name")
+let table = Tui.Table.add_column(table, "Age")
+let table = Tui.Table.add_column(table, "City")
+
+# Add rows (as lists)
+let row1 = ["Alice", "30", "NYC"]
+let table = Tui.Table.add_row(table, row1)
+let row2 = ["Bob", "25", "LA"]
+let table = Tui.Table.add_row(table, row2)
+
+# Border styles
+let table = Tui.Table.border(table, "rounded")
+
+# Hide header row if needed
+let table = Tui.Table.show_header(table, 0)  # 0 = hide, 1 = show
+
+println(Tui.Table.render(table))
+```
+
+#### Tui.Status - Status Badges
+
+Display colored status badges for logging:
+
+```fern
+println(Tui.Status.ok("All systems operational"))
+println(Tui.Status.warn("Low disk space"))
+println(Tui.Status.error("Connection failed"))
+println(Tui.Status.info("Press Ctrl+C to cancel"))
+println(Tui.Status.debug("Verbose logging enabled"))
+```
+
+Output:
+```
+ OKAY  All systems operational
+ WARN  Low disk space
+ FAIL  Connection failed
+ INFO  Press Ctrl+C to cancel
+ DBUG  Verbose logging enabled
+```
+
+#### Tui.Live - Same-Line Updates
+
+Update text on the same line (for spinners, progress):
+
+```fern
+# Print without newline (stays on same line)
+Tui.Live.print("Loading... ")
+
+# Update the current line
+Tui.Live.update("Loading... 50%")
+Tui.Live.sleep(500)
+Tui.Live.update("Loading... 100%")
+
+# Clear the line
+Tui.Live.clear_line()
+
+# Finish with newline
+Tui.Live.done()
+```
+
+#### Tui.Progress - Progress Bars
+
+Display progress bars with percentage:
+
+```fern
+let progress = Tui.Progress.new(100)  # Total items
+let progress = Tui.Progress.description(progress, "Downloading")
+let progress = Tui.Progress.width(progress, 40)
+
+# Update progress
+for i in 0..100:
+    let progress = Tui.Progress.set(progress, i)
+    Tui.Live.update(Tui.Progress.render(progress))
+    Tui.Live.sleep(50)
+
+Tui.Live.done()
+```
+
+#### Tui.Spinner - Animated Spinners
+
+Display animated spinners for long-running tasks:
+
+```fern
+let spinner = Tui.Spinner.new()
+let spinner = Tui.Spinner.message(spinner, "Processing")
+let spinner = Tui.Spinner.style(spinner, "dots")  # "dots", "line", "braille"
+
+# Animate in a loop
+for i in 0..20:
+    let spinner = Tui.Spinner.tick(spinner)
+    Tui.Live.update(Tui.Spinner.render(spinner))
+    Tui.Live.sleep(100)
+
+Tui.Live.done()
+```
+
 ### I/O Functions
 
 Basic print functions (always available):
