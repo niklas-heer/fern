@@ -372,6 +372,22 @@ FernList* fern_list_tail(FernList* list);
 int64_t fern_list_is_empty(FernList* list);
 
 /**
+ * Check if list contains element (by value equality for Int).
+ * @param list The list.
+ * @param elem The element to find.
+ * @return 1 if found, 0 otherwise.
+ */
+int64_t fern_list_contains(FernList* list, int64_t elem);
+
+/**
+ * Check if string list contains string (by string equality).
+ * @param list The list of strings.
+ * @param s The string to find.
+ * @return 1 if found, 0 otherwise.
+ */
+int64_t fern_list_contains_str(FernList* list, const char* s);
+
+/**
  * Check if any element matches predicate.
  * @param list The list.
  * @param pred Predicate function.

@@ -915,6 +915,42 @@ int64_t fern_list_is_empty(FernList* list) {
 }
 
 /**
+ * Check if list contains element (by value equality for Int).
+ * @param list The list.
+ * @param elem The element to find.
+ * @return 1 if found, 0 otherwise.
+ */
+int64_t fern_list_contains(FernList* list, int64_t elem) {
+    assert(list != NULL);
+
+    for (int64_t i = 0; i < list->len; i++) {
+        if (list->data[i] == elem) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Check if string list contains string (by string equality).
+ * @param list The list of strings.
+ * @param s The string to find.
+ * @return 1 if found, 0 otherwise.
+ */
+int64_t fern_list_contains_str(FernList* list, const char* s) {
+    assert(list != NULL);
+    assert(s != NULL);
+
+    for (int64_t i = 0; i < list->len; i++) {
+        const char* elem = (const char*)list->data[i];
+        if (elem != NULL && strcmp(elem, s) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
  * Check if any element matches predicate.
  * @param list The list.
  * @param pred Predicate function.
