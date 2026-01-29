@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include "arena.h"
+#include "qbe.h"  /* Embedded QBE compiler backend */
 #include "fern_string.h"
 #include "lexer.h"
 #include "parser.h"
@@ -281,55 +282,82 @@ static const char* g_output_file = NULL;
 
 /**
  * Run QBE compiler and linker to create executable.
+ * Uses embedded QBE backend - no external qbe binary needed.
  * @param ssa_file Path to QBE IR file.
  * @param output_file Path for output executable.
  * @return 0 on success, non-zero on error.
  */
 static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
-    // FERN_STYLE: allow(assertion-density) external process invocation
+    // FERN_STYLE: allow(assertion-density) compilation pipeline
+    // FERN_STYLE: allow(function-length) QBE/link pipeline is cohesive
     char cmd[1024];
-    int ret;
-    
-    // Generate object file with QBE
+    char asm_file[256];
     char obj_file[256];
+    int ret;
+
+    snprintf(asm_file, sizeof(asm_file), "%s.s", output_file);
     snprintf(obj_file, sizeof(obj_file), "%s.o", output_file);
-    
-    snprintf(cmd, sizeof(cmd), "qbe -o %s.s %s 2>&1", output_file, ssa_file);
-    ret = system(cmd);
-    if (ret != 0) {
-        error_print("QBE compilation failed (is qbe installed?)");
-        note_print("install QBE from https://c9x.me/compile/");
+
+    // Open SSA input file
+    FILE* ssa_input = fopen(ssa_file, "r");
+    if (!ssa_input) {
+        error_print("cannot open SSA file '%s'", ssa_file);
         return 1;
     }
-    
-    // Assemble
-    snprintf(cmd, sizeof(cmd), "cc -c -o %s %s.s 2>&1", obj_file, output_file);
+
+    // Open assembly output file
+    FILE* asm_output = fopen(asm_file, "w");
+    if (!asm_output) {
+        fclose(ssa_input);
+        error_print("cannot create assembly file '%s'", asm_file);
+        return 1;
+    }
+
+    // Compile QBE IR to assembly using embedded QBE
+    ret = qbe_compile(ssa_input, asm_output, ssa_file);
+    fclose(ssa_input);
+    fclose(asm_output);
+
+    if (ret != 0) {
+        error_print("QBE compilation failed");
+        unlink(asm_file);
+        return 1;
+    }
+
+    // Assemble using system compiler
+    snprintf(cmd, sizeof(cmd), "cc -c -o %s %s 2>&1", obj_file, asm_file);
     ret = system(cmd);
     if (ret != 0) {
         error_print("assembly failed");
+        unlink(asm_file);
         return 1;
     }
-    
-    // Find and link with runtime library
+
+    // Find and link with runtime library + GC (static linking for standalone binaries)
+    // We link statically to produce standalone binaries with no runtime dependencies
     char runtime_lib[512];
+    const char* gc_link = "$(pkg-config --variable=libdir bdw-gc 2>/dev/null | xargs -I{} echo {}/libgc.a || "
+                          "for d in /opt/homebrew/lib /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu; do "
+                          "[ -f $d/libgc.a ] && echo $d/libgc.a && break; done)";
     if (g_exe_path && find_runtime_lib(g_exe_path, runtime_lib, sizeof(runtime_lib))) {
-        snprintf(cmd, sizeof(cmd), "cc -o %s %s %s 2>&1", output_file, obj_file, runtime_lib);
+        snprintf(cmd, sizeof(cmd), "cc -o %s %s %s %s 2>&1", output_file, obj_file, runtime_lib, gc_link);
     } else {
         // Fall back to linking without runtime (will fail if runtime functions used)
-        snprintf(cmd, sizeof(cmd), "cc -o %s %s 2>&1", output_file, obj_file);
+        snprintf(cmd, sizeof(cmd), "cc -o %s %s %s 2>&1", output_file, obj_file, gc_link);
     }
-    
+
     ret = system(cmd);
     if (ret != 0) {
         error_print("linking failed");
+        unlink(asm_file);
+        unlink(obj_file);
         return 1;
     }
-    
+
     // Clean up intermediate files
-    snprintf(cmd, sizeof(cmd), "%s.s", output_file);
-    unlink(cmd);
+    unlink(asm_file);
     unlink(obj_file);
-    
+
     return 0;
 }
 
