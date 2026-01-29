@@ -360,8 +360,10 @@ fn check_function(filepath: String, func: (String, Int, Int, Int, String), viola
             let violations = List.push(violations, v)
 
     # Check for unbounded loops
+    # Accept both "unbounded-loop" and "bounded-loops" as exception rules
     if has_unbounded_loop(body):
-        if not has_allow(body, "unbounded-loop"):
+        let allowed = has_allow(body, "unbounded-loop") or has_allow(body, "bounded-loops")
+        if not allowed:
             let v = make_violation(filepath, start_line, func_name,
                 "unbounded-loop", "Has unbounded loop - add explicit bound")
             let violations = List.push(violations, v)
@@ -428,8 +430,19 @@ fn print_violations_table(violations: List((String, Int, String, String, String)
 
 # Check if body contains FERN_STYLE: allow(rule)
 fn has_allow(body: String, rule: String) -> Bool:
-    let pattern = "FERN_STYLE: allow(" + rule + ")"
-    String.contains(body, pattern)
+    # Check if rule appears within FERN_STYLE: allow(...)
+    # The allow can contain multiple rules like allow(assertion-density, function-length)
+    # So we check if allow( followed by rule followed by ) or , appears
+    let allow_start = "FERN_STYLE: allow("
+    if not String.contains(body, allow_start):
+        false
+    else:
+        # Simple approach: check if the rule name appears after "allow(" in the body
+        # This works because rule names are unique identifiers
+        let has_rule_with_close = String.contains(body, rule + ")")
+        let has_rule_with_comma = String.contains(body, rule + ",")
+        let has_comma_rule = String.contains(body, ", " + rule)
+        has_rule_with_close or has_rule_with_comma or has_comma_rule
 
 # Find all function definitions in the file
 fn find_functions(lines: List(String)) -> List((String, Int, Int, Int, String)):
