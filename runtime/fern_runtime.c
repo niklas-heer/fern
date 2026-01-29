@@ -1448,45 +1448,47 @@ typedef struct {
 
 /**
  * Create a Some option.
- * @param value The contained value (can be a pointer).
- * @return Pointer to heap-allocated Option.
+ * @param value The contained value (must fit in 32 bits).
+ * @return Packed 64-bit value: tag (1) in lower 32 bits, value in upper 32 bits.
+ *
+ * Format: [value:32][tag:32] where tag=1 for Some
+ * This matches the codegen's expected Option representation.
  */
 int64_t fern_option_some(int64_t value) {
-    FernOption* opt = FERN_ALLOC(sizeof(FernOption));
-    opt->tag = OPTION_TAG_SOME;
-    opt->value = value;
-    return (int64_t)(intptr_t)opt;
+    /* Pack: value in upper 32 bits, tag=1 in lower 32 bits */
+    return ((value & 0xFFFFFFFF) << 32) | 1;
 }
 
 /**
  * Create a None option.
- * @return NULL (representing None).
+ * @return Packed value with tag=0.
+ *
+ * Format: [0:32][tag:32] where tag=0 for None
  */
 int64_t fern_option_none(void) {
-    /* None is represented as NULL for efficiency */
+    /* Tag = 0 for None */
     return 0;
 }
 
 /**
  * Check if an Option is Some.
- * @param option Pointer to Option (or NULL for None).
- * @return 1 if Some, 0 if None.
+ * @param option Packed Option value.
+ * @return 1 if Some (tag=1), 0 if None (tag=0).
  */
 int64_t fern_option_is_some(int64_t option) {
-    if (option == 0) return 0;  /* None */
-    FernOption* opt = (FernOption*)(intptr_t)option;
-    return opt->tag == OPTION_TAG_SOME ? 1 : 0;
+    /* Check if lower 32 bits (tag) == 1 */
+    return (option & 0xFFFFFFFF) == OPTION_TAG_SOME ? 1 : 0;
 }
 
 /**
  * Unwrap the value from an Option.
- * @param option Pointer to Option.
- * @return The contained value (undefined if None).
+ * @param option Packed Option value.
+ * @return The contained value (upper 32 bits).
  */
 int64_t fern_option_unwrap(int64_t option) {
-    assert(option != 0);  /* Should not unwrap None */
-    FernOption* opt = (FernOption*)(intptr_t)option;
-    return opt->value;
+    assert((option & 0xFFFFFFFF) == OPTION_TAG_SOME);  /* Should not unwrap None */
+    /* Extract upper 32 bits as the value */
+    return (option >> 32) & 0xFFFFFFFF;
 }
 
 /**

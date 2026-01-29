@@ -1335,8 +1335,11 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "char_at") == 0 && call->args->len == 2) {
                             String* s = codegen_expr(cg, call->args->data[0].value);
                             String* idx = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_str_char_at(l %s, w %s)\n",
-                                string_cstr(result), string_cstr(s), string_cstr(idx));
+                            /* Extend index to 64-bit for runtime call */
+                            String* idx_ext = fresh_temp(cg);
+                            emit(cg, "    %s =l extsw %s\n", string_cstr(idx_ext), string_cstr(idx));
+                            emit(cg, "    %s =l call $fern_str_char_at(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(s), string_cstr(idx_ext));
                             return result;
                         }
                         /* String.join(list, sep) -> String */
