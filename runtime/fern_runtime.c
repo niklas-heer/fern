@@ -1305,51 +1305,67 @@ void fern_FERN_FREE(void* ptr) {
 /* ========== Result Type ========== */
 
 /*
- * Result encoding (packed 64-bit):
- * - Bits 0-31: tag (0 = Ok, 1 = Err)
- * - Bits 32-63: value
+ * Result encoding: heap-allocated struct to support full 64-bit values.
+ * This allows Result to contain pointers (strings, lists, etc.).
+ *
+ * FernResult {
+ *   tag: int32_t (0 = Ok, 1 = Err)
+ *   value: int64_t (the ok/err value, can be a pointer)
+ * }
+ *
+ * The Result is passed around as a pointer (int64_t).
  */
+
+typedef struct {
+    int32_t tag;
+    int64_t value;
+} FernResult;
 
 #define RESULT_TAG_OK  0
 #define RESULT_TAG_ERR 1
 
 /**
  * Create an Ok result.
- * @param value The success value.
- * @return Packed Result value.
+ * @param value The success value (can be a pointer).
+ * @return Pointer to heap-allocated Result.
  */
 int64_t fern_result_ok(int64_t value) {
-    /* Pack: value in upper 32 bits, tag=0 in lower 32 bits */
-    return ((value & 0xFFFFFFFF) << 32) | RESULT_TAG_OK;
+    FernResult* result = FERN_ALLOC(sizeof(FernResult));
+    result->tag = RESULT_TAG_OK;
+    result->value = value;
+    return (int64_t)(intptr_t)result;
 }
 
 /**
  * Create an Err result.
  * @param value The error value.
- * @return Packed Result value.
+ * @return Pointer to heap-allocated Result.
  */
 int64_t fern_result_err(int64_t value) {
-    /* Pack: value in upper 32 bits, tag=1 in lower 32 bits */
-    return ((value & 0xFFFFFFFF) << 32) | RESULT_TAG_ERR;
+    FernResult* result = FERN_ALLOC(sizeof(FernResult));
+    result->tag = RESULT_TAG_ERR;
+    result->value = value;
+    return (int64_t)(intptr_t)result;
 }
 
 /**
  * Check if a Result is Ok.
- * @param result The packed Result value.
+ * @param result Pointer to Result.
  * @return 1 if Ok, 0 if Err.
  */
 int64_t fern_result_is_ok(int64_t result) {
-    return (result & 0xFFFFFFFF) == RESULT_TAG_OK ? 1 : 0;
+    FernResult* r = (FernResult*)(intptr_t)result;
+    return r->tag == RESULT_TAG_OK ? 1 : 0;
 }
 
 /**
  * Unwrap the value from a Result.
- * @param result The packed Result value.
+ * @param result Pointer to Result.
  * @return The contained value (ok or err).
  */
 int64_t fern_result_unwrap(int64_t result) {
-    /* Extract value from upper 32 bits, sign-extend */
-    return (int64_t)((int32_t)(result >> 32));
+    FernResult* r = (FernResult*)(intptr_t)result;
+    return r->value;
 }
 
 /**
