@@ -31,3 +31,6 @@ sum_fern
 # Python
 __pycache__/
 *.pyc
+check_style_simple
+test_file_read
+test_simple_str

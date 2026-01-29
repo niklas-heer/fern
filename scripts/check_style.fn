@@ -1,0 +1,342 @@
+# Fern Style Checker
+# A port of check_style.py to Fern
+# Checks FERN_STYLE compliance for C source files
+
+fn main():
+    let argc = System.args_count()
+
+    # Print header
+    let header = Tui.Panel.new("Fern Style Checker")
+    let header = Tui.Panel.title(header, "fern-style")
+    let header = Tui.Panel.border(header, "rounded")
+    let header = Tui.Panel.border_color(header, "cyan")
+    println(Tui.Panel.render(header))
+    println("")
+
+    # Determine paths to check - use args or defaults
+    let paths = get_paths_to_check(argc)
+
+    # Check each path
+    let total_files = 0
+    let total_violations = 0
+
+    for path in paths:
+        let result = check_path(path)
+        let total_files = total_files + result.0
+        let total_violations = total_violations + result.1
+
+    # Print summary
+    println("")
+    if total_violations == 0:
+        println(Tui.Status.ok("All {total_files} files pass FERN_STYLE checks"))
+    else:
+        println(Tui.Status.error("{total_violations} violations in {total_files} files"))
+
+    if total_violations > 0:
+        1
+    else:
+        0
+
+# Get paths from command line or use defaults
+fn get_paths_to_check(argc: Int) -> List(String):
+    if argc > 1:
+        collect_args(1, argc)
+    else:
+        ["lib", "src"]
+
+# Collect command line args into a list - build up from first arg
+fn collect_args(start: Int, end: Int) -> List(String):
+    let first_arg = System.arg(start)
+    let result = [first_arg]
+    let next = start + 1
+    for i in next..end:
+        let arg = System.arg(i)
+        let result = List.push(result, arg)
+    result
+
+# Check a path (file or directory)
+fn check_path(path: String) -> (Int, Int):
+    if File.is_dir(path):
+        check_directory(path)
+    else:
+        if String.ends_with(path, ".c"):
+            let v = check_file(path)
+            let result = (1, v)
+            result
+        else:
+            (0, 0)
+
+# Check all .c files in a directory
+fn check_directory(dir: String) -> (Int, Int):
+    let entries = File.list_dir(dir)
+    check_entries(dir, entries, 0, 0)
+
+# Helper to process directory entries recursively
+fn check_entries(dir: String, entries: List(String), files: Int, violations: Int) -> (Int, Int):
+    if List.is_empty(entries):
+        (files, violations)
+    else:
+        let entry = List.head(entries)
+        let rest = List.tail(entries)
+        let full_path = dir + "/" + entry
+        let is_dir = File.is_dir(full_path)
+        let is_c_file = String.ends_with(entry, ".c")
+
+        if is_dir:
+            let sub_result = check_directory(full_path)
+            let new_files = files + sub_result.0
+            let new_violations = violations + sub_result.1
+            check_entries(dir, rest, new_files, new_violations)
+        else:
+            if is_c_file:
+                let v = check_file(full_path)
+                check_entries(dir, rest, files + 1, violations + v)
+            else:
+                check_entries(dir, rest, files, violations)
+
+# Check a single C file for FERN_STYLE violations
+fn check_file(filepath: String) -> Int:
+    let content_result = File.read(filepath)
+
+    # Handle file read error - use match as expression
+    let content = match content_result:
+        Ok(c) -> c
+        Err(_) -> ""
+
+    if String.len(content) == 0:
+        println(Tui.Status.error("Could not read: {filepath}"))
+        return 1
+
+    let lines = String.lines(content)
+    let violations = []
+
+    # Find all functions and check them
+    let functions = find_functions(lines)
+
+    for func in functions:
+        let violations = check_function(filepath, func, violations)
+
+    # Print violations for this file
+    if List.len(violations) > 0:
+        println("")
+        println(Tui.Style.bold(filepath))
+        print_violations_table(violations)
+
+    List.len(violations)
+
+# Check a single function for violations
+# func tuple: (name, start_line, end_line, assertions, body)
+#             .0     .1          .2        .3          .4
+fn check_function(filepath: String, func: (String, Int, Int, Int, String), violations: List) -> List:
+    let violations = violations
+    let func_name = func.0
+    let start_line = func.1
+    let end_line = func.2
+    let assertions = func.3
+    let body = func.4
+
+    # Check assertion density (minimum 2 per function)
+    if assertions < 2:
+        if not has_allow(body, "assertion-density"):
+            let v = make_violation(filepath, start_line, func_name,
+                "assertion-density", "{assertions} assertions (need 2+)")
+            let violations = List.push(violations, v)
+
+    # Check function length (max 70 lines)
+    let length = end_line - start_line
+    if length > 70:
+        if not has_allow(body, "function-length"):
+            let v = make_violation(filepath, start_line, func_name,
+                "function-length", "{length} lines (max 70)")
+            let violations = List.push(violations, v)
+
+    # Check for malloc usage
+    if String.contains(body, "malloc("):
+        if not has_allow(body, "no-malloc"):
+            let v = make_violation(filepath, start_line, func_name,
+                "no-malloc", "Uses malloc() - use arena instead")
+            let violations = List.push(violations, v)
+
+    # Check for free usage
+    if String.contains(body, "free("):
+        if not has_allow(body, "no-free"):
+            let v = make_violation(filepath, start_line, func_name,
+                "no-free", "Uses free() - use arena instead")
+            let violations = List.push(violations, v)
+
+    violations
+
+# Create a violation record
+fn make_violation(file: String, line: Int, name: String, rule: String, msg: String):
+    (file, line, name, rule, msg)
+
+# Print violations as a table
+fn print_violations_table(violations: List):
+    let table = Tui.Table.new()
+    let table = Tui.Table.add_column(table, "")
+    let table = Tui.Table.add_column(table, "Function")
+    let table = Tui.Table.add_column(table, "Line")
+    let table = Tui.Table.add_column(table, "Rule")
+    let table = Tui.Table.add_column(table, "Message")
+    let table = Tui.Table.show_header(table, 0)
+    let table = Tui.Table.border(table, "simple")
+
+    for v in violations:
+        let icon = Tui.Style.red("X")
+        let func_name = Tui.Style.yellow("{v.2}()")
+        let line_str = "{v.1}"
+        let rule = Tui.Style.magenta(v.3)
+        let msg = v.4
+
+        let row = [icon, func_name, line_str, rule, msg]
+        let table = Tui.Table.add_row(table, row)
+
+    println(Tui.Table.render(table))
+
+# Check if body contains FERN_STYLE: allow(rule)
+fn has_allow(body: String, rule: String) -> Bool:
+    let pattern = "FERN_STYLE: allow(" + rule + ")"
+    String.contains(body, pattern)
+
+# Find all function definitions in the file
+fn find_functions(lines: List(String)) -> List:
+    let functions = []
+    let line_count = List.len(lines)
+    let i = 0
+
+    for i in 0..line_count:
+        let line = List.get(lines, i)
+        let trimmed = String.trim(line)
+
+        # Skip preprocessor and comments
+        if String.starts_with(trimmed, "#"):
+            continue
+        if String.starts_with(trimmed, "//"):
+            continue
+
+        # Check for function pattern
+        if is_function_start(trimmed):
+            let func_name = extract_function_name(trimmed)
+            let start_line = i + 1
+
+            # Find function end by matching braces
+            let result = find_function_end(lines, i)
+            let end_line = result.0
+            let body = result.1
+
+            # Count assertions in body
+            let assertions = count_assertions(body)
+
+            let func = (func_name, start_line, end_line, assertions, body)
+            let functions = List.push(functions, func)
+
+    functions
+
+# Check if line looks like a function definition start
+fn is_function_start(line: String) -> Bool:
+    # Must contain '(' and end with '{'
+    let has_paren = String.contains(line, "(")
+    let ends_brace = String.ends_with(line, "{")
+
+    if not has_paren or not ends_brace:
+        false
+    else:
+        # Skip control structures
+        let is_control = is_control_structure(line)
+        if is_control:
+            false
+        else:
+            # Check for common type prefixes
+            is_type_prefix(line)
+
+# Check if line is a control structure (if, while, for, switch)
+fn is_control_structure(line: String) -> Bool:
+    let has_if = String.contains(line, "if (") or String.contains(line, "if(")
+    let has_while = String.contains(line, "while (") or String.contains(line, "while(")
+    let has_for = String.contains(line, "for (") or String.contains(line, "for(")
+    let has_switch = String.contains(line, "switch (") or String.contains(line, "switch(")
+    has_if or has_while or has_for or has_switch
+
+# Check if line starts with a type prefix
+fn is_type_prefix(line: String) -> Bool:
+    # Common C type prefixes
+    let prefixes = ["static ", "void ", "int ", "int64_t ", "char ", "char* ", "bool ", "size_t "]
+
+    for prefix in prefixes:
+        if String.starts_with(line, prefix):
+            return true
+
+    # Fern-specific type prefixes (no space needed - these are custom types)
+    let types = ["String", "Type", "Expr", "Token", "Lexer", "Parser", "Checker", "Codegen", "Arena", "Fern", "PrintType"]
+
+    for t in types:
+        if String.starts_with(line, t):
+            return true
+
+    false
+
+# Extract function name from definition line
+fn extract_function_name(line: String) -> String:
+    # Find the part before '('
+    let parts = String.split(line, "(")
+    if List.len(parts) == 0:
+        return "unknown"
+
+    let before_paren = List.get(parts, 0)
+    let words = String.split(String.trim(before_paren), " ")
+
+    # Last word is the function name (possibly with *)
+    let last_idx = List.len(words) - 1
+    if last_idx < 0:
+        return "unknown"
+
+    let name = List.get(words, last_idx)
+
+    # Remove leading * if present
+    if String.starts_with(name, "*"):
+        String.slice(name, 1, String.len(name))
+    else:
+        name
+
+# Find the end of a function and return (end_line, body_text)
+fn find_function_end(lines: List(String), start_idx: Int) -> (Int, String):
+    let brace_count = 0
+    let line_count = List.len(lines)
+    let body_lines = []
+    let found_first_brace = false
+
+    for i in start_idx..line_count:
+        let line = List.get(lines, i)
+        let body_lines = List.push(body_lines, line)
+
+        # Count braces
+        let brace_count = brace_count + count_char(line, 123)  # '{'
+        let brace_count = brace_count - count_char(line, 125)  # '}'
+
+        if brace_count > 0:
+            let found_first_brace = true
+
+        if found_first_brace and brace_count == 0:
+            let body = String.join(body_lines, "\n")
+            return (i + 1, body)
+
+    # Reached end without finding closing brace
+    let body = String.join(body_lines, "\n")
+    (line_count, body)
+
+# Count occurrences of a character in a string
+fn count_char(s: String, ch: Int) -> Int:
+    let count = 0
+    let len = String.len(s)
+    for i in 0..len:
+        let c = String.char_at(s, i)
+        let is_match = match c:
+            Some(code) -> code == ch
+            None -> false
+        let count = if is_match: count + 1 else: count
+    count
+
+# Count assert() calls in function body
+fn count_assertions(body: String) -> Int:
+    let parts = String.split(body, "assert(")
+    List.len(parts) - 1
