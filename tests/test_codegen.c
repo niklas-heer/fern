@@ -594,6 +594,87 @@ void test_codegen_with_multiple_bindings(void) {
     arena_destroy(arena);
 }
 
+/* ========== Pointer Type Handling Tests ========== */
+
+/* Test: Function returning tuple uses 'l' return type */
+void test_codegen_fn_returns_tuple(void) {
+    Arena* arena = arena_create(8192);
+    
+    const char* qbe = generate_qbe(arena,
+        "fn get_pair() -> (Int, Int): (1, 2)\n"
+        "fn main(): let p = get_pair() 0");
+    
+    ASSERT_NOT_NULL(qbe);
+    /* Function should return 'l' (pointer) for tuple */
+    ASSERT_TRUE(strstr(qbe, "function l $get_pair") != NULL);
+    /* Call should use '=l' */
+    ASSERT_TRUE(strstr(qbe, "=l call $get_pair") != NULL);
+    
+    arena_destroy(arena);
+}
+
+/* Test: Function returning String uses 'l' return type */
+void test_codegen_fn_returns_string(void) {
+    Arena* arena = arena_create(8192);
+    
+    const char* qbe = generate_qbe(arena,
+        "fn greet() -> String: \"hello\"\n"
+        "fn main(): let s = greet() 0");
+    
+    ASSERT_NOT_NULL(qbe);
+    /* Function should return 'l' (pointer) for String */
+    ASSERT_TRUE(strstr(qbe, "function l $greet") != NULL);
+    /* Call should use '=l' */
+    ASSERT_TRUE(strstr(qbe, "=l call $greet") != NULL);
+    
+    arena_destroy(arena);
+}
+
+/* Test: Function with String parameter uses 'l' param type */
+void test_codegen_fn_string_param(void) {
+    Arena* arena = arena_create(8192);
+    
+    const char* qbe = generate_qbe(arena,
+        "fn process(s: String) -> Int: 0\n"
+        "fn main(): process(\"test\") 0");
+    
+    ASSERT_NOT_NULL(qbe);
+    /* Parameter should be 'l' (pointer) for String */
+    ASSERT_TRUE(strstr(qbe, "function w $process(l %s)") != NULL);
+    
+    arena_destroy(arena);
+}
+
+/* Test: Function with List parameter uses 'l' param type */
+void test_codegen_fn_list_param(void) {
+    Arena* arena = arena_create(8192);
+    
+    const char* qbe = generate_qbe(arena,
+        "fn process(items: List(Int)) -> Int: 0\n"
+        "fn main(): process([1, 2, 3]) 0");
+    
+    ASSERT_NOT_NULL(qbe);
+    /* Parameter should be 'l' (pointer) for List */
+    ASSERT_TRUE(strstr(qbe, "function w $process(l %items)") != NULL);
+    
+    arena_destroy(arena);
+}
+
+/* Test: If expression returning String uses 'l' type */
+void test_codegen_if_returns_string(void) {
+    Arena* arena = arena_create(8192);
+    
+    const char* qbe = generate_qbe(arena,
+        "fn choose(b: Bool) -> String: if b: \"yes\" else: \"no\"\n"
+        "fn main(): let s = choose(true) 0");
+    
+    ASSERT_NOT_NULL(qbe);
+    /* If branches should use '=l copy' for String results */
+    ASSERT_TRUE(strstr(qbe, "=l copy") != NULL);
+    
+    arena_destroy(arena);
+}
+
 /* ========== Test Runner ========== */
 
 void run_codegen_tests(void) {
@@ -676,4 +757,11 @@ void run_codegen_tests(void) {
     /* With expressions */
     TEST_RUN(test_codegen_with_simple);
     TEST_RUN(test_codegen_with_multiple_bindings);
+    
+    /* Pointer type handling */
+    TEST_RUN(test_codegen_fn_returns_tuple);
+    TEST_RUN(test_codegen_fn_returns_string);
+    TEST_RUN(test_codegen_fn_string_param);
+    TEST_RUN(test_codegen_fn_list_param);
+    TEST_RUN(test_codegen_if_returns_string);
 }

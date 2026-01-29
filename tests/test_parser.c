@@ -544,7 +544,7 @@ void test_parse_type_int(void) {
 
     TypeExpr* type = parse_type(parser);
     ASSERT_NOT_NULL(type);
-    ASSERT_EQ(type->kind, TYPE_NAMED);
+    ASSERT_EQ(type->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(type->data.named.name), "Int");
     ASSERT_NULL(type->data.named.args);
 
@@ -558,7 +558,7 @@ void test_parse_type_string(void) {
 
     TypeExpr* type = parse_type(parser);
     ASSERT_NOT_NULL(type);
-    ASSERT_EQ(type->kind, TYPE_NAMED);
+    ASSERT_EQ(type->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(type->data.named.name), "String");
 
     arena_destroy(arena);
@@ -571,7 +571,7 @@ void test_parse_type_bool(void) {
 
     TypeExpr* type = parse_type(parser);
     ASSERT_NOT_NULL(type);
-    ASSERT_EQ(type->kind, TYPE_NAMED);
+    ASSERT_EQ(type->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(type->data.named.name), "Bool");
 
     arena_destroy(arena);
@@ -584,7 +584,7 @@ void test_parse_type_custom(void) {
 
     TypeExpr* type = parse_type(parser);
     ASSERT_NOT_NULL(type);
-    ASSERT_EQ(type->kind, TYPE_NAMED);
+    ASSERT_EQ(type->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(type->data.named.name), "User");
 
     arena_destroy(arena);
@@ -597,19 +597,19 @@ void test_parse_type_result(void) {
 
     TypeExpr* type = parse_type(parser);
     ASSERT_NOT_NULL(type);
-    ASSERT_EQ(type->kind, TYPE_NAMED);
+    ASSERT_EQ(type->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(type->data.named.name), "Result");
     ASSERT_NOT_NULL(type->data.named.args);
     ASSERT_EQ(type->data.named.args->len, 2);
 
     // First type arg: String
     TypeExpr* arg1 = TypeExprVec_get(type->data.named.args, 0);
-    ASSERT_EQ(arg1->kind, TYPE_NAMED);
+    ASSERT_EQ(arg1->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(arg1->data.named.name), "String");
 
     // Second type arg: Error
     TypeExpr* arg2 = TypeExprVec_get(type->data.named.args, 1);
-    ASSERT_EQ(arg2->kind, TYPE_NAMED);
+    ASSERT_EQ(arg2->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(arg2->data.named.name), "Error");
 
     arena_destroy(arena);
@@ -622,14 +622,14 @@ void test_parse_type_list(void) {
 
     TypeExpr* type = parse_type(parser);
     ASSERT_NOT_NULL(type);
-    ASSERT_EQ(type->kind, TYPE_NAMED);
+    ASSERT_EQ(type->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(type->data.named.name), "List");
     ASSERT_NOT_NULL(type->data.named.args);
     ASSERT_EQ(type->data.named.args->len, 1);
 
     // Type arg: Int
     TypeExpr* arg1 = TypeExprVec_get(type->data.named.args, 0);
-    ASSERT_EQ(arg1->kind, TYPE_NAMED);
+    ASSERT_EQ(arg1->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(arg1->data.named.name), "Int");
 
     arena_destroy(arena);
@@ -642,24 +642,62 @@ void test_parse_type_function(void) {
 
     TypeExpr* type = parse_type(parser);
     ASSERT_NOT_NULL(type);
-    ASSERT_EQ(type->kind, TYPE_FUNCTION);
+    ASSERT_EQ(type->kind, TYPEEXPR_FUNCTION);
     ASSERT_NOT_NULL(type->data.func.params);
     ASSERT_EQ(type->data.func.params->len, 2);
     ASSERT_NOT_NULL(type->data.func.return_type);
 
     // First param: Int
     TypeExpr* param1 = TypeExprVec_get(type->data.func.params, 0);
-    ASSERT_EQ(param1->kind, TYPE_NAMED);
+    ASSERT_EQ(param1->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(param1->data.named.name), "Int");
 
     // Second param: String
     TypeExpr* param2 = TypeExprVec_get(type->data.func.params, 1);
-    ASSERT_EQ(param2->kind, TYPE_NAMED);
+    ASSERT_EQ(param2->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(param2->data.named.name), "String");
 
     // Return type: Bool
-    ASSERT_EQ(type->data.func.return_type->kind, TYPE_NAMED);
+    ASSERT_EQ(type->data.func.return_type->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(type->data.func.return_type->data.named.name), "Bool");
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse tuple return type in type annotation */
+void test_parse_type_tuple_return(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "(Int, Int)");
+
+    TypeExpr* type = parse_type(parser);
+    ASSERT_NOT_NULL(type);
+    ASSERT_EQ(type->kind, TYPEEXPR_TUPLE);
+    ASSERT_EQ(type->data.tuple.elements->len, 2);
+    
+    /* First element: Int */
+    TypeExpr* elem1 = TypeExprVec_get(type->data.tuple.elements, 0);
+    ASSERT_EQ(elem1->kind, TYPEEXPR_NAMED);
+    ASSERT_STR_EQ(string_cstr(elem1->data.named.name), "Int");
+    
+    /* Second element: Int */
+    TypeExpr* elem2 = TypeExprVec_get(type->data.tuple.elements, 1);
+    ASSERT_EQ(elem2->kind, TYPEEXPR_NAMED);
+    ASSERT_STR_EQ(string_cstr(elem2->data.named.name), "Int");
+
+    arena_destroy(arena);
+}
+
+/* Test: Parse function with tuple return type */
+void test_parse_fn_tuple_return(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena, "fn get_pair() -> (Int, String): (1, \"a\")");
+
+    Stmt* stmt = parse_stmt(parser);
+    ASSERT_NOT_NULL(stmt);
+    ASSERT_EQ(stmt->type, STMT_FN);
+    ASSERT_NOT_NULL(stmt->data.fn.return_type);
+    ASSERT_EQ(stmt->data.fn.return_type->kind, TYPEEXPR_TUPLE);
+    ASSERT_EQ(stmt->data.fn.return_type->data.tuple.elements->len, 2);
 
     arena_destroy(arena);
 }
@@ -759,19 +797,19 @@ void test_parse_function_with_params(void) {
     Parameter p1 = ParameterVec_get(stmt->data.fn.params, 0);
     ASSERT_STR_EQ(string_cstr(p1.name), "x");
     ASSERT_NOT_NULL(p1.type_ann);
-    ASSERT_EQ(p1.type_ann->kind, TYPE_NAMED);
+    ASSERT_EQ(p1.type_ann->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(p1.type_ann->data.named.name), "Int");
 
     // Second parameter: y: Int
     Parameter p2 = ParameterVec_get(stmt->data.fn.params, 1);
     ASSERT_STR_EQ(string_cstr(p2.name), "y");
     ASSERT_NOT_NULL(p2.type_ann);
-    ASSERT_EQ(p2.type_ann->kind, TYPE_NAMED);
+    ASSERT_EQ(p2.type_ann->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(p2.type_ann->data.named.name), "Int");
 
     // Return type: Int
     ASSERT_NOT_NULL(stmt->data.fn.return_type);
-    ASSERT_EQ(stmt->data.fn.return_type->kind, TYPE_NAMED);
+    ASSERT_EQ(stmt->data.fn.return_type->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(stmt->data.fn.return_type->data.named.name), "Int");
 
     // Body: x + y (binary expression)
@@ -798,12 +836,12 @@ void test_parse_function_with_body(void) {
     Parameter p1 = ParameterVec_get(stmt->data.fn.params, 0);
     ASSERT_STR_EQ(string_cstr(p1.name), "x");
     ASSERT_NOT_NULL(p1.type_ann);
-    ASSERT_EQ(p1.type_ann->kind, TYPE_NAMED);
+    ASSERT_EQ(p1.type_ann->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(p1.type_ann->data.named.name), "Int");
 
     // Return type: Int
     ASSERT_NOT_NULL(stmt->data.fn.return_type);
-    ASSERT_EQ(stmt->data.fn.return_type->kind, TYPE_NAMED);
+    ASSERT_EQ(stmt->data.fn.return_type->kind, TYPEEXPR_NAMED);
 
     // Body should be a block expression
     ASSERT_NOT_NULL(stmt->data.fn.body);
@@ -945,7 +983,7 @@ void test_parse_let_with_type_int(void) {
 
     // Type annotation should be Int
     ASSERT_NOT_NULL(stmt->data.let.type_ann);
-    ASSERT_EQ(stmt->data.let.type_ann->kind, TYPE_NAMED);
+    ASSERT_EQ(stmt->data.let.type_ann->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(stmt->data.let.type_ann->data.named.name), "Int");
 
     // Value should be 42
@@ -967,7 +1005,7 @@ void test_parse_let_with_type_string(void) {
 
     // Type annotation should be String
     ASSERT_NOT_NULL(stmt->data.let.type_ann);
-    ASSERT_EQ(stmt->data.let.type_ann->kind, TYPE_NAMED);
+    ASSERT_EQ(stmt->data.let.type_ann->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(stmt->data.let.type_ann->data.named.name), "String");
 
     // Value should be "test"
@@ -989,13 +1027,13 @@ void test_parse_let_with_type_parameterized(void) {
 
     // Type annotation should be List(Int)
     ASSERT_NOT_NULL(stmt->data.let.type_ann);
-    ASSERT_EQ(stmt->data.let.type_ann->kind, TYPE_NAMED);
+    ASSERT_EQ(stmt->data.let.type_ann->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(stmt->data.let.type_ann->data.named.name), "List");
     ASSERT_NOT_NULL(stmt->data.let.type_ann->data.named.args);
     ASSERT_EQ(stmt->data.let.type_ann->data.named.args->len, 1);
 
     TypeExpr* arg = TypeExprVec_get(stmt->data.let.type_ann->data.named.args, 0);
-    ASSERT_EQ(arg->kind, TYPE_NAMED);
+    ASSERT_EQ(arg->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(arg->data.named.name), "Int");
 
     // Value should be a list
@@ -1017,11 +1055,11 @@ void test_parse_let_with_type_function(void) {
 
     // Type annotation should be (Int) -> Int
     ASSERT_NOT_NULL(stmt->data.let.type_ann);
-    ASSERT_EQ(stmt->data.let.type_ann->kind, TYPE_FUNCTION);
+    ASSERT_EQ(stmt->data.let.type_ann->kind, TYPEEXPR_FUNCTION);
     ASSERT_NOT_NULL(stmt->data.let.type_ann->data.func.params);
     ASSERT_EQ(stmt->data.let.type_ann->data.func.params->len, 1);
     ASSERT_NOT_NULL(stmt->data.let.type_ann->data.func.return_type);
-    ASSERT_EQ(stmt->data.let.type_ann->data.func.return_type->kind, TYPE_NAMED);
+    ASSERT_EQ(stmt->data.let.type_ann->data.func.return_type->kind, TYPEEXPR_NAMED);
     ASSERT_STR_EQ(string_cstr(stmt->data.let.type_ann->data.func.return_type->data.named.name), "Int");
 
     // Value should be identifier "double"
@@ -2836,6 +2874,8 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_type_result);
     TEST_RUN(test_parse_type_list);
     TEST_RUN(test_parse_type_function);
+    TEST_RUN(test_parse_type_tuple_return);
+    TEST_RUN(test_parse_fn_tuple_return);
     TEST_RUN(test_parse_function_no_params);
     TEST_RUN(test_parse_function_with_params);
     TEST_RUN(test_parse_function_with_body);
