@@ -316,6 +316,9 @@ static Expr* parse_indented_block_with_indent(Parser* parser, bool track_dedent)
     while (!check(parser, TOKEN_EOF) && can_start_block_expr(parser) && !at_block_end(parser)) {
         /* Check if a DEDENT was seen since we started this block */
         if (track_dedent && g_dedent_seen > starting_dedent_count) {
+            /* Consume exactly ONE dedent for this block's termination.
+             * This prevents outer blocks from also seeing this dedent. */
+            g_dedent_seen = starting_dedent_count;
             break;
         }
         
@@ -342,6 +345,10 @@ static Expr* parse_indented_block_with_indent(Parser* parser, bool track_dedent)
             } else {
                 /* Nothing follows at this indent level - this is the final expr */
                 final_expr = expr;
+                /* Consume the dedent if we're exiting due to it */
+                if (saw_dedent) {
+                    g_dedent_seen = starting_dedent_count;
+                }
                 break;
             }
         }
@@ -1799,13 +1806,17 @@ Stmt* parse_stmt(Parser* parser) {
         SourceLoc loc = parser->previous.loc;
         Expr* value = NULL;
         
+        /* Track dedent count before parsing expression to detect block boundary */
+        int return_start_dedent = g_dedent_seen;
+        
         if (!check(parser, TOKEN_EOF) && !check(parser, TOKEN_RBRACE) && !check(parser, TOKEN_COMMA)) {
             value = parse_expression(parser);
         }
 
         // Postfix guard: return expr if condition
+        // But only if we didn't cross a block boundary (dedent)
         Stmt* ret = stmt_return(parser->arena, value, loc);
-        if (match(parser, TOKEN_IF)) {
+        if (g_dedent_seen == return_start_dedent && match(parser, TOKEN_IF)) {
             ret->data.return_stmt.condition = parse_expression(parser);
         }
         return ret;
