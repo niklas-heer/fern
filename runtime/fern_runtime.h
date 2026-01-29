@@ -1155,4 +1155,45 @@ char* fern_spinner_render(FernSpinner* spinner);
  */
 void fern_spinner_free(FernSpinner* spinner);
 
+/* ========== Prompt Module ========== */
+
+/**
+ * Read a line of input from the user.
+ * @param prompt The prompt text to display.
+ * @return The user's input (without newline).
+ */
+char* fern_prompt_input(const char* prompt);
+
+/**
+ * Ask a yes/no confirmation question.
+ * @param prompt The question to ask.
+ * @return 1 for yes, 0 for no.
+ */
+int fern_prompt_confirm(const char* prompt);
+
+/**
+ * Ask user to select from a list of choices.
+ * @param prompt The prompt text.
+ * @param choices Array of choice strings.
+ * @param count Number of choices.
+ * @return Index of selected choice (0-based), or -1 on error.
+ */
+int fern_prompt_select(const char* prompt, FernStringList* choices);
+
+/**
+ * Ask for password input (hidden).
+ * @param prompt The prompt text.
+ * @return The password string.
+ */
+char* fern_prompt_password(const char* prompt);
+
+/**
+ * Ask for integer input with validation.
+ * @param prompt The prompt text.
+ * @param min Minimum allowed value.
+ * @param max Maximum allowed value.
+ * @return The entered integer, or min if invalid.
+ */
+int64_t fern_prompt_int(const char* prompt, int64_t min, int64_t max);
+
 #endif /* FERN_RUNTIME_H */

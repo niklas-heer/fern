@@ -255,6 +255,11 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
                     if (strcmp(module, "Spinner") == 0 && strcmp(func, "render") == 0) {
                         return PRINT_STRING;
                     }
+                    /* Prompt.input() and Prompt.password() return String */
+                    if (strcmp(module, "Prompt") == 0 && 
+                        (strcmp(func, "input") == 0 || strcmp(func, "password") == 0)) {
+                        return PRINT_STRING;
+                    }
                 }
             }
             if (call->func->type == EXPR_IDENT) {
@@ -388,6 +393,13 @@ static char qbe_type_for_expr(Expr* expr) {
                     /* Spinner module functions return Spinner or String (pointers) */
                     if (strcmp(module, "Spinner") == 0) {
                         return 'l';
+                    }
+                    /* Prompt module: input/password return String (l), confirm returns Bool (w), select/int return Int (w) */
+                    if (strcmp(module, "Prompt") == 0) {
+                        if (strcmp(func, "input") == 0 || strcmp(func, "password") == 0) {
+                            return 'l';
+                        }
+                        return 'w';
                     }
                 }
             }
@@ -1506,6 +1518,49 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* spin = codegen_expr(cg, call->args->data[0].value);
                             emit(cg, "    %s =l call $fern_spinner_render(l %s)\n",
                                 string_cstr(result), string_cstr(spin));
+                            return result;
+                        }
+                    }
+
+                    /* ===== Prompt module ===== */
+                    if (strcmp(module, "Prompt") == 0) {
+                        /* Prompt.input(prompt) -> String */
+                        if (strcmp(func, "input") == 0 && call->args->len == 1) {
+                            String* prompt = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_prompt_input(l %s)\n",
+                                string_cstr(result), string_cstr(prompt));
+                            return result;
+                        }
+                        /* Prompt.confirm(prompt) -> Bool */
+                        if (strcmp(func, "confirm") == 0 && call->args->len == 1) {
+                            String* prompt = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =w call $fern_prompt_confirm(l %s)\n",
+                                string_cstr(result), string_cstr(prompt));
+                            return result;
+                        }
+                        /* Prompt.select(prompt, choices) -> Int */
+                        if (strcmp(func, "select") == 0 && call->args->len == 2) {
+                            String* prompt = codegen_expr(cg, call->args->data[0].value);
+                            String* choices = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =w call $fern_prompt_select(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(prompt), string_cstr(choices));
+                            return result;
+                        }
+                        /* Prompt.password(prompt) -> String */
+                        if (strcmp(func, "password") == 0 && call->args->len == 1) {
+                            String* prompt = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_prompt_password(l %s)\n",
+                                string_cstr(result), string_cstr(prompt));
+                            return result;
+                        }
+                        /* Prompt.int(prompt, min, max) -> Int */
+                        if (strcmp(func, "int") == 0 && call->args->len == 3) {
+                            String* prompt = codegen_expr(cg, call->args->data[0].value);
+                            String* min = codegen_expr(cg, call->args->data[1].value);
+                            String* max = codegen_expr(cg, call->args->data[2].value);
+                            emit(cg, "    %s =w call $fern_prompt_int(l %s, w %s, w %s)\n",
+                                string_cstr(result), string_cstr(prompt), 
+                                string_cstr(min), string_cstr(max));
                             return result;
                         }
                     }

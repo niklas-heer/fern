@@ -152,7 +152,8 @@ static bool is_builtin_module(const char* name) {
            strcmp(name, "Table") == 0 ||
            strcmp(name, "Style") == 0 ||
            strcmp(name, "Progress") == 0 ||
-           strcmp(name, "Spinner") == 0;
+           strcmp(name, "Spinner") == 0 ||
+           strcmp(name, "Prompt") == 0;
 }
 
 /**
@@ -846,6 +847,43 @@ static Type* lookup_module_function(Checker* checker, const char* module, const 
             params = TypeVec_new(arena);
             TypeVec_push(arena, params, spinner_type);
             return type_fn(arena, params, type_string(arena));
+        }
+    }
+
+    /* ===== Prompt module ===== */
+    if (strcmp(module, "Prompt") == 0) {
+        /* Prompt.input(String) -> String - read line from user */
+        if (strcmp(func, "input") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
+        /* Prompt.confirm(String) -> Bool - yes/no question */
+        if (strcmp(func, "confirm") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_bool(arena));
+        }
+        /* Prompt.select(String, List(String)) -> Int - select from choices */
+        if (strcmp(func, "select") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_list(arena, type_string(arena)));
+            return type_fn(arena, params, type_int(arena));
+        }
+        /* Prompt.password(String) -> String - hidden input */
+        if (strcmp(func, "password") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
+        /* Prompt.int(String, Int, Int) -> Int - validated int input */
+        if (strcmp(func, "int") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_int(arena));
+            TypeVec_push(arena, params, type_int(arena));
+            return type_fn(arena, params, type_int(arena));
         }
     }
 

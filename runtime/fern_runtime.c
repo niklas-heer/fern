@@ -3071,3 +3071,146 @@ void fern_spinner_free(FernSpinner* s) {
         free(s);
     }
 }
+
+/* ========== Prompt Module ========== */
+
+char* fern_prompt_input(const char* prompt) {
+    if (prompt) {
+        printf("%s", prompt);
+        fflush(stdout);
+    }
+    
+    char* line = NULL;
+    size_t len = 0;
+    ssize_t read = getline(&line, &len, stdin);
+    
+    if (read <= 0) {
+        free(line);
+        return strdup("");
+    }
+    
+    /* Remove trailing newline */
+    if (read > 0 && line[read - 1] == '\n') {
+        line[read - 1] = '\0';
+    }
+    
+    return line;
+}
+
+int fern_prompt_confirm(const char* prompt) {
+    if (prompt) {
+        printf("%s [y/N] ", prompt);
+        fflush(stdout);
+    }
+    
+    char* line = NULL;
+    size_t len = 0;
+    ssize_t read = getline(&line, &len, stdin);
+    
+    if (read <= 0) {
+        free(line);
+        return 0;
+    }
+    
+    /* Check for yes */
+    int result = (line[0] == 'y' || line[0] == 'Y');
+    free(line);
+    return result;
+}
+
+int fern_prompt_select(const char* prompt, FernStringList* choices) {
+    if (!choices || choices->len == 0) return -1;
+    
+    /* Display prompt */
+    if (prompt) {
+        printf("%s\n", prompt);
+    }
+    
+    /* Display choices */
+    for (int64_t i = 0; i < choices->len; i++) {
+        printf("  %lld. %s\n", (long long)(i + 1), choices->data[i]);
+    }
+    
+    printf("Enter choice (1-%lld): ", (long long)choices->len);
+    fflush(stdout);
+    
+    char* line = NULL;
+    size_t len = 0;
+    ssize_t read = getline(&line, &len, stdin);
+    
+    if (read <= 0) {
+        free(line);
+        return -1;
+    }
+    
+    /* Parse selection */
+    long selection = strtol(line, NULL, 10);
+    free(line);
+    
+    if (selection < 1 || selection > choices->len) {
+        return -1;
+    }
+    
+    return (int)(selection - 1);
+}
+
+char* fern_prompt_password(const char* prompt) {
+    if (prompt) {
+        printf("%s", prompt);
+        fflush(stdout);
+    }
+    
+    /* Disable echo for password input */
+    struct termios old_term, new_term;
+    tcgetattr(STDIN_FILENO, &old_term);
+    new_term = old_term;
+    new_term.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_term);
+    
+    char* line = NULL;
+    size_t len = 0;
+    ssize_t read = getline(&line, &len, stdin);
+    
+    /* Restore echo */
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_term);
+    printf("\n");  /* Print newline since user's enter was hidden */
+    
+    if (read <= 0) {
+        free(line);
+        return strdup("");
+    }
+    
+    /* Remove trailing newline */
+    if (read > 0 && line[read - 1] == '\n') {
+        line[read - 1] = '\0';
+    }
+    
+    return line;
+}
+
+int64_t fern_prompt_int(const char* prompt, int64_t min, int64_t max) {
+    if (prompt) {
+        printf("%s (%lld-%lld): ", prompt, (long long)min, (long long)max);
+        fflush(stdout);
+    }
+    
+    char* line = NULL;
+    size_t len = 0;
+    ssize_t read = getline(&line, &len, stdin);
+    
+    if (read <= 0) {
+        free(line);
+        return min;
+    }
+    
+    /* Parse number */
+    char* endptr;
+    long long value = strtoll(line, &endptr, 10);
+    free(line);
+    
+    /* Validate */
+    if (value < min) return min;
+    if (value > max) return max;
+    
+    return (int64_t)value;
+}
