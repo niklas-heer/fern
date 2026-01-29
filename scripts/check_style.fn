@@ -3,8 +3,8 @@
 # Checks FERN_STYLE compliance for C source files
 
 # Type aliases for clarity:
-# FuncInfo = (String, Int, Int, Int, String, Bool, List(String), String)
-#          = (name, start_line, end_line, assertions, body, has_doc, param_names, return_type)
+# FuncInfo = (String, Int, Int, Int, String, Bool, List(String), String, List(String))
+#          = (name, start_line, end_line, assertions, body, has_doc, param_names, return_type, doc_params)
 # Violation = (String, Int, String, String, String, String)
 #          = (file, line, func_name, rule, message, severity)
 # DocComment = (Bool, Bool, List(String), Bool) = (exists, has_desc, documented_params, has_return)
@@ -305,6 +305,9 @@ fn check_file_content(filepath: String, content: String) -> Int:
     let lines = String.lines(content)
     let violations: List((String, Int, String, String, String)) = []
 
+    # Check for manual tagged unions at file level
+    let violations = check_tagged_unions(filepath, content, violations)
+
     # Find all functions and check them
     let functions = find_functions(lines)
 
@@ -319,16 +322,55 @@ fn check_file_content(filepath: String, content: String) -> Int:
 
     List.len(violations)
 
+# Check for manual tagged union patterns
+# Looks for: enum {...} kind; or enum {...} tag; or enum {...} type;
+fn check_tagged_unions(filepath: String, content: String, violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
+    if has_allow(content, "no-tagged-union"):
+        violations
+    else:
+        # Check for common tagged union patterns
+        let has_kind = String.contains(content, "} kind;")
+        let has_tag = String.contains(content, "} tag;")
+        let has_type_field = String.contains(content, "} type;")
+
+        if has_kind or has_tag or has_type_field:
+            # Find the line number (approximate - first occurrence)
+            let lines = String.lines(content)
+            let line_num = find_tagged_union_line(lines, 0)
+            let v = make_violation(filepath, line_num, "",
+                "no-tagged-union", "Manual tagged union detected - use Datatype99 instead")
+            List.push(violations, v)
+        else:
+            violations
+
+# Find the line containing a tagged union pattern
+fn find_tagged_union_line(lines: List(String), idx: Int) -> Int:
+    if List.is_empty(lines):
+        1
+    else:
+        let line: String = List.head(lines)
+        let has_kind = String.contains(line, "} kind;")
+        let has_tag = String.contains(line, "} tag;")
+        let has_type = String.contains(line, "} type;")
+        if has_kind or has_tag or has_type:
+            idx + 1
+        else:
+            find_tagged_union_line(List.tail(lines), idx + 1)
+
 # Check a single function for violations
-# func tuple: (name, start_line, end_line, assertions, body)
-#             .0     .1          .2        .3          .4
-fn check_function(filepath: String, func: (String, Int, Int, Int, String), violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
+# func tuple: (name, start_line, end_line, assertions, body, has_doc, param_names, return_type, doc_params)
+#             .0     .1          .2        .3          .4     .5       .6           .7           .8
+fn check_function(filepath: String, func: (String, Int, Int, Int, String, Bool, List(String), String, List(String)), violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
     let violations = violations
     let func_name: String = func.0
     let start_line: Int = func.1
     let end_line: Int = func.2
     let assertions: Int = func.3
     let body: String = func.4
+    let has_doc: Bool = func.5
+    let param_names: List(String) = func.6
+    let return_type: String = func.7
+    let doc_params: List(String) = func.8
 
     # Check assertion density (minimum 2 per function)
     if assertions < 2:
@@ -376,7 +418,76 @@ fn check_function(filepath: String, func: (String, Int, Int, Int, String), viola
                 "raw-char", "Raw char* param - use const char* or sds")
             let violations = List.push(violations, v)
 
+    # Check for doc comment
+    let violations = check_doc_comment_violations(filepath, start_line, func_name, body, has_doc, param_names, return_type, doc_params, violations)
+
     violations
+
+# Check doc comment related violations
+fn check_doc_comment_violations(filepath: String, line: Int, func_name: String, body: String, has_doc: Bool, param_names: List(String), return_type: String, doc_params: List(String), violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
+    if not has_doc:
+        if not has_allow(body, "doc-comment"):
+            let v = make_violation(filepath, line, func_name,
+                "doc-comment", "Missing doc comment (add /** ... */ before function)")
+            List.push(violations, v)
+        else:
+            violations
+    else:
+        # Check for missing @param documentation
+        let violations = check_doc_params(filepath, line, func_name, body, param_names, doc_params, violations)
+        # Check for missing @return documentation
+        check_doc_return(filepath, line, func_name, body, return_type, violations)
+
+# Check that all function parameters are documented with @param
+fn check_doc_params(filepath: String, line: Int, func_name: String, body: String, param_names: List(String), doc_params: List(String), violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
+    if has_allow(body, "doc-params") or has_allow(body, "doc-style"):
+        violations
+    else:
+        check_doc_params_rec(filepath, line, func_name, param_names, doc_params, violations)
+
+fn check_doc_params_rec(filepath: String, line: Int, func_name: String, param_names: List(String), doc_params: List(String), violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
+    if List.is_empty(param_names):
+        violations
+    else:
+        let param: String = List.head(param_names)
+        let rest = List.tail(param_names)
+        if list_contains_string(doc_params, param):
+            check_doc_params_rec(filepath, line, func_name, rest, doc_params, violations)
+        else:
+            let v = make_violation(filepath, line, func_name,
+                "doc-params", "Missing @param for: {param}")
+            let violations = List.push(violations, v)
+            check_doc_params_rec(filepath, line, func_name, rest, doc_params, violations)
+
+# Check that non-void functions have @return documentation
+fn check_doc_return(filepath: String, line: Int, func_name: String, body: String, return_type: String, violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
+    if has_allow(body, "doc-return") or has_allow(body, "doc-style"):
+        violations
+    else:
+        # Check if return type is void
+        let is_void = String.eq(return_type, "void") or String.eq(return_type, "")
+        if is_void:
+            violations
+        else:
+            # Need to check if doc comment has @return - this info would need to be passed
+            # For now, we'll check if the body contains @return in a comment
+            if String.contains(body, "@return"):
+                violations
+            else:
+                let v = make_violation(filepath, line, func_name,
+                    "doc-return", "Missing @return for non-void function")
+                List.push(violations, v)
+
+# Check if a string is in a list of strings
+fn list_contains_string(list: List(String), s: String) -> Bool:
+    if List.is_empty(list):
+        false
+    else:
+        let head: String = List.head(list)
+        if String.eq(head, s):
+            true
+        else:
+            list_contains_string(List.tail(list), s)
 
 # Check for unbounded loops: while(1), while(true), for(;;)
 fn has_unbounded_loop(body: String) -> Bool:
@@ -445,8 +556,8 @@ fn has_allow(body: String, rule: String) -> Bool:
         has_rule_with_close or has_rule_with_comma or has_comma_rule
 
 # Find all function definitions in the file
-fn find_functions(lines: List(String)) -> List((String, Int, Int, Int, String)):
-    let functions: List((String, Int, Int, Int, String)) = []
+fn find_functions(lines: List(String)) -> List((String, Int, Int, Int, String, Bool, List(String), String, List(String))):
+    let functions: List((String, Int, Int, Int, String, Bool, List(String), String, List(String))) = []
     let line_count = List.len(lines)
     let i = 0
 
@@ -465,18 +576,262 @@ fn find_functions(lines: List(String)) -> List((String, Int, Int, Int, String)):
             let func_name = extract_function_name(trimmed)
             let start_line = i + 1
 
+            # Parse doc comment before the function
+            let doc_result = parse_doc_comment(lines, i)
+            let has_doc: Bool = doc_result.0
+            let doc_params: List(String) = doc_result.1
+            let has_return_doc: Bool = doc_result.2
+
+            # Extract parameter names and return type from signature
+            let param_names = extract_param_names(trimmed)
+            let return_type = extract_return_type(trimmed)
+
             # Find function end by matching braces
             let result = find_function_end(lines, i)
             let end_line: Int = result.0
             let body: String = result.1
 
+            # Include doc comment info in body for @return check
+            let body = if has_return_doc: body + "\n@return" else: body
+
             # Count assertions in body
             let assertions = count_assertions(body)
 
-            let func = (func_name, start_line, end_line, assertions, body)
+            let func = (func_name, start_line, end_line, assertions, body, has_doc, param_names, return_type, doc_params)
             let functions = List.push(functions, func)
 
     functions
+
+# Parse documentation comment before a function
+# Returns (has_doc, documented_params, has_return)
+fn parse_doc_comment(lines: List(String), func_line_idx: Int) -> (Bool, List(String), Bool):
+    let search_start = if func_line_idx > 30: func_line_idx - 30 else: 0
+    parse_doc_comment_rec(lines, func_line_idx - 1, search_start)
+
+fn parse_doc_comment_rec(lines: List(String), idx: Int, search_start: Int) -> (Bool, List(String), Bool):
+    let empty_params: List(String) = []
+    if idx < search_start:
+        (false, empty_params, false)
+    else:
+        let line: String = List.get(lines, idx)
+        let trimmed = String.trim(line)
+
+        # Check for end of block comment
+        if String.ends_with(trimmed, "*/"):
+            # Found potential doc comment, search backwards for start
+            find_block_comment_start(lines, idx, search_start)
+        else:
+            # Check for /// style comments
+            if String.starts_with(trimmed, "///"):
+                collect_triple_slash_comment(lines, idx, search_start)
+            else:
+                # Check for empty line or other content
+                if String.len(trimmed) == 0:
+                    parse_doc_comment_rec(lines, idx - 1, search_start)
+                else:
+                    # Non-comment content before function
+                    if String.starts_with(trimmed, "//"):
+                        parse_doc_comment_rec(lines, idx - 1, search_start)
+                    else:
+                        (false, empty_params, false)
+
+# Find the start of a block comment and extract @param/@return
+fn find_block_comment_start(lines: List(String), end_idx: Int, search_start: Int) -> (Bool, List(String), Bool):
+    let empty_params: List(String) = []
+    find_block_comment_start_rec(lines, end_idx, end_idx, search_start, empty_params, false)
+
+fn find_block_comment_start_rec(lines: List(String), current_idx: Int, end_idx: Int, search_start: Int, params: List(String), has_return: Bool) -> (Bool, List(String), Bool):
+    let empty_params: List(String) = []
+    if current_idx < search_start:
+        (false, empty_params, false)
+    else:
+        let line: String = List.get(lines, current_idx)
+        let trimmed = String.trim(line)
+
+        # Extract @param names from this line
+        let params = if String.contains(line, "@param"):
+            extract_param_from_doc_line(line, params)
+        else:
+            params
+
+        # Check for @return
+        let has_return = has_return or String.contains(line, "@return")
+
+        # Check for start of block comment
+        if String.starts_with(trimmed, "/**") or String.starts_with(trimmed, "/*"):
+            # Found the start - check if it has description
+            let has_desc = has_doc_description(lines, current_idx, end_idx)
+            (has_desc, params, has_return)
+        else:
+            find_block_comment_start_rec(lines, current_idx - 1, end_idx, search_start, params, has_return)
+
+# Check if doc comment has a description (not just @tags)
+fn has_doc_description(lines: List(String), start_idx: Int, end_idx: Int) -> Bool:
+    has_doc_description_rec(lines, start_idx, end_idx)
+
+fn has_doc_description_rec(lines: List(String), idx: Int, end_idx: Int) -> Bool:
+    if idx > end_idx:
+        false
+    else:
+        let line: String = List.get(lines, idx)
+        # Strip comment markers and check for non-tag content
+        let content = String.trim(line)
+        let content = strip_comment_markers(content)
+        let content = String.trim(content)
+
+        # Skip empty lines and lines starting with @
+        if String.len(content) == 0:
+            has_doc_description_rec(lines, idx + 1, end_idx)
+        else:
+            if String.starts_with(content, "@"):
+                has_doc_description_rec(lines, idx + 1, end_idx)
+            else:
+                # Found description text
+                true
+
+# Strip /** /* */ * // markers from a line
+fn strip_comment_markers(line: String) -> String:
+    let line = if String.starts_with(line, "/**"): String.slice(line, 3, String.len(line)) else: line
+    let line = if String.starts_with(line, "/*"): String.slice(line, 2, String.len(line)) else: line
+    let line = if String.ends_with(line, "*/"): String.slice(line, 0, String.len(line) - 2) else: line
+    let line = if String.starts_with(line, "*"): String.slice(line, 1, String.len(line)) else: line
+    let line = if String.starts_with(line, "///"): String.slice(line, 3, String.len(line)) else: line
+    let line = if String.starts_with(line, "//"): String.slice(line, 2, String.len(line)) else: line
+    line
+
+# Extract @param name from a doc comment line
+fn extract_param_from_doc_line(line: String, params: List(String)) -> List(String):
+    # Find @param and extract the word after it
+    let parts = String.split(line, "@param")
+    if List.len(parts) < 2:
+        params
+    else:
+        let after_param: String = List.get(parts, 1)
+        let after_param = String.trim(after_param)
+        # Get first word (the parameter name)
+        let words = String.split(after_param, " ")
+        if List.is_empty(words):
+            params
+        else:
+            let param_name: String = List.head(words)
+            List.push(params, param_name)
+
+# Collect /// style comments
+fn collect_triple_slash_comment(lines: List(String), start_idx: Int, search_start: Int) -> (Bool, List(String), Bool):
+    let empty_params: List(String) = []
+    collect_triple_slash_rec(lines, start_idx, search_start, empty_params, false, false)
+
+fn collect_triple_slash_rec(lines: List(String), idx: Int, search_start: Int, params: List(String), has_return: Bool, has_desc: Bool) -> (Bool, List(String), Bool):
+    if idx < search_start:
+        (has_desc, params, has_return)
+    else:
+        let line: String = List.get(lines, idx)
+        let trimmed = String.trim(line)
+
+        if String.starts_with(trimmed, "///"):
+            # Extract @param if present
+            let params = if String.contains(line, "@param"):
+                extract_param_from_doc_line(line, params)
+            else:
+                params
+
+            # Check for @return
+            let has_return = has_return or String.contains(line, "@return")
+
+            # Check for description (non-empty, non-@ content)
+            let content = String.slice(trimmed, 3, String.len(trimmed))
+            let content = String.trim(content)
+            let has_desc = has_desc or (String.len(content) > 0 and not String.starts_with(content, "@"))
+
+            collect_triple_slash_rec(lines, idx - 1, search_start, params, has_return, has_desc)
+        else:
+            if String.len(trimmed) == 0:
+                collect_triple_slash_rec(lines, idx - 1, search_start, params, has_return, has_desc)
+            else:
+                (has_desc, params, has_return)
+
+# Extract parameter names from function signature
+fn extract_param_names(sig: String) -> List(String):
+    let empty: List(String) = []
+    # Find the part between parentheses
+    let parts = String.split(sig, "(")
+    if List.len(parts) < 2:
+        empty
+    else:
+        let after_paren: String = List.get(parts, 1)
+        let parts2 = String.split(after_paren, ")")
+        if List.is_empty(parts2):
+            empty
+        else:
+            let params_str: String = List.head(parts2)
+            let params_str = String.trim(params_str)
+            if String.eq(params_str, "") or String.eq(params_str, "void"):
+                empty
+            else:
+                # Split by comma and extract last word from each
+                let param_parts = String.split(params_str, ",")
+                extract_param_names_from_parts(param_parts, empty)
+
+fn extract_param_names_from_parts(parts: List(String), result: List(String)) -> List(String):
+    if List.is_empty(parts):
+        result
+    else:
+        let part: String = List.head(parts)
+        let rest = List.tail(parts)
+        let part = String.trim(part)
+        # Handle ... for varargs
+        if String.contains(part, "..."):
+            let result = List.push(result, "...")
+            extract_param_names_from_parts(rest, result)
+        else:
+            # Get last word (possibly with *)
+            let words = String.split(part, " ")
+            let last_word = get_last_word(words)
+            # Remove leading *
+            let name = if String.starts_with(last_word, "*"): String.slice(last_word, 1, String.len(last_word)) else: last_word
+            if String.eq(name, "") or String.eq(name, "void"):
+                extract_param_names_from_parts(rest, result)
+            else:
+                let result = List.push(result, name)
+                extract_param_names_from_parts(rest, result)
+
+fn get_last_word(words: List(String)) -> String:
+    if List.is_empty(words):
+        ""
+    else:
+        let head: String = List.head(words)
+        let tail = List.tail(words)
+        if List.is_empty(tail):
+            head
+        else:
+            get_last_word(tail)
+
+# Extract return type from function signature
+fn extract_return_type(sig: String) -> String:
+    let empty: List(String) = []
+    # Everything before the function name (last word before '(')
+    let parts = String.split(sig, "(")
+    if List.is_empty(parts):
+        ""
+    else:
+        let before_paren: String = List.head(parts)
+        let before_paren = String.trim(before_paren)
+        let words = String.split(before_paren, " ")
+        # All words except the last one form the return type
+        extract_return_type_from_words(words, empty)
+
+fn extract_return_type_from_words(words: List(String), result: List(String)) -> String:
+    if List.is_empty(words):
+        ""
+    else:
+        let tail = List.tail(words)
+        if List.is_empty(tail):
+            # Last word is the function name, join the accumulated result
+            String.join(result, " ")
+        else:
+            let head: String = List.head(words)
+            let result = List.push(result, head)
+            extract_return_type_from_words(tail, result)
 
 # Check if line looks like a function definition start
 fn is_function_start(line: String) -> Bool:
@@ -506,8 +861,13 @@ fn is_control_structure(line: String) -> Bool:
 # Check if line starts with a type prefix
 fn is_type_prefix(line: String) -> Bool:
     # Common C type prefixes - use helper to avoid early return issue
-    let c_prefixes = ["static ", "void ", "int ", "int64_t ", "char ", "char* ", "bool ", "size_t "]
-    let fern_types = ["String", "Type", "Expr", "Token", "Lexer", "Parser", "Checker", "Codegen", "Arena", "Fern", "PrintType"]
+    let c_prefixes = ["static ", "void ", "int ", "int64_t ", "char ", "char* ", "bool ", "size_t ", "const "]
+    # Fern types - include pointer variants
+    let fern_types = ["String*", "String ", "Type*", "Type ", "Expr*", "Expr ", "Token*", "Token ",
+                      "Lexer*", "Lexer ", "Parser*", "Parser ", "Checker*", "Checker ",
+                      "Codegen*", "Codegen ", "Arena*", "Arena ", "Fern", "PrintType",
+                      "MatchArm*", "MatchArm ", "Pattern*", "Pattern ", "Stmt*", "Stmt ",
+                      "TypeDef*", "TypeDef ", "RecordField*", "RecordField ", "MapEntry*", "MapEntry "]
     has_any_prefix(line, c_prefixes) or has_any_prefix(line, fern_types)
 
 # Helper: check if line starts with any prefix in list (recursive to avoid return in for loop)
@@ -550,7 +910,8 @@ fn extract_name_from_parts(parts: List(String)) -> String:
 # Find the end of a function and return (end_line, body_text)
 fn find_function_end(lines: List(String), start_idx: Int) -> (Int, String):
     let line_count = List.len(lines)
-    find_function_end_rec(lines, start_idx, line_count, 0, [], false)
+    let empty_lines: List(String) = []
+    find_function_end_rec(lines, start_idx, line_count, 0, empty_lines, false)
 
 # Recursive helper to find function end (avoids return in for loop)
 fn find_function_end_rec(lines: List(String), idx: Int, line_count: Int, brace_count: Int, body_lines: List(String), found_first: Bool) -> (Int, String):
@@ -562,9 +923,10 @@ fn find_function_end_rec(lines: List(String), idx: Int, line_count: Int, brace_c
         let line: String = List.get(lines, idx)
         let body_lines = List.push(body_lines, line)
 
-        # Count braces
-        let open_braces = count_char(line, 123)   # '{'
-        let close_braces = count_char(line, 125)  # '}'
+        # Count braces, ignoring those inside string literals
+        let brace_counts = count_braces_outside_strings(line)
+        let open_braces: Int = brace_counts.0
+        let close_braces: Int = brace_counts.1
         let brace_count = brace_count + open_braces - close_braces
 
         let found_first = found_first or brace_count > 0
@@ -574,6 +936,45 @@ fn find_function_end_rec(lines: List(String), idx: Int, line_count: Int, brace_c
             (idx + 1, body)
         else:
             find_function_end_rec(lines, idx + 1, line_count, brace_count, body_lines, found_first)
+
+# Count braces in a line, ignoring those inside string literals
+# Returns (open_braces, close_braces)
+fn count_braces_outside_strings(line: String) -> (Int, Int):
+    count_braces_rec(line, 0, String.len(line), false, 0, 0, 0)
+
+fn count_braces_rec(line: String, idx: Int, len: Int, in_string: Bool, string_char: Int, opens: Int, closes: Int) -> (Int, Int):
+    if idx >= len:
+        (opens, closes)
+    else:
+        let char_opt = String.char_at(line, idx)
+        match char_opt:
+            None -> (opens, closes),
+            Some(c) -> count_brace_char(line, idx, len, in_string, string_char, opens, closes, c)
+
+fn count_brace_char(line: String, idx: Int, len: Int, in_string: Bool, string_char: Int, opens: Int, closes: Int, c: Int) -> (Int, Int):
+    if not in_string:
+        # Check for start of string
+        if c == 34 or c == 39:  # " or '
+            count_braces_rec(line, idx + 1, len, true, c, opens, closes)
+        else:
+            if c == 123:  # {
+                count_braces_rec(line, idx + 1, len, false, 0, opens + 1, closes)
+            else:
+                if c == 125:  # }
+                    count_braces_rec(line, idx + 1, len, false, 0, opens, closes + 1)
+                else:
+                    count_braces_rec(line, idx + 1, len, false, 0, opens, closes)
+    else:
+        # Inside string
+        if c == 92:  # backslash - skip next char too
+            count_braces_rec(line, idx + 2, len, true, string_char, opens, closes)
+        else:
+            if c == string_char:
+                # End of string
+                count_braces_rec(line, idx + 1, len, false, 0, opens, closes)
+            else:
+                # Inside string - ignore
+                count_braces_rec(line, idx + 1, len, true, string_char, opens, closes)
 
 # Count occurrences of a character (as ASCII code) in a string
 fn count_char(s: String, ch: Int) -> Int:
