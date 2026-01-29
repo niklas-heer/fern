@@ -283,6 +283,31 @@ static Type* lookup_module_function(Checker* checker, const char* module, const 
             TypeVec_push(arena, params, type_string(arena));
             return type_fn(arena, params, type_list(arena, type_string(arena)));
         }
+        /* String.index_of(String, String) -> Option(Int) */
+        if (strcmp(func, "index_of") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec* option_args = TypeVec_new(arena);
+            TypeVec_push(arena, option_args, type_int(arena));
+            return type_fn(arena, params, type_con(arena, string_new(arena, "Option"), option_args));
+        }
+        /* String.char_at(String, Int) -> Option(Int) */
+        if (strcmp(func, "char_at") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            TypeVec_push(arena, params, type_int(arena));
+            TypeVec* option_args = TypeVec_new(arena);
+            TypeVec_push(arena, option_args, type_int(arena));
+            return type_fn(arena, params, type_con(arena, string_new(arena, "Option"), option_args));
+        }
+        /* String.join(List(String), String) -> String */
+        if (strcmp(func, "join") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_list(arena, type_string(arena)));
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_string(arena));
+        }
     }
 
     /* ===== List module ===== */

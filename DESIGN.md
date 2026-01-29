@@ -2554,9 +2554,14 @@ let repeated = String.repeat("-", 10)      # "----------"
 # Predicates
 let empty = String.is_empty("")            # true
 
-# Splitting
+# Splitting and joining
 let parts = String.split("a,b,c", ",")     # ["a", "b", "c"]
 let lines = String.lines("a\nb\nc")        # ["a", "b", "c"]
+let joined = String.join(["a", "b"], "-")  # "a-b"
+
+# Character access
+let idx = String.index_of("hello", "ll")   # Some(2)
+let ch = String.char_at("hello", 0)        # Some(104) - ASCII 'h'
 ```
 
 ### List Module

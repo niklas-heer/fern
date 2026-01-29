@@ -267,7 +267,7 @@ static char qbe_type_for_expr(Expr* expr) {
                 if (dot->object->type == EXPR_IDENT) {
                     const char* module = string_cstr(dot->object->data.ident.name);
                     const char* func = string_cstr(dot->field);
-                    /* String module functions returning String (pointer) */
+                    /* String module functions returning String or pointer types */
                     if (strcmp(module, "String") == 0) {
                         if (strcmp(func, "concat") == 0 ||
                             strcmp(func, "slice") == 0 ||
@@ -279,7 +279,10 @@ static char qbe_type_for_expr(Expr* expr) {
                             strcmp(func, "replace") == 0 ||
                             strcmp(func, "repeat") == 0 ||
                             strcmp(func, "split") == 0 ||
-                            strcmp(func, "lines") == 0) {
+                            strcmp(func, "lines") == 0 ||
+                            strcmp(func, "join") == 0 ||
+                            strcmp(func, "index_of") == 0 ||
+                            strcmp(func, "char_at") == 0) {
                             return 'l';
                         }
                     }
@@ -863,6 +866,30 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* s = codegen_expr(cg, call->args->data[0].value);
                             emit(cg, "    %s =l call $fern_str_lines(l %s)\n",
                                 string_cstr(result), string_cstr(s));
+                            return result;
+                        }
+                        /* String.index_of(s, substr) -> Option(Int) */
+                        if (strcmp(func, "index_of") == 0 && call->args->len == 2) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            String* substr = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_str_index_of(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(s), string_cstr(substr));
+                            return result;
+                        }
+                        /* String.char_at(s, index) -> Option(Int) */
+                        if (strcmp(func, "char_at") == 0 && call->args->len == 2) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            String* idx = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_str_char_at(l %s, w %s)\n",
+                                string_cstr(result), string_cstr(s), string_cstr(idx));
+                            return result;
+                        }
+                        /* String.join(list, sep) -> String */
+                        if (strcmp(func, "join") == 0 && call->args->len == 2) {
+                            String* list = codegen_expr(cg, call->args->data[0].value);
+                            String* sep = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_str_join(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(list), string_cstr(sep));
                             return result;
                         }
                     }
