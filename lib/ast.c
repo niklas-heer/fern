@@ -624,7 +624,7 @@ TypeExpr* type_named(Arena* arena, String* name, TypeExprVec* args, SourceLoc lo
     assert(name != NULL);
 
     TypeExpr* type = arena_alloc(arena, sizeof(TypeExpr));
-    type->kind = TYPE_NAMED;
+    type->kind = TYPEEXPR_NAMED;
     type->loc = loc;
     type->data.named.name = name;
     type->data.named.args = args;  // Can be NULL for simple types
@@ -646,10 +646,29 @@ TypeExpr* type_function(Arena* arena, TypeExprVec* params, TypeExpr* return_type
     assert(return_type != NULL);
 
     TypeExpr* type = arena_alloc(arena, sizeof(TypeExpr));
-    type->kind = TYPE_FUNCTION;
+    type->kind = TYPEEXPR_FUNCTION;
     type->loc = loc;
     type->data.func.params = params;
     type->data.func.return_type = return_type;
+
+    return type;
+}
+
+/**
+ * Create tuple type expression.
+ * @param arena The arena to allocate from.
+ * @param elements The element types.
+ * @param loc The source location.
+ * @return The new type expression node.
+ */
+TypeExpr* type_tuple_expr(Arena* arena, TypeExprVec* elements, SourceLoc loc) {
+    assert(arena != NULL);
+    assert(elements != NULL);
+
+    TypeExpr* type = arena_alloc(arena, sizeof(TypeExpr));
+    type->kind = TYPEEXPR_TUPLE;
+    type->loc = loc;
+    type->data.tuple.elements = elements;
 
     return type;
 }

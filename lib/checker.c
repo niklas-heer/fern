@@ -2709,10 +2709,10 @@ static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
     // FERN_STYLE: allow(function-length) type expression resolution handles all type forms
     assert(checker != NULL);
     if (!type_expr) return NULL;
-    assert(type_expr->kind == TYPE_NAMED || type_expr->kind == TYPE_FUNCTION);
+    assert(type_expr->kind == TYPEEXPR_NAMED || type_expr->kind == TYPEEXPR_FUNCTION || type_expr->kind == TYPEEXPR_TUPLE);
     
     switch (type_expr->kind) {
-        case TYPE_NAMED: {
+        case TYPEEXPR_NAMED: {
             String* name = type_expr->data.named.name;
             const char* name_str = string_cstr(name);
             
@@ -2771,7 +2771,7 @@ static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
             return type_con(checker->arena, name, NULL);
         }
         
-        case TYPE_FUNCTION: {
+        case TYPEEXPR_FUNCTION: {
             /* Resolve parameter types */
             TypeVec* params = TypeVec_new(checker->arena);
             for (size_t i = 0; i < type_expr->data.func.params->len; i++) {
@@ -2787,6 +2787,18 @@ static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
             
             return type_fn(checker->arena, params, ret);
         }
+
+        case TYPEEXPR_TUPLE: {
+            /* Resolve element types */
+            TypeVec* elements = TypeVec_new(checker->arena);
+            for (size_t i = 0; i < type_expr->data.tuple.elements->len; i++) {
+                Type* elem = resolve_type_expr(checker,
+                    type_expr->data.tuple.elements->data[i]);
+                if (!elem || elem->kind == TYPE_ERROR) return elem;
+                TypeVec_push(checker->arena, elements, elem);
+            }
+            return type_tuple(checker->arena, elements);
+        }
     }
     
     return error_type(checker, "Unknown type expression kind");
@@ -2801,9 +2813,9 @@ static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
 static Type* resolve_type_expr_strict(Checker* checker, TypeExpr* type_expr) {
     assert(checker != NULL);
     if (!type_expr) return NULL;
-    assert(type_expr->kind == TYPE_NAMED || type_expr->kind == TYPE_FUNCTION);
+    assert(type_expr->kind == TYPEEXPR_NAMED || type_expr->kind == TYPEEXPR_FUNCTION || type_expr->kind == TYPEEXPR_TUPLE);
     
-    if (type_expr->kind == TYPE_NAMED) {
+    if (type_expr->kind == TYPEEXPR_NAMED) {
         String* name = type_expr->data.named.name;
         const char* name_str = string_cstr(name);
         

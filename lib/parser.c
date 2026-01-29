@@ -1328,15 +1328,20 @@ TypeExpr* parse_type(Parser* parser) {
 
         consume(parser, TOKEN_RPAREN, "Expected ')' after type parameters");
 
-        // If followed by ->, it's a function type; otherwise () is the unit type
+        // If followed by ->, it's a function type
         if (match(parser, TOKEN_ARROW)) {
             TypeExpr* return_type = parse_type(parser);
             return type_function(parser->arena, params, return_type, loc);
         }
 
-        // Unit type: () — represent as named type "()"
-        String* unit_name = string_new(parser->arena, "()");
-        return type_named(parser->arena, unit_name, NULL, loc);
+        // Empty () is unit type
+        if (params->len == 0) {
+            String* unit_name = string_new(parser->arena, "()");
+            return type_named(parser->arena, unit_name, NULL, loc);
+        }
+
+        // (T1, T2, ...) is a tuple type
+        return type_tuple_expr(parser->arena, params, loc);
     }
 
     // Named type: Ident or Ident(args)

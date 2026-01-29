@@ -85,7 +85,7 @@ void ast_print_type(FILE* out, TypeExpr* type, int indent) {
     print_indent(out, indent);
     
     switch (type->kind) {
-        case TYPE_NAMED:
+        case TYPEEXPR_NAMED:
             fprintf(out, "Type: %s", string_cstr(type->data.named.name));
             if (type->data.named.args && type->data.named.args->len > 0) {
                 fprintf(out, "(");
@@ -99,7 +99,7 @@ void ast_print_type(FILE* out, TypeExpr* type, int indent) {
             fprintf(out, "\n");
             break;
             
-        case TYPE_FUNCTION:
+        case TYPEEXPR_FUNCTION:
             fprintf(out, "FnType: (");
             for (size_t i = 0; i < type->data.func.params->len; i++) {
                 if (i > 0) fprintf(out, ", ");
@@ -108,6 +108,20 @@ void ast_print_type(FILE* out, TypeExpr* type, int indent) {
             }
             fprintf(out, ") -> ");
             fprintf(out, "%s\n", string_cstr(type->data.func.return_type->data.named.name));
+            break;
+            
+        case TYPEEXPR_TUPLE:
+            fprintf(out, "TupleType: (");
+            for (size_t i = 0; i < type->data.tuple.elements->len; i++) {
+                if (i > 0) fprintf(out, ", ");
+                TypeExpr* elem = type->data.tuple.elements->data[i];
+                if (elem->kind == TYPEEXPR_NAMED) {
+                    fprintf(out, "%s", string_cstr(elem->data.named.name));
+                } else {
+                    fprintf(out, "...");
+                }
+            }
+            fprintf(out, ")\n");
             break;
     }
 }

@@ -533,8 +533,9 @@ struct Pattern {
 
 /* Type expression kinds */
 typedef enum {
-    TYPE_NAMED,         // Int, String, Result(String, Error), List(Int)
-    TYPE_FUNCTION,      // (Int, String) -> Bool
+    TYPEEXPR_NAMED,     // Int, String, Result(String, Error), List(Int)
+    TYPEEXPR_FUNCTION,  // (Int, String) -> Bool
+    TYPEEXPR_TUPLE,     // (Int, String) - tuple type
 } TypeExprKind;
 
 /* Named type (with optional type arguments) */
@@ -549,6 +550,11 @@ typedef struct {
     TypeExpr* return_type;
 } FunctionType;
 
+/* Tuple type: (T1, T2, ...) */
+typedef struct {
+    TypeExprVec* elements;
+} TupleType;
+
 /* Type expression node */
 struct TypeExpr {
     TypeExprKind kind;
@@ -556,6 +562,7 @@ struct TypeExpr {
     union {
         NamedType named;
         FunctionType func;
+        TupleType tuple;
     } data;
 };
 
@@ -618,5 +625,6 @@ Pattern* pattern_rest(Arena* arena, String* name, SourceLoc loc);
 /* Create type expressions */
 TypeExpr* type_named(Arena* arena, String* name, TypeExprVec* args, SourceLoc loc);
 TypeExpr* type_function(Arena* arena, TypeExprVec* params, TypeExpr* return_type, SourceLoc loc);
+TypeExpr* type_tuple_expr(Arena* arena, TypeExprVec* elements, SourceLoc loc);
 
 #endif /* FERN_AST_H */
