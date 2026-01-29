@@ -8,22 +8,53 @@
 
 ## Design Philosophy
 
-**Core Principles:**
-- Readability through indentation (no braces, no `do`/`end`)
-- Functional-first with immutability by default
-- Strong static types with inference
-- Single binary compilation (Go-style deployment)
-- Pragmatic over dogmatic
-- **Dual-purpose: Fast CLI tools AND full-stack applications**
+### The Four Pillars
 
-**Inspirations:**
-- Python: indentation, readability
-- Gleam: type system, simplicity
-- Elixir: pattern matching, multiple function clauses, pragmatic immutability, actor model
-- Go: single binary output, deployment simplicity
-- Clojure: threading macros (evolved into flexible pipes)
-- Ruby: postfix conditionals
-- Erlang: lightweight processes, fault tolerance
+**1. Spark Joy** 🌿
+For those familiar with functional programming, writing Fern should feel delightful. Pattern matching, pipes, and immutability aren't obstacles - they're tools that make code a pleasure to write and read.
+
+**2. One Obvious Way**
+There should be one clear, idiomatic way to accomplish any task. We actively avoid the "many ways to do it" trap. When you see Fern code, you know what it does. When you write Fern code, you don't agonize over which approach to use.
+
+**3. No Surprises**
+The language actively prevents the bugs that waste your afternoon debugging. No null pointer exceptions. No unhandled errors silently failing. No race conditions from shared mutable state. If your code compiles, it probably works.
+
+**4. Jetpack Included**
+Everything you need is built-in: actors for concurrency, embedded database, HTTP client/server, CLI tools, terminal UI. Like Bun or Elixir's ecosystem, but compiled to a single binary.
+
+### What We Prevent
+
+| Bug Class | How Fern Prevents It |
+|-----------|---------------------|
+| Null pointer exceptions | `Option` type, exhaustive pattern matching |
+| Unhandled exceptions | `Result` type, compiler enforces handling |
+| Race conditions | Actors with isolated heaps, no shared mutable state |
+| Silent failures | Must explicitly handle all error cases |
+| "Works on my machine" | Single binary, all dependencies included |
+| Action at a distance | Immutability prevents spooky mutation |
+| Memory leaks | Garbage collected (Boehm GC, future: per-process heaps) |
+| Buffer overflows | Bounds-checked collections, no raw pointers |
+
+### Core Principles
+
+- **Readable**: Python-like indentation, no braces, clear keywords
+- **Functional-first**: Immutable by default, pure functions, pattern matching
+- **Strongly typed**: Static types with inference - safety without verbosity
+- **Single binary**: Go-style deployment, no runtime dependencies
+- **Pragmatic**: We take the best ideas and make them work together
+- **Dual-purpose**: Same language for CLI tools and full-stack applications
+
+### Inspirations
+
+| Language | What We Borrowed |
+|----------|-----------------|
+| **Python** | Indentation-based syntax, readability focus |
+| **Gleam** | Type system, simplicity, Result/Option |
+| **Elixir** | Pattern matching, multiple clauses, actors, pragmatism |
+| **Go** | Single binary deployment, simplicity |
+| **Rust** | `?` operator, Result types, memory safety mindset |
+| **Erlang** | Lightweight processes, fault tolerance, "let it crash" |
+| **Ruby** | Postfix conditionals, developer happiness |
 
 ---
 
@@ -4574,6 +4605,17 @@ When actors are implemented (Milestone 8), Fern will transition to per-process g
 - Process death = instant memory reclamation
 - No global GC pauses
 - BEAM-level latency guarantees
+
+**Future: Perceus for WASM Support**
+
+Boehm GC relies on stack scanning and OS features that don't work in WebAssembly. For WASM targets, Fern will use **Perceus-style reference counting**:
+
+- **No cycles possible** - Fern's functional purity eliminates reference cycles
+- **Zero annotations** - Unlike Rust, no lifetime annotations needed
+- **"Functional but in-place"** - Compiler mutates unique values behind the scenes
+- **Unified model** - Same memory strategy for native and WASM
+
+See [docs/MEMORY_MANAGEMENT.md](docs/MEMORY_MANAGEMENT.md) for the complete design.
 
 ### Error Handling: Result Types
 

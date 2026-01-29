@@ -4,6 +4,20 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 26 Perceus-style reference counting for WASM support
+* **Date**: 2026-01-29
+* **Status**: ✅ Accepted
+* **Decision**: I will implement Perceus-style compile-time reference counting as Fern's long-term memory management strategy, replacing Boehm GC for both native and WASM targets.
+* **Context**: Boehm GC works well for native targets but cannot support WASM (relies on stack scanning and OS features). Considered several alternatives: (1) Rust-style ownership - powerful but steep learning curve, (2) Swift ARC - requires manual weak references for cycles, (3) WasmGC - ties us to browser GC, may have pauses, (4) Perceus (from Koka/Roc) - reference counting with reuse optimization. Chose Perceus because: functional purity eliminates cycles (no weak refs needed), zero developer annotations required, works identically on native and WASM, no GC pauses, and enables "functional but in-place" optimization where unique values are mutated behind the scenes.
+* **Consequences**: Created `docs/MEMORY_MANAGEMENT.md` with detailed design. Implementation in phases: (1) Keep Boehm for now, (2) Add Perceus for WASM target, (3) Replace Boehm everywhere, (4) Add reuse optimization. Compiler will insert dup/drop operations automatically. Developers write pure functional code; compiler figures out optimal memory strategy.
+
+### 25 Four Pillars philosophy - joy, one way, no surprises, jetpack
+* **Date**: 2026-01-29
+* **Status**: ✅ Adopted
+* **Decision**: I will design Fern around four core pillars: (1) Spark Joy - FP should feel delightful, (2) One Obvious Way - avoid "many ways to do it" confusion, (3) No Surprises - prevent bugs that waste debugging time, (4) Jetpack Included - batteries included like Bun/Elixir.
+* **Context**: Needed to articulate what makes Fern distinctive beyond just "functional + Python syntax". The four pillars capture the user experience goals: joy for FP practitioners, clarity for teams, safety by default, and productivity through included batteries. This philosophy influences every design decision - from syntax choices to stdlib scope to error messages.
+* **Consequences**: README and DESIGN.md updated with philosophy. All future features evaluated against these pillars. "No surprises" particularly important - we actively prevent null, unhandled errors, race conditions, silent failures. "One obvious way" means we document idioms clearly and avoid redundant features. "Jetpack" means stdlib includes actors, DB, HTTP, TUI, CLI tools - not just basics.
+
 ### 24 Tui.* nested module namespace for terminal UI
 * **Date**: 2026-01-29
 * **Status**: ✅ Adopted

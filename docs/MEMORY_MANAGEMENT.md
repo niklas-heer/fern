@@ -1,0 +1,261 @@
+# Fern Memory Management Design
+
+> Perceus-style reference counting for native and WASM targets
+
+## Executive Summary
+
+Fern will use **Perceus-style compile-time reference counting** as its memory management strategy. This approach:
+
+- Works on both native and WASM targets
+- Has no GC pauses (deterministic)
+- Eliminates cycles by design (functional purity)
+- Enables in-place mutation optimization ("functional but in-place")
+- Requires zero annotations from developers
+
+## Current State
+
+**Native (now):** Boehm GC
+- Conservative garbage collector
+- Works well, no memory leaks
+- But: Won't work for WASM, has GC pauses
+
+**WASM (blocked):** Not supported
+- Boehm GC relies on stack scanning, OS features
+- Need a different approach
+
+## Proposed: Perceus Reference Counting
+
+### Why Perceus?
+
+[Perceus](https://www.microsoft.com/en-us/research/publication/perceus-garbage-free-reference-counting-with-reuse/) is a reference counting algorithm designed for functional languages. It was developed for [Koka](https://koka-lang.github.io/) and has also influenced [Roc](https://www.roc-lang.org/).
+
+**Key insight:** In a pure functional language, **reference cycles cannot exist**. Cycles require mutation:
+
+```
+# This creates a cycle (impossible in Fern):
+let a = Node()
+let b = Node()
+a.next = b  # Mutation!
+b.next = a  # Mutation! Now a→b→a
+
+# Fern is immutable, so this is impossible
+```
+
+Since Fern is immutable by default, we get RC without the cycles problem.
+
+### How It Works
+
+#### 1. Dup/Drop Insertion
+
+The compiler automatically inserts `dup` (increment refcount) and `drop` (decrement refcount) operations:
+
+```fern
+fn example(x: String) -> String:
+    let y = x        # dup(x) - y now shares ownership
+    let z = x        # dup(x) - z now shares ownership
+    y                # drop(z), drop(x) at end of scope
+```
+
+Compiles to (conceptually):
+```
+fn example(x: String) -> String:
+    let y = dup(x)
+    let z = dup(x)
+    drop(z)
+    drop(x)
+    return y
+```
+
+#### 2. Reuse Optimization (The Magic)
+
+When the compiler sees that a value is **unique** (refcount = 1), it can reuse its memory:
+
+```fern
+fn map(list: List[a], f: fn(a) -> b) -> List[b]:
+    match list:
+        []: []
+        [head, ..tail]: [f(head), ..map(tail, f)]
+```
+
+If `list` is unique (only one reference), the compiler can:
+1. Reuse the list node's memory for the new node
+2. Avoid allocation entirely
+3. Make "functional" code run as fast as imperative
+
+This is called **"functional but in-place"** - you write pure functional code, but it mutates behind the scenes when safe.
+
+#### 3. Borrow Inference
+
+When a value is only read (not stored), we can **borrow** instead of dup:
+
+```fern
+fn len(list: List[a]) -> Int:
+    match list:
+        []: 0
+        [_, ..tail]: 1 + len(tail)
+```
+
+Here `list` is borrowed - we don't need to increment its refcount because we're not keeping a reference to it.
+
+### Comparison with Other Approaches
+
+| Approach | Annotations | Cycles | WASM | Pauses | Complexity |
+|----------|-------------|--------|------|--------|------------|
+| **Boehm GC** | None | Yes (handles) | ❌ | Yes | Low |
+| **Rust Ownership** | Many | N/A | ✅ | No | High |
+| **Swift ARC** | Few (weak) | Manual | ✅ | No | Medium |
+| **Perceus** | None | Impossible | ✅ | No | Medium |
+| **WasmGC** | None | Yes (browser) | ✅ | Yes | Low |
+
+### Why Not Rust-style Ownership?
+
+Rust's borrow checker is powerful but has a steep learning curve:
+
+```rust
+// Rust: "fighting the borrow checker"
+fn example(v: &mut Vec<i32>) {
+    let first = &v[0];      // Immutable borrow
+    v.push(1);               // Error! Can't mutate while borrowed
+    println!("{}", first);
+}
+```
+
+With Perceus, you just write functional code:
+
+```fern
+# Fern: no fighting, no annotations
+fn example(v: List[Int]) -> List[Int]:
+    let first = List.head(v)
+    let v2 = List.append(v, 1)  # Creates new list (or reuses if unique)
+    println(first)
+    v2
+```
+
+The compiler figures out the optimal memory strategy. No lifetime annotations, no borrow errors, no `'a` syntax.
+
+### Implementation Phases
+
+#### Phase 1: Keep Boehm GC (Current)
+- Native compilation works
+- Focus on language features
+- Good enough for v1
+
+#### Phase 2: Add Perceus for WASM
+- Implement dup/drop insertion in codegen
+- WASM target uses Perceus
+- Native can still use Boehm
+
+#### Phase 3: Perceus Everywhere
+- Replace Boehm with Perceus for native
+- Unified memory model
+- Better performance (no GC pauses)
+
+#### Phase 4: Reuse Optimization
+- Implement "functional but in-place"
+- Significant performance boost
+- Competitive with imperative code
+
+### WASM-Specific Considerations
+
+#### Option A: Perceus (Recommended)
+- Same memory model as native
+- No browser dependencies
+- Works today in all browsers
+
+#### Option B: WasmGC
+- Browser handles GC
+- [Now available in all major browsers](https://web.dev/blog/wasmgc-wasm-tail-call-optimizations-baseline) (Dec 2024)
+- But: ties us to browser GC, may have pauses
+
+We recommend **Perceus** because:
+1. Unified model (same code for native and WASM)
+2. No GC pauses (important for games, animations)
+3. Deterministic destruction (important for resources)
+
+### Code Generation Example
+
+**Fern source:**
+```fern
+fn greet(name: String) -> String:
+    let greeting = "Hello, "
+    let result = String.concat(greeting, name)
+    result
+```
+
+**With Perceus (QBE-style IR):**
+```
+export function l $greet(l %name) {
+@start
+    %greeting =l copy $str_hello    # Static string, no dup needed
+    %name_dup =l call $dup(l %name) # dup name (used in concat)
+    %result =l call $string_concat(l %greeting, l %name_dup)
+    call $drop(l %name)             # drop original name
+    ret %result                      # result is returned, not dropped
+}
+```
+
+### Reference Counting Data Structure
+
+Each heap object has a header:
+```c
+typedef struct {
+    atomic_int refcount;  // Reference count
+    uint16_t type_tag;    // Type information for drop
+    uint16_t flags;       // Unique, borrowed, etc.
+} FernObjectHeader;
+```
+
+For single-threaded WASM, `refcount` can be non-atomic for better performance.
+
+### Handling Special Cases
+
+#### Actors (Future)
+When actors are added, each actor will have its own heap with Perceus RC. Messages between actors are copied (not shared), so no cross-heap references.
+
+#### FFI
+C functions that receive Fern values must follow the convention:
+- **Borrowed**: Don't keep the reference, no dup/drop needed
+- **Owned**: Responsible for calling drop
+
+#### Closures
+Closures capture their environment. Each captured variable is dupped when the closure is created, dropped when the closure is dropped.
+
+### Performance Expectations
+
+Based on Koka and Roc benchmarks:
+
+| Scenario | vs Boehm GC | vs Tracing GC |
+|----------|-------------|---------------|
+| Allocation-heavy | ~1.5x faster | ~2x faster |
+| Long-running | No pauses | No pauses |
+| Memory usage | Lower peak | Lower peak |
+| WASM binary size | Smaller | Smaller |
+
+### Open Questions
+
+1. **String interning**: Should common strings be interned (shared, never freed)?
+2. **Small value optimization**: Should small values (ints, bools) be unboxed?
+3. **Weak references**: Needed for caches? (Probably not in pure FP)
+4. **Thread safety**: Full atomics or single-threaded by default?
+
+### References
+
+- [Perceus: Garbage Free Reference Counting with Reuse](https://www.microsoft.com/en-us/research/publication/perceus-garbage-free-reference-counting-with-reuse/) - Original paper
+- [Koka Language](https://koka-lang.github.io/) - Perceus implementation
+- [Roc Language](https://www.roc-lang.org/functional) - Similar approach
+- [Lobster Memory Management](https://aardappel.github.io/lobster/memory_management.html) - Ownership inference
+- [Counting Immutable Beans](https://arxiv.org/abs/1908.05647) - Lean's RC optimizations
+- [WasmGC Chrome Blog](https://developer.chrome.com/blog/wasmgc) - Browser GC alternative
+
+---
+
+## Summary
+
+Perceus gives Fern:
+
+✅ **No annotations** - Write normal functional code
+✅ **No cycles** - Functional purity eliminates them
+✅ **No pauses** - Deterministic, predictable performance
+✅ **WASM support** - Same model everywhere
+✅ **Optimization potential** - "Functional but in-place"
+✅ **Spark joy** - You don't fight the memory manager

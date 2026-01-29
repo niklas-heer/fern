@@ -18,12 +18,35 @@ Ok(process(validated))
 
 ## Design Philosophy
 
-- **Readability first** - Python-like indentation, no braces
-- **Functional-first** - Immutable by default, pure functions
-- **No crashes** - No null, no exceptions, no panics - only Result types
-- **Predictable** - Explicit error handling, no hidden control flow
-- **Dual-purpose** - Same code for CLI tools and servers
-- **Single binary** - Deploy one file, no dependencies
+**Fern should spark joy** - for those familiar with functional programming, writing Fern should feel delightful, not tedious.
+
+**One obvious way** - There should be one clear, idiomatic way to accomplish any task. No agonizing over which of five approaches to use.
+
+**No surprises** - The language actively prevents the bugs that waste your afternoon. If it compiles, it probably works.
+
+**Jetpack included** - Everything you need is built-in: actors, databases, HTTP, CLI tools, TUI. Like Bun, but compiled.
+
+### Core Principles
+
+| Principle | How Fern Delivers |
+|-----------|------------------|
+| **Readable** | Python-like indentation, no braces, clear keywords |
+| **Functional** | Immutable by default, pure functions, pattern matching |
+| **Safe** | No null, no exceptions, no panics - only Result/Option types |
+| **Predictable** | Explicit error handling, no hidden control flow, exhaustive matching |
+| **Fast** | Compiles to native code, ~35x faster than Python |
+| **Portable** | Single binary, no runtime dependencies |
+
+### What We Prevent
+
+```
+✗ NullPointerException     → Option type, exhaustive matching
+✗ Unhandled exceptions     → Result type, must handle errors
+✗ Race conditions          → Actors with isolated heaps, no shared state
+✗ "It works on my machine" → Single binary, all dependencies included
+✗ Silent failures          → Compiler enforces error handling
+✗ Action at a distance     → Immutability prevents spooky mutation
+```
 
 ## Key Features
 

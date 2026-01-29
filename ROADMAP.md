@@ -1017,6 +1017,94 @@ Future consideration: Embed an assembler and linker to become 100% self-containe
 
 ---
 
+## Milestone 7.7: WASM Target & Perceus Memory Management
+
+**Status:** 🔮 Future
+**Priority:** Medium - Enables web deployment
+
+**Goal:** Enable compiling Fern to WebAssembly with Perceus-style reference counting
+
+### Why Perceus?
+
+Boehm GC cannot work on WASM (relies on stack scanning and OS features). Perceus is ideal because:
+
+- **No cycles possible** - Fern's functional purity means reference cycles cannot exist
+- **Zero annotations** - Unlike Rust, no lifetime annotations or borrow checker fighting
+- **No GC pauses** - Deterministic, predictable performance
+- **"Functional but in-place"** - Compiler mutates unique values behind the scenes for performance
+
+See `docs/MEMORY_MANAGEMENT.md` for the complete design.
+
+### Implementation Phases
+
+#### Phase 1: Keep Boehm GC (Current)
+- [x] Native compilation works with Boehm GC
+- [x] Focus on language features
+- [x] Good enough for v1
+
+#### Phase 2: Add Perceus for WASM
+- [ ] Implement dup/drop insertion in codegen
+- [ ] Reference counting data structures
+- [ ] WASM-specific runtime library
+- [ ] WASM target in codegen (wat or direct binary)
+- [ ] Test WASM output in browser/Node.js
+
+#### Phase 3: Perceus Everywhere
+- [ ] Replace Boehm with Perceus for native
+- [ ] Unified memory model across targets
+- [ ] Remove Boehm GC dependency
+- [ ] Benchmark against Boehm baseline
+
+#### Phase 4: Reuse Optimization
+- [ ] Track uniqueness (refcount = 1)
+- [ ] Reuse memory for unique values
+- [ ] "Functional but in-place" optimization
+- [ ] Benchmark performance gains
+
+### Dup/Drop Insertion Example
+
+```fern
+fn example(x: String) -> String:
+    let y = x        # dup(x) - y shares ownership
+    let z = x        # dup(x) - z shares ownership
+    y                # drop(z), drop(x) at end of scope
+```
+
+Compiles to (conceptually):
+```
+fn example(x: String) -> String:
+    let y = dup(x)
+    let z = dup(x)
+    drop(z)
+    drop(x)
+    return y
+```
+
+### WASM Considerations
+
+| Approach | WASM Compatible | GC Pauses | Complexity |
+|----------|-----------------|-----------|------------|
+| Boehm GC | ❌ | Yes | Low |
+| Perceus | ✅ | No | Medium |
+| WasmGC | ✅ (browser only) | Maybe | Low |
+
+We chose Perceus because it provides a unified memory model for both native and WASM without depending on browser GC.
+
+### References
+
+- [Perceus Paper](https://www.microsoft.com/en-us/research/publication/perceus-garbage-free-reference-counting-with-reuse/)
+- [Koka Language](https://koka-lang.github.io/)
+- [Roc Language](https://www.roc-lang.org/)
+- [Lobster Memory Management](https://aardappel.github.io/lobster/memory_management.html)
+
+**Success Criteria:**
+- [ ] Fern programs compile to WASM
+- [ ] WASM output runs in browser
+- [ ] No memory leaks (RC properly inserts dup/drop)
+- [ ] Performance competitive with native
+
+---
+
 ## Milestone 8: Actor Runtime
 
 **Goal:** Implement BEAM-inspired actor-based concurrency with supervision trees
