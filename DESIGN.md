@@ -2480,6 +2480,44 @@ Output is a single statically-linked binary with no runtime dependencies.
 
 ---
 
+## Scripting
+
+Fern supports shebang scripts for quick scripting without explicit compilation:
+
+```fern
+#!/usr/bin/env fern run
+fn main():
+    let name = "World"
+    println("Hello, {name}!")
+```
+
+Make the file executable and run it directly:
+
+```bash
+chmod +x script.fn
+./script.fn
+```
+
+This is similar to `uvx` for Python or `deno run` for TypeScript. The `fern run` command compiles and executes in one step, cleaning up temporary files automatically.
+
+**Use cases:**
+- Quick automation scripts
+- Build tools and dev utilities
+- Data processing pipelines
+- CLI tools during development
+
+**String interpolation** makes scripting convenient:
+
+```fern
+#!/usr/bin/env fern run
+fn main():
+    let count = 42
+    let status = "complete"
+    println("Processed {count} items, status: {status}")
+```
+
+---
+
 ## Design Decisions
 
 ### Type System ✅ Decided

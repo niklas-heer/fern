@@ -839,6 +839,9 @@ Used by Redis and MongoDB. Provides readline-like editing in ~1800 lines.
 
 - [x] Language ergonomics
   - [x] Allow `fn main():` shorthand (omit return type, defaults to Unit, auto-returns 0)
+  - [x] Polymorphic `print`/`println` (accepts Int, String, Bool)
+  - [x] String interpolation in codegen (`"Hello, {name}!"`)
+  - [x] Shebang support (`#!/usr/bin/env fern run`)
 
 - [ ] End-to-end tests
   - [ ] Test complete programs
