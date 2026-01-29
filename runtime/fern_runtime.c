@@ -2667,8 +2667,8 @@ FernTable* fern_table_add_column(FernTable* table, const char* header) {
     return table;
 }
 
-FernTable* fern_table_add_row(FernTable* table, char** cells, int64_t cell_count) {
-    if (!table) return NULL;
+FernTable* fern_table_add_row(FernTable* table, FernStringList* cells) {
+    if (!table || !cells) return NULL;
     
     /* Grow rows array if needed */
     if (table->row_count >= table->row_capacity) {
@@ -2678,12 +2678,12 @@ FernTable* fern_table_add_row(FernTable* table, char** cells, int64_t cell_count
     }
     
     FernTableRow* row = &table->rows[table->row_count++];
-    row->cell_count = cell_count;
-    row->cells = malloc(cell_count * sizeof(char*));
+    row->cell_count = cells->len;
+    row->cells = malloc(cells->len * sizeof(char*));
     if (!row->cells) return NULL;
     
-    for (int64_t i = 0; i < cell_count; i++) {
-        row->cells[i] = cells[i] ? strdup(cells[i]) : strdup("");
+    for (int64_t i = 0; i < cells->len; i++) {
+        row->cells[i] = cells->data[i] ? strdup(cells->data[i]) : strdup("");
     }
     
     return table;

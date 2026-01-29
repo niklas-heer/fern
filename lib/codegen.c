@@ -1776,9 +1776,11 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             
             /* Push each element to the list (mutating for construction) */
             for (size_t i = 0; i < list->elements->len; i++) {
-                String* elem = codegen_expr(cg, list->elements->data[i]);
-                emit(cg, "    call $fern_list_push_mut(l %s, w %s)\n",
-                    string_cstr(list_ptr), string_cstr(elem));
+                Expr* elem_expr = list->elements->data[i];
+                String* elem = codegen_expr(cg, elem_expr);
+                char elem_type = qbe_type_for_expr(elem_expr);
+                emit(cg, "    call $fern_list_push_mut(l %s, %c %s)\n",
+                    string_cstr(list_ptr), elem_type, string_cstr(elem));
             }
             
             return list_ptr;

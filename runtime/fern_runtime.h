@@ -988,11 +988,10 @@ FernTable* fern_table_add_column(FernTable* table, const char* header);
 /**
  * Add a row to the table.
  * @param table The table.
- * @param cells Array of cell values.
- * @param cell_count Number of cells.
+ * @param cells List of cell values (FernStringList*).
  * @return The table (for chaining).
  */
-FernTable* fern_table_add_row(FernTable* table, char** cells, int64_t cell_count);
+FernTable* fern_table_add_row(FernTable* table, FernStringList* cells);
 
 /**
  * Set table title.
