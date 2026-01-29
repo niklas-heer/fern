@@ -2606,7 +2606,8 @@ let entries = File.list_dir("src")         # List(String)
 
 ### System Module
 
-Functions for system-level operations like command-line arguments and process control:
+Functions for system-level operations like command-line arguments, process control,
+shell command execution, and environment variables:
 
 ```fern
 # Command-line arguments
@@ -2618,6 +2619,18 @@ let all_args = System.args()               # List(String) of all arguments
 # Process control
 System.exit(0)                             # Exit with success code
 System.exit(1)                             # Exit with error code
+
+# Shell command execution
+let result = System.exec("ls -la")         # Returns (Int, String, String)
+let exit_code = result.0                   # Exit code (0 = success)
+let stdout = result.1                      # Standard output as string
+let stderr = result.2                      # Standard error as string
+
+let result2 = System.exec_args(["ls", "-la"])  # Execute with argument list
+
+# Environment variables
+let home = System.getenv("HOME")           # Get environment variable (empty string if not set)
+let ok = System.setenv("KEY", "value")     # Set environment variable (returns 0 on success)
 ```
 
 Example CLI tool:
@@ -2634,6 +2647,63 @@ fn main():
         let name = System.arg(1)
         println("Hello, {name}!")
         0
+```
+
+Example shell script:
+
+```fern
+fn main():
+    # Run a command and check its output
+    let result = System.exec("git status --porcelain")
+    
+    if result.0 != 0:
+        println("Error: {result.2}")
+        System.exit(1)
+    
+    if String.len(result.1) == 0:
+        println("Working directory is clean")
+    else:
+        println("Uncommitted changes:")
+        println(result.1)
+    
+    0
+```
+
+### Regex Module
+
+Functions for regular expression pattern matching and text manipulation:
+
+```fern
+# Pattern matching
+let matches = Regex.is_match("hello world", "world")   # Bool - true if pattern found
+let match = Regex.find("hello world", "w\\w+")         # First match or null
+let all = Regex.find_all("a1b2c3", "\\d")              # List(String) of all matches
+
+# Text replacement
+let new = Regex.replace("hello world", "world", "fern")      # Replace first match
+let all_new = Regex.replace_all("a1b2c3", "\\d", "X")        # Replace all matches
+
+# Splitting
+let parts = Regex.split("a,b;c", "[,;]")               # List(String) - ["a", "b", "c"]
+
+# Capture groups
+let caps = Regex.captures("abc123", "(\\w+)(\\d+)")    # Access groups with caps.0, caps.1, ...
+```
+
+Example - validating input:
+
+```fern
+fn is_valid_email(email: String) -> Bool:
+    Regex.is_match(email, "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")
+
+fn main():
+    let email = System.arg(1)
+    if is_valid_email(email):
+        println("Valid email")
+        0
+    else:
+        println("Invalid email")
+        1
 ```
 
 ### I/O Functions
