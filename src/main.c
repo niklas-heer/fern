@@ -17,6 +17,7 @@
 #include "ast_print.h"
 #include "version.h"
 #include "errors.h"
+#include "lsp.h"
 
 /* ========== File Utilities ========== */
 
@@ -118,6 +119,7 @@ static int cmd_check(Arena* arena, const char* filename);
 static int cmd_emit(Arena* arena, const char* filename);
 static int cmd_lex(Arena* arena, const char* filename);
 static int cmd_parse(Arena* arena, const char* filename);
+static int cmd_lsp(Arena* arena, const char* filename);
 
 /** All available commands. */
 static const Command COMMANDS[] = {
@@ -127,6 +129,7 @@ static const Command COMMANDS[] = {
     {"emit",  "<file>", "Emit QBE IR to stdout",       cmd_emit},
     {"lex",   "<file>", "Show tokens (debug)",         cmd_lex},
     {"parse", "<file>", "Show AST (debug)",            cmd_parse},
+    {"lsp",   "",       "Start language server",       cmd_lsp},
     {NULL, NULL, NULL, NULL}  /* Sentinel */
 };
 
@@ -616,6 +619,31 @@ static int cmd_parse(Arena* arena, const char* filename) {
     return 0;
 }
 
+/**
+ * LSP command: start language server on stdio.
+ * @param arena The arena for allocations.
+ * @param filename Unused for LSP command (may be NULL).
+ * @return Exit code.
+ */
+static int cmd_lsp(Arena* arena, const char* filename) {
+    // FERN_STYLE: allow(assertion-density) simple command handler
+    (void)filename;  // LSP doesn't take a file argument
+    
+    // Log to a file in /tmp for debugging (set to NULL to disable logging)
+    const char* log_file = "/tmp/fern-lsp.log";
+    
+    LspServer* server = lsp_server_new(arena, log_file);
+    if (!server) {
+        error_print("failed to initialize language server");
+        return 1;
+    }
+    
+    int result = lsp_server_run(server);
+    lsp_server_free(server);
+    
+    return result;
+}
+
 /* ========== Main Entry Point ========== */
 
 /**
@@ -626,6 +654,7 @@ static int cmd_parse(Arena* arena, const char* filename) {
  */
 int main(int argc, char** argv) {
     // FERN_STYLE: allow(assertion-density) main entry point - handles args and setup
+    // FERN_STYLE: allow(function-length) main() is cohesive arg parsing flow
     
     // Store executable path for runtime library lookup
     g_exe_path = argv[0];
@@ -642,8 +671,8 @@ int main(int argc, char** argv) {
         }
     }
     
-    // Need at least command and file
-    if (argc < 3) {
+    // Need at least a command
+    if (argc < 2) {
         print_usage();
         return 1;
     }
@@ -652,6 +681,17 @@ int main(int argc, char** argv) {
     const Command* cmd = find_command(argv[1]);
     if (!cmd) {
         fprintf(stderr, "Unknown command: %s\n\n", argv[1]);
+        print_usage();
+        return 1;
+    }
+    
+    // Check if command requires a file argument (args field is non-empty)
+    bool needs_file = cmd->args && cmd->args[0] != '\0';
+    
+    // Need at least command and file for commands that require it
+    if (needs_file && argc < 3) {
+        error_print("missing file argument");
+        fprintf(stderr, "\n");
         print_usage();
         return 1;
     }
@@ -672,15 +712,17 @@ int main(int argc, char** argv) {
         }
     }
     
-    // Need a file argument
-    if (arg_index >= argc) {
-        error_print("missing file argument");
-        fprintf(stderr, "\n");
-        print_usage();
-        return 1;
+    // Need a file argument for commands that require it
+    const char* filename = NULL;
+    if (needs_file) {
+        if (arg_index >= argc) {
+            error_print("missing file argument");
+            fprintf(stderr, "\n");
+            print_usage();
+            return 1;
+        }
+        filename = argv[arg_index];
     }
-    
-    const char* filename = argv[arg_index];
     
     // Create arena for compiler session
     Arena* arena = arena_create(4 * 1024 * 1024);  // 4MB
