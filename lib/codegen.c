@@ -1011,6 +1011,23 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 return tmp;
             }
             
+            /* Handle 'in' operator: elem in list -> List.contains(list, elem) */
+            if (bin->op == BINOP_IN) {
+                String* elem = codegen_expr(cg, bin->left);
+                String* list = codegen_expr(cg, bin->right);
+                /* Use string version for string elements */
+                PrintType elem_pt = get_print_type(cg, bin->left);
+                if (elem_pt == PRINT_STRING) {
+                    emit(cg, "    %s =w call $fern_list_contains_str(l %s, l %s)\n",
+                        string_cstr(tmp), string_cstr(list), string_cstr(elem));
+                } else {
+                    char elem_type = qbe_type_for_expr(cg, bin->left);
+                    emit(cg, "    %s =w call $fern_list_contains(l %s, %c %s)\n",
+                        string_cstr(tmp), string_cstr(list), elem_type, string_cstr(elem));
+                }
+                return tmp;
+            }
+            
             /* Check if this is string concatenation (+ with string operands)
              * Use get_print_type to check for actual string types, not just 64-bit values
              * (tuple field access returns 'l' but may not be a string) */
@@ -1548,6 +1565,38 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* list = codegen_expr(cg, call->args->data[0].value);
                             emit(cg, "    %s =w call $fern_list_is_empty(l %s)\n",
                                 string_cstr(result), string_cstr(list));
+                            return result;
+                        }
+                        /* List.contains(list, elem) -> Bool */
+                        if (strcmp(func, "contains") == 0 && call->args->len == 2) {
+                            String* list = codegen_expr(cg, call->args->data[0].value);
+                            String* elem = codegen_expr(cg, call->args->data[1].value);
+                            /* Use string version for string elements */
+                            PrintType elem_pt = get_print_type(cg, call->args->data[1].value);
+                            if (elem_pt == PRINT_STRING) {
+                                emit(cg, "    %s =w call $fern_list_contains_str(l %s, l %s)\n",
+                                    string_cstr(result), string_cstr(list), string_cstr(elem));
+                            } else {
+                                char elem_type = qbe_type_for_expr(cg, call->args->data[1].value);
+                                emit(cg, "    %s =w call $fern_list_contains(l %s, %c %s)\n",
+                                    string_cstr(result), string_cstr(list), elem_type, string_cstr(elem));
+                            }
+                            return result;
+                        }
+                        /* List.any(list, pred) -> Bool */
+                        if (strcmp(func, "any") == 0 && call->args->len == 2) {
+                            String* list = codegen_expr(cg, call->args->data[0].value);
+                            String* pred = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =w call $fern_list_any(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(list), string_cstr(pred));
+                            return result;
+                        }
+                        /* List.all(list, pred) -> Bool */
+                        if (strcmp(func, "all") == 0 && call->args->len == 2) {
+                            String* list = codegen_expr(cg, call->args->data[0].value);
+                            String* pred = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =w call $fern_list_all(l %s, l %s)\n",
+                                string_cstr(result), string_cstr(list), string_cstr(pred));
                             return result;
                         }
                     }
@@ -2598,13 +2647,16 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             cg->output = string_new(cg->arena, "");
             
             /* Function header */
-            emit(cg, "function w %s(", fn_name_buf);
+            emit(cg, "function l %s(", fn_name_buf);
             
-            /* Parameters */
+            /* Parameters - use 'l' (64-bit) for all since runtime uses int64_t
+             * Note: We do NOT call register_wide_var here because that would mark
+             * integer params as pointer types, breaking arithmetic operations.
+             * The 'l' type is used for ABI compatibility with int64_t. */
             if (lambda->params) {
                 for (size_t i = 0; i < lambda->params->len; i++) {
                     if (i > 0) emit(cg, ", ");
-                    emit(cg, "w %%%s", string_cstr(lambda->params->data[i]));
+                    emit(cg, "l %%%s", string_cstr(lambda->params->data[i]));
                 }
             }
             

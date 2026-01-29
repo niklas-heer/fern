@@ -30,7 +30,7 @@ void ast_print_stmt(FILE* out, Stmt* stmt, int indent);
  */
 static const char* binop_name(BinaryOp op) {
     assert(op >= BINOP_ADD);
-    assert(op <= BINOP_PIPE);
+    assert(op <= BINOP_IN);
     switch (op) {
         case BINOP_ADD: return "+";
         case BINOP_SUB: return "-";
@@ -47,6 +47,7 @@ static const char* binop_name(BinaryOp op) {
         case BINOP_AND: return "and";
         case BINOP_OR:  return "or";
         case BINOP_PIPE: return "|>";
+        case BINOP_IN:   return "in";
         default: return "?";
     }
 }

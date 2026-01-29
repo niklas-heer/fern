@@ -74,6 +74,7 @@ typedef enum {
     BINOP_AND,          // and
     BINOP_OR,           // or
     BINOP_PIPE,         // |>
+    BINOP_IN,           // in (list containment)
 } BinaryOp;
 
 /* Unary operators */

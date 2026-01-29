@@ -31,6 +31,7 @@ static bool bind_pattern(Checker* checker, Pattern* pattern, Type* type);
 static bool unify(Type* a, Type* b);
 static Type* substitute(Arena* arena, Type* type);
 static Type* check_pipe_expr(Checker* checker, BinaryExpr* expr);
+static Type* check_lambda_against(Checker* checker, LambdaExpr* lambda, Type* expected_fn_type);
 
 /**
  * Map from old var id to new type variable for instantiation.
@@ -451,6 +452,47 @@ static Type* lookup_module_function(Checker* checker, const char* module, const 
             TypeVec_push(arena, type_args, var);
             list_type = type_con(arena, string_new(arena, "List"), type_args);
             TypeVec_push(arena, params, list_type);
+            return type_fn(arena, params, type_bool(arena));
+        }
+        /* List.contains(List(a), a) -> Bool */
+        if (strcmp(func, "contains") == 0) {
+            params = TypeVec_new(arena);
+            var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+            type_args = TypeVec_new(arena);
+            TypeVec_push(arena, type_args, var);
+            list_type = type_con(arena, string_new(arena, "List"), type_args);
+            TypeVec_push(arena, params, list_type);
+            TypeVec_push(arena, params, var);
+            return type_fn(arena, params, type_bool(arena));
+        }
+        /* List.any(List(a), (a) -> Bool) -> Bool */
+        if (strcmp(func, "any") == 0) {
+            params = TypeVec_new(arena);
+            var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+            type_args = TypeVec_new(arena);
+            TypeVec_push(arena, type_args, var);
+            list_type = type_con(arena, string_new(arena, "List"), type_args);
+            TypeVec_push(arena, params, list_type);
+            /* The predicate function: (a) -> Bool */
+            TypeVec* pred_params = TypeVec_new(arena);
+            TypeVec_push(arena, pred_params, var);
+            Type* pred_type = type_fn(arena, pred_params, type_bool(arena));
+            TypeVec_push(arena, params, pred_type);
+            return type_fn(arena, params, type_bool(arena));
+        }
+        /* List.all(List(a), (a) -> Bool) -> Bool */
+        if (strcmp(func, "all") == 0) {
+            params = TypeVec_new(arena);
+            var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+            type_args = TypeVec_new(arena);
+            TypeVec_push(arena, type_args, var);
+            list_type = type_con(arena, string_new(arena, "List"), type_args);
+            TypeVec_push(arena, params, list_type);
+            /* The predicate function: (a) -> Bool */
+            TypeVec* pred_params = TypeVec_new(arena);
+            TypeVec_push(arena, pred_params, var);
+            Type* pred_type = type_fn(arena, pred_params, type_bool(arena));
+            TypeVec_push(arena, params, pred_type);
             return type_fn(arena, params, type_bool(arena));
         }
     }
@@ -1481,6 +1523,36 @@ static Type* check_equality_op(Checker* checker, Type* left, Type* right,
 }
 
 /**
+ * Check types for 'in' operator (list containment).
+ * @param checker The type checker context.
+ * @param left The element type (left operand).
+ * @param right The list type (right operand).
+ * @return Bool type on success, error type on failure.
+ */
+static Type* check_in_op(Checker* checker, Type* left, Type* right) {
+    assert(checker != NULL);
+    assert(left != NULL);
+    assert(right != NULL);
+
+    /* Right must be List(a) */
+    if (right->kind != TYPE_CON ||
+        strcmp(string_cstr(right->data.con.name), "List") != 0) {
+        return error_type(checker, "'in' requires a List on the right, got %s",
+            string_cstr(type_to_string(checker->arena, right)));
+    }
+    /* Element type must match */
+    if (right->data.con.args->len > 0) {
+        Type* elem_type = right->data.con.args->data[0];
+        if (!unify(left, elem_type)) {
+            return error_type(checker, "Cannot check if %s is in List(%s)",
+                string_cstr(type_to_string(checker->arena, left)),
+                string_cstr(type_to_string(checker->arena, elem_type)));
+        }
+    }
+    return type_bool(checker->arena);
+}
+
+/**
  * Check types for logical operators (and, or).
  * @param checker The type checker context.
  * @param left The left operand type.
@@ -1646,6 +1718,9 @@ static Type* check_binary_expr(Checker* checker, BinaryExpr* expr) {
         case BINOP_PIPE:
             /* Handled above by check_pipe_expr */
             return right; /* Should not reach here */
+            
+        case BINOP_IN:
+            return check_in_op(checker, left, right);
     }
     
     return error_type(checker, "Unknown binary operator");
@@ -2049,6 +2124,64 @@ static Type* instantiate_type(Arena* arena, Type* type, VarMapping** map) {
     }
 }
 
+/* ========== Lambda Bidirectional Checking ========== */
+
+/**
+ * Check a lambda expression against an expected function type.
+ * This enables bidirectional type checking - when we know what type
+ * a lambda should have, we use that to constrain its parameter types.
+ * 
+ * @param checker The type checker context.
+ * @param lambda The lambda expression to check.
+ * @param expected_fn_type The expected function type (must be TYPE_FN).
+ * @return The lambda's function type, or error type on failure.
+ */
+static Type* check_lambda_against(Checker* checker, LambdaExpr* lambda, Type* expected_fn_type) {
+    assert(checker != NULL);
+    assert(lambda != NULL);
+    assert(expected_fn_type != NULL);
+    assert(expected_fn_type->kind == TYPE_FN);
+    
+    TypeFn* expected_fn = &expected_fn_type->data.fn;
+    
+    /* Check parameter count matches */
+    if (lambda->params->len != expected_fn->params->len) {
+        return error_type(checker, "Lambda has %zu parameters but expected %zu",
+            lambda->params->len, expected_fn->params->len);
+    }
+    
+    /* Push a new scope for lambda parameters */
+    checker_push_scope(checker);
+    
+    /* Bind each parameter to its expected type (from the function type) */
+    TypeVec* param_types = TypeVec_new(checker->arena);
+    for (size_t i = 0; i < lambda->params->len; i++) {
+        Type* param_type = expected_fn->params->data[i];
+        /* Substitute any bound type variables */
+        param_type = substitute(checker->arena, param_type);
+        TypeVec_push(checker->arena, param_types, param_type);
+        checker_define(checker, lambda->params->data[i], param_type);
+    }
+    
+    /* Infer the body type with constrained parameters in scope */
+    Type* body_type = checker_infer_expr(checker, lambda->body);
+    
+    checker_pop_scope(checker);
+    
+    if (body_type->kind == TYPE_ERROR) return body_type;
+    
+    /* Unify body type with expected return type */
+    Type* expected_ret = substitute(checker->arena, expected_fn->result);
+    if (!unify(expected_ret, body_type)) {
+        return error_type(checker, "Lambda body has type %s but expected %s",
+            string_cstr(type_to_string(checker->arena, body_type)),
+            string_cstr(type_to_string(checker->arena, expected_ret)));
+    }
+    
+    /* Return the function type */
+    return type_fn(checker->arena, param_types, body_type);
+}
+
 /* ========== Function Call Type Checking ========== */
 
 /**
@@ -2095,7 +2228,20 @@ static Type* check_call_expr(Checker* checker, Expr* call_expr) {
     /* Unify argument types with parameter types (handles generics) */
     for (size_t i = 0; i < actual_count; i++) {
         Type* expected = fn->params->data[i];
-        Type* actual = checker_infer_expr(checker, expr->args->data[i].value);
+        Expr* arg_expr = expr->args->data[i].value;
+        Type* actual;
+        
+        /* Bidirectional type checking for lambdas:
+         * If the expected type is a function and the argument is a lambda,
+         * check the lambda against the expected type instead of inferring.
+         * This allows lambdas like (x) -> x > 3 to work when passed to
+         * functions expecting (Int) -> Bool predicates. */
+        Type* expected_subst = substitute(checker->arena, expected);
+        if (expected_subst->kind == TYPE_FN && arg_expr->type == EXPR_LAMBDA) {
+            actual = check_lambda_against(checker, &arg_expr->data.lambda, expected_subst);
+        } else {
+            actual = checker_infer_expr(checker, arg_expr);
+        }
         
         if (actual->kind == TYPE_ERROR) return actual;
         

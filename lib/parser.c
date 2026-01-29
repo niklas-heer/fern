@@ -531,8 +531,9 @@ static Expr* parse_comparison(Parser* parser) {
         {TOKEN_LE, BINOP_LE},
         {TOKEN_GT, BINOP_GT},
         {TOKEN_GE, BINOP_GE},
+        {TOKEN_IN, BINOP_IN},
     };
-    return parse_binary_left(parser, parse_term, ops, 4);
+    return parse_binary_left(parser, parse_term, ops, 5);
 }
 
 /**
