@@ -1319,6 +1319,38 @@ static void register_file_builtins(Checker* checker) {
     register_builtin(checker, "file_size", type_fn(arena, params, result_type));
 }
 
+/**
+ * Register Result type constructors Ok and Err.
+ * @param checker The type checker context.
+ */
+static void register_result_constructors(Checker* checker) {
+    assert(checker != NULL);
+    assert(checker->arena != NULL);
+    Arena* arena = checker->arena;
+    
+    /* Ok(a) -> Result(a, e) */
+    TypeVec* params = TypeVec_new(arena);
+    Type* ok_var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+    Type* err_var = type_var(arena, string_new(arena, "e"), type_fresh_var_id());
+    TypeVec_push(arena, params, ok_var);
+    TypeVec* result_args = TypeVec_new(arena);
+    TypeVec_push(arena, result_args, ok_var);
+    TypeVec_push(arena, result_args, err_var);
+    Type* result_type = type_con(arena, string_new(arena, "Result"), result_args);
+    register_builtin(checker, "Ok", type_fn(arena, params, result_type));
+    
+    /* Err(e) -> Result(a, e) */
+    params = TypeVec_new(arena);
+    ok_var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+    err_var = type_var(arena, string_new(arena, "e"), type_fresh_var_id());
+    TypeVec_push(arena, params, err_var);
+    result_args = TypeVec_new(arena);
+    TypeVec_push(arena, result_args, ok_var);
+    TypeVec_push(arena, result_args, err_var);
+    result_type = type_con(arena, string_new(arena, "Result"), result_args);
+    register_builtin(checker, "Err", type_fn(arena, params, result_type));
+}
+
 /* ========== Checker Creation ========== */
 
 /**
@@ -1340,6 +1372,7 @@ Checker* checker_new(Arena* arena) {
     register_string_builtins(checker);
     register_list_builtins(checker);
     register_file_builtins(checker);
+    register_result_constructors(checker);
 
     return checker;
 }
@@ -2015,19 +2048,24 @@ static Type* instantiate_type(Arena* arena, Type* type, VarMapping** map) {
 /**
  * Check types for function call expressions.
  * @param checker The type checker context.
- * @param expr The call expression to check.
+ * @param call_expr The call expression to check.
  * @return The return type of the call.
  */
-static Type* check_call_expr(Checker* checker, CallExpr* expr) {
+static Type* check_call_expr(Checker* checker, Expr* call_expr) {
     assert(checker != NULL);
-    assert(expr != NULL);
+    assert(call_expr != NULL);
+    assert(call_expr->type == EXPR_CALL);
+    
+    CallExpr* expr = &call_expr->data.call;
+    SourceLoc loc = call_expr->loc;
+    
     /* Infer the type of the callee */
     Type* callee_type = checker_infer_expr(checker, expr->func);
     if (callee_type->kind == TYPE_ERROR) return callee_type;
     
     /* Callee must be a function type */
     if (callee_type->kind != TYPE_FN) {
-        return error_type(checker, "Cannot call non-function type %s",
+        return error_type_at(checker, loc, "Cannot call non-function type %s",
             string_cstr(type_to_string(checker->arena, callee_type)));
     }
     
@@ -2044,7 +2082,7 @@ static Type* check_call_expr(Checker* checker, CallExpr* expr) {
     size_t actual_count = expr->args->len;
     
     if (actual_count != expected_count) {
-        return error_type(checker, "Expected %zu arguments, got %zu",
+        return error_type_at(checker, loc, "Expected %zu arguments, got %zu",
             expected_count, actual_count);
     }
     
@@ -2056,7 +2094,7 @@ static Type* check_call_expr(Checker* checker, CallExpr* expr) {
         if (actual->kind == TYPE_ERROR) return actual;
         
         if (!unify(expected, actual)) {
-            return error_type(checker, "Argument %zu: expected %s, got %s",
+            return error_type_at(checker, loc, "Argument %zu: expected %s, got %s",
                 i + 1,
                 string_cstr(type_to_string(checker->arena, expected)),
                 string_cstr(type_to_string(checker->arena, actual)));
@@ -2275,7 +2313,7 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
             return check_tuple_expr(checker, &expr->data.tuple);
             
         case EXPR_CALL:
-            return check_call_expr(checker, &expr->data.call);
+            return check_call_expr(checker, expr);
             
         case EXPR_IF:
             return check_if_expr(checker, &expr->data.if_expr);
@@ -3064,7 +3102,9 @@ bool checker_check_stmt(Checker* checker, Stmt* stmt) {
                     return false;
                 }
                 
-                if (!type_assignable(body_type, return_type)) {
+                /* Use unify instead of type_assignable to handle type variables
+                 * (e.g., Ok(42) returns Result(Int, e) which should unify with Result(Int, String)) */
+                if (!unify(body_type, return_type)) {
                     add_error(checker, "Function '%s' body has type %s, but declared return type is %s",
                         string_cstr(fn->name),
                         string_cstr(type_to_string(checker->arena, body_type)),
