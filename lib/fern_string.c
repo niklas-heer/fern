@@ -122,6 +122,33 @@ String* string_concat(Arena* arena, const String* a, const String* b) {
 }
 
 /**
+ * Concatenate a string with a C string.
+ * @param arena The arena for allocation.
+ * @param s The first string.
+ * @param cstr The C string to append.
+ * @return The concatenated string or NULL on failure.
+ */
+String* string_append_cstr(Arena* arena, const String* s, const char* cstr) {
+    assert(arena != NULL);
+    assert(s != NULL);
+    assert(cstr != NULL);
+    
+    size_t cstr_len = strlen(cstr);
+    size_t total_len = s->len + cstr_len;
+    String* result = arena_alloc(arena, sizeof(String) + total_len + 1);
+    if (!result) {
+        return NULL;
+    }
+    
+    result->len = total_len;
+    memcpy(result->data, s->data, s->len);
+    memcpy(result->data + s->len, cstr, cstr_len);
+    result->data[total_len] = '\0';
+    
+    return result;
+}
+
+/**
  * Check if two strings are equal.
  * @param a The first string.
  * @param b The second string.

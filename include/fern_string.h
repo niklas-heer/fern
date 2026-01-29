@@ -53,6 +53,11 @@ bool string_is_empty(const String* s);
  */
 String* string_concat(Arena* arena, const String* a, const String* b);
 
+/* Concatenate a string with a C string, returning a new string.
+ * Returns NULL on allocation failure.
+ */
+String* string_append_cstr(Arena* arena, const String* s, const char* cstr);
+
 /* Compare two strings for equality. */
 bool string_equal(const String* a, const String* b);
 
