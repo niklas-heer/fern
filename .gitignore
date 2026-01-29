@@ -19,6 +19,14 @@ vgcore.*
 
 # Test outputs
 *.log
+*.ssa
+
+# Compiled test binaries (created during benchmarks/testing)
+hello
+string_ops
+fib_fern
+startup_fern
+sum_fern
 
 # Python
 __pycache__/

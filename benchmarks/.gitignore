@@ -1,0 +1,6 @@
+# Compiled benchmark binaries
+fib_fern
+startup_fern
+sum_fern
+/tmp/fib_c
+/tmp/startup_c
