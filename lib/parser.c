@@ -1305,6 +1305,12 @@ static Expr* parse_primary_internal(Parser* parser) {
         parser->panic_mode = saved_panic;
         lexer_restore(parser->lexer, saved_lexer);
 
+        // Empty tuple () is Unit
+        if (match(parser, TOKEN_RPAREN)) {
+            ExprVec* elements = ExprVec_new(parser->arena);
+            return expr_tuple(parser->arena, elements, loc);
+        }
+
         Expr* first = parse_expression(parser);
 
         if (match(parser, TOKEN_COMMA)) {

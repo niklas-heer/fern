@@ -1053,17 +1053,17 @@ static void register_io_builtins(Checker* checker) {
     assert(checker->arena != NULL);
     Arena* arena = checker->arena;
 
-    /* print(a) -> Int - polymorphic, accepts Int, String, Bool */
+    /* print(a) -> () - polymorphic, accepts Int, String, Bool */
     TypeVec* print_params = TypeVec_new(arena);
     Type* print_var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
     TypeVec_push(arena, print_params, print_var);
-    register_builtin(checker, "print", type_fn(arena, print_params, type_int(arena)));
+    register_builtin(checker, "print", type_fn(arena, print_params, type_unit(arena)));
 
-    /* println(a) -> Int - polymorphic, accepts Int, String, Bool */
+    /* println(a) -> () - polymorphic, accepts Int, String, Bool */
     TypeVec* println_params = TypeVec_new(arena);
     Type* println_var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
     TypeVec_push(arena, println_params, println_var);
-    register_builtin(checker, "println", type_fn(arena, println_params, type_int(arena)));
+    register_builtin(checker, "println", type_fn(arena, println_params, type_unit(arena)));
 }
 
 /**
@@ -1737,6 +1737,12 @@ static Type* check_list_expr(Checker* checker, ListExpr* expr) {
 static Type* check_tuple_expr(Checker* checker, TupleExpr* expr) {
     assert(checker != NULL);
     assert(expr != NULL);
+    
+    /* Empty tuple () is Unit */
+    if (expr->elements->len == 0) {
+        return type_unit(checker->arena);
+    }
+    
     TypeVec* elem_types = TypeVec_new(checker->arena);
     
     for (size_t i = 0; i < expr->elements->len; i++) {
@@ -2767,6 +2773,9 @@ static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
             if (strcmp(name_str, "Bool") == 0) {
                 return type_bool(checker->arena);
             }
+            if (strcmp(name_str, "()") == 0) {
+                return type_unit(checker->arena);
+            }
             
             /* Check for parameterized types */
             TypeExprVec* args = type_expr->data.named.args;
@@ -2827,6 +2836,10 @@ static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
         }
 
         case TYPEEXPR_TUPLE: {
+            /* Empty tuple () is Unit */
+            if (type_expr->data.tuple.elements->len == 0) {
+                return type_unit(checker->arena);
+            }
             /* Resolve element types */
             TypeVec* elements = TypeVec_new(checker->arena);
             for (size_t i = 0; i < type_expr->data.tuple.elements->len; i++) {
