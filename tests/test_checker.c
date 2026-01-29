@@ -1528,6 +1528,118 @@ void test_check_interp_string_undefined_var(void) {
     arena_destroy(arena);
 }
 
+/* ========== Tui Module Tests ========== */
+
+void test_check_tui_style_returns_string(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Tui.Style.red("text") -> String
+    Type* t = check_expr(arena, "Tui.Style.red(\"hello\")");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_STRING);
+    
+    arena_destroy(arena);
+}
+
+void test_check_tui_style_bold_returns_string(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Tui.Style.bold("text") -> String
+    Type* t = check_expr(arena, "Tui.Style.bold(\"important\")");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_STRING);
+    
+    arena_destroy(arena);
+}
+
+void test_check_tui_panel_new_returns_panel(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Tui.Panel.new("content") -> Panel
+    Type* t = check_expr(arena, "Tui.Panel.new(\"Hello\")");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(t->data.con.name), "Panel");
+    
+    arena_destroy(arena);
+}
+
+void test_check_tui_panel_render_returns_string(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Tui.Panel.render(panel) -> String
+    Type* t = check_expr(arena, "Tui.Panel.render(Tui.Panel.new(\"test\"))");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_STRING);
+    
+    arena_destroy(arena);
+}
+
+void test_check_tui_table_new_returns_table(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Tui.Table.new() -> Table
+    Type* t = check_expr(arena, "Tui.Table.new()");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(t->data.con.name), "Table");
+    
+    arena_destroy(arena);
+}
+
+void test_check_tui_status_ok_returns_string(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Tui.Status.ok("message") -> String
+    Type* t = check_expr(arena, "Tui.Status.ok(\"All good\")");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_STRING);
+    
+    arena_destroy(arena);
+}
+
+void test_check_tui_term_is_tty_returns_bool(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Tui.Term.is_tty() -> Bool
+    Type* t = check_expr(arena, "Tui.Term.is_tty()");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_BOOL);
+    
+    arena_destroy(arena);
+}
+
+void test_check_tui_term_color_support_returns_int(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Tui.Term.color_support() -> Int
+    Type* t = check_expr(arena, "Tui.Term.color_support()");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_INT);
+    
+    arena_destroy(arena);
+}
+
+void test_check_tui_live_sleep_returns_unit(void) {
+    Arena* arena = arena_create(4096);
+    
+    // Tui.Live.sleep(100) -> Unit
+    Type* t = check_expr(arena, "Tui.Live.sleep(100)");
+    
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_UNIT);
+    
+    arena_destroy(arena);
+}
+
 /* ========== Test Runner ========== */
 
 void run_checker_tests(void) {
@@ -1683,4 +1795,15 @@ void run_checker_tests(void) {
     TEST_RUN(test_check_interp_string_int);
     TEST_RUN(test_check_interp_string_expr);
     TEST_RUN(test_check_interp_string_undefined_var);
+    
+    // Tui module type checking
+    TEST_RUN(test_check_tui_style_returns_string);
+    TEST_RUN(test_check_tui_style_bold_returns_string);
+    TEST_RUN(test_check_tui_panel_new_returns_panel);
+    TEST_RUN(test_check_tui_panel_render_returns_string);
+    TEST_RUN(test_check_tui_table_new_returns_table);
+    TEST_RUN(test_check_tui_status_ok_returns_string);
+    TEST_RUN(test_check_tui_term_is_tty_returns_bool);
+    TEST_RUN(test_check_tui_term_color_support_returns_int);
+    TEST_RUN(test_check_tui_live_sleep_returns_unit);
 }
