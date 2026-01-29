@@ -2209,6 +2209,30 @@ int64_t fern_term_color_support(void) {
 #define ANSI_BG_CYAN "\x1b[46m"
 #define ANSI_BG_WHITE "\x1b[47m"
 
+/* ========== Fern Color Palette ========== */
+/* Centralized color definitions for TUI components.
+ * These can be customized to change the look of Status badges, etc.
+ * 256-color codes use format: \x1b[38;5;Nm (fg) or \x1b[48;5;Nm (bg)
+ * RGB colors use format: \x1b[38;2;R;G;Bm (fg) or \x1b[48;2;R;G;Bm (bg)
+ */
+
+/* Status badge colors - background */
+#define FERN_COLOR_WARN_BG   "\x1b[48;5;214m"  /* Orange (256-color) */
+#define FERN_COLOR_OKAY_BG   "\x1b[42m"        /* Green */
+#define FERN_COLOR_INFO_BG   "\x1b[44m"        /* Blue */
+#define FERN_COLOR_FAIL_BG   "\x1b[41m"        /* Red */
+#define FERN_COLOR_DBUG_BG   "\x1b[45m"        /* Magenta */
+
+/* Status badge colors - foreground (text) */
+#define FERN_COLOR_WARN_FG   "\x1b[30m"        /* Black */
+#define FERN_COLOR_OKAY_FG   "\x1b[30m"        /* Black */
+#define FERN_COLOR_INFO_FG   "\x1b[37m"        /* White */
+#define FERN_COLOR_FAIL_FG   "\x1b[37m"        /* White */
+#define FERN_COLOR_DBUG_FG   "\x1b[37m"        /* White */
+
+/* Panel border colors (defaults, can be overridden per-panel) */
+#define FERN_COLOR_PANEL_BORDER "\x1b[36m"    /* Cyan */
+
 /**
  * Helper to wrap text with ANSI escape codes.
  * @param prefix The ANSI escape sequence to apply.
@@ -2422,6 +2446,214 @@ char* fern_style_reset(const char* text) {
     return result;
 }
 
+/* ========== TUI: Status Badges ========== */
+
+/**
+ * Create a status badge with background color and text color.
+ * All badges are 8 visible chars: space + 6-char centered label + space.
+ * @param label The badge text (e.g., "WARN", "OK").
+ * @param bg_color Background color code.
+ * @param fg_color Foreground (text) color code.
+ * @return Formatted badge string with colors.
+ */
+static char* make_badge(const char* label, const char* bg_color, const char* fg_color) {
+    if (!label) return FERN_STRDUP("");
+    
+    /* All labels are 4 chars: WARN, OKAY, INFO, FAIL, DBUG */
+    const size_t inner_width = 4;
+    size_t label_len = strlen(label);
+    size_t total_pad = inner_width - label_len;
+    size_t pad_left = total_pad / 2;  /* Round down - extra space goes right */
+    size_t pad_right = total_pad - pad_left;
+    
+    size_t bg_len = bg_color ? strlen(bg_color) : 0;
+    size_t fg_len = fg_color ? strlen(fg_color) : 0;
+    size_t bold_len = strlen(ANSI_BOLD);
+    size_t reset_len = strlen(ANSI_RESET);
+    
+    /* Total: colors + bold + outer_space + pad_left + label + pad_right + outer_space + reset + null */
+    size_t total = bg_len + fg_len + bold_len + 1 + pad_left + label_len + pad_right + 1 + reset_len + 1;
+    char* result = FERN_ALLOC(total);
+    if (!result) return FERN_STRDUP("");
+    
+    char* p = result;
+    if (bg_color) { memcpy(p, bg_color, bg_len); p += bg_len; }
+    if (fg_color) { memcpy(p, fg_color, fg_len); p += fg_len; }
+    memcpy(p, ANSI_BOLD, bold_len); p += bold_len;
+    *p++ = ' ';
+    for (size_t i = 0; i < pad_left; i++) *p++ = ' ';
+    memcpy(p, label, label_len); p += label_len;
+    for (size_t i = 0; i < pad_right; i++) *p++ = ' ';
+    *p++ = ' ';
+    memcpy(p, ANSI_RESET, reset_len); p += reset_len;
+    *p = '\0';
+    
+    return result;
+}
+
+/**
+ * Create a WARN badge (yellow/orange background, black text).
+ * @param message Optional message to append after badge.
+ * @return Formatted string like "[WARN] message".
+ */
+char* fern_status_warn(const char* message) {
+    char* badge = make_badge("WARN", FERN_COLOR_WARN_BG, FERN_COLOR_WARN_FG);
+    if (!message || message[0] == '\0') return badge;
+    
+    size_t badge_len = strlen(badge);
+    size_t msg_len = strlen(message);
+    char* result = FERN_ALLOC(badge_len + 1 + msg_len + 1);
+    if (!result) { FERN_FREE(badge); return FERN_STRDUP(""); }
+    
+    memcpy(result, badge, badge_len);
+    result[badge_len] = ' ';
+    memcpy(result + badge_len + 1, message, msg_len);
+    result[badge_len + 1 + msg_len] = '\0';
+    
+    FERN_FREE(badge);
+    return result;
+}
+
+/**
+ * Create an OK badge (green background, black text).
+ * @param message Optional message to append after badge.
+ * @return Formatted string like "[OK] message".
+ */
+char* fern_status_ok(const char* message) {
+    char* badge = make_badge("OKAY", FERN_COLOR_OKAY_BG, FERN_COLOR_OKAY_FG);
+    if (!message || message[0] == '\0') return badge;
+    
+    size_t badge_len = strlen(badge);
+    size_t msg_len = strlen(message);
+    char* result = FERN_ALLOC(badge_len + 1 + msg_len + 1);
+    if (!result) { FERN_FREE(badge); return FERN_STRDUP(""); }
+    
+    memcpy(result, badge, badge_len);
+    result[badge_len] = ' ';
+    memcpy(result + badge_len + 1, message, msg_len);
+    result[badge_len + 1 + msg_len] = '\0';
+    
+    FERN_FREE(badge);
+    return result;
+}
+
+/**
+ * Create an INFO badge (blue background, white text).
+ * @param message Optional message to append after badge.
+ * @return Formatted string like "[INFO] message".
+ */
+char* fern_status_info(const char* message) {
+    char* badge = make_badge("INFO", FERN_COLOR_INFO_BG, FERN_COLOR_INFO_FG);
+    if (!message || message[0] == '\0') return badge;
+    
+    size_t badge_len = strlen(badge);
+    size_t msg_len = strlen(message);
+    char* result = FERN_ALLOC(badge_len + 1 + msg_len + 1);
+    if (!result) { FERN_FREE(badge); return FERN_STRDUP(""); }
+    
+    memcpy(result, badge, badge_len);
+    result[badge_len] = ' ';
+    memcpy(result + badge_len + 1, message, msg_len);
+    result[badge_len + 1 + msg_len] = '\0';
+    
+    FERN_FREE(badge);
+    return result;
+}
+
+/**
+ * Create an ERROR badge (red background, white text).
+ * @param message Optional message to append after badge.
+ * @return Formatted string like "[ERROR] message".
+ */
+char* fern_status_error(const char* message) {
+    char* badge = make_badge("FAIL", FERN_COLOR_FAIL_BG, FERN_COLOR_FAIL_FG);
+    if (!message || message[0] == '\0') return badge;
+    
+    size_t badge_len = strlen(badge);
+    size_t msg_len = strlen(message);
+    char* result = FERN_ALLOC(badge_len + 1 + msg_len + 1);
+    if (!result) { FERN_FREE(badge); return FERN_STRDUP(""); }
+    
+    memcpy(result, badge, badge_len);
+    result[badge_len] = ' ';
+    memcpy(result + badge_len + 1, message, msg_len);
+    result[badge_len + 1 + msg_len] = '\0';
+    
+    FERN_FREE(badge);
+    return result;
+}
+
+/**
+ * Create a DEBUG badge (magenta background, white text).
+ * @param message Optional message to append after badge.
+ * @return Formatted string like "[DEBUG] message".
+ */
+char* fern_status_debug(const char* message) {
+    char* badge = make_badge("DBUG", FERN_COLOR_DBUG_BG, FERN_COLOR_DBUG_FG);
+    if (!message || message[0] == '\0') return badge;
+    
+    size_t badge_len = strlen(badge);
+    size_t msg_len = strlen(message);
+    char* result = FERN_ALLOC(badge_len + 1 + msg_len + 1);
+    if (!result) { FERN_FREE(badge); return FERN_STRDUP(""); }
+    
+    memcpy(result, badge, badge_len);
+    result[badge_len] = ' ';
+    memcpy(result + badge_len + 1, message, msg_len);
+    result[badge_len + 1 + msg_len] = '\0';
+    
+    FERN_FREE(badge);
+    return result;
+}
+
+/* ========== TUI: Live/Spinner Module ========== */
+
+/**
+ * Print text without a newline (for same-line updates).
+ * @param text The text to print.
+ */
+void fern_live_print(const char* text) {
+    if (text) {
+        printf("%s", text);
+        fflush(stdout);
+    }
+}
+
+/**
+ * Clear the current line and move cursor to beginning.
+ */
+void fern_live_clear_line(void) {
+    printf("\r\x1b[K");
+    fflush(stdout);
+}
+
+/**
+ * Update the current line with new text (clears line first).
+ * @param text The new text to display.
+ */
+void fern_live_update(const char* text) {
+    fern_live_clear_line();
+    fern_live_print(text);
+}
+
+/**
+ * Finish live update by printing newline.
+ */
+void fern_live_done(void) {
+    printf("\n");
+    fflush(stdout);
+}
+
+/**
+ * Sleep for specified milliseconds.
+ * @param ms Milliseconds to sleep.
+ */
+void fern_sleep_ms(int64_t ms) {
+    if (ms > 0) {
+        usleep((useconds_t)(ms * 1000));
+    }
+}
+
 /* ========== TUI: Panel Module ========== */
 
 /* Box drawing characters for each style */
@@ -2578,6 +2810,7 @@ FernPanel* fern_panel_new(const char* content) {
     panel->content = content ? FERN_STRDUP(content) : FERN_STRDUP("");
     panel->title = NULL;
     panel->subtitle = NULL;
+    panel->border_color = NULL;
     panel->box_style = BOX_ROUNDED;
     panel->width = 0;  /* Auto */
     panel->padding_h = 1;
@@ -2621,11 +2854,64 @@ FernPanel* fern_panel_padding(FernPanel* panel, int64_t vertical, int64_t horizo
     return panel;
 }
 
+FernPanel* fern_panel_border_color(FernPanel* panel, const char* color) {
+    if (!panel) return NULL;
+    FERN_FREE(panel->border_color);
+    panel->border_color = color ? FERN_STRDUP(color) : NULL;
+    return panel;
+}
+
+/**
+ * Get ANSI color code for a color name or hex value.
+ * @param color Color name or hex (e.g., "red", "cyan", "#00ff00").
+ * @return ANSI escape sequence string (caller must free).
+ */
+static char* get_ansi_color(const char* color) {
+    if (!color || color[0] == '\0') return FERN_STRDUP("");
+    
+    /* Handle hex colors */
+    if (color[0] == '#' && strlen(color) == 7) {
+        int r, g, b;
+        if (sscanf(color + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
+            char* result = FERN_ALLOC(32);
+            if (result) {
+                snprintf(result, 32, "\x1b[38;2;%d;%d;%dm", r, g, b);
+            }
+            return result;
+        }
+    }
+    
+    /* Named colors */
+    if (strcmp(color, "black") == 0) return FERN_STRDUP("\x1b[30m");
+    if (strcmp(color, "red") == 0) return FERN_STRDUP("\x1b[31m");
+    if (strcmp(color, "green") == 0) return FERN_STRDUP("\x1b[32m");
+    if (strcmp(color, "yellow") == 0) return FERN_STRDUP("\x1b[33m");
+    if (strcmp(color, "blue") == 0) return FERN_STRDUP("\x1b[34m");
+    if (strcmp(color, "magenta") == 0) return FERN_STRDUP("\x1b[35m");
+    if (strcmp(color, "cyan") == 0) return FERN_STRDUP("\x1b[36m");
+    if (strcmp(color, "white") == 0) return FERN_STRDUP("\x1b[37m");
+    /* Bright colors */
+    if (strcmp(color, "bright_black") == 0) return FERN_STRDUP("\x1b[90m");
+    if (strcmp(color, "bright_red") == 0) return FERN_STRDUP("\x1b[91m");
+    if (strcmp(color, "bright_green") == 0) return FERN_STRDUP("\x1b[92m");
+    if (strcmp(color, "bright_yellow") == 0) return FERN_STRDUP("\x1b[93m");
+    if (strcmp(color, "bright_blue") == 0) return FERN_STRDUP("\x1b[94m");
+    if (strcmp(color, "bright_magenta") == 0) return FERN_STRDUP("\x1b[95m");
+    if (strcmp(color, "bright_cyan") == 0) return FERN_STRDUP("\x1b[96m");
+    if (strcmp(color, "bright_white") == 0) return FERN_STRDUP("\x1b[97m");
+    
+    return FERN_STRDUP("");
+}
+
 char* fern_panel_render(FernPanel* panel) {
     /* FERN_STYLE: allow(function-length) panel rendering with multi-line support */
     if (!panel) return FERN_STRDUP("");
     
     const BoxChars* box = &BOX_CHARS[panel->box_style];
+    
+    /* Get border color codes */
+    char* color_start = get_ansi_color(panel->border_color);
+    const char* color_end = (color_start && color_start[0] != '\0') ? "\x1b[0m" : "";
     
     /* Calculate content width - use max line width for multi-line content */
     size_t content_width = max_line_width(panel->content);
@@ -2656,15 +2942,18 @@ char* fern_panel_render(FernPanel* panel) {
     result[0] = '\0';
     
     /* Top border with optional title */
+    strcat(result, color_start);
     strcat(result, box->top_left);
     if (panel->title && panel->title[0] != '\0') {
         size_t title_len = display_width(panel->title);
         size_t side_len = (inner_width - title_len - 2) / 2;
         char* side = str_repeat(box->top, side_len);
         strcat(result, side);
+        strcat(result, color_end);
         strcat(result, " ");
         strcat(result, panel->title);
         strcat(result, " ");
+        strcat(result, color_start);
         FERN_FREE(side);
         side = str_repeat(box->top, inner_width - side_len - title_len - 2);
         strcat(result, side);
@@ -2675,15 +2964,20 @@ char* fern_panel_render(FernPanel* panel) {
         FERN_FREE(top_line);
     }
     strcat(result, box->top_right);
+    strcat(result, color_end);
     strcat(result, "\n");
     
     /* Vertical padding (top) */
     for (int64_t i = 0; i < panel->padding_v; i++) {
+        strcat(result, color_start);
         strcat(result, box->left);
+        strcat(result, color_end);
         char* spaces = str_repeat(" ", inner_width);
         strcat(result, spaces);
         FERN_FREE(spaces);
+        strcat(result, color_start);
         strcat(result, box->right);
+        strcat(result, color_end);
         strcat(result, "\n");
     }
     
@@ -2705,13 +2999,17 @@ char* fern_panel_render(FernPanel* panel) {
                 memcpy(line, line_start, line_len);
                 line[line_len] = '\0';
                 
+                strcat(result, color_start);
                 strcat(result, box->left);
+                strcat(result, color_end);
                 strcat(result, h_pad);
                 char* padded_line = pad_right(line, line_width);
                 strcat(result, padded_line);
                 FERN_FREE(padded_line);
                 strcat(result, h_pad);
+                strcat(result, color_start);
                 strcat(result, box->right);
+                strcat(result, color_end);
                 strcat(result, "\n");
                 FERN_FREE(line);
             }
@@ -2729,13 +3027,17 @@ char* fern_panel_render(FernPanel* panel) {
                 memcpy(line, line_start, line_len);
                 line[line_len] = '\0';
                 
+                strcat(result, color_start);
                 strcat(result, box->left);
+                strcat(result, color_end);
                 strcat(result, h_pad);
                 char* padded_line = pad_right(line, line_width);
                 strcat(result, padded_line);
                 FERN_FREE(padded_line);
                 strcat(result, h_pad);
+                strcat(result, color_start);
                 strcat(result, box->right);
+                strcat(result, color_end);
                 strcat(result, "\n");
                 FERN_FREE(line);
             }
@@ -2746,24 +3048,31 @@ char* fern_panel_render(FernPanel* panel) {
     
     /* Vertical padding (bottom) */
     for (int64_t i = 0; i < panel->padding_v; i++) {
+        strcat(result, color_start);
         strcat(result, box->left);
+        strcat(result, color_end);
         char* spaces = str_repeat(" ", inner_width);
         strcat(result, spaces);
         FERN_FREE(spaces);
+        strcat(result, color_start);
         strcat(result, box->right);
+        strcat(result, color_end);
         strcat(result, "\n");
     }
     
     /* Bottom border with optional subtitle */
+    strcat(result, color_start);
     strcat(result, box->bottom_left);
     if (panel->subtitle && panel->subtitle[0] != '\0') {
         size_t subtitle_len = display_width(panel->subtitle);
         size_t side_len = (inner_width - subtitle_len - 2) / 2;
         char* side = str_repeat(box->bottom, side_len);
         strcat(result, side);
+        strcat(result, color_end);
         strcat(result, " ");
         strcat(result, panel->subtitle);
         strcat(result, " ");
+        strcat(result, color_start);
         FERN_FREE(side);
         side = str_repeat(box->bottom, inner_width - side_len - subtitle_len - 2);
         strcat(result, side);
@@ -2774,6 +3083,9 @@ char* fern_panel_render(FernPanel* panel) {
         FERN_FREE(bottom_line);
     }
     strcat(result, box->bottom_right);
+    strcat(result, color_end);
+    
+    FERN_FREE(color_start);
     
     return result;
 }
@@ -2783,6 +3095,7 @@ void fern_panel_FERN_FREE(FernPanel* panel) {
         FERN_FREE(panel->content);
         FERN_FREE(panel->title);
         FERN_FREE(panel->subtitle);
+        FERN_FREE(panel->border_color);
         FERN_FREE(panel);
     }
 }
@@ -2858,6 +3171,12 @@ FernTable* fern_table_border(FernTable* table, int64_t style) {
     if (style >= 0 && style <= 5) {
         table->box_style = (FernBoxStyle)style;
     }
+    return table;
+}
+
+FernTable* fern_table_show_header(FernTable* table, int64_t show) {
+    if (!table) return NULL;
+    table->show_header = show ? 1 : 0;
     return table;
 }
 

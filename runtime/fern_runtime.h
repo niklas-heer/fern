@@ -882,6 +882,73 @@ char* fern_style_on_hex(const char* text, const char* hex_color);
 /* Reset/strip styling */
 char* fern_style_reset(const char* text);
 
+/* ========== TUI: Status Badges ========== */
+
+/**
+ * Create a WARN badge (orange background, black text).
+ * @param message Optional message to append after badge.
+ * @return Formatted string like " WARN  message".
+ */
+char* fern_status_warn(const char* message);
+
+/**
+ * Create an OK badge (green background, black text).
+ * @param message Optional message to append after badge.
+ * @return Formatted string like " OK  message".
+ */
+char* fern_status_ok(const char* message);
+
+/**
+ * Create an INFO badge (blue background, white text).
+ * @param message Optional message to append after badge.
+ * @return Formatted string like " INFO  message".
+ */
+char* fern_status_info(const char* message);
+
+/**
+ * Create an ERROR badge (red background, white text).
+ * @param message Optional message to append after badge.
+ * @return Formatted string like " ERROR  message".
+ */
+char* fern_status_error(const char* message);
+
+/**
+ * Create a DEBUG badge (magenta background, white text).
+ * @param message Optional message to append after badge.
+ * @return Formatted string like " DEBUG  message".
+ */
+char* fern_status_debug(const char* message);
+
+/* ========== TUI: Live/Spinner Module ========== */
+
+/**
+ * Print text without a newline (for same-line updates).
+ * @param text The text to print.
+ */
+void fern_live_print(const char* text);
+
+/**
+ * Clear the current line and move cursor to beginning.
+ */
+void fern_live_clear_line(void);
+
+/**
+ * Update the current line with new text (clears line first).
+ * @param text The new text to display.
+ */
+void fern_live_update(const char* text);
+
+/**
+ * Finish live update by printing newline.
+ */
+void fern_live_done(void);
+
+/**
+ * Sleep for specified milliseconds.
+ * @param ms Milliseconds to sleep.
+ */
+void fern_sleep_ms(int64_t ms);
+
 /* ========== TUI: Panel Module ========== */
 
 /**
@@ -903,6 +970,7 @@ typedef struct FernPanel {
     char* content;
     char* title;
     char* subtitle;
+    char* border_color;      /* ANSI color for border (e.g., "cyan", "green", "#00ff00") */
     FernBoxStyle box_style;
     int64_t width;           /* 0 = auto-fit to content, -1 = expand to terminal */
     int64_t padding_h;       /* Horizontal padding */
@@ -956,6 +1024,14 @@ FernPanel* fern_panel_width(FernPanel* panel, int64_t width);
  * @return The panel (for chaining).
  */
 FernPanel* fern_panel_padding(FernPanel* panel, int64_t vertical, int64_t horizontal);
+
+/**
+ * Set panel border color.
+ * @param panel The panel.
+ * @param color Color name ("red", "green", "cyan", etc.) or hex ("#00ff00").
+ * @return The panel (for chaining).
+ */
+FernPanel* fern_panel_border_color(FernPanel* panel, const char* color);
 
 /**
  * Render panel to string.
@@ -1040,10 +1116,18 @@ FernTable* fern_table_title(FernTable* table, const char* title);
 /**
  * Set table border style.
  * @param table The table.
- * @param style The box style.
+ * @param style The box style (0=rounded, 1=square, 2=double, 3=heavy, 4=ascii, 5=none).
  * @return The table (for chaining).
  */
 FernTable* fern_table_border(FernTable* table, int64_t style);
+
+/**
+ * Set whether to show the header row.
+ * @param table The table.
+ * @param show 1 to show header, 0 to hide.
+ * @return The table (for chaining).
+ */
+FernTable* fern_table_show_header(FernTable* table, int64_t show);
 
 /**
  * Render table to string.
