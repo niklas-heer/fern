@@ -16,6 +16,7 @@ struct Lexer {
     size_t column;
     int interp_depth;       // > 0 when inside string interpolation {expr}
     int interp_brace_depth; // tracks nested {} inside interpolation expr
+    int bracket_depth;      // tracks nesting of (), [], {} - no INDENT/DEDENT inside
     
     // Indentation tracking
     int indent_stack[MAX_INDENT_LEVELS];  // Stack of indentation levels
@@ -650,6 +651,7 @@ Lexer* lexer_new(Arena* arena, const char* source) {
     lex->column = 1;
     lex->interp_depth = 0;
     lex->interp_brace_depth = 0;
+    lex->bracket_depth = 0;
     
     // Initialize indentation tracking
     lex->indent_stack[0] = 0;  // Start with indent level 0
@@ -762,13 +764,14 @@ static Token lex_token(Lexer* lex) {
     }
     
     // Single-character tokens
+    // Track bracket depth for indentation handling (no INDENT/DEDENT inside brackets)
     switch (c) {
-        case '(': return make_token(lex, TOKEN_LPAREN, lex->current - 1, lex->current);
-        case ')': return make_token(lex, TOKEN_RPAREN, lex->current - 1, lex->current);
-        case '[': return make_token(lex, TOKEN_LBRACKET, lex->current - 1, lex->current);
-        case ']': return make_token(lex, TOKEN_RBRACKET, lex->current - 1, lex->current);
-        case '{': return make_token(lex, TOKEN_LBRACE, lex->current - 1, lex->current);
-        case '}': return make_token(lex, TOKEN_RBRACE, lex->current - 1, lex->current);
+        case '(': lex->bracket_depth++; return make_token(lex, TOKEN_LPAREN, lex->current - 1, lex->current);
+        case ')': if (lex->bracket_depth > 0) lex->bracket_depth--; return make_token(lex, TOKEN_RPAREN, lex->current - 1, lex->current);
+        case '[': lex->bracket_depth++; return make_token(lex, TOKEN_LBRACKET, lex->current - 1, lex->current);
+        case ']': if (lex->bracket_depth > 0) lex->bracket_depth--; return make_token(lex, TOKEN_RBRACKET, lex->current - 1, lex->current);
+        case '{': lex->bracket_depth++; return make_token(lex, TOKEN_LBRACE, lex->current - 1, lex->current);
+        case '}': if (lex->bracket_depth > 0) lex->bracket_depth--; return make_token(lex, TOKEN_RBRACE, lex->current - 1, lex->current);
         case ',': return make_token(lex, TOKEN_COMMA, lex->current - 1, lex->current);
         case ':': return make_token(lex, TOKEN_COLON, lex->current - 1, lex->current);
         case '+': return make_token(lex, TOKEN_PLUS, lex->current - 1, lex->current);
@@ -792,6 +795,38 @@ Token lexer_next(Lexer* lex) {
     // FERN_STYLE: allow(function-length) indentation state machine is complex
     assert(lex != NULL);
     assert(lex->current != NULL);
+    
+    // When inside brackets/parens/braces, skip all indentation handling
+    // This allows multi-line expressions inside delimiters
+    if (lex->bracket_depth > 0) {
+        // Clear any pending layout tokens - they'll be re-computed when we exit brackets
+        lex->pending_dedents = 0;
+        lex->emit_newline = false;
+        lex->at_line_start = false;
+        // Skip newlines inside brackets (they're just whitespace in this context)
+        while (peek(lex) == '\n') {
+            advance(lex);
+            // Also skip any leading whitespace on continuation lines
+            skip_horizontal_whitespace(lex);
+            // Skip comments on blank lines
+            if (peek(lex) == '#') {
+                skip_line_comment(lex);
+            }
+        }
+        Token tok = lex_token(lex);
+        // If we just closed the last bracket, handle trailing newline normally
+        if (lex->bracket_depth == 0) {
+            skip_horizontal_whitespace(lex);
+            if (peek(lex) == '#') {
+                skip_line_comment(lex);
+            }
+            if (peek(lex) == '\n') {
+                advance(lex);
+                lex->emit_newline = true;
+            }
+        }
+        return tok;
+    }
     
     // First, emit any pending DEDENT tokens
     if (lex->pending_dedents > 0) {
@@ -881,7 +916,8 @@ Token lexer_next(Lexer* lex) {
     Token tok = lex_token(lex);
     
     // If we just lexed something and the next char is newline, mark it
-    if (tok.type != TOKEN_EOF && tok.type != TOKEN_ERROR) {
+    // But only if not inside brackets (multi-line expressions in brackets ignore layout)
+    if (tok.type != TOKEN_EOF && tok.type != TOKEN_ERROR && lex->bracket_depth == 0) {
         skip_horizontal_whitespace(lex);
         // Skip trailing comments on the same line
         if (peek(lex) == '#') {
