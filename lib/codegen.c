@@ -159,6 +159,61 @@ static bool fn_returns_pointer(const char* name) {
     return false;
 }
 
+/* Print type for polymorphic print/println */
+typedef enum {
+    PRINT_INT,
+    PRINT_STRING,
+    PRINT_BOOL
+} PrintType;
+
+/**
+ * Determine the print type for an expression.
+ * Used to select the correct runtime print function.
+ * @param cg The codegen context.
+ * @param expr The expression to check.
+ * @return The print type (PRINT_INT, PRINT_STRING, or PRINT_BOOL).
+ */
+static PrintType get_print_type(Codegen* cg, Expr* expr) {
+    assert(cg != NULL);
+    assert(cg->arena != NULL);
+    if (expr == NULL) return PRINT_INT;
+    
+    switch (expr->type) {
+        case EXPR_STRING_LIT:
+        case EXPR_INTERP_STRING:
+            return PRINT_STRING;
+        
+        case EXPR_BOOL_LIT:
+            return PRINT_BOOL;
+        
+        case EXPR_INT_LIT:
+        case EXPR_FLOAT_LIT:
+            return PRINT_INT;
+        
+        case EXPR_IDENT:
+            /* Check if variable is a wide type (string/list) */
+            if (is_wide_var(cg, expr->data.ident.name)) {
+                return PRINT_STRING;
+            }
+            return PRINT_INT;
+        
+        case EXPR_CALL: {
+            CallExpr* call = &expr->data.call;
+            if (call->func->type == EXPR_IDENT) {
+                const char* fn_name = string_cstr(call->func->data.ident.name);
+                /* String functions return strings */
+                if (strncmp(fn_name, "str_", 4) == 0) {
+                    return PRINT_STRING;
+                }
+            }
+            return PRINT_INT;
+        }
+        
+        default:
+            return PRINT_INT;
+    }
+}
+
 /**
  * Get QBE type specifier for an expression.
  * Returns 'l' for pointer types (lists, strings), 'w' for word types (int, bool).
@@ -539,18 +594,42 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
 
                 /* Handle print(value) - prints to stdout without newline */
                 if (strcmp(fn_name, "print") == 0 && call->args->len == 1) {
-                    String* val = codegen_expr(cg, call->args->data[0].value);
-                    /* Call runtime print function - assume Int for now */
-                    emit(cg, "    call $fern_print_int(w %s)\n", string_cstr(val));
+                    Expr* arg = call->args->data[0].value;
+                    String* val = codegen_expr(cg, arg);
+                    PrintType pt = get_print_type(cg, arg);
+                    switch (pt) {
+                        case PRINT_STRING:
+                            emit(cg, "    call $fern_print_str(l %s)\n", string_cstr(val));
+                            break;
+                        case PRINT_BOOL:
+                            emit(cg, "    call $fern_print_bool(w %s)\n", string_cstr(val));
+                            break;
+                        case PRINT_INT:
+                        default:
+                            emit(cg, "    call $fern_print_int(w %s)\n", string_cstr(val));
+                            break;
+                    }
                     emit(cg, "    %s =w copy 0\n", string_cstr(result));
                     return result;
                 }
 
                 /* Handle println(value) - prints to stdout with newline */
                 if (strcmp(fn_name, "println") == 0 && call->args->len == 1) {
-                    String* val = codegen_expr(cg, call->args->data[0].value);
-                    /* Call runtime println function - assume Int for now */
-                    emit(cg, "    call $fern_println_int(w %s)\n", string_cstr(val));
+                    Expr* arg = call->args->data[0].value;
+                    String* val = codegen_expr(cg, arg);
+                    PrintType pt = get_print_type(cg, arg);
+                    switch (pt) {
+                        case PRINT_STRING:
+                            emit(cg, "    call $fern_println_str(l %s)\n", string_cstr(val));
+                            break;
+                        case PRINT_BOOL:
+                            emit(cg, "    call $fern_println_bool(w %s)\n", string_cstr(val));
+                            break;
+                        case PRINT_INT:
+                        default:
+                            emit(cg, "    call $fern_println_int(w %s)\n", string_cstr(val));
+                            break;
+                    }
                     emit(cg, "    %s =w copy 0\n", string_cstr(result));
                     return result;
                 }

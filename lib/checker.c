@@ -154,14 +154,16 @@ static void register_io_builtins(Checker* checker) {
     assert(checker->arena != NULL);
     Arena* arena = checker->arena;
 
-    /* print(Int) -> Int */
+    /* print(a) -> Int - polymorphic, accepts Int, String, Bool */
     TypeVec* print_params = TypeVec_new(arena);
-    TypeVec_push(arena, print_params, type_int(arena));
+    Type* print_var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+    TypeVec_push(arena, print_params, print_var);
     register_builtin(checker, "print", type_fn(arena, print_params, type_int(arena)));
 
-    /* println(Int) -> Int */
+    /* println(a) -> Int - polymorphic, accepts Int, String, Bool */
     TypeVec* println_params = TypeVec_new(arena);
-    TypeVec_push(arena, println_params, type_int(arena));
+    Type* println_var = type_var(arena, string_new(arena, "a"), type_fresh_var_id());
+    TypeVec_push(arena, println_params, println_var);
     register_builtin(checker, "println", type_fn(arena, println_params, type_int(arena)));
 }
 
