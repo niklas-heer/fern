@@ -778,27 +778,28 @@ Using lightweight built-in CLI structure (Command/Option arrays with auto-genera
 - [x] Auto-generate help from command/option arrays
 - [x] Implement find_command() lookup
 
-- [ ] Implement CLI argument structure
-  - [ ] Define subcommands: build, run, check, test, fmt, repl, lsp
-  - [ ] Global flags: `--help`, `--version`, `--color=auto|always|never`
-  - [ ] Build flags: `-o <output>`, `--mode=cli|full`, `--no-actors`, `--no-db`
-  - [ ] Check flags: `--explain <code>`, `--format=json`, `--errors-only`
-  - [ ] Test flags: `--doc`, `--coverage`, `--bench`, `--watch`
-  - [ ] Auto-generate help text for each subcommand
+- [x] Core subcommands implemented: build, run, check, emit, lex, parse
+- [x] Global flags: `--help`, `--version`
+- [ ] Additional flags
+  - [ ] Build: `-o <output>`, `--mode=cli|full`, `--no-actors`, `--no-db`
+  - [ ] Check: `--explain <code>`, `--format=json`, `--errors-only`
+  - [ ] Global: `--color=auto|always|never`, `--quiet`, `--verbose`
+- [ ] Additional subcommands: test, fmt, repl, lsp
 
-- [ ] Wire up CLI to compiler
-  - [ ] `fern build <file>` → lexer → parser → checker → codegen → QBE → binary
-  - [ ] `fern run <file>` → build + execute
-  - [ ] `fern check <file>` → lexer → parser → checker (no codegen)
-  - [ ] `fern lex <file>` → lexer (debug output)
-  - [ ] `fern parse <file>` → parser (debug AST output)
+- [x] Wire up CLI to compiler
+  - [x] `fern build <file>` → lexer → parser → checker → codegen → QBE → binary
+  - [x] `fern run <file>` → build + execute
+  - [x] `fern check <file>` → lexer → parser → checker (no codegen)
+  - [x] `fern lex <file>` → lexer (debug output)
+  - [x] `fern parse <file>` → parser (debug AST output)
+  - [x] `fern emit <file>` → emit QBE IR to stdout
 
 ### REPL (linenoise)
 
 Using [linenoise](https://github.com/antirez/linenoise) (BSD-2 license) for interactive line editing.
 Used by Redis and MongoDB. Provides readline-like editing in ~1800 lines.
 
-- [x] Add linenoise to lib/ (`lib/linenoise.c`, `lib/linenoise.h`)
+- [ ] Add linenoise to lib/ (`lib/linenoise.c`, `lib/linenoise.h`)
 
 - [ ] Implement `fern repl`
   - [ ] Basic read-eval-print loop
@@ -811,16 +812,22 @@ Used by Redis and MongoDB. Provides readline-like editing in ~1800 lines.
 
 ### Tasks
 
-- [ ] Implement CLI commands
+- [x] Implement core CLI commands
   ```bash
-  fern build file.fn        # Compile to binary
-  fern run file.fn          # Compile and run
-  fern check file.fn        # Type check only
+  fern build file.fn        # Compile to binary ✓
+  fern run file.fn          # Compile and run ✓
+  fern check file.fn        # Type check only ✓
+  fern emit file.fn         # Emit QBE IR ✓
+  fern lex file.fn          # Debug: show tokens ✓
+  fern parse file.fn        # Debug: show AST ✓
+  ```
+
+- [ ] Implement additional CLI commands
+  ```bash
   fern test                 # Run tests
   fern test --doc           # Run doc tests
   fern fmt file.fn          # Format code
-  fern lex file.fn          # Debug: show tokens
-  fern parse file.fn        # Debug: show AST
+  fern repl                 # Interactive mode
   ```
 
 - [ ] Implement helpful error messages
