@@ -15,6 +15,7 @@
 #include "codegen.h"
 #include "ast_print.h"
 #include "version.h"
+#include "errors.h"
 
 /* ========== File Utilities ========== */
 
@@ -201,12 +202,14 @@ static Codegen* compile_to_qbe(Arena* arena, const char* source, const char* fil
     StmtVec* stmts = parse_stmts(parser);
     
     if (parser_had_error(parser)) {
-        fprintf(stderr, "Parse error in %s\n", filename);
+        error_location(filename, 1, 0);
+        error_print("parse error");
         return NULL;
     }
     
     if (!stmts || stmts->len == 0) {
-        fprintf(stderr, "Error: No statements found in %s\n", filename);
+        error_location(filename, 1, 0);
+        error_print("no statements found");
         return NULL;
     }
     
@@ -216,7 +219,7 @@ static Codegen* compile_to_qbe(Arena* arena, const char* source, const char* fil
     
     if (!check_ok || checker_has_errors(checker)) {
         const char* err = checker_first_error(checker);
-        fprintf(stderr, "Type error in %s: %s\n", filename, err ? err : "unknown error");
+        error_print("%s", err ? err : "type error");
         return NULL;
     }
     
@@ -294,8 +297,8 @@ static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
     snprintf(cmd, sizeof(cmd), "qbe -o %s.s %s 2>&1", output_file, ssa_file);
     ret = system(cmd);
     if (ret != 0) {
-        fprintf(stderr, "Error: QBE compilation failed (is qbe installed?)\n");
-        fprintf(stderr, "  Install QBE: https://c9x.me/compile/\n");
+        error_print("QBE compilation failed (is qbe installed?)");
+        note_print("install QBE from https://c9x.me/compile/");
         return 1;
     }
     
@@ -303,7 +306,7 @@ static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
     snprintf(cmd, sizeof(cmd), "cc -c -o %s %s.s 2>&1", obj_file, output_file);
     ret = system(cmd);
     if (ret != 0) {
-        fprintf(stderr, "Error: Assembly failed\n");
+        error_print("assembly failed");
         return 1;
     }
     
@@ -318,7 +321,7 @@ static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
     
     ret = system(cmd);
     if (ret != 0) {
-        fprintf(stderr, "Error: Linking failed\n");
+        error_print("linking failed");
         return 1;
     }
     
@@ -344,7 +347,7 @@ static int cmd_build(Arena* arena, const char* filename) {
     // Read source file
     char* source = read_file(arena, filename);
     if (!source) {
-        fprintf(stderr, "Error: Cannot read file '%s'\n", filename);
+        error_print("cannot read file '%s'", filename);
         return 1;
     }
     
@@ -370,7 +373,7 @@ static int cmd_build(Arena* arena, const char* filename) {
     snprintf(ssa_file, sizeof(ssa_file), "%s.ssa", output_file);
     
     if (!codegen_write(cg, ssa_file)) {
-        fprintf(stderr, "Error: Cannot write QBE IR to '%s'\n", ssa_file);
+        error_print("cannot write QBE IR to '%s'", ssa_file);
         return 1;
     }
     
@@ -398,7 +401,7 @@ static int cmd_check(Arena* arena, const char* filename) {
     // Read source file
     char* source = read_file(arena, filename);
     if (!source) {
-        fprintf(stderr, "Error: Cannot read file '%s'\n", filename);
+        error_print("cannot read file '%s'", filename);
         return 1;
     }
     
@@ -407,7 +410,8 @@ static int cmd_check(Arena* arena, const char* filename) {
     StmtVec* stmts = parse_stmts(parser);
     
     if (parser_had_error(parser)) {
-        fprintf(stderr, "Parse error in %s\n", filename);
+        error_location(filename, 1, 0);
+        error_print("parse error");
         return 1;
     }
     
@@ -417,7 +421,7 @@ static int cmd_check(Arena* arena, const char* filename) {
     
     if (!check_ok || checker_has_errors(checker)) {
         const char* err = checker_first_error(checker);
-        fprintf(stderr, "Type error: %s\n", err ? err : "unknown error");
+        error_print("%s", err ? err : "type error");
         return 1;
     }
     
@@ -437,7 +441,7 @@ static int cmd_emit(Arena* arena, const char* filename) {
     // Read source file
     char* source = read_file(arena, filename);
     if (!source) {
-        fprintf(stderr, "Error: Cannot read file '%s'\n", filename);
+        error_print("cannot read file '%s'", filename);
         return 1;
     }
     
@@ -464,7 +468,7 @@ static int cmd_run(Arena* arena, const char* filename) {
     // Read source file
     char* source = read_file(arena, filename);
     if (!source) {
-        fprintf(stderr, "Error: Cannot read file '%s'\n", filename);
+        error_print("cannot read file '%s'", filename);
         return 1;
     }
     
@@ -480,7 +484,7 @@ static int cmd_run(Arena* arena, const char* filename) {
     snprintf(ssa_file, sizeof(ssa_file), "/tmp/fern_%s.ssa", string_cstr(basename));
     
     if (!codegen_write(cg, ssa_file)) {
-        fprintf(stderr, "Error: Cannot write QBE IR to '%s'\n", ssa_file);
+        error_print("cannot write QBE IR to '%s'", ssa_file);
         return 1;
     }
     
@@ -522,7 +526,7 @@ static int cmd_lex(Arena* arena, const char* filename) {
     // Read source file
     char* source = read_file(arena, filename);
     if (!source) {
-        fprintf(stderr, "Error: Cannot read file '%s'\n", filename);
+        error_print("cannot read file '%s'", filename);
         return 1;
     }
     
@@ -560,7 +564,7 @@ static int cmd_parse(Arena* arena, const char* filename) {
     // Read source file
     char* source = read_file(arena, filename);
     if (!source) {
-        fprintf(stderr, "Error: Cannot read file '%s'\n", filename);
+        error_print("cannot read file '%s'", filename);
         return 1;
     }
     
@@ -569,7 +573,8 @@ static int cmd_parse(Arena* arena, const char* filename) {
     StmtVec* stmts = parse_stmts(parser);
     
     if (parser_had_error(parser)) {
-        fprintf(stderr, "Parse error in %s\n", filename);
+        error_location(filename, 1, 0);
+        error_print("parse error");
         return 1;
     }
     
@@ -628,20 +633,21 @@ int main(int argc, char** argv) {
     while (arg_index < argc && argv[arg_index][0] == '-') {
         if ((strcmp(argv[arg_index], "-o") == 0 || strcmp(argv[arg_index], "--output") == 0)) {
             if (arg_index + 1 >= argc) {
-                fprintf(stderr, "Error: -o requires an argument\n");
+                error_print("-o requires an argument");
                 return 1;
             }
             g_output_file = argv[arg_index + 1];
             arg_index += 2;
         } else {
-            fprintf(stderr, "Unknown option: %s\n", argv[arg_index]);
+            error_print("unknown option '%s'", argv[arg_index]);
             return 1;
         }
     }
     
     // Need a file argument
     if (arg_index >= argc) {
-        fprintf(stderr, "Error: missing file argument\n\n");
+        error_print("missing file argument");
+        fprintf(stderr, "\n");
         print_usage();
         return 1;
     }
@@ -651,7 +657,7 @@ int main(int argc, char** argv) {
     // Create arena for compiler session
     Arena* arena = arena_create(4 * 1024 * 1024);  // 4MB
     if (!arena) {
-        fprintf(stderr, "Error: Failed to initialize memory\n");
+        error_print("failed to initialize memory");
         return 1;
     }
     
