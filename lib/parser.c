@@ -1437,6 +1437,7 @@ TypeExpr* parse_type(Parser* parser) {
  * @return True if params are typed, false if pattern-based.
  */
 static bool is_typed_params(Parser* parser) {
+    // FERN_STYLE: allow(assertion-density) simple peek-ahead detection
     // Empty params: () — treat as single-clause
     if (check(parser, TOKEN_RPAREN)) return true;
     // If first token is IDENT, peek at the lexer's next token to check for ':'
@@ -1456,6 +1457,7 @@ static bool is_typed_params(Parser* parser) {
  * @return The parsed statement.
  */
 Stmt* parse_stmt(Parser* parser) {
+    // FERN_STYLE: allow(assertion-density, function-length) main statement parser handles all statement types
     // Module declaration: module math.geometry
     if (match(parser, TOKEN_MODULE)) {
         SourceLoc loc = parser->previous.loc;

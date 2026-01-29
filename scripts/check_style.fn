@@ -464,8 +464,8 @@ fn check_doc_return(filepath: String, line: Int, func_name: String, body: String
     if has_allow(body, "doc-return") or has_allow(body, "doc-style"):
         violations
     else:
-        # Check if return type is void
-        let is_void = String.eq(return_type, "void") or String.eq(return_type, "")
+        # Check if return type is void (may be "void", "static void", etc.)
+        let is_void = String.contains(return_type, "void") or String.eq(return_type, "")
         if is_void:
             violations
         else:
