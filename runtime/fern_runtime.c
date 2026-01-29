@@ -2545,7 +2545,7 @@ char* fern_panel_render(FernPanel* panel) {
     
     /* Top border with optional title */
     strcat(result, box->top_left);
-    if (panel->title) {
+    if (panel->title && panel->title[0] != '\0') {
         size_t title_len = display_width(panel->title);
         size_t side_len = (inner_width - title_len - 2) / 2;
         char* side = str_repeat(box->top, side_len);
