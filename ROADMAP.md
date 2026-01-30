@@ -795,21 +795,39 @@ Using lightweight built-in CLI structure (Command/Option arrays with auto-genera
   - [x] `fern parse <file>` → parser (debug AST output)
   - [x] `fern emit <file>` → emit QBE IR to stdout
 
-### REPL (linenoise)
+### REPL (linenoise) ✓ COMPLETE
+
+**Status:** ✅ Complete
+**Completed:** 2026-01-30
 
 Using [linenoise](https://github.com/antirez/linenoise) (BSD-2 license) for interactive line editing.
 Used by Redis and MongoDB. Provides readline-like editing in ~1800 lines.
 
-- [ ] Add linenoise to lib/ (`lib/linenoise.c`, `lib/linenoise.h`)
+- [x] Add linenoise to deps/ (`deps/linenoise/linenoise.c`, `deps/linenoise/linenoise.h`)
 
-- [ ] Implement `fern repl`
-  - [ ] Basic read-eval-print loop
-  - [ ] Line editing (arrow keys, backspace, delete)
-  - [ ] History (up/down arrows, persistent across sessions)
-  - [ ] Tab completion for keywords and identifiers
-  - [ ] Hints (show type info while typing)
-  - [ ] Multi-line input for blocks
-  - [ ] `:help`, `:quit`, `:type <expr>` commands
+- [x] Implement `fern repl`
+  - [x] Basic read-eval-print loop
+  - [x] Line editing (arrow keys, backspace, delete)
+  - [x] History (up/down arrows, persistent to ~/.fern_history)
+  - [x] Tab completion for keywords and built-in functions
+  - [ ] Hints (show type info while typing) - deferred
+  - [ ] Multi-line input for blocks - deferred
+  - [x] `:help`, `:quit`, `:type <expr>`, `:clear` commands
+
+**Usage:**
+```
+$ fern repl
+fern> 42
+42 : Int
+fern> let x = 5
+x : Int
+fern> :type x + 1
+Int
+fern> :quit
+Goodbye!
+```
+
+**Tests:** 14 new REPL tests (382 total)
 
 ### Tasks
 
@@ -828,7 +846,7 @@ Used by Redis and MongoDB. Provides readline-like editing in ~1800 lines.
   fern test                 # Run tests
   fern test --doc           # Run doc tests
   fern fmt file.fn          # Format code
-  fern repl                 # Interactive mode
+  fern repl                 # Interactive mode ✓
   ```
 
 - [x] Implement helpful error messages
