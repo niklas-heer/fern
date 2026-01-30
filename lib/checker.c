@@ -3439,6 +3439,21 @@ const char* checker_first_error(Checker* checker) {
     return string_cstr(checker->errors->message);
 }
 
+/**
+ * @brief Clear all accumulated errors.
+ *
+ * Resets the error list so the checker can be reused for a new
+ * evaluation (e.g., in a REPL).
+ *
+ * @param checker Checker instance (must not be NULL)
+ */
+void checker_clear_errors(Checker* checker) {
+    // FERN_STYLE: allow(assertion-density) simple error reset
+    assert(checker != NULL);
+    checker->errors = NULL;
+    checker->errors_tail = NULL;
+}
+
 /* ========== Environment Access ========== */
 
 /**

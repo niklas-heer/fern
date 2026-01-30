@@ -2,13 +2,16 @@
 # A statically-typed, functional language that compiles to single binaries
 
 CC = clang
-CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude -Ilib -Ideps/qbe
+CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude -Ilib -Ideps/qbe -Ideps/linenoise
 DEBUGFLAGS = -g -O0 -DDEBUG
 RELEASEFLAGS = -O2 -DNDEBUG
 LDFLAGS =
 
 # QBE compiler flags (embedded backend, more lenient warnings for external code)
 QBE_CFLAGS = -std=c99 -Ideps/qbe -Wno-unused-parameter -Wno-sign-compare
+
+# Linenoise flags (external library, lenient warnings)
+LINENOISE_CFLAGS = -std=c11 -Ideps/linenoise -Wno-unused-parameter -Wno-missing-field-initializers
 
 # Boehm GC for runtime (automatic garbage collection)
 # Install with: brew install bdw-gc (macOS) or apt install libgc-dev (Linux)
@@ -46,6 +49,9 @@ QBE_RV64_SRCS = $(QBE_DIR)/rv64/targ.c $(QBE_DIR)/rv64/abi.c \
                 $(QBE_DIR)/rv64/isel.c $(QBE_DIR)/rv64/emit.c
 QBE_SRCS = $(QBE_COMMON_SRCS) $(QBE_AMD64_SRCS) $(QBE_ARM64_SRCS) $(QBE_RV64_SRCS)
 
+# Linenoise source files (line editing library)
+LINENOISE_SRCS = deps/linenoise/linenoise.c
+
 # Object files
 OBJS = $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 TEST_OBJS = $(TEST_SRCS:$(TEST_DIR)/%.c=$(BUILD_DIR)/test_%.o)
@@ -65,6 +71,9 @@ QBE_ARM64_OBJS = $(BUILD_DIR)/qbe_arm64_targ.o $(BUILD_DIR)/qbe_arm64_abi.o \
 QBE_RV64_OBJS = $(BUILD_DIR)/qbe_rv64_targ.o $(BUILD_DIR)/qbe_rv64_abi.o \
                 $(BUILD_DIR)/qbe_rv64_isel.o $(BUILD_DIR)/qbe_rv64_emit.o
 QBE_OBJS = $(QBE_COMMON_OBJS) $(QBE_AMD64_OBJS) $(QBE_ARM64_OBJS) $(QBE_RV64_OBJS)
+
+# Linenoise object file
+LINENOISE_OBJS = $(BUILD_DIR)/linenoise.o
 
 # Runtime library (linked into compiled Fern programs)
 RUNTIME_LIB = $(BIN_DIR)/libfern_runtime.a
@@ -87,8 +96,8 @@ debug: $(FERN_BIN) $(RUNTIME_LIB)
 release: CFLAGS += $(RELEASEFLAGS)
 release: clean $(FERN_BIN) $(RUNTIME_LIB)
 
-# Build fern compiler (includes embedded QBE backend)
-$(FERN_BIN): $(OBJS) $(LIB_OBJS) $(QBE_OBJS) | $(BIN_DIR)
+# Build fern compiler (includes embedded QBE backend and linenoise)
+$(FERN_BIN): $(OBJS) $(LIB_OBJS) $(QBE_OBJS) $(LINENOISE_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 	@echo "✓ Built fern compiler: $@"
 
@@ -104,8 +113,8 @@ test: $(TEST_BIN)
 	@echo "Running tests..."
 	@$(TEST_BIN)
 
-# Build test runner
-$(TEST_BIN): $(TEST_OBJS) $(LIB_OBJS) | $(BIN_DIR)
+# Build test runner (includes linenoise for REPL tests)
+$(TEST_BIN): $(TEST_OBJS) $(LIB_OBJS) $(LINENOISE_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 	@echo "✓ Built test runner: $@"
 
@@ -140,6 +149,10 @@ $(BUILD_DIR)/qbe_arm64_%.o: $(QBE_DIR)/arm64/%.c | $(BUILD_DIR)
 # Compile QBE rv64 target files
 $(BUILD_DIR)/qbe_rv64_%.o: $(QBE_DIR)/rv64/%.c | $(BUILD_DIR)
 	$(CC) $(QBE_CFLAGS) -c $< -o $@
+
+# Compile linenoise (external library with lenient warnings)
+$(BUILD_DIR)/linenoise.o: deps/linenoise/linenoise.c | $(BUILD_DIR)
+	$(CC) $(LINENOISE_CFLAGS) -c $< -o $@
 
 # Create directories
 $(BUILD_DIR):

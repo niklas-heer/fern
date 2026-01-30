@@ -108,6 +108,16 @@ bool checker_has_errors(Checker* checker);
  */
 const char* checker_first_error(Checker* checker);
 
+/**
+ * @brief Clear all accumulated errors.
+ *
+ * Resets the error list so the checker can be reused for a new
+ * evaluation (e.g., in a REPL).
+ *
+ * @param checker Checker instance (must not be NULL)
+ */
+void checker_clear_errors(Checker* checker);
+
 /* ========== Environment Access ========== */
 
 /**

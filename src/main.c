@@ -18,6 +18,7 @@
 #include "version.h"
 #include "errors.h"
 #include "lsp.h"
+#include "repl.h"
 
 /* ========== File Utilities ========== */
 
@@ -120,6 +121,7 @@ static int cmd_emit(Arena* arena, const char* filename);
 static int cmd_lex(Arena* arena, const char* filename);
 static int cmd_parse(Arena* arena, const char* filename);
 static int cmd_lsp(Arena* arena, const char* filename);
+static int cmd_repl(Arena* arena, const char* filename);
 
 /** All available commands. */
 static const Command COMMANDS[] = {
@@ -130,6 +132,7 @@ static const Command COMMANDS[] = {
     {"lex",   "<file>", "Show tokens (debug)",         cmd_lex},
     {"parse", "<file>", "Show AST (debug)",            cmd_parse},
     {"lsp",   "",       "Start language server",       cmd_lsp},
+    {"repl",  "",       "Interactive mode",            cmd_repl},
     {NULL, NULL, NULL, NULL}  /* Sentinel */
 };
 
@@ -642,6 +645,25 @@ static int cmd_lsp(Arena* arena, const char* filename) {
     lsp_server_free(server);
     
     return result;
+}
+
+/**
+ * REPL command: start interactive mode.
+ * @param arena The arena for allocations.
+ * @param filename Unused for REPL command (may be NULL).
+ * @return Exit code.
+ */
+static int cmd_repl(Arena* arena, const char* filename) {
+    // FERN_STYLE: allow(assertion-density) simple command handler
+    (void)filename;  // REPL doesn't take a file argument
+    
+    Repl* repl = repl_new(arena);
+    if (!repl) {
+        error_print("failed to initialize REPL");
+        return 1;
+    }
+    
+    return repl_run(repl);
 }
 
 /* ========== Main Entry Point ========== */

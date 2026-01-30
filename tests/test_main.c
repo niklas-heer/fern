@@ -10,6 +10,7 @@ void run_parser_tests(void);
 void run_type_tests(void);
 void run_checker_tests(void);
 void run_codegen_tests(void);
+void run_repl_tests(void);
 
 int main(void) {
     test_init();
@@ -25,6 +26,7 @@ int main(void) {
     run_type_tests();
     run_checker_tests();
     run_codegen_tests();
+    run_repl_tests();
     
     return TEST_FINISH();
 }
