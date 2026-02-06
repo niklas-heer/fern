@@ -23,14 +23,67 @@ jobs:
       - name: Build release binary
         run: make clean && make release
 
+      - name: Validate release staging layout
+        run: make release-package-check
+
       - name: Validate compatibility policy
         run: make release-policy-check
 
       - name: Enforce performance budgets
         run: make perf-budget PERF_BUDGET_FLAGS=--skip-build
 
-      - name: Upload release artifact
+      - name: Generate benchmark + case-study report
+        run: make benchmark-report BENCHMARK_FLAGS="--skip-release-build --output dist/benchmark-case-studies.md"
+
+      - name: Upload readiness binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fern-release-binary
+          name: fern-release-readiness-linux
           path: bin/fern
+
+      - name: Upload benchmark report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fern-benchmark-case-studies
+          path: dist/benchmark-case-studies.md
+          if-no-files-found: error
+
+  package-bundles:
+    name: Package Release Bundles
+    needs: release-readiness
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: macos
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang make libgc-dev python3
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install bdw-gc
+          clang --version
+
+      - name: Build and package release bundle
+        run: make clean && make release-package
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fern-release-${{ matrix.platform }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+          if-no-files-found: error

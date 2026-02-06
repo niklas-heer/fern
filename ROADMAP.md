@@ -8,10 +8,10 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `make test` passing (**475/475**)
+- Build/tests: `make test` passing (**479/479**)
 - Style: `make style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
-- Current focus: Gate D kickoff (LSP depth, packaging/release hardening, reproducible benchmark publishing)
+- Current focus: Post-Gate D stabilization and adoption docs maintenance
 
 ## Working Model
 
@@ -92,19 +92,19 @@ Gates are sequential. Only one gate is active at a time.
 
 ### Gate D: Ecosystem and Adoption
 
-**Status:** ACTIVE (2026-02-06)
+**Status:** PASSED (2026-02-06)
 **Maps to milestones:** 10.5 follow-up, 11
 **Dependency:** Gate C passed
 
 **Implementation checklist:**
 - [x] Expand LSP beyond MVP (completion, rename, code actions, better positions) (`include/lsp.h`, `lib/lsp.c`, `tests/test_lsp.c`)
-- [ ] Harden packaging/release workflow for single-binary distribution
-- [ ] Publish reproducible benchmarks and case studies
+- [x] Harden packaging/release workflow for single-binary distribution (`scripts/package_release.py`, `tests/test_release_packaging.c`, `.github/workflows/release.yml`)
+- [x] Publish reproducible benchmarks and case studies (`scripts/publish_benchmarks.py`, `tests/test_benchmark_publication.c`, `docs/reports/benchmark-case-studies-2026-02-06.md`)
 
 **Pass criteria (all required):**
-- [ ] First-run developer workflow is smooth across supported platforms
-- [ ] Benchmark claims are reproducible from repository scripts
-- [ ] Adoption docs/templates are versioned and maintained
+- [x] First-run developer workflow is smooth across supported platforms (`release.yml` bundle matrix for Linux/macOS + release layout validation)
+- [x] Benchmark claims are reproducible from repository scripts (`make benchmark-report`, `scripts/publish_benchmarks.py`, report artifact upload in release workflow)
+- [x] Adoption docs/templates are versioned and maintained (canonical examples + published benchmark case-study report in `docs/reports/`)
 
 ## Milestone Status (Condensed)
 
@@ -136,11 +136,11 @@ Gates are sequential. Only one gate is active at a time.
 
 ## Next Session Start Here
 
-Gate C pass criteria are fully closed and verified via `make check`. Continue with Gate D execution.
+Gate D pass criteria are now closed and validated with test + workflow coverage. Next work should focus on milestone polish items and adoption follow-through.
 
 1. [x] Gate D / Task 1: Expand LSP beyond MVP (completion, rename, code actions, better source positions)
-2. [ ] Gate D / Task 2: Harden packaging/release workflow for single-binary distribution
-3. [ ] Gate D / Task 3: Publish reproducible benchmarks and case studies
+2. [x] Gate D / Task 2: Harden packaging/release workflow for single-binary distribution
+3. [x] Gate D / Task 3: Publish reproducible benchmarks and case studies
 
 ## Active Backlog (By Gate)
 

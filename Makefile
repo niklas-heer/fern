@@ -86,6 +86,7 @@ FUZZ_SRCS = tests/fuzz/fuzz_runner.c tests/fuzz/fuzz_generator.c
 FUZZ_TEST_OBJ = $(BUILD_DIR)/fuzz_generator_test.o
 PERF_BUDGET_FLAGS ?=
 RELEASE_POLICY_DOC ?= docs/COMPATIBILITY_POLICY.md
+FERN_VERSION_STRING := $(shell awk -F\" '/FERN_VERSION_STRING/ {print $$2}' include/version.h)
 
 # Default target
 .PHONY: all
@@ -306,6 +307,37 @@ perf-budget:
 release-policy-check:
 	@python3 scripts/check_release_policy.py $(RELEASE_POLICY_DOC)
 
+# Publish reproducible benchmark + case-study report
+.PHONY: benchmark-report
+benchmark-report:
+	@python3 scripts/publish_benchmarks.py $(BENCHMARK_FLAGS)
+
+# Package release bundle (fern + libfern_runtime.a + docs/license) into dist/
+.PHONY: release-package
+release-package: release
+	@rm -rf dist/staging
+	@mkdir -p dist/staging
+	@cp bin/fern dist/staging/fern
+	@cp bin/libfern_runtime.a dist/staging/libfern_runtime.a
+	@cp LICENSE dist/staging/LICENSE
+	@cp README.md dist/staging/README.md
+	@mkdir -p dist/staging/docs
+	@cp docs/COMPATIBILITY_POLICY.md dist/staging/docs/COMPATIBILITY_POLICY.md
+	@python3 scripts/package_release.py package \
+		--version $(FERN_VERSION_STRING) \
+		--staging dist/staging \
+		--out-dir dist
+
+# Validate staging layout for release packaging
+.PHONY: release-package-check
+release-package-check:
+	@python3 scripts/package_release.py verify-layout --staging bin
+
+# End-to-end LSP JSON-RPC smoke validation
+.PHONY: lsp-rpc-smoke
+lsp-rpc-smoke: debug
+	@python3 scripts/lsp_rpc_smoke.py
+
 # Generate editor support files (syntax highlighting, grammar, etc.)
 # Run this after changing language keywords/tokens in include/token.h
 .PHONY: editor-support
@@ -346,7 +378,11 @@ help:
 	@echo "  make fuzz-smoke   - Run short fuzzing pass"
 	@echo "  make fuzz-forever - Run fuzzing in a loop"
 	@echo "  make perf-budget  - Enforce compile/startup/size budgets"
+	@echo "  make benchmark-report - Publish benchmark + case-study report"
 	@echo "  make release-policy-check - Validate compatibility policy doc"
+	@echo "  make release-package - Build and package release bundle into dist/"
+	@echo "  make release-package-check - Validate release staging inputs"
+	@echo "  make lsp-rpc-smoke - Run JSON-RPC smoke test against fern lsp"
 	@echo "  make clean        - Remove build artifacts"
 	@echo "  make install      - Install fern to /usr/local/bin"
 	@echo "  make uninstall    - Remove installed fern"
