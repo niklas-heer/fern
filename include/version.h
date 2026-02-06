@@ -11,7 +11,7 @@
 #define FERN_VERSION_H
 
 /* String version for display */
-#define FERN_VERSION_STRING "0.1.0" /* x-release-please-version */
+#define FERN_VERSION_STRING "0.2.0" /* x-release-please-version */
 
 /* Full version with name */
 #define FERN_VERSION "fern " FERN_VERSION_STRING
