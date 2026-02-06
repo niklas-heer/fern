@@ -354,10 +354,15 @@ void test_cli_check_type_error_includes_snippet_note_and_help(void) {
 }
 
 void test_cli_test_command_runs_unit_tests(void) {
-    CmdResult result = run_cmd("FERN_TEST_CMD='echo unit-tests-ok' ./bin/fern test 2>&1");
+    CmdResult result = run_cmd(
+        "FERN_TEST_CMD='echo unit-tests-ok' "
+        "FERN_TEST_DOC_CMD='echo doc-tests-ok' "
+        "./bin/fern test 2>&1"
+    );
     ASSERT_EQ(result.exit_code, 0);
     ASSERT_NOT_NULL(result.output);
     ASSERT_TRUE(strstr(result.output, "unit-tests-ok") != NULL);
+    ASSERT_TRUE(strstr(result.output, "doc-tests-ok") != NULL);
 
     free(result.output);
 }
@@ -367,6 +372,44 @@ void test_cli_test_doc_command_runs_doc_tests(void) {
     ASSERT_EQ(result.exit_code, 0);
     ASSERT_NOT_NULL(result.output);
     ASSERT_TRUE(strstr(result.output, "doc-tests-ok") != NULL);
+    ASSERT_TRUE(strstr(result.output, "unit-tests-ok") == NULL);
+
+    free(result.output);
+}
+
+void test_cli_help_lists_doc_command(void) {
+    CmdResult result = run_cmd("./bin/fern --help 2>&1");
+    ASSERT_EQ(result.exit_code, 0);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_TRUE(strstr(result.output, "doc") != NULL);
+    ASSERT_TRUE(strstr(result.output, "Generate documentation") != NULL);
+
+    free(result.output);
+}
+
+void test_cli_doc_command_runs_generator(void) {
+    CmdResult result = run_cmd("FERN_DOC_CMD='echo docs-ok' ./bin/fern doc 2>&1");
+    ASSERT_EQ(result.exit_code, 0);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_TRUE(strstr(result.output, "docs-ok") != NULL);
+
+    free(result.output);
+}
+
+void test_cli_doc_open_command_runs_generator(void) {
+    CmdResult result = run_cmd("FERN_DOC_OPEN_CMD='echo docs-open-ok' ./bin/fern doc --open 2>&1");
+    ASSERT_EQ(result.exit_code, 0);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_TRUE(strstr(result.output, "docs-open-ok") != NULL);
+
+    free(result.output);
+}
+
+void test_cli_open_option_only_valid_for_doc(void) {
+    CmdResult result = run_cmd("./bin/fern test --open 2>&1");
+    ASSERT_EQ(result.exit_code, 1);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_TRUE(strstr(result.output, "--open is only valid for the doc command") != NULL);
 
     free(result.output);
 }
@@ -374,6 +417,7 @@ void test_cli_test_doc_command_runs_doc_tests(void) {
 void run_cli_main_tests(void) {
     printf("\n=== CLI Main Tests ===\n");
     TEST_RUN(test_cli_help_lists_global_flags);
+    TEST_RUN(test_cli_help_lists_doc_command);
     TEST_RUN(test_cli_quiet_suppresses_check_success_output);
     TEST_RUN(test_cli_verbose_emits_debug_lines);
     TEST_RUN(test_cli_verbose_after_command_emits_debug_lines);
@@ -385,4 +429,7 @@ void run_cli_main_tests(void) {
     TEST_RUN(test_cli_check_type_error_includes_snippet_note_and_help);
     TEST_RUN(test_cli_test_command_runs_unit_tests);
     TEST_RUN(test_cli_test_doc_command_runs_doc_tests);
+    TEST_RUN(test_cli_doc_command_runs_generator);
+    TEST_RUN(test_cli_doc_open_command_runs_generator);
+    TEST_RUN(test_cli_open_option_only_valid_for_doc);
 }

@@ -218,6 +218,26 @@ style:
 style-lenient:
 	@uv run scripts/check_style.py --style-only --lenient $(SRC_DIR) $(LIB_DIR)
 
+# Run the Fern implementation of the style checker (bootstrapping progress)
+.PHONY: style-fern
+style-fern: debug
+	@$(FERN_BIN) run scripts/check_style.fn
+
+# Compare Python checker and Fern checker exit-code parity
+.PHONY: style-parity
+style-parity: debug
+	@echo "Comparing style checker parity (python vs fern)..."
+	@py_status=0; fern_status=0; \
+	uv run scripts/check_style.py --style-only $(SRC_DIR) $(LIB_DIR) > /tmp/fern_style_python.out 2>&1 || py_status=$$?; \
+	$(FERN_BIN) run scripts/check_style.fn > /tmp/fern_style_fern.out 2>&1 || fern_status=$$?; \
+	echo "  python status: $$py_status"; \
+	echo "  fern status:   $$fern_status"; \
+	if [ $$py_status -ne $$fern_status ]; then \
+		echo "  parity mismatch (see /tmp/fern_style_python.out and /tmp/fern_style_fern.out)"; \
+		exit 1; \
+	fi; \
+	echo "✓ style checker exit-code parity"
+
 # Pre-commit hook check
 .PHONY: pre-commit
 pre-commit:
@@ -336,6 +356,8 @@ help:
 	@echo "Quality Checks (strict mode - warnings are errors):"
 	@echo "  make check        - Full check (build + test + style)"
 	@echo "  make style        - FERN_STYLE only (strict)"
+	@echo "  make style-fern   - Run Fern implementation of style checker"
+	@echo "  make style-parity - Compare Python vs Fern checker exit status"
 	@echo "  make style-lenient - FERN_STYLE only (warnings allowed)"
 	@echo "  make pre-commit   - Pre-commit hook check"
 	@echo ""

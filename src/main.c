@@ -127,6 +127,7 @@ static int cmd_lex(Arena* arena, const char* filename);
 static int cmd_parse(Arena* arena, const char* filename);
 static int cmd_fmt(Arena* arena, const char* filename);
 static int cmd_test(Arena* arena, const char* filename);
+static int cmd_doc(Arena* arena, const char* filename);
 static int cmd_lsp(Arena* arena, const char* filename);
 static int cmd_repl(Arena* arena, const char* filename);
 static void report_parse_failure(const char* filename);
@@ -144,6 +145,7 @@ static const Command COMMANDS[] = {
     {"parse", "<file>", "Show AST (debug)",            cmd_parse},
     {"fmt",   "<file>", "Format source deterministically", cmd_fmt},
     {"test",  "",       "Run project tests",           cmd_test},
+    {"doc",   "",       "Generate documentation",      cmd_doc},
     {"lsp",   "",       "Start language server",       cmd_lsp},
     {"repl",  "",       "Interactive mode",            cmd_repl},
     {NULL, NULL, NULL, NULL}  /* Sentinel */
@@ -154,6 +156,7 @@ static const Option OPTIONS[] = {
     {"-h", "--help",    "Show this help message"},
     {"-v", "--version", "Show version information"},
     {"-o", "--output",  "Output file (build only)"},
+    {"",   "--open",    "Open generated docs (doc only)"},
     {"",   "--color",   "Color output: --color=auto|always|never"},
     {"",   "--quiet",   "Suppress non-error output"},
     {"",   "--verbose", "Enable verbose diagnostic output"},
@@ -499,6 +502,7 @@ static const char* g_exe_path = NULL;
 /* Global variable for output filename (-o flag) */
 static const char* g_output_file = NULL;
 static bool g_test_doc_mode = false;
+static bool g_doc_open_mode = false;
 
 typedef enum {
     LOG_NORMAL = 0,
@@ -678,6 +682,50 @@ static int run_shell_command(const char* command) {
         return WEXITSTATUS(status);
     }
     return 1;
+}
+
+/**
+ * Shell-quote a single argument using POSIX-safe single-quote escaping.
+ * @param input Raw argument text.
+ * @param output Destination buffer for quoted output.
+ * @param output_size Capacity of output buffer.
+ * @return True on success, false if output buffer is too small.
+ */
+static bool shell_quote_arg(const char* input, char* output, size_t output_size) {
+    // FERN_STYLE: allow(assertion-density, no-raw-char) output buffer is an explicit out-parameter
+    assert(input != NULL);
+    assert(output != NULL);
+    assert(output_size > 2);
+    if (!input || !output || output_size <= 2) {
+        return false;
+    }
+
+    size_t out = 0;
+    output[out++] = '\'';
+
+    for (const char* p = input; *p != '\0'; p++) {
+        if (*p == '\'') {
+            if (out + 4 >= output_size) {
+                return false;
+            }
+            output[out++] = '\'';
+            output[out++] = '\\';
+            output[out++] = '\'';
+            output[out++] = '\'';
+        } else {
+            if (out + 1 >= output_size) {
+                return false;
+            }
+            output[out++] = *p;
+        }
+    }
+
+    if (out + 2 > output_size) {
+        return false;
+    }
+    output[out++] = '\'';
+    output[out] = '\0';
+    return true;
 }
 
 /* ========== Commands ========== */
@@ -1046,19 +1094,86 @@ static int cmd_test(Arena* arena, const char* filename) {
     (void)arena;
     (void)filename;
 
-    const char* override = NULL;
-    const char* command = NULL;
+    const char* test_override = getenv("FERN_TEST_CMD");
+    const char* doc_override = getenv("FERN_TEST_DOC_CMD");
+    const char* test_command = (test_override && test_override[0] != '\0') ? test_override : "make test";
+    const char* doc_command = (doc_override && doc_override[0] != '\0') ? doc_override : "make test-examples";
+
     if (g_test_doc_mode) {
-        override = getenv("FERN_TEST_DOC_CMD");
-        command = (override && override[0] != '\0') ? override : "make test-examples";
         log_info("Running documentation tests...\n");
-    } else {
-        override = getenv("FERN_TEST_CMD");
-        command = (override && override[0] != '\0') ? override : "make test";
-        log_info("Running tests...\n");
+        log_verbose("verbose: test doc command=%s\n", doc_command);
+        return run_shell_command(doc_command);
     }
 
-    log_verbose("verbose: test command=%s\n", command);
+    log_info("Running tests...\n");
+    log_verbose("verbose: test command=%s\n", test_command);
+    int test_exit = run_shell_command(test_command);
+    if (test_exit != 0) {
+        return test_exit;
+    }
+
+    log_info("Running documentation tests...\n");
+    log_verbose("verbose: test doc command=%s\n", doc_command);
+    return run_shell_command(doc_command);
+}
+
+/**
+ * Doc command: generate project/module documentation.
+ * @param arena Unused for doc command (may be NULL).
+ * @param filename Optional path to a Fern source file or directory.
+ * @return Exit code from the underlying documentation command.
+ */
+static int cmd_doc(Arena* arena, const char* filename) {
+    // FERN_STYLE: allow(assertion-density) command wrapper with env overrides and optional args
+    (void)arena;
+
+    const char* override = NULL;
+    const char* command = NULL;
+    char quoted_path[1024];
+    char command_buf[2304];
+
+    if (g_doc_open_mode) {
+        override = getenv("FERN_DOC_OPEN_CMD");
+        command = (override && override[0] != '\0') ? override : NULL;
+        log_info("Generating documentation and opening output...\n");
+    } else {
+        override = getenv("FERN_DOC_CMD");
+        command = (override && override[0] != '\0') ? override : NULL;
+        log_info("Generating documentation...\n");
+    }
+
+    if (command == NULL) {
+        if (filename && filename[0] != '\0') {
+            if (!shell_quote_arg(filename, quoted_path, sizeof(quoted_path))) {
+                error_print("failed to process documentation path argument");
+                return 1;
+            }
+            if (g_doc_open_mode) {
+                snprintf(
+                    command_buf,
+                    sizeof(command_buf),
+                    "python3 scripts/generate_docs.py --open --path %s",
+                    quoted_path
+                );
+            } else {
+                snprintf(
+                    command_buf,
+                    sizeof(command_buf),
+                    "python3 scripts/generate_docs.py --path %s",
+                    quoted_path
+                );
+            }
+        } else {
+            if (g_doc_open_mode) {
+                snprintf(command_buf, sizeof(command_buf), "python3 scripts/generate_docs.py --open");
+            } else {
+                snprintf(command_buf, sizeof(command_buf), "python3 scripts/generate_docs.py");
+            }
+        }
+        command = command_buf;
+    }
+
+    log_verbose("verbose: doc command=%s\n", command);
     return run_shell_command(command);
 }
 
@@ -1121,6 +1236,7 @@ int main(int argc, char** argv) {
     // Store executable path for runtime library lookup
     g_exe_path = argv[0];
     g_test_doc_mode = false;
+    g_doc_open_mode = false;
     
     // Need at least a command
     if (argc < 2) {
@@ -1219,6 +1335,13 @@ int main(int argc, char** argv) {
             }
             g_test_doc_mode = true;
             arg_index++;
+        } else if (strcmp(argv[arg_index], "--open") == 0) {
+            if (strcmp(cmd->name, "doc") != 0) {
+                error_print("--open is only valid for the doc command");
+                return 1;
+            }
+            g_doc_open_mode = true;
+            arg_index++;
         } else {
             error_print("unknown option '%s'", argv[arg_index]);
             return 1;
@@ -1237,6 +1360,14 @@ int main(int argc, char** argv) {
             return 1;
         }
         filename = argv[arg_index];
+        arg_index++;
+    } else if (arg_index < argc) {
+        filename = argv[arg_index];
+        arg_index++;
+    }
+    if (arg_index < argc) {
+        error_print("unexpected argument '%s'", argv[arg_index]);
+        return 1;
     }
     
     // Create arena for compiler session
