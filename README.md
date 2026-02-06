@@ -2,7 +2,7 @@
 
 > A statically-typed, functional language with Python aesthetics that compiles to single binaries.
 
-**Status:** 🚧 In active development - Milestone 4 (Code Generation) in progress, 346 tests passing
+**Status:** 🚧 In active development - Gate D complete, 479 tests passing, and release packaging/benchmark publishing in CI
 
 ## What is Fern?
 
@@ -52,47 +52,32 @@ Ok(process(validated))
 
 - **Static types** with inference - safety without verbosity
 - **Pattern matching** - exhaustiveness checking catches bugs
-- **Garbage collected** - automatic memory management (Boehm GC)
-- **Actor concurrency** - Erlang/Elixir-style lightweight processes
-- **Embedded database** - libSQL included (SQLite-compatible)
-- **Helpful errors** - compiler guides you to solutions
-- **Doc tests** - examples in docs are automatically tested
+- **Garbage collected runtime** - Boehm-backed runtime plus Perceus baseline ownership primitives
+- **Language tooling** - LSP with diagnostics, hover, definition, completion, rename, and code actions
+- **Stable stdlib API surface** - `fs`, `http`, `json`, `sql`, `actors`, and `File` alias compatibility
+- **Helpful diagnostics** - snippets, notes, and fix hints in CLI workflows
+- **Reproducible quality gates** - `make check`, fuzz smoke, perf budgets, release policy checks
 
 ## Current Status
 
-We're implementing the compiler using test-driven development. See [DESIGN.md](DESIGN.md) for the complete language specification.
+Fern is implemented with strict TDD. See [DESIGN.md](DESIGN.md) for language details and [ROADMAP.md](ROADMAP.md) for gate-by-gate status.
 
-**Completed:**
-- ✅ Milestone 0: Project Setup
-  - Build system and test infrastructure
-  - Safety libraries (arena, strings, collections)
-  - Development workflow and pre-commit hooks
-  - CI/CD pipeline
-- ✅ Milestone 1: Lexer
-  - All keywords, operators, literals
-  - `?` operator for Result propagation
-  - Block comments (`/* */`)
-- ✅ Milestone 2: Parser
-  - Expression parsing with Pratt precedence
-  - Statement parsing (let, fn, return, if, match, for)
-  - Pattern matching, type annotations
-  - Function definitions with clauses
-- ✅ Milestone 3: Type Checker
-  - Hindley-Milner type inference
-  - Generic types, Result/Option handling
-  - Pipe operator type checking
+**Execution gates:**
+- ✅ Gate A (DX + language feel) passed
+- ✅ Gate B (reliability + regression resistance) passed
+- ✅ Gate C (stdlib/runtime surface quality) passed
+- ✅ Gate D (ecosystem/adoption hardening) passed
 
-**In Progress:**
-- 🚧 Milestone 4: Code Generation
-  - QBE IR generation from AST
-  - Runtime library (Result, List, String operations)
-  - Automatic garbage collection (Boehm GC)
-  - 346 tests passing
+**Recent outcomes:**
+- ✅ 479/479 tests passing in local `make test`
+- ✅ Cross-platform CI (Ubuntu + macOS) with build/test/style/perf/fuzz/example checks
+- ✅ Release packaging bundles (`fern` + `libfern_runtime.a` + policy/docs artifacts)
+- ✅ Conventional-commit-driven semver + release notes via `release-please`
+- ✅ Published reproducible benchmark + case-study report in `docs/reports/benchmark-case-studies-2026-02-06.md`
+- ✅ LSP support beyond MVP (completion, rename, code actions, better source positions)
 
-**Planned:**
-- FernFuzz: Grammar-based fuzzing for compiler testing
-- FernDoc: HexDocs-style documentation generation
-- See [ROADMAP.md](ROADMAP.md) for full plan
+**Active focus:**
+- 🚧 Post-Gate D stabilization and milestone polish (see [ROADMAP.md](ROADMAP.md))
 
 ## Documentation
 
@@ -160,8 +145,11 @@ dnf install gc-devel
 ```bash
 make           # Release build
 make debug     # Debug build with symbols
-make test      # Run test suite (346 tests)
-make style     # Check FERN_STYLE compliance
+make test      # Run test suite
+make check     # Build + tests + examples + strict style checks
+make style     # Check FERN_STYLE compliance only
+make release-package   # Build + package release bundle into dist/
+make benchmark-report  # Publish reproducible benchmark + case-study report
 ```
 
 ## FAQ
@@ -190,7 +178,7 @@ Why? Because we can, and it makes your file explorer more interesting.
 
 ### Is Fern production-ready?
 
-Not yet. We're in active development (Milestone 4 of 9). See [ROADMAP.md](ROADMAP.md) for current progress. The compiler is being built with extensive testing, including planned deterministic simulation testing for the actor system.
+Not yet. Core compiler/runtime/tooling paths are heavily tested and Gate D is complete, but Fern is still pre-1.0 and evolving. See [ROADMAP.md](ROADMAP.md) and [docs/COMPATIBILITY_POLICY.md](docs/COMPATIBILITY_POLICY.md) for current guarantees and planned work.
 
 ## License
 

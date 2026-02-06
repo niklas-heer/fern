@@ -149,6 +149,21 @@ Fern uses Semantic Versioning aligned with `include/version.h`.
 
 `include/version.h` is the single source of truth for version numbers.
 
+## Automated Release Flow
+
+Fern uses conventional commit messages with `release-please` to automate:
+
+1. Semver bump calculation (`major`/`minor`/`patch`) based on commit intent.
+2. Release note/changelog generation.
+3. Version updates in tracked files (including `include/version.h`).
+4. Creation of version tags (for example: `v0.2.0`), which trigger the release packaging workflow.
+
+Workflow/config files:
+
+1. `.github/workflows/release-please.yml`
+2. `.github/release-please-config.json`
+3. `.github/.release-please-manifest.json`
+
 ## Release Checklist
 
 Before any tagged release:
@@ -160,6 +175,9 @@ Before any tagged release:
    - compatibility notes,
    - deprecations and removals,
    - migration guidance.
+
+For normal releases, tags and release notes are produced by `release-please`.
+Manual tags should only be used for exceptional recovery flows.
 
 The release workflow must fail if policy checks fail.
 

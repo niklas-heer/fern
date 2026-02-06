@@ -5,7 +5,7 @@ CC = clang
 CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude -Ilib -Ideps/qbe -Ideps/linenoise
 DEBUGFLAGS = -g -O0 -DDEBUG
 RELEASEFLAGS = -O2 -DNDEBUG
-LDFLAGS =
+LDFLAGS = -lm
 
 # QBE compiler flags (embedded backend, more lenient warnings for external code)
 QBE_CFLAGS = -std=c99 -Ideps/qbe -Wno-unused-parameter -Wno-sign-compare

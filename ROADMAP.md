@@ -11,6 +11,7 @@ Detailed historical logs and old iteration notes were moved to:
 - Build/tests: `make test` passing (**479/479**)
 - Style: `make style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
+- Release automation: conventional-commit-driven semver + release notes configured via `release-please`
 - Current focus: Post-Gate D stabilization and adoption docs maintenance
 
 ## Working Model
