@@ -875,27 +875,66 @@ int64_t fern_sql_open(const char* path);
 int64_t fern_sql_execute(int64_t handle, const char* query);
 
 /**
- * Start an actor and return its id.
- * Current implementation assigns deterministic process-local ids.
+ * Spawn an actor and return its id.
  * @param name Actor name.
- * @return Actor id (positive integer).
+ * @return Actor id (positive integer), or 0 on allocation failure.
+ */
+int64_t fern_actor_spawn(const char* name);
+
+/**
+ * Send a message to an actor mailbox.
+ * @param actor_id Destination actor id.
+ * @param msg Message payload.
+ * @return Result: Ok(0) on enqueue, Err(error code) for invalid actor/input.
+ */
+int64_t fern_actor_send(int64_t actor_id, const char* msg);
+
+/**
+ * Receive the next actor message from a mailbox.
+ * @param actor_id Actor id.
+ * @return Result: Ok(message) or Err(error code) if mailbox is empty/invalid.
+ */
+int64_t fern_actor_receive(int64_t actor_id);
+
+/**
+ * Get current mailbox length for an actor.
+ * @param actor_id Actor id.
+ * @return Number of queued messages, or -1 for invalid actor id.
+ */
+int64_t fern_actor_mailbox_len(int64_t actor_id);
+
+/**
+ * Return next runnable actor id from scheduler queue.
+ *
+ * The scheduler returns actors in round-robin order across ready actors.
+ * Each successful send contributes one scheduler ticket for that actor.
+ *
+ * @return Actor id, or 0 when no actor is ready.
+ */
+int64_t fern_actor_scheduler_next(void);
+
+/**
+ * Start an actor and return its id.
+ * Compatibility alias for fern_actor_spawn().
+ * @param name Actor name.
+ * @return Actor id (positive integer), or 0 on allocation failure.
  */
 int64_t fern_actor_start(const char* name);
 
 /**
  * Post a message to an actor.
- * Current implementation accepts and drops the message.
+ * Compatibility alias for fern_actor_send().
  * @param actor_id Destination actor id.
  * @param msg Message payload.
- * @return Result: Ok(0) or Err(error code).
+ * @return Result: Ok(0) on enqueue, Err(error code) for invalid actor/input.
  */
 int64_t fern_actor_post(int64_t actor_id, const char* msg);
 
 /**
  * Receive the next actor message.
- * Current implementation returns Err(FERN_ERR_IO) when no queue is available.
+ * Compatibility alias for fern_actor_receive().
  * @param actor_id Actor id.
- * @return Result: Ok(message) or Err(error code).
+ * @return Result: Ok(message) or Err(error code) if mailbox is empty/invalid.
  */
 int64_t fern_actor_next(int64_t actor_id);
 

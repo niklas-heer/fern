@@ -35,9 +35,9 @@ Compatibility alias policy:
 2. Any future alias deprecation must follow the lifecycle below and keep the minimum 2-minor-release support window.
 3. New APIs may be added to these modules in minor releases, but existing signatures must remain backward compatible.
 
-### Gate C Runtime Placeholder Contract (2026-02-06)
+### Gate C Runtime Contract (2026-02-06)
 
-Until full `json/http/sql/actors` runtimes land, the current runtime behavior is stabilized as:
+Gate C runtime behavior is stabilized as:
 
 1. `json.parse(text)`:
    - `Err(FERN_ERR_IO)` for empty input.
@@ -51,11 +51,19 @@ Until full `json/http/sql/actors` runtimes land, the current runtime behavior is
 5. `actors.start(name)`:
    - Returns deterministic, process-local, monotonic actor ids.
 6. `actors.post(actor_id, msg)`:
-   - `Ok(0)` placeholder acknowledgment.
+   - Enqueues a message copy into actor mailbox FIFO and returns `Ok(0)`.
+   - Returns `Err(FERN_ERR_IO)` for invalid actor ids or invalid message pointers.
 7. `actors.next(actor_id)`:
-   - `Err(FERN_ERR_IO)` when no queue/backend exists.
+   - Returns `Ok(message)` in FIFO order when mailbox is non-empty.
+   - Returns `Err(FERN_ERR_IO)` for empty mailbox or invalid actor id.
+8. Runtime C-ABI actor helpers:
+   - `fern_actor_spawn(name)` mirrors `actors.start`.
+   - `fern_actor_send(actor_id, msg)` mirrors `actors.post`.
+   - `fern_actor_receive(actor_id)` mirrors `actors.next`.
+   - `fern_actor_mailbox_len(actor_id)` returns mailbox length or `-1` for invalid actor id.
+   - `fern_actor_scheduler_next()` returns next ready actor id in round-robin order, or `0` when no actor is ready.
 
-These behaviors are regression-tested in `tests/test_runtime_surface.c` and treated as the compatibility baseline for Gate C placeholders.
+These behaviors are regression-tested in `tests/test_runtime_surface.c` and treated as the compatibility baseline for Gate C runtime behavior.
 
 ### Milestone 7.7 Step A Memory API Contract (2026-02-06)
 

@@ -8,10 +8,10 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `make test` passing (**455/455**)
+- Build/tests: `make test` passing (**456/456**)
 - Style: `make style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
-- Current focus: Gate C actor runtime core work (`spawn`, `send`, `receive`, scheduler) after completing Milestone 7.7 A-D
+- Current focus: Gate C templates/examples and CI validation after landing actor runtime core baseline
 
 ## Working Model
 
@@ -77,7 +77,7 @@ Gates are sequential. Only one gate is active at a time.
 - [x] Milestone 7.7 / Step B: Add Perceus object header + refcount ops for core heap value types (`fern_rc_alloc/dup/drop`, header metadata accessors, core type tags validated in `test_runtime_rc_header_and_core_type_ops`)
 - [x] Milestone 7.7 / Step C: Add initial dup/drop insertion in codegen for a constrained, test-covered subset (`test_codegen_dup_inserted_for_pointer_alias_binding`, `test_codegen_drop_inserted_for_unreturned_pointer_bindings`)
 - [x] Milestone 7.7 / Step D: Benchmark/compare Boehm bridge vs Perceus baseline vs WasmGC feasibility and record default + fallback path (`scripts/compare_memory_paths.py`, `docs/reports/memory-path-comparison-2026-02-06.md`)
-- [ ] Complete actor runtime core (`spawn`, `send`, `receive`, scheduler)
+- [x] Complete actor runtime core (`spawn`, `send`, `receive`, scheduler) with in-memory mailbox FIFO + round-robin scheduler tickets (`test_runtime_actors_post_and_next_mailbox_contract`, `test_runtime_actor_scheduler_round_robin_contract`)
 - [ ] Ship canonical templates/examples: tiny CLI, HTTP API, actor-based app
 - [ ] Continuous example validation + doc tests in CI
 - [ ] Advance bootstrapping tools (`fern doc`, `fern test`, `fern-style` parity targets)
@@ -86,7 +86,7 @@ Gates are sequential. Only one gate is active at a time.
 - [ ] Canonical examples and templates are continuously green in CI
 - [ ] Core stdlib APIs are stable and documented
 - [x] Milestone 7.7 implementation tranche (A-D) is complete with tests and measured tradeoffs, and a chosen default memory path for first WASM target (`docs/reports/memory-path-comparison-2026-02-06.md`, `docs/MEMORY_MANAGEMENT.md`, `DECISIONS.md`)
-- [ ] Actor baseline scenarios pass deterministic tests
+- [x] Actor baseline scenarios pass deterministic tests (`test_runtime_actors_post_and_next_mailbox_contract`, `test_runtime_actor_scheduler_round_robin_contract`, `make check`)
 
 ### Gate D: Ecosystem and Adoption
 
@@ -134,12 +134,12 @@ Gates are sequential. Only one gate is active at a time.
 
 ## Next Session Start Here
 
-Gate C Task 1 and Milestone 7.7 Steps A-D are complete. Continue with actor runtime core work next.
+Gate C Task 2 actor runtime core baseline is complete. Continue with templates/examples and CI validation next.
 
 1. [x] Gate C / Task 1.5b: Milestone 7.7 - implement Perceus object header and RC ops for core heap types (`test_runtime_rc_header_and_core_type_ops`)
 2. [x] Gate C / Task 1.5c: Milestone 7.7 - add constrained dup/drop insertion in codegen with focused tests (`test_codegen_dup_inserted_for_pointer_alias_binding`, `test_codegen_drop_inserted_for_unreturned_pointer_bindings`)
 3. [x] Gate C / Task 1.5d: Milestone 7.7 - benchmark WASM memory/runtime options and finalize default + fallback path in docs/decisions (`docs/reports/memory-path-comparison-2026-02-06.md`, Decision 33)
-4. [ ] Gate C / Task 2: Complete actor runtime core (`spawn`, `send`, `receive`, scheduler) building on FernSim scaffolding
+4. [x] Gate C / Task 2: Complete actor runtime core (`spawn`, `send`, `receive`, scheduler) with runtime C-ABI and surface tests (`runtime/fern_runtime.c`, `runtime/fern_runtime.h`, `tests/test_runtime_surface.c`)
 5. [ ] Gate C / Task 3: Add canonical templates/examples (tiny CLI, HTTP API, actor app) with CI validation
 6. [ ] Gate C / Task 4: Advance bootstrapping tools (`fern doc`, `fern test`, `fern-style` parity targets)
 
@@ -163,7 +163,7 @@ Gate C Task 1 and Milestone 7.7 Steps A-D are complete. Continue with actor runt
 
 - [ ] Extended stdlib modules with doc tests
 - [x] Milestone 7.7 WASM memory/runtime implementation tranche (abstraction + RC baseline + codegen subset + decision artifact)
-- [ ] Actor runtime core (`spawn`, `send`, `receive`, scheduler)
+- [x] Actor runtime core baseline (`spawn`, `send`, `receive`, scheduler`) with mailbox/scheduler runtime tests
 - [ ] `fern doc` documentation generation pipeline
 - [ ] LSP expansion beyond MVP (completion/rename/code actions)
 

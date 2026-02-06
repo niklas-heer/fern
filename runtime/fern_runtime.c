@@ -2046,17 +2046,375 @@ int64_t fern_sql_execute(int64_t handle, const char* query) {
     return fern_result_err(FERN_ERR_IO);
 }
 
+typedef struct {
+    int64_t actor_id;
+    char* name;
+    char** mailbox_data;
+    int64_t mailbox_head;
+    int64_t mailbox_len;
+    int64_t mailbox_cap;
+    int64_t scheduler_tokens;
+    int64_t scheduler_enqueued;
+} FernActorRecord;
+
+typedef struct {
+    FernActorRecord* actors;
+    int64_t actor_len;
+    int64_t actor_cap;
+    int64_t next_actor_id;
+    int64_t* ready_ids;
+    int64_t ready_head;
+    int64_t ready_len;
+    int64_t ready_cap;
+} FernActorRuntimeState;
+
+static FernActorRuntimeState g_actor_runtime;
+
+/**
+ * Get actor runtime state with lazy initialization.
+ * @return Pointer to actor runtime state.
+ */
+static FernActorRuntimeState* fern_actor_runtime_state(void) {
+    FernActorRuntimeState* state = &g_actor_runtime;
+    assert(state != NULL);
+    if (state->next_actor_id == 0) {
+        state->next_actor_id = 1;
+    }
+    assert(state->next_actor_id > 0);
+    return state;
+}
+
+/**
+ * Reserve actor registry capacity for at least needed entries.
+ * @param state Actor runtime state.
+ * @param needed Required entry count.
+ * @return 1 on success, 0 on allocation failure.
+ */
+static int fern_actor_registry_reserve(FernActorRuntimeState* state, int64_t needed) {
+    assert(state != NULL);
+    assert(needed >= 0);
+    if (needed <= state->actor_cap) {
+        return 1;
+    }
+
+    int64_t next_cap = state->actor_cap > 0 ? state->actor_cap : 8;
+    while (next_cap < needed) {
+        next_cap *= 2;
+    }
+
+    FernActorRecord* next = FERN_ALLOC((size_t)next_cap * sizeof(FernActorRecord));
+    if (next == NULL) {
+        return 0;
+    }
+    memset(next, 0, (size_t)next_cap * sizeof(FernActorRecord));
+
+    if (state->actors != NULL && state->actor_len > 0) {
+        memcpy(next, state->actors, (size_t)state->actor_len * sizeof(FernActorRecord));
+    }
+
+    state->actors = next;
+    state->actor_cap = next_cap;
+    return 1;
+}
+
+/**
+ * Reserve ready-queue capacity for at least needed entries.
+ * @param state Actor runtime state.
+ * @param needed Required queue entry count.
+ * @return 1 on success, 0 on allocation failure.
+ */
+static int fern_actor_ready_reserve(FernActorRuntimeState* state, int64_t needed) {
+    assert(state != NULL);
+    assert(needed >= 0);
+    if (needed <= state->ready_cap) {
+        return 1;
+    }
+
+    int64_t next_cap = state->ready_cap > 0 ? state->ready_cap : 8;
+    while (next_cap < needed) {
+        next_cap *= 2;
+    }
+
+    int64_t* next = FERN_ALLOC((size_t)next_cap * sizeof(int64_t));
+    if (next == NULL) {
+        return 0;
+    }
+
+    for (int64_t i = 0; i < state->ready_len; i++) {
+        int64_t idx = 0;
+        if (state->ready_cap > 0) {
+            idx = (state->ready_head + i) % state->ready_cap;
+        }
+        next[i] = state->ready_ids[idx];
+    }
+
+    state->ready_ids = next;
+    state->ready_cap = next_cap;
+    state->ready_head = 0;
+    return 1;
+}
+
+/**
+ * Reserve mailbox capacity for at least needed entries.
+ * @param actor Actor record.
+ * @param needed Required mailbox entry count.
+ * @return 1 on success, 0 on allocation failure.
+ */
+static int fern_actor_mailbox_reserve(FernActorRecord* actor, int64_t needed) {
+    assert(actor != NULL);
+    assert(needed >= 0);
+    if (needed <= actor->mailbox_cap) {
+        return 1;
+    }
+
+    int64_t next_cap = actor->mailbox_cap > 0 ? actor->mailbox_cap : 8;
+    while (next_cap < needed) {
+        next_cap *= 2;
+    }
+
+    char** next = FERN_ALLOC((size_t)next_cap * sizeof(char*));
+    if (next == NULL) {
+        return 0;
+    }
+
+    for (int64_t i = 0; i < actor->mailbox_len; i++) {
+        int64_t idx = 0;
+        if (actor->mailbox_cap > 0) {
+            idx = (actor->mailbox_head + i) % actor->mailbox_cap;
+        }
+        next[i] = actor->mailbox_data[idx];
+    }
+
+    actor->mailbox_data = next;
+    actor->mailbox_cap = next_cap;
+    actor->mailbox_head = 0;
+    return 1;
+}
+
+/**
+ * Look up actor record by actor id.
+ * @param state Actor runtime state.
+ * @param actor_id Actor id.
+ * @return Actor record pointer, or NULL if actor id is invalid.
+ */
+static FernActorRecord* fern_actor_lookup(FernActorRuntimeState* state, int64_t actor_id) {
+    assert(state != NULL);
+    assert(actor_id < INT64_MAX);
+    if (actor_id <= 0 || actor_id > state->actor_len) {
+        return NULL;
+    }
+    return &state->actors[actor_id - 1];
+}
+
+/**
+ * Push actor id to ready queue.
+ * @param state Actor runtime state.
+ * @param actor_id Actor id.
+ */
+static void fern_actor_ready_push(FernActorRuntimeState* state, int64_t actor_id) {
+    assert(state != NULL);
+    assert(actor_id > 0);
+    assert(state->ready_cap > 0);
+    assert(state->ready_len < state->ready_cap);
+    int64_t tail = (state->ready_head + state->ready_len) % state->ready_cap;
+    state->ready_ids[tail] = actor_id;
+    state->ready_len++;
+}
+
+/**
+ * Pop actor id from ready queue.
+ * @param state Actor runtime state.
+ * @return Actor id at queue head, or 0 when queue is empty.
+ */
+static int64_t fern_actor_ready_pop(FernActorRuntimeState* state) {
+    assert(state != NULL);
+    assert(state->ready_len >= 0);
+    if (state->ready_len == 0) {
+        return 0;
+    }
+
+    int64_t actor_id = state->ready_ids[state->ready_head];
+    state->ready_head = (state->ready_head + 1) % state->ready_cap;
+    state->ready_len--;
+    if (state->ready_len == 0) {
+        state->ready_head = 0;
+    }
+    return actor_id;
+}
+
+/**
+ * Rotate ready queue head to the tail.
+ * @param state Actor runtime state.
+ */
+static void fern_actor_ready_rotate(FernActorRuntimeState* state) {
+    assert(state != NULL);
+    assert(state->ready_len >= 0);
+    if (state->ready_len <= 1) {
+        return;
+    }
+
+    int64_t actor_id = fern_actor_ready_pop(state);
+    assert(actor_id > 0);
+    fern_actor_ready_push(state, actor_id);
+}
+
+/**
+ * Spawn an actor and return its id.
+ * @param name Actor name.
+ * @return Actor id (positive integer), or 0 on allocation failure.
+ */
+int64_t fern_actor_spawn(const char* name) {
+    if (name == NULL) {
+        return 0;
+    }
+
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    if (!fern_actor_registry_reserve(state, state->actor_len + 1)) {
+        return 0;
+    }
+
+    int64_t actor_id = state->next_actor_id++;
+    FernActorRecord* actor = &state->actors[state->actor_len];
+    memset(actor, 0, sizeof(*actor));
+    actor->actor_id = actor_id;
+    actor->name = FERN_STRDUP(name);
+    state->actor_len++;
+
+    return actor_id;
+}
+
+/**
+ * Send a message to an actor mailbox.
+ * @param actor_id Destination actor id.
+ * @param msg Message payload.
+ * @return Result: Ok(0) on enqueue, Err(error code) otherwise.
+ */
+int64_t fern_actor_send(int64_t actor_id, const char* msg) {
+    if (actor_id <= 0 || msg == NULL) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    FernActorRecord* actor = fern_actor_lookup(state, actor_id);
+    if (actor == NULL) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+    if (actor->scheduler_tokens == INT64_MAX) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    if (!fern_actor_mailbox_reserve(actor, actor->mailbox_len + 1)) {
+        return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+    }
+    if (!actor->scheduler_enqueued && !fern_actor_ready_reserve(state, state->ready_len + 1)) {
+        return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+    }
+
+    char* copy = FERN_STRDUP(msg);
+    if (copy == NULL) {
+        return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+    }
+
+    int64_t tail = (actor->mailbox_head + actor->mailbox_len) % actor->mailbox_cap;
+    actor->mailbox_data[tail] = copy;
+    actor->mailbox_len++;
+    actor->scheduler_tokens++;
+
+    if (!actor->scheduler_enqueued) {
+        fern_actor_ready_push(state, actor->actor_id);
+        actor->scheduler_enqueued = 1;
+    }
+
+    return fern_result_ok(0);
+}
+
+/**
+ * Receive the next actor message from mailbox FIFO.
+ * @param actor_id Actor id.
+ * @return Result: Ok(message) or Err(error code).
+ */
+int64_t fern_actor_receive(int64_t actor_id) {
+    if (actor_id <= 0) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    FernActorRecord* actor = fern_actor_lookup(state, actor_id);
+    if (actor == NULL || actor->mailbox_len <= 0) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    char* msg = actor->mailbox_data[actor->mailbox_head];
+    actor->mailbox_head = (actor->mailbox_head + 1) % actor->mailbox_cap;
+    actor->mailbox_len--;
+    if (actor->mailbox_len == 0) {
+        actor->mailbox_head = 0;
+    }
+    if (actor->scheduler_tokens > actor->mailbox_len) {
+        actor->scheduler_tokens = actor->mailbox_len;
+    }
+
+    return fern_result_ok((int64_t)(intptr_t)msg);
+}
+
+/**
+ * Get current mailbox length for an actor.
+ * @param actor_id Actor id.
+ * @return Number of queued messages, or -1 for invalid actor id.
+ */
+int64_t fern_actor_mailbox_len(int64_t actor_id) {
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    FernActorRecord* actor = fern_actor_lookup(state, actor_id);
+    if (actor == NULL) {
+        return -1;
+    }
+    return actor->mailbox_len;
+}
+
+/**
+ * Return next runnable actor id from scheduler queue.
+ * @return Actor id, or 0 when no actor is ready.
+ */
+int64_t fern_actor_scheduler_next(void) {
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+
+    while (state->ready_len > 0) {
+        int64_t actor_id = state->ready_ids[state->ready_head];
+        FernActorRecord* actor = fern_actor_lookup(state, actor_id);
+
+        if (actor == NULL) {
+            (void)fern_actor_ready_pop(state);
+            continue;
+        }
+        if (actor->scheduler_tokens > actor->mailbox_len) {
+            actor->scheduler_tokens = actor->mailbox_len;
+        }
+        if (actor->mailbox_len <= 0 || actor->scheduler_tokens <= 0) {
+            (void)fern_actor_ready_pop(state);
+            actor->scheduler_enqueued = 0;
+            continue;
+        }
+
+        actor->scheduler_tokens--;
+        if (actor->scheduler_tokens <= 0) {
+            (void)fern_actor_ready_pop(state);
+            actor->scheduler_enqueued = 0;
+        } else {
+            fern_actor_ready_rotate(state);
+        }
+        return actor_id;
+    }
+
+    return 0;
+}
+
 /**
  * Start an actor and return its id.
  * @param name Actor name.
  * @return Actor id.
  */
 int64_t fern_actor_start(const char* name) {
-    static int64_t next_actor_id = 1;
-    assert(name != NULL);
-    assert(next_actor_id > 0);
-    (void)name;
-    return next_actor_id++;
+    return fern_actor_spawn(name);
 }
 
 /**
@@ -2066,23 +2424,16 @@ int64_t fern_actor_start(const char* name) {
  * @return Result: Ok(0) or Err(error code).
  */
 int64_t fern_actor_post(int64_t actor_id, const char* msg) {
-    assert(actor_id > 0);
-    assert(msg != NULL);
-    (void)actor_id;
-    (void)msg;
-    return fern_result_ok(0);
+    return fern_actor_send(actor_id, msg);
 }
 
 /**
- * Receive the next actor message (placeholder).
+ * Receive the next actor message.
  * @param actor_id Actor id.
- * @return Result: Err(error code).
+ * @return Result: Ok(message) or Err(error code).
  */
 int64_t fern_actor_next(int64_t actor_id) {
-    assert(actor_id > 0);
-    assert(actor_id < INT64_MAX);
-    (void)actor_id;
-    return fern_result_err(FERN_ERR_IO);
+    return fern_actor_receive(actor_id);
 }
 
 /* ========== Regex Functions ========== */
