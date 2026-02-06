@@ -1790,8 +1790,9 @@ FernStringList* fern_list_dir(const char* path) {
  * @return Result: Ok(copy of text) or Err(error code).
  */
 int64_t fern_json_parse(const char* text) {
-    assert(text != NULL);
-    assert(text[0] != '\0');
+    if (text == NULL || text[0] == '\0') {
+        return fern_result_err(FERN_ERR_IO);
+    }
     char* copy = FERN_STRDUP(text);
     if (copy == NULL) {
         return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
@@ -1805,8 +1806,9 @@ int64_t fern_json_parse(const char* text) {
  * @return Result: Ok(copy of text) or Err(error code).
  */
 int64_t fern_json_stringify(const char* text) {
-    assert(text != NULL);
-    assert(text[0] != '\0');
+    if (text == NULL) {
+        return fern_result_err(FERN_ERR_IO);
+    }
     char* copy = FERN_STRDUP(text);
     if (copy == NULL) {
         return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
@@ -1820,8 +1822,9 @@ int64_t fern_json_stringify(const char* text) {
  * @return Result: Err(error code).
  */
 int64_t fern_http_get(const char* url) {
-    assert(url != NULL);
-    assert(url[0] != '\0');
+    if (url == NULL || url[0] == '\0') {
+        return fern_result_err(FERN_ERR_IO);
+    }
     return fern_result_err(FERN_ERR_IO);
 }
 
@@ -1832,8 +1835,9 @@ int64_t fern_http_get(const char* url) {
  * @return Result: Err(error code).
  */
 int64_t fern_http_post(const char* url, const char* body) {
-    assert(url != NULL);
-    assert(body != NULL);
+    if (url == NULL || url[0] == '\0' || body == NULL) {
+        return fern_result_err(FERN_ERR_IO);
+    }
     return fern_result_err(FERN_ERR_IO);
 }
 
@@ -1843,8 +1847,9 @@ int64_t fern_http_post(const char* url, const char* body) {
  * @return Result: Err(error code).
  */
 int64_t fern_sql_open(const char* path) {
-    assert(path != NULL);
-    assert(path[0] != '\0');
+    if (path == NULL || path[0] == '\0') {
+        return fern_result_err(FERN_ERR_IO);
+    }
     return fern_result_err(FERN_ERR_IO);
 }
 
@@ -1855,8 +1860,9 @@ int64_t fern_sql_open(const char* path) {
  * @return Result: Err(error code).
  */
 int64_t fern_sql_execute(int64_t handle, const char* query) {
-    assert(query != NULL);
-    assert(handle >= 0);
+    if (query == NULL || handle < 0) {
+        return fern_result_err(FERN_ERR_IO);
+    }
     return fern_result_err(FERN_ERR_IO);
 }
 

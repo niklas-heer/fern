@@ -724,17 +724,21 @@ FernStringList* fern_list_dir(const char* path);
 
 /**
  * Parse JSON text.
- * Current implementation is a placeholder bridge used during Gate C API work.
+ * Placeholder Gate C contract:
+ * - Empty input returns Err(FERN_ERR_IO)
+ * - Otherwise returns Ok(copy of input)
  * @param text UTF-8 JSON text.
- * @return Result: Ok(normalized JSON string) or Err(error code).
+ * @return Result: Ok(JSON text copy) or Err(error code).
  */
 int64_t fern_json_parse(const char* text);
 
 /**
  * Encode value as JSON text.
- * Current implementation is a placeholder bridge used during Gate C API work.
+ * Placeholder Gate C contract:
+ * - Returns Ok(copy of input), including empty strings
+ * - Returns Err(FERN_ERR_IO) for invalid pointers
  * @param text Input text payload.
- * @return Result: Ok(JSON string) or Err(error code).
+ * @return Result: Ok(JSON string copy) or Err(error code).
  */
 int64_t fern_json_stringify(const char* text);
 

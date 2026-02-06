@@ -35,6 +35,28 @@ Compatibility alias policy:
 2. Any future alias deprecation must follow the lifecycle below and keep the minimum 2-minor-release support window.
 3. New APIs may be added to these modules in minor releases, but existing signatures must remain backward compatible.
 
+### Gate C Runtime Placeholder Contract (2026-02-06)
+
+Until full `json/http/sql/actors` runtimes land, the current runtime behavior is stabilized as:
+
+1. `json.parse(text)`:
+   - `Err(FERN_ERR_IO)` for empty input.
+   - `Ok(copy_of_text)` for non-empty input.
+2. `json.stringify(text)`:
+   - `Ok(copy_of_text)` for all string inputs (including empty).
+3. `http.get(url)` / `http.post(url, body)`:
+   - `Err(FERN_ERR_IO)` placeholder response.
+4. `sql.open(path)` / `sql.execute(handle, query)`:
+   - `Err(FERN_ERR_IO)` placeholder response.
+5. `actors.start(name)`:
+   - Returns deterministic, process-local, monotonic actor ids.
+6. `actors.post(actor_id, msg)`:
+   - `Ok(0)` placeholder acknowledgment.
+7. `actors.next(actor_id)`:
+   - `Err(FERN_ERR_IO)` when no queue/backend exists.
+
+These behaviors are regression-tested in `tests/test_runtime_surface.c` and treated as the compatibility baseline for Gate C placeholders.
+
 ## Deprecation Lifecycle
 
 Every removal or incompatible behavior change must follow this sequence:

@@ -16,6 +16,7 @@ void run_codegen_tests(void);
 void run_repl_tests(void);
 void run_fuzz_generator_tests(void);
 void run_fernsim_tests(void);
+void run_runtime_surface_tests(void);
 
 int main(void) {
     test_init();
@@ -37,6 +38,7 @@ int main(void) {
     run_repl_tests();
     run_fuzz_generator_tests();
     run_fernsim_tests();
+    run_runtime_surface_tests();
     
     return TEST_FINISH();
 }
