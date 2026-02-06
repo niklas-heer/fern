@@ -8,10 +8,10 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `make test` passing (**463/463**)
+- Build/tests: `make test` passing (**471/471**)
 - Style: `make style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
-- Current focus: Gate C closure work (core stdlib API stability docs + ongoing CI validation)
+- Current focus: Gate D kickoff (LSP depth, packaging/release hardening, reproducible benchmark publishing)
 
 ## Working Model
 
@@ -67,7 +67,7 @@ Gates are sequential. Only one gate is active at a time.
 
 ### Gate C: Product Surface and Standard Library Quality
 
-**Status:** ACTIVE (2026-02-06)
+**Status:** PASSED (2026-02-06)
 **Maps to milestones:** 7, 8, 9
 **Dependency:** Gate B passed
 
@@ -82,16 +82,17 @@ Gates are sequential. Only one gate is active at a time.
 - [x] Continuous example validation + doc tests in CI (`.github/workflows/ci.yml` step `Validate examples` runs `make test-examples`)
 - [x] Add initial `fern doc` documentation generation pipeline (`src/main.c` `doc` command + `scripts/generate_docs.py` + CLI tests in `tests/test_cli_main.c`)
 - [x] Advance bootstrapping tools (`fern doc`, `fern test`, `fern-style` parity targets) (`src/main.c` doc/test command updates, `scripts/generate_docs.py`, `Makefile` targets `style-fern` and `style-parity`, CLI coverage in `tests/test_cli_main.c`)
+- [x] Expand `fern doc` output quality: cross-linked markdown module/function index, richer `@doc """..."""` extraction, and optional HTML output (`scripts/generate_docs.py`, `src/main.c`, `tests/test_cli_main.c`)
 
 **Pass criteria (all required):**
 - [x] Canonical examples and templates are continuously green in CI (`make test-examples` in CI + `tests/test_canonical_examples.c`)
-- [ ] Core stdlib APIs are stable and documented
+- [x] Core stdlib APIs are stable and documented (`docs/STDLIB_API_REFERENCE.md`, `docs/COMPATIBILITY_POLICY.md`, `test_check_fs_api_signatures`, `test_check_json_api_signatures`, `test_check_http_api_signatures`, `test_check_sql_api_signatures`, `test_check_actors_api_signatures`, `test_check_file_alias_api_signatures`)
 - [x] Milestone 7.7 implementation tranche (A-D) is complete with tests and measured tradeoffs, and a chosen default memory path for first WASM target (`docs/reports/memory-path-comparison-2026-02-06.md`, `docs/MEMORY_MANAGEMENT.md`, `DECISIONS.md`)
 - [x] Actor baseline scenarios pass deterministic tests (`test_runtime_actors_post_and_next_mailbox_contract`, `test_runtime_actor_scheduler_round_robin_contract`, `make check`)
 
 ### Gate D: Ecosystem and Adoption
 
-**Status:** QUEUED
+**Status:** ACTIVE (2026-02-06)
 **Maps to milestones:** 10.5 follow-up, 11
 **Dependency:** Gate C passed
 
@@ -135,14 +136,11 @@ Gates are sequential. Only one gate is active at a time.
 
 ## Next Session Start Here
 
-Gate C Task 4 bootstrapping tooling tranche is complete. Continue Gate C pass-criteria closure work next.
+Gate C pass criteria are fully closed and verified via `make check`. Continue with Gate D execution.
 
-1. [x] Gate C / Task 1.5b: Milestone 7.7 - implement Perceus object header and RC ops for core heap types (`test_runtime_rc_header_and_core_type_ops`)
-2. [x] Gate C / Task 1.5c: Milestone 7.7 - add constrained dup/drop insertion in codegen with focused tests (`test_codegen_dup_inserted_for_pointer_alias_binding`, `test_codegen_drop_inserted_for_unreturned_pointer_bindings`)
-3. [x] Gate C / Task 1.5d: Milestone 7.7 - benchmark WASM memory/runtime options and finalize default + fallback path in docs/decisions (`docs/reports/memory-path-comparison-2026-02-06.md`, Decision 33)
-4. [x] Gate C / Task 2: Complete actor runtime core (`spawn`, `send`, `receive`, scheduler) with runtime C-ABI and surface tests (`runtime/fern_runtime.c`, `runtime/fern_runtime.h`, `tests/test_runtime_surface.c`)
-5. [x] Gate C / Task 3: Add canonical templates/examples (tiny CLI, HTTP API, actor app) with CI validation (`examples/tiny_cli.fn`, `examples/http_api.fn`, `examples/actor_app.fn`, `tests/test_canonical_examples.c`, `.github/workflows/ci.yml`)
-6. [x] Gate C / Task 4: Advance bootstrapping tools (`fern doc`, `fern test`, `fern-style` parity targets) (`src/main.c`, `scripts/generate_docs.py`, `Makefile`, `tests/test_cli_main.c`)
+1. [ ] Gate D / Task 1: Expand LSP beyond MVP (completion, rename, code actions, better source positions)
+2. [ ] Gate D / Task 2: Harden packaging/release workflow for single-binary distribution
+3. [ ] Gate D / Task 3: Publish reproducible benchmarks and case studies
 
 ## Active Backlog (By Gate)
 

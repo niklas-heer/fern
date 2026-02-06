@@ -157,6 +157,7 @@ static const Option OPTIONS[] = {
     {"-v", "--version", "Show version information"},
     {"-o", "--output",  "Output file (build only)"},
     {"",   "--open",    "Open generated docs (doc only)"},
+    {"",   "--html",    "Emit HTML docs (doc only)"},
     {"",   "--color",   "Color output: --color=auto|always|never"},
     {"",   "--quiet",   "Suppress non-error output"},
     {"",   "--verbose", "Enable verbose diagnostic output"},
@@ -503,6 +504,7 @@ static const char* g_exe_path = NULL;
 static const char* g_output_file = NULL;
 static bool g_test_doc_mode = false;
 static bool g_doc_open_mode = false;
+static bool g_doc_html_mode = false;
 
 typedef enum {
     LOG_NORMAL = 0,
@@ -1143,31 +1145,41 @@ static int cmd_doc(Arena* arena, const char* filename) {
     }
 
     if (command == NULL) {
+        size_t used = 0;
+        int wrote = snprintf(command_buf, sizeof(command_buf), "python3 scripts/generate_docs.py");
+        if (wrote < 0 || (size_t)wrote >= sizeof(command_buf)) {
+            error_print("failed to build documentation command");
+            return 1;
+        }
+        used = (size_t)wrote;
+
+        if (g_doc_open_mode) {
+            wrote = snprintf(command_buf + used, sizeof(command_buf) - used, " --open");
+            if (wrote < 0 || (size_t)wrote >= sizeof(command_buf) - used) {
+                error_print("failed to build documentation command");
+                return 1;
+            }
+            used += (size_t)wrote;
+        }
+
+        if (g_doc_html_mode) {
+            wrote = snprintf(command_buf + used, sizeof(command_buf) - used, " --html");
+            if (wrote < 0 || (size_t)wrote >= sizeof(command_buf) - used) {
+                error_print("failed to build documentation command");
+                return 1;
+            }
+            used += (size_t)wrote;
+        }
+
         if (filename && filename[0] != '\0') {
             if (!shell_quote_arg(filename, quoted_path, sizeof(quoted_path))) {
                 error_print("failed to process documentation path argument");
                 return 1;
             }
-            if (g_doc_open_mode) {
-                snprintf(
-                    command_buf,
-                    sizeof(command_buf),
-                    "python3 scripts/generate_docs.py --open --path %s",
-                    quoted_path
-                );
-            } else {
-                snprintf(
-                    command_buf,
-                    sizeof(command_buf),
-                    "python3 scripts/generate_docs.py --path %s",
-                    quoted_path
-                );
-            }
-        } else {
-            if (g_doc_open_mode) {
-                snprintf(command_buf, sizeof(command_buf), "python3 scripts/generate_docs.py --open");
-            } else {
-                snprintf(command_buf, sizeof(command_buf), "python3 scripts/generate_docs.py");
+            wrote = snprintf(command_buf + used, sizeof(command_buf) - used, " --path %s", quoted_path);
+            if (wrote < 0 || (size_t)wrote >= sizeof(command_buf) - used) {
+                error_print("failed to build documentation command");
+                return 1;
             }
         }
         command = command_buf;
@@ -1237,6 +1249,7 @@ int main(int argc, char** argv) {
     g_exe_path = argv[0];
     g_test_doc_mode = false;
     g_doc_open_mode = false;
+    g_doc_html_mode = false;
     
     // Need at least a command
     if (argc < 2) {
@@ -1341,6 +1354,13 @@ int main(int argc, char** argv) {
                 return 1;
             }
             g_doc_open_mode = true;
+            arg_index++;
+        } else if (strcmp(argv[arg_index], "--html") == 0) {
+            if (strcmp(cmd->name, "doc") != 0) {
+                error_print("--html is only valid for the doc command");
+                return 1;
+            }
+            g_doc_html_mode = true;
             arg_index++;
         } else {
             error_print("unknown option '%s'", argv[arg_index]);

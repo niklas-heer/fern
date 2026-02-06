@@ -1720,6 +1720,186 @@ void test_check_actors_start_returns_int(void) {
     arena_destroy(arena);
 }
 
+void test_check_fs_api_signatures(void) {
+    Arena* arena = arena_create(4096);
+
+    Type* read_t = check_expr(arena, "fs.read(\"notes.txt\")");
+    ASSERT_NOT_NULL(read_t);
+    ASSERT_EQ(read_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(read_t->data.con.name), "Result");
+    ASSERT_EQ(read_t->data.con.args->len, 2);
+    ASSERT_EQ(read_t->data.con.args->data[0]->kind, TYPE_STRING);
+    ASSERT_EQ(read_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* write_t = check_expr(arena, "fs.write(\"notes.txt\", \"hello\")");
+    ASSERT_NOT_NULL(write_t);
+    ASSERT_EQ(write_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(write_t->data.con.name), "Result");
+    ASSERT_EQ(write_t->data.con.args->len, 2);
+    ASSERT_EQ(write_t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(write_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* exists_t = check_expr(arena, "fs.exists(\"notes.txt\")");
+    ASSERT_NOT_NULL(exists_t);
+    ASSERT_EQ(exists_t->kind, TYPE_BOOL);
+
+    Type* append_t = check_expr(arena, "fs.append(\"notes.txt\", \"world\")");
+    ASSERT_NOT_NULL(append_t);
+    ASSERT_EQ(append_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(append_t->data.con.name), "Result");
+    ASSERT_EQ(append_t->data.con.args->len, 2);
+    ASSERT_EQ(append_t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(append_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* delete_t = check_expr(arena, "fs.delete(\"notes.txt\")");
+    ASSERT_NOT_NULL(delete_t);
+    ASSERT_EQ(delete_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(delete_t->data.con.name), "Result");
+    ASSERT_EQ(delete_t->data.con.args->len, 2);
+    ASSERT_EQ(delete_t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(delete_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* size_t = check_expr(arena, "fs.size(\"notes.txt\")");
+    ASSERT_NOT_NULL(size_t);
+    ASSERT_EQ(size_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(size_t->data.con.name), "Result");
+    ASSERT_EQ(size_t->data.con.args->len, 2);
+    ASSERT_EQ(size_t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(size_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* bad_t = check_expr(arena, "fs.read(123)");
+    ASSERT_NOT_NULL(bad_t);
+    ASSERT_EQ(bad_t->kind, TYPE_ERROR);
+
+    arena_destroy(arena);
+}
+
+void test_check_json_api_signatures(void) {
+    Arena* arena = arena_create(4096);
+
+    Type* parse_t = check_expr(arena, "json.parse(\"[]\")");
+    ASSERT_NOT_NULL(parse_t);
+    ASSERT_EQ(parse_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(parse_t->data.con.name), "Result");
+    ASSERT_EQ(parse_t->data.con.args->len, 2);
+    ASSERT_EQ(parse_t->data.con.args->data[0]->kind, TYPE_STRING);
+    ASSERT_EQ(parse_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* stringify_t = check_expr(arena, "json.stringify(\"[]\")");
+    ASSERT_NOT_NULL(stringify_t);
+    ASSERT_EQ(stringify_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(stringify_t->data.con.name), "Result");
+    ASSERT_EQ(stringify_t->data.con.args->len, 2);
+    ASSERT_EQ(stringify_t->data.con.args->data[0]->kind, TYPE_STRING);
+    ASSERT_EQ(stringify_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* bad_t = check_expr(arena, "json.parse(123)");
+    ASSERT_NOT_NULL(bad_t);
+    ASSERT_EQ(bad_t->kind, TYPE_ERROR);
+
+    arena_destroy(arena);
+}
+
+void test_check_http_api_signatures(void) {
+    Arena* arena = arena_create(4096);
+
+    Type* get_t = check_expr(arena, "http.get(\"https://example.com\")");
+    ASSERT_NOT_NULL(get_t);
+    ASSERT_EQ(get_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(get_t->data.con.name), "Result");
+    ASSERT_EQ(get_t->data.con.args->len, 2);
+    ASSERT_EQ(get_t->data.con.args->data[0]->kind, TYPE_STRING);
+    ASSERT_EQ(get_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* post_t = check_expr(arena, "http.post(\"https://example.com\", \"payload\")");
+    ASSERT_NOT_NULL(post_t);
+    ASSERT_EQ(post_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(post_t->data.con.name), "Result");
+    ASSERT_EQ(post_t->data.con.args->len, 2);
+    ASSERT_EQ(post_t->data.con.args->data[0]->kind, TYPE_STRING);
+    ASSERT_EQ(post_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* bad_arity_t = check_expr(arena, "http.get(\"https://example.com\", \"extra\")");
+    ASSERT_NOT_NULL(bad_arity_t);
+    ASSERT_EQ(bad_arity_t->kind, TYPE_ERROR);
+
+    arena_destroy(arena);
+}
+
+void test_check_sql_api_signatures(void) {
+    Arena* arena = arena_create(4096);
+
+    Type* open_t = check_expr(arena, "sql.open(\"app.db\")");
+    ASSERT_NOT_NULL(open_t);
+    ASSERT_EQ(open_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(open_t->data.con.name), "Result");
+    ASSERT_EQ(open_t->data.con.args->len, 2);
+    ASSERT_EQ(open_t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(open_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* execute_t = check_expr(arena, "sql.execute(1, \"select 1\")");
+    ASSERT_NOT_NULL(execute_t);
+    ASSERT_EQ(execute_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(execute_t->data.con.name), "Result");
+    ASSERT_EQ(execute_t->data.con.args->len, 2);
+    ASSERT_EQ(execute_t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(execute_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* bad_t = check_expr(arena, "sql.execute(\"bad\", \"select 1\")");
+    ASSERT_NOT_NULL(bad_t);
+    ASSERT_EQ(bad_t->kind, TYPE_ERROR);
+
+    arena_destroy(arena);
+}
+
+void test_check_actors_api_signatures(void) {
+    Arena* arena = arena_create(4096);
+
+    Type* start_t = check_expr(arena, "actors.start(\"worker\")");
+    ASSERT_NOT_NULL(start_t);
+    ASSERT_EQ(start_t->kind, TYPE_INT);
+
+    Type* post_t = check_expr(arena, "actors.post(1, \"msg\")");
+    ASSERT_NOT_NULL(post_t);
+    ASSERT_EQ(post_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(post_t->data.con.name), "Result");
+    ASSERT_EQ(post_t->data.con.args->len, 2);
+    ASSERT_EQ(post_t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(post_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* next_t = check_expr(arena, "actors.next(1)");
+    ASSERT_NOT_NULL(next_t);
+    ASSERT_EQ(next_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(next_t->data.con.name), "Result");
+    ASSERT_EQ(next_t->data.con.args->len, 2);
+    ASSERT_EQ(next_t->data.con.args->data[0]->kind, TYPE_STRING);
+    ASSERT_EQ(next_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* bad_t = check_expr(arena, "actors.post(1, 2)");
+    ASSERT_NOT_NULL(bad_t);
+    ASSERT_EQ(bad_t->kind, TYPE_ERROR);
+
+    arena_destroy(arena);
+}
+
+void test_check_file_alias_api_signatures(void) {
+    Arena* arena = arena_create(4096);
+
+    Type* read_t = check_expr(arena, "File.read(\"notes.txt\")");
+    ASSERT_NOT_NULL(read_t);
+    ASSERT_EQ(read_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(read_t->data.con.name), "Result");
+    ASSERT_EQ(read_t->data.con.args->len, 2);
+    ASSERT_EQ(read_t->data.con.args->data[0]->kind, TYPE_STRING);
+    ASSERT_EQ(read_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* exists_t = check_expr(arena, "File.exists(\"notes.txt\")");
+    ASSERT_NOT_NULL(exists_t);
+    ASSERT_EQ(exists_t->kind, TYPE_BOOL);
+
+    arena_destroy(arena);
+}
+
 /* ========== Tui Module Tests ========== */
 
 void test_check_tui_style_returns_string(void) {
@@ -2062,6 +2242,12 @@ void run_checker_tests(void) {
     TEST_RUN(test_check_http_get_returns_result);
     TEST_RUN(test_check_sql_open_returns_result);
     TEST_RUN(test_check_actors_start_returns_int);
+    TEST_RUN(test_check_fs_api_signatures);
+    TEST_RUN(test_check_json_api_signatures);
+    TEST_RUN(test_check_http_api_signatures);
+    TEST_RUN(test_check_sql_api_signatures);
+    TEST_RUN(test_check_actors_api_signatures);
+    TEST_RUN(test_check_file_alias_api_signatures);
 
     // Tui module type checking
     TEST_RUN(test_check_tui_style_returns_string);

@@ -414,6 +414,90 @@ void test_cli_open_option_only_valid_for_doc(void) {
     free(result.output);
 }
 
+void test_cli_doc_generates_cross_linked_markdown_with_doc_blocks(void) {
+    unlink("docs/generated/test_doc_source.fn");
+    unlink("docs/generated/fern-docs.md");
+
+    char* source_path = write_tmp_source(
+        "module demo\n"
+        "\n"
+        "@doc \"\"\"\n"
+        "Increment an integer by one.\n"
+        "\n"
+        "Used by other examples.\n"
+        "\"\"\"\n"
+        "fn inc(x: Int) -> Int:\n"
+        "    x + 1\n"
+        "\n"
+        "fn other() -> Int:\n"
+        "    0\n"
+    );
+    ASSERT_NOT_NULL(source_path);
+
+    CmdResult result = run_cmd("mkdir -p docs/generated && ./bin/fern doc docs/generated/test_doc_source.fn 2>&1");
+    ASSERT_EQ(result.exit_code, 1);
+    free(result.output);
+
+    char cmd[768];
+    snprintf(cmd, sizeof(cmd), "cp %s docs/generated/test_doc_source.fn", source_path);
+    CmdResult copy_result = run_cmd(cmd);
+    ASSERT_EQ(copy_result.exit_code, 0);
+    free(copy_result.output);
+
+    CmdResult doc_result = run_cmd("./bin/fern doc docs/generated/test_doc_source.fn 2>&1");
+    ASSERT_EQ(doc_result.exit_code, 0);
+    ASSERT_NOT_NULL(doc_result.output);
+
+    char* docs = read_file_all("docs/generated/fern-docs.md");
+    ASSERT_NOT_NULL(docs);
+    ASSERT_TRUE(strstr(docs, "## Modules") != NULL);
+    ASSERT_TRUE(strstr(docs, "[`demo`]") != NULL);
+    ASSERT_TRUE(strstr(docs, "Increment an integer by one.") != NULL);
+    ASSERT_TRUE(strstr(docs, "[`inc`](#demo-inc)") != NULL);
+
+    free(doc_result.output);
+    free(docs);
+    unlink("docs/generated/test_doc_source.fn");
+    unlink("docs/generated/fern-docs.md");
+    unlink(source_path);
+    free(source_path);
+}
+
+void test_cli_doc_html_output_generation(void) {
+    unlink("docs/generated/test_doc_html.fn");
+    unlink("docs/generated/fern-docs.html");
+
+    char* source_path = write_tmp_source(
+        "module html_demo\n"
+        "fn main() -> Int:\n"
+        "    0\n"
+    );
+    ASSERT_NOT_NULL(source_path);
+
+    char cmd[768];
+    snprintf(cmd, sizeof(cmd), "mkdir -p docs/generated && cp %s docs/generated/test_doc_html.fn", source_path);
+    CmdResult prep = run_cmd(cmd);
+    ASSERT_EQ(prep.exit_code, 0);
+    free(prep.output);
+
+    CmdResult result = run_cmd("./bin/fern doc --html docs/generated/test_doc_html.fn 2>&1");
+    ASSERT_EQ(result.exit_code, 0);
+    ASSERT_NOT_NULL(result.output);
+
+    char* html = read_file_all("docs/generated/fern-docs.html");
+    ASSERT_NOT_NULL(html);
+    ASSERT_TRUE(strstr(html, "<html") != NULL);
+    ASSERT_TRUE(strstr(html, "Fern Documentation") != NULL);
+    ASSERT_TRUE(strstr(html, "href=\"#html_demo\"") != NULL);
+
+    free(result.output);
+    free(html);
+    unlink("docs/generated/test_doc_html.fn");
+    unlink("docs/generated/fern-docs.html");
+    unlink(source_path);
+    free(source_path);
+}
+
 void run_cli_main_tests(void) {
     printf("\n=== CLI Main Tests ===\n");
     TEST_RUN(test_cli_help_lists_global_flags);
@@ -432,4 +516,6 @@ void run_cli_main_tests(void) {
     TEST_RUN(test_cli_doc_command_runs_generator);
     TEST_RUN(test_cli_doc_open_command_runs_generator);
     TEST_RUN(test_cli_open_option_only_valid_for_doc);
+    TEST_RUN(test_cli_doc_generates_cross_linked_markdown_with_doc_blocks);
+    TEST_RUN(test_cli_doc_html_output_generation);
 }

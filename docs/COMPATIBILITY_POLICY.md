@@ -35,6 +35,9 @@ Compatibility alias policy:
 2. Any future alias deprecation must follow the lifecycle below and keep the minimum 2-minor-release support window.
 3. New APIs may be added to these modules in minor releases, but existing signatures must remain backward compatible.
 
+Detailed function-level signatures are tracked in:
+- `docs/STDLIB_API_REFERENCE.md`
+
 ### Gate C Runtime Contract (2026-02-06)
 
 Gate C runtime behavior is stabilized as:
