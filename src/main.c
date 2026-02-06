@@ -15,6 +15,8 @@
 #include "checker.h"
 #include "codegen.h"
 #include "ast_print.h"
+#include "ast_validate.h"
+#include "cli_parse.h"
 #include "version.h"
 #include "errors.h"
 #include "lsp.h"
@@ -594,32 +596,15 @@ static int cmd_lex(Arena* arena, const char* filename) {
  */
 static int cmd_parse(Arena* arena, const char* filename) {
     // FERN_STYLE: allow(assertion-density) command handler
-    
+
     // Read source file
     char* source = read_file(arena, filename);
     if (!source) {
         error_print("cannot read file '%s'", filename);
         return 1;
     }
-    
-    // Parse
-    Parser* parser = parser_new(arena, source);
-    StmtVec* stmts = parse_stmts(parser);
-    
-    if (parser_had_error(parser)) {
-        error_location(filename, 1, 0);
-        error_print("parse error");
-        return 1;
-    }
-    
-    // Print AST
-    printf("AST for %s:\n\n", filename);
-    for (size_t i = 0; i < stmts->len; i++) {
-        ast_print_stmt(stdout, stmts->data[i], 0);
-        printf("\n");
-    }
-    
-    return 0;
+
+    return fern_parse_source(arena, filename, source, stdout);
 }
 
 /**
