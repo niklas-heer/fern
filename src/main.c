@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdarg.h>
+#include <assert.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -124,6 +126,8 @@ static int cmd_lex(Arena* arena, const char* filename);
 static int cmd_parse(Arena* arena, const char* filename);
 static int cmd_lsp(Arena* arena, const char* filename);
 static int cmd_repl(Arena* arena, const char* filename);
+static void log_info(const char* fmt, ...);
+static void log_verbose(const char* fmt, ...);
 
 /** All available commands. */
 static const Command COMMANDS[] = {
@@ -143,6 +147,9 @@ static const Option OPTIONS[] = {
     {"-h", "--help",    "Show this help message"},
     {"-v", "--version", "Show version information"},
     {"-o", "--output",  "Output file (build only)"},
+    {"",   "--color",   "Color output: --color=auto|always|never"},
+    {"",   "--quiet",   "Suppress non-error output"},
+    {"",   "--verbose", "Enable verbose diagnostic output"},
     {NULL, NULL, NULL}  /* Sentinel */
 };
 
@@ -166,7 +173,11 @@ static void print_usage(void) {
     fprintf(stderr, "\nOptions:\n");
     for (const Option* opt = OPTIONS; opt->short_flag != NULL; opt++) {
         char flags[32];
-        snprintf(flags, sizeof(flags), "%s, %s", opt->short_flag, opt->long_flag);
+        if (opt->short_flag[0] != '\0') {
+            snprintf(flags, sizeof(flags), "%s, %s", opt->short_flag, opt->long_flag);
+        } else {
+            snprintf(flags, sizeof(flags), "%s", opt->long_flag);
+        }
         fprintf(stderr, "  %-14s %s\n", flags, opt->description);
     }
     
@@ -205,6 +216,7 @@ static const Command* find_command(const char* name) {
  */
 static Codegen* compile_to_qbe(Arena* arena, const char* source, const char* filename) {
     // FERN_STYLE: allow(assertion-density) pipeline orchestration
+    log_verbose("verbose: parsing %s\n", filename);
     
     // Parse
     Parser* parser = parser_new(arena, source);
@@ -223,6 +235,7 @@ static Codegen* compile_to_qbe(Arena* arena, const char* source, const char* fil
     }
     
     // Type check
+    log_verbose("verbose: type checking %s\n", filename);
     Checker* checker = checker_new(arena);
     bool check_ok = checker_check_stmts(checker, stmts);
     
@@ -233,6 +246,7 @@ static Codegen* compile_to_qbe(Arena* arena, const char* source, const char* fil
     }
     
     // Generate QBE IR
+    log_verbose("verbose: generating QBE IR for %s\n", filename);
     Codegen* cg = codegen_new(arena);
     codegen_program(cg, stmts);
     
@@ -288,6 +302,78 @@ static const char* g_exe_path = NULL;
 /* Global variable for output filename (-o flag) */
 static const char* g_output_file = NULL;
 
+typedef enum {
+    LOG_NORMAL = 0,
+    LOG_QUIET = 1,
+    LOG_VERBOSE = 2
+} LogLevel;
+
+static LogLevel g_log_level = LOG_NORMAL;
+
+/**
+ * Print a normal informational message unless quiet mode is active.
+ * @param fmt Printf-style format string.
+ * @param ... Format arguments.
+ */
+static void log_info(const char* fmt, ...) {
+    assert(fmt != NULL);
+    assert(g_log_level >= LOG_NORMAL && g_log_level <= LOG_VERBOSE);
+    if (g_log_level == LOG_QUIET) {
+        return;
+    }
+
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stdout, fmt, args);
+    va_end(args);
+}
+
+/**
+ * Print verbose diagnostics only when verbose mode is active.
+ * @param fmt Printf-style format string.
+ * @param ... Format arguments.
+ */
+static void log_verbose(const char* fmt, ...) {
+    assert(fmt != NULL);
+    assert(g_log_level >= LOG_NORMAL && g_log_level <= LOG_VERBOSE);
+    if (g_log_level != LOG_VERBOSE) {
+        return;
+    }
+
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+}
+
+/**
+ * Parse a global --color=<mode> flag.
+ * @param arg CLI argument token.
+ * @param mode_out Output color mode when parsing succeeds.
+ * @return true when arg is a recognized color flag, false otherwise.
+ */
+static bool parse_color_flag(const char* arg, ErrorsColorMode* mode_out) {
+    assert(arg != NULL);
+    assert(mode_out != NULL);
+    if (!arg || !mode_out) {
+        return false;
+    }
+
+    if (strcmp(arg, "--color=auto") == 0) {
+        *mode_out = ERRORS_COLOR_AUTO;
+        return true;
+    }
+    if (strcmp(arg, "--color=always") == 0) {
+        *mode_out = ERRORS_COLOR_ALWAYS;
+        return true;
+    }
+    if (strcmp(arg, "--color=never") == 0) {
+        *mode_out = ERRORS_COLOR_NEVER;
+        return true;
+    }
+    return false;
+}
+
 /**
  * Run QBE compiler and linker to create executable.
  * Uses embedded QBE backend - no external qbe binary needed.
@@ -322,6 +408,7 @@ static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
     }
 
     // Compile QBE IR to assembly using embedded QBE
+    log_verbose("verbose: qbe compile %s -> %s\n", ssa_file, asm_file);
     ret = qbe_compile(ssa_input, asm_output, ssa_file);
     fclose(ssa_input);
     fclose(asm_output);
@@ -333,6 +420,7 @@ static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
     }
 
     // Assemble using system compiler
+    log_verbose("verbose: assembling %s -> %s\n", asm_file, obj_file);
     snprintf(cmd, sizeof(cmd), "cc -c -o %s %s 2>&1", obj_file, asm_file);
     ret = system(cmd);
     if (ret != 0) {
@@ -348,9 +436,11 @@ static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
                           "for d in /opt/homebrew/lib /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu; do "
                           "[ -f $d/libgc.a ] && echo $d/libgc.a && break; done)";
     if (g_exe_path && find_runtime_lib(g_exe_path, runtime_lib, sizeof(runtime_lib))) {
+        log_verbose("verbose: linking with runtime %s\n", runtime_lib);
         snprintf(cmd, sizeof(cmd), "cc -o %s %s %s %s 2>&1", output_file, obj_file, runtime_lib, gc_link);
     } else {
         // Fall back to linking without runtime (will fail if runtime functions used)
+        log_verbose("verbose: runtime library not found near executable, linking fallback path\n");
         snprintf(cmd, sizeof(cmd), "cc -o %s %s %s 2>&1", output_file, obj_file, gc_link);
     }
 
@@ -387,7 +477,7 @@ static int cmd_build(Arena* arena, const char* filename) {
         return 1;
     }
     
-    printf("Compiling %s...\n", filename);
+    log_info("Compiling %s...\n", filename);
     
     // Compile to QBE IR
     Codegen* cg = compile_to_qbe(arena, source, filename);
@@ -419,7 +509,7 @@ static int cmd_build(Arena* arena, const char* filename) {
     // Clean up SSA file on success
     if (ret == 0) {
         unlink(ssa_file);
-        printf("Created executable: %s\n", output_file);
+        log_info("Created executable: %s\n", output_file);
     }
     
     return ret;
@@ -461,7 +551,7 @@ static int cmd_check(Arena* arena, const char* filename) {
         return 1;
     }
     
-    printf("✓ %s: No type errors\n", filename);
+    log_info("✓ %s: No type errors\n", filename);
     return 0;
 }
 
@@ -666,47 +756,90 @@ int main(int argc, char** argv) {
     // Store executable path for runtime library lookup
     g_exe_path = argv[0];
     
-    // Handle global options (before command)
-    if (argc >= 2) {
-        if (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
-            print_usage();
-            return 0;
-        }
-        if (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0) {
-            print_version();
-            return 0;
-        }
-    }
-    
     // Need at least a command
     if (argc < 2) {
         print_usage();
         return 1;
     }
-    
-    // Find command
-    const Command* cmd = find_command(argv[1]);
-    if (!cmd) {
-        fprintf(stderr, "Unknown command: %s\n\n", argv[1]);
-        print_usage();
-        return 1;
+
+    int arg_index = 1;
+
+    // Parse global flags before command.
+    while (arg_index < argc && argv[arg_index][0] == '-') {
+        if (strcmp(argv[arg_index], "-h") == 0 || strcmp(argv[arg_index], "--help") == 0) {
+            print_usage();
+            return 0;
+        }
+        if (strcmp(argv[arg_index], "-v") == 0 || strcmp(argv[arg_index], "--version") == 0) {
+            print_version();
+            return 0;
+        }
+        if (strcmp(argv[arg_index], "--quiet") == 0) {
+            g_log_level = LOG_QUIET;
+            arg_index++;
+            continue;
+        }
+        if (strcmp(argv[arg_index], "--verbose") == 0) {
+            g_log_level = LOG_VERBOSE;
+            arg_index++;
+            continue;
+        }
+
+        ErrorsColorMode color_mode = ERRORS_COLOR_AUTO;
+        if (parse_color_flag(argv[arg_index], &color_mode)) {
+            errors_set_color_mode(color_mode);
+            arg_index++;
+            continue;
+        }
+        break;
     }
-    
-    // Check if command requires a file argument (args field is non-empty)
-    bool needs_file = cmd->args && cmd->args[0] != '\0';
-    
-    // Need at least command and file for commands that require it
-    if (needs_file && argc < 3) {
-        error_print("missing file argument");
+
+    if (arg_index >= argc) {
+        error_print("missing command");
         fprintf(stderr, "\n");
         print_usage();
         return 1;
     }
     
+    // Find command
+    const Command* cmd = find_command(argv[arg_index]);
+    if (!cmd) {
+        fprintf(stderr, "Unknown command: %s\n\n", argv[arg_index]);
+        print_usage();
+        return 1;
+    }
+
+    log_verbose("verbose: command=%s\n", cmd->name);
+    arg_index++;
+    
+    // Check if command requires a file argument (args field is non-empty)
+    bool needs_file = cmd->args && cmd->args[0] != '\0';
+    
     // Parse command-specific options
-    int arg_index = 2;
     while (arg_index < argc && argv[arg_index][0] == '-') {
+        if (strcmp(argv[arg_index], "--quiet") == 0) {
+            g_log_level = LOG_QUIET;
+            arg_index++;
+            continue;
+        }
+        if (strcmp(argv[arg_index], "--verbose") == 0) {
+            g_log_level = LOG_VERBOSE;
+            arg_index++;
+            continue;
+        }
+
+        ErrorsColorMode color_mode = ERRORS_COLOR_AUTO;
+        if (parse_color_flag(argv[arg_index], &color_mode)) {
+            errors_set_color_mode(color_mode);
+            arg_index++;
+            continue;
+        }
+
         if ((strcmp(argv[arg_index], "-o") == 0 || strcmp(argv[arg_index], "--output") == 0)) {
+            if (strcmp(cmd->name, "build") != 0) {
+                error_print("-o is only valid for the build command");
+                return 1;
+            }
             if (arg_index + 1 >= argc) {
                 error_print("-o requires an argument");
                 return 1;

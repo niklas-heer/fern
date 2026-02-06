@@ -6,12 +6,34 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "errors.h"
+#include <assert.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 /* ========== Color Detection ========== */
+static ErrorsColorMode g_color_mode = ERRORS_COLOR_AUTO;
+
+/**
+ * Set color output mode override.
+ * @param mode Requested color mode.
+ */
+void errors_set_color_mode(ErrorsColorMode mode) {
+    assert(mode == ERRORS_COLOR_AUTO || mode == ERRORS_COLOR_ALWAYS || mode == ERRORS_COLOR_NEVER);
+    assert(g_color_mode == ERRORS_COLOR_AUTO || g_color_mode == ERRORS_COLOR_ALWAYS || g_color_mode == ERRORS_COLOR_NEVER);
+    g_color_mode = mode;
+}
+
+/**
+ * Get current configured color mode.
+ * @return The current color mode.
+ */
+ErrorsColorMode errors_get_color_mode(void) {
+    assert(g_color_mode == ERRORS_COLOR_AUTO || g_color_mode == ERRORS_COLOR_ALWAYS || g_color_mode == ERRORS_COLOR_NEVER);
+    assert(g_color_mode >= ERRORS_COLOR_AUTO && g_color_mode <= ERRORS_COLOR_NEVER);
+    return g_color_mode;
+}
 
 /**
  * Check if stderr supports colors.
@@ -19,6 +41,12 @@
  */
 bool errors_use_color(void) {
     // FERN_STYLE: allow(assertion-density) environment checks
+    if (g_color_mode == ERRORS_COLOR_ALWAYS) {
+        return true;
+    }
+    if (g_color_mode == ERRORS_COLOR_NEVER) {
+        return false;
+    }
     
     // Check NO_COLOR (https://no-color.org/)
     if (getenv("NO_COLOR") != NULL) {

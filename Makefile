@@ -109,7 +109,7 @@ $(RUNTIME_LIB): $(RUNTIME_OBJS) | $(BIN_DIR)
 # Build and run tests
 .PHONY: test
 test: CFLAGS += $(DEBUGFLAGS)
-test: $(TEST_BIN)
+test: $(FERN_BIN) $(TEST_BIN)
 	@echo "Running tests..."
 	@$(TEST_BIN)
 

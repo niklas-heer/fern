@@ -33,12 +33,32 @@
 
 /* ========== Color Detection ========== */
 
+/** Explicit color mode override for diagnostics output. */
+typedef enum {
+    ERRORS_COLOR_AUTO = 0,
+    ERRORS_COLOR_ALWAYS = 1,
+    ERRORS_COLOR_NEVER = 2
+} ErrorsColorMode;
+
 /**
  * Check if stderr supports colors.
  * Respects NO_COLOR and FORCE_COLOR environment variables.
  * @return true if colors should be used.
  */
 bool errors_use_color(void);
+
+/**
+ * Set color output mode override.
+ * AUTO respects NO_COLOR/FORCE_COLOR/isatty. ALWAYS and NEVER force behavior.
+ * @param mode Requested color mode.
+ */
+void errors_set_color_mode(ErrorsColorMode mode);
+
+/**
+ * Get current configured color mode.
+ * @return The current color mode.
+ */
+ErrorsColorMode errors_get_color_mode(void);
 
 /* ========== Error Reporting ========== */
 
