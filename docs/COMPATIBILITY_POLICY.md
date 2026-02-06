@@ -56,7 +56,7 @@ Gate C runtime behavior is stabilized as:
 3. `http.get(url)` / `http.post(url, body)`:
    - `Ok(response_body)` for successful (`2xx`) HTTP responses.
    - `Err(FERN_ERR_IO)` for invalid URLs, non-`2xx` responses, and transport/read failures.
-   - Current runtime build uses civetweb with HTTP client support; HTTPS/TLS paths are not enabled in this baseline.
+   - Current runtime build uses civetweb with TLS enabled for both `http://` and `https://` URLs.
 4. `sql.open(path)` / `sql.execute(handle, query)`:
    - `sql.open(path)` returns `Ok(handle)` for valid paths and `Err(FERN_ERR_IO)` for invalid input/open failure.
    - `sql.execute(handle, query)` returns `Ok(rows_affected)` for valid handles/statements and `Err(FERN_ERR_IO)` for invalid handles/input/SQL errors.

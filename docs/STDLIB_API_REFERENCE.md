@@ -78,7 +78,7 @@ actors.next(actor_id: Int) -> Result(String, Int)
 
 1. `fs`, `json`, and `actors` have concrete runtime behavior covered by regression tests.
 2. `sql` signatures are stable and backed by a concrete SQLite runtime (`sql.open`, `sql.execute`).
-3. `http` signatures are stable and backed by a civetweb client runtime for HTTP requests (`http.get`, `http.post`), returning `Err(FERN_ERR_IO)` for invalid URLs/network failures/non-`2xx` responses.
+3. `http` signatures are stable and backed by a civetweb client runtime for HTTP/HTTPS requests (`http.get`, `http.post`), returning `Err(FERN_ERR_IO)` for invalid URLs/network failures/non-`2xx` responses.
 4. `File.*` is maintained for compatibility and maps to the same runtime surface as `fs.*`.
 
 ### `File` compatibility alias

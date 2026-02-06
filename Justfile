@@ -8,7 +8,7 @@ debug_flags := "-g -O0 -DDEBUG"
 release_flags := "-O2 -DNDEBUG"
 qbe_cflags := "-std=c99 -Ideps/qbe -Wno-unused-parameter -Wno-sign-compare"
 linenoise_cflags := "-std=c11 -Ideps/linenoise -Wno-unused-parameter -Wno-missing-field-initializers"
-civetweb_cflags := "-std=c11 -Ideps/civetweb/include -Ideps/civetweb/src -DNO_SSL -DNO_CGI"
+civetweb_cflags := "-std=c11 -Ideps/civetweb/include -Ideps/civetweb/src -DNO_CGI -DNO_SSL_DL -DOPENSSL_API_1_1"
 
 runtime_sources := "runtime/*.c"
 src_sources := "src/*.c"
@@ -91,6 +91,11 @@ _build-runtime mode:
       read -r -a gc_cflags <<< "$(pkg-config --cflags bdw-gc)"
     fi
 
+    openssl_cflags=()
+    if pkg-config --exists openssl >/dev/null 2>&1; then
+      read -r -a openssl_cflags <<< "$(pkg-config --cflags openssl)"
+    fi
+
     mkdir -p build bin
 
     runtime_objs=()
@@ -100,7 +105,7 @@ _build-runtime mode:
       runtime_objs+=("$obj")
     done
 
-    "$cc" "${civetweb[@]}" "${mode_flags[@]}" -c deps/civetweb/src/civetweb.c -o build/runtime_civetweb.o
+    "$cc" "${civetweb[@]}" "${mode_flags[@]}" "${openssl_cflags[@]}" -c deps/civetweb/src/civetweb.c -o build/runtime_civetweb.o
     runtime_objs+=("build/runtime_civetweb.o")
 
     ar rcs bin/libfern_runtime.a "${runtime_objs[@]}"

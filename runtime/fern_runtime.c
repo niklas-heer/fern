@@ -2015,7 +2015,7 @@ static int g_fern_http_client_initialized = 0;
  */
 static int fern_http_ensure_client_initialized(void) {
     if (g_fern_http_client_initialized) return 1;
-    unsigned features = mg_init_library(MG_FEATURES_DEFAULT);
+    unsigned features = mg_init_library(MG_FEATURES_DEFAULT | MG_FEATURES_TLS);
     (void)features;
     g_fern_http_client_initialized = 1;
     return 1;
@@ -2214,6 +2214,9 @@ static int64_t fern_http_request(const char* method, const char* url, const char
 
     FernHttpUrl target;
     if (!fern_http_parse_url(url, &target)) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+    if (target.use_ssl && (mg_check_feature(MG_FEATURES_TLS) == 0u)) {
         return fern_result_err(FERN_ERR_IO);
     }
 

@@ -127,6 +127,12 @@ def compile_microbenchmark(source_path: Path, output_path: Path) -> None:
         if sqlite_libs_probe.returncode == 0
         else ["-lsqlite3"]
     )
+    openssl_libs_probe = run(["pkg-config", "--libs", "openssl"], check=False)
+    openssl_libs = (
+        openssl_libs_probe.stdout.strip().split()
+        if openssl_libs_probe.returncode == 0
+        else ["-lssl", "-lcrypto"]
+    )
     cmd = [
         "clang",
         "-O3",
@@ -139,6 +145,7 @@ def compile_microbenchmark(source_path: Path, output_path: Path) -> None:
         str(output_path),
         *gc_libs,
         *sqlite_libs,
+        *openssl_libs,
     ]
     run(cmd)
 

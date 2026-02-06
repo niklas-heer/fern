@@ -360,6 +360,7 @@ static BuildRunResult build_and_run_c_source(const char* source) {
         "%s bin/libfern_runtime.a "
         "$(pkg-config --libs bdw-gc 2>/dev/null || echo -lgc) "
         "$(pkg-config --libs sqlite3 2>/dev/null || echo -lsqlite3) "
+        "$(pkg-config --libs openssl 2>/dev/null || echo -lssl -lcrypto) "
         "-pthread "
         "-o %s 2>&1",
         source_path,

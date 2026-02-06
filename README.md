@@ -55,7 +55,7 @@ Ok(process(validated))
 - **Garbage collected runtime** - Boehm-backed runtime plus Perceus baseline ownership primitives
 - **Language tooling** - LSP with diagnostics, hover, definition, completion, rename, and code actions
 - **Stable stdlib API surface** - `fs`, `http`, `json`, `sql`, `actors`, and `File` alias compatibility
-- **Explicit runtime readiness** - SQL is SQLite-backed today; HTTP GET/POST are runtime-backed (HTTP URLs) with deterministic `Err(FERN_ERR_IO)` on invalid URLs/network failures
+- **Explicit runtime readiness** - SQL is SQLite-backed today; HTTP GET/POST are runtime-backed for `http://` and `https://` URLs with deterministic `Err(FERN_ERR_IO)` on invalid URLs/network failures
 - **Helpful diagnostics** - snippets, notes, and fix hints in CLI workflows
 - **Reproducible quality gates** - `just check`, fuzz smoke, perf budgets, release policy checks
 
