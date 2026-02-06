@@ -2462,10 +2462,18 @@ typedef struct {
     int64_t alive;
     int64_t linked_parent_id;
     int64_t supervisor_id;
+    int64_t supervision_strategy;
+    int64_t supervision_order;
     int64_t supervision_max_restarts;
     int64_t supervision_period_sec;
     int64_t supervision_window_start_sec;
     int64_t supervision_restart_count;
+    int64_t* supervision_child_ids;
+    int64_t* supervision_child_strategies;
+    int64_t* supervision_child_orders;
+    int64_t supervision_child_len;
+    int64_t supervision_child_cap;
+    int64_t supervision_next_order;
     char* name;
     int64_t* monitor_ids;
     int64_t monitor_len;
@@ -2483,6 +2491,9 @@ typedef struct {
     int64_t actor_len;
     int64_t actor_cap;
     int64_t next_actor_id;
+    int64_t current_actor_id;
+    int64_t clock_now_sec;
+    int64_t clock_manual_mode;
     int64_t* ready_ids;
     int64_t ready_head;
     int64_t ready_len;
@@ -2490,6 +2501,10 @@ typedef struct {
 } FernActorRuntimeState;
 
 static FernActorRuntimeState g_actor_runtime;
+
+#define FERN_SUPERVISION_ONE_FOR_ONE 1
+#define FERN_SUPERVISION_ONE_FOR_ALL 2
+#define FERN_SUPERVISION_REST_FOR_ONE 3
 
 /**
  * Get actor runtime state with lazy initialization.
@@ -2500,9 +2515,26 @@ static FernActorRuntimeState* fern_actor_runtime_state(void) {
     assert(state != NULL);
     if (state->next_actor_id == 0) {
         state->next_actor_id = 1;
+        time_t raw_now = time(NULL);
+        state->clock_now_sec = raw_now > 0 ? (int64_t)raw_now : 0;
+        state->clock_manual_mode = 0;
     }
     assert(state->next_actor_id > 0);
     return state;
+}
+
+/**
+ * Read actor runtime clock seconds.
+ * @param state Actor runtime state.
+ * @return Runtime clock seconds.
+ */
+static int64_t fern_actor_clock_now_state(FernActorRuntimeState* state) {
+    assert(state != NULL);
+    if (state->clock_manual_mode) {
+        return state->clock_now_sec;
+    }
+    time_t raw_now = time(NULL);
+    return raw_now > 0 ? (int64_t)raw_now : 0;
 }
 
 /**
@@ -2644,6 +2676,47 @@ static int fern_actor_monitor_reserve(FernActorRecord* actor, int64_t needed) {
 }
 
 /**
+ * Reserve supervisor child-table capacity for at least needed entries.
+ * @param supervisor Supervisor actor record.
+ * @param needed Required child entry count.
+ * @return 1 on success, 0 on allocation failure.
+ */
+static int fern_actor_supervision_child_reserve(FernActorRecord* supervisor, int64_t needed) {
+    assert(supervisor != NULL);
+    assert(needed >= 0);
+    if (needed <= supervisor->supervision_child_cap) {
+        return 1;
+    }
+
+    int64_t next_cap = supervisor->supervision_child_cap > 0 ? supervisor->supervision_child_cap : 4;
+    while (next_cap < needed) {
+        next_cap *= 2;
+    }
+
+    int64_t* next_ids = FERN_ALLOC((size_t)next_cap * sizeof(int64_t));
+    int64_t* next_strategies = FERN_ALLOC((size_t)next_cap * sizeof(int64_t));
+    int64_t* next_orders = FERN_ALLOC((size_t)next_cap * sizeof(int64_t));
+    if (next_ids == NULL || next_strategies == NULL || next_orders == NULL) {
+        return 0;
+    }
+
+    if (supervisor->supervision_child_len > 0) {
+        memcpy(next_ids, supervisor->supervision_child_ids,
+            (size_t)supervisor->supervision_child_len * sizeof(int64_t));
+        memcpy(next_strategies, supervisor->supervision_child_strategies,
+            (size_t)supervisor->supervision_child_len * sizeof(int64_t));
+        memcpy(next_orders, supervisor->supervision_child_orders,
+            (size_t)supervisor->supervision_child_len * sizeof(int64_t));
+    }
+
+    supervisor->supervision_child_ids = next_ids;
+    supervisor->supervision_child_strategies = next_strategies;
+    supervisor->supervision_child_orders = next_orders;
+    supervisor->supervision_child_cap = next_cap;
+    return 1;
+}
+
+/**
  * Look up actor record by actor id.
  * @param state Actor runtime state.
  * @param actor_id Actor id.
@@ -2762,9 +2835,9 @@ int64_t fern_actor_spawn(const char* name) {
 }
 
 /**
- * Spawn an actor linked to the latest known supervisor baseline actor.
+ * Spawn an actor linked to the current actor context.
  * @param name Actor name.
- * @return Actor id (positive integer), or 0 on allocation failure.
+ * @return Actor id (positive integer), or 0 when no current actor is set.
  */
 int64_t fern_actor_spawn_link(const char* name) {
     if (name == NULL) {
@@ -2772,12 +2845,94 @@ int64_t fern_actor_spawn_link(const char* name) {
     }
 
     FernActorRuntimeState* state = fern_actor_runtime_state();
-    int64_t linked_parent_id = 0;
-    if (state->actor_len > 0) {
-        linked_parent_id = state->actors[state->actor_len - 1].actor_id;
+    int64_t linked_parent_id = state->current_actor_id;
+    if (linked_parent_id <= 0) {
+        return 0;
+    }
+
+    FernActorRecord* parent = fern_actor_lookup(state, linked_parent_id);
+    if (parent == NULL || !fern_actor_is_alive(parent)) {
+        return 0;
     }
 
     return fern_actor_spawn_with_link(name, linked_parent_id);
+}
+
+/**
+ * Set current actor context used by spawn_link.
+ * @param actor_id Actor id to set as current, or 0 to clear context.
+ * @return 0 on success, -1 for invalid/dead actor id.
+ */
+int64_t fern_actor_set_current(int64_t actor_id) {
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    if (actor_id == 0) {
+        state->current_actor_id = 0;
+        return 0;
+    }
+    if (actor_id < 0) {
+        return -1;
+    }
+
+    FernActorRecord* actor = fern_actor_lookup(state, actor_id);
+    if (actor == NULL || !fern_actor_is_alive(actor)) {
+        return -1;
+    }
+    state->current_actor_id = actor_id;
+    return 0;
+}
+
+/**
+ * Read current actor context id used by spawn_link.
+ * @return Current actor id, or 0 if unset.
+ */
+int64_t fern_actor_self(void) {
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    return state->current_actor_id;
+}
+
+/**
+ * Set actor runtime clock for deterministic supervision timing.
+ * @param now_sec Absolute seconds value.
+ * @return 0 on success, -1 on invalid value.
+ */
+int64_t fern_actor_clock_set(int64_t now_sec) {
+    if (now_sec < 0) {
+        return -1;
+    }
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    state->clock_now_sec = now_sec;
+    state->clock_manual_mode = 1;
+    return 0;
+}
+
+/**
+ * Advance actor runtime clock by delta seconds.
+ * @param delta_sec Seconds to advance.
+ * @return 0 on success, -1 on invalid/overflow.
+ */
+int64_t fern_actor_clock_advance(int64_t delta_sec) {
+    if (delta_sec < 0) {
+        return -1;
+    }
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    if (!state->clock_manual_mode) {
+        state->clock_now_sec = fern_actor_clock_now_state(state);
+        state->clock_manual_mode = 1;
+    }
+    if (state->clock_now_sec > INT64_MAX - delta_sec) {
+        return -1;
+    }
+    state->clock_now_sec += delta_sec;
+    return 0;
+}
+
+/**
+ * Read actor runtime clock used by supervision timing.
+ * @return Runtime clock seconds.
+ */
+int64_t fern_actor_clock_now(void) {
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    return fern_actor_clock_now_state(state);
 }
 
 /**
@@ -2796,6 +2951,144 @@ static int fern_actor_has_monitor(const FernActorRecord* worker, int64_t supervi
         }
     }
     return 0;
+}
+
+/**
+ * Remove a monitor id from a worker monitor list in-place.
+ * @param worker Worker actor record.
+ * @param supervisor_id Supervisor actor id to remove.
+ * @return 1 when removed, 0 when absent.
+ */
+static int fern_actor_remove_monitor(FernActorRecord* worker, int64_t supervisor_id) {
+    assert(worker != NULL);
+    assert(supervisor_id > 0);
+
+    for (int64_t i = 0; i < worker->monitor_len; i++) {
+        if (worker->monitor_ids[i] == supervisor_id) {
+            for (int64_t j = i + 1; j < worker->monitor_len; j++) {
+                worker->monitor_ids[j - 1] = worker->monitor_ids[j];
+            }
+            worker->monitor_len--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Find index of child id in supervisor child table.
+ * @param supervisor Supervisor actor record.
+ * @param worker_id Worker actor id.
+ * @return Index when present, -1 otherwise.
+ */
+static int64_t fern_actor_supervision_child_index(const FernActorRecord* supervisor, int64_t worker_id) {
+    assert(supervisor != NULL);
+    assert(worker_id > 0);
+    for (int64_t i = 0; i < supervisor->supervision_child_len; i++) {
+        if (supervisor->supervision_child_ids[i] == worker_id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/**
+ * Register or update a worker entry in supervisor child table.
+ * @param supervisor Supervisor actor record.
+ * @param worker Worker actor record.
+ * @param strategy Supervision strategy enum.
+ * @return 1 on success, 0 on allocation failure.
+ */
+static int fern_actor_supervision_register_child(
+    FernActorRecord* supervisor,
+    FernActorRecord* worker,
+    int64_t strategy) {
+    assert(supervisor != NULL);
+    assert(worker != NULL);
+    assert(strategy >= FERN_SUPERVISION_ONE_FOR_ONE);
+    assert(strategy <= FERN_SUPERVISION_REST_FOR_ONE);
+
+    int64_t idx = fern_actor_supervision_child_index(supervisor, worker->actor_id);
+    if (idx >= 0) {
+        worker->supervision_strategy = strategy;
+        worker->supervision_order = supervisor->supervision_child_orders[idx];
+        supervisor->supervision_child_strategies[idx] = strategy;
+        return 1;
+    }
+
+    if (!fern_actor_supervision_child_reserve(supervisor, supervisor->supervision_child_len + 1)) {
+        return 0;
+    }
+
+    int64_t order = supervisor->supervision_next_order++;
+    int64_t write_idx = supervisor->supervision_child_len++;
+    supervisor->supervision_child_ids[write_idx] = worker->actor_id;
+    supervisor->supervision_child_strategies[write_idx] = strategy;
+    supervisor->supervision_child_orders[write_idx] = order;
+
+    worker->supervision_strategy = strategy;
+    worker->supervision_order = order;
+    return 1;
+}
+
+/**
+ * Replace child id in a supervisor child table after restart.
+ * @param supervisor Supervisor actor record.
+ * @param old_id Previous worker actor id.
+ * @param new_id Replacement worker actor id.
+ */
+static void fern_actor_supervision_replace_child_id(FernActorRecord* supervisor, int64_t old_id, int64_t new_id) {
+    assert(supervisor != NULL);
+    assert(old_id > 0);
+    assert(new_id > 0);
+    for (int64_t i = 0; i < supervisor->supervision_child_len; i++) {
+        if (supervisor->supervision_child_ids[i] == old_id) {
+            supervisor->supervision_child_ids[i] = new_id;
+        }
+    }
+}
+
+/**
+ * Register supervision policy for a worker with explicit strategy.
+ * @param supervisor_id Supervisor actor id.
+ * @param worker_id Worker actor id.
+ * @param max_restarts Restart attempts allowed inside the time window.
+ * @param period_sec Window size in seconds.
+ * @param strategy Supervision strategy enum.
+ * @return Result: Ok(0) on success, Err(error code) otherwise.
+ */
+static int64_t fern_actor_supervise_with_strategy(
+    int64_t supervisor_id,
+    int64_t worker_id,
+    int64_t max_restarts,
+    int64_t period_sec,
+    int64_t strategy) {
+    if (supervisor_id <= 0 || worker_id <= 0 || max_restarts <= 0 || period_sec <= 0) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+    if (strategy < FERN_SUPERVISION_ONE_FOR_ONE || strategy > FERN_SUPERVISION_REST_FOR_ONE) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    FernActorRecord* supervisor = fern_actor_lookup(state, supervisor_id);
+    FernActorRecord* worker = fern_actor_lookup(state, worker_id);
+    if (supervisor == NULL || worker == NULL ||
+        !fern_actor_is_alive(supervisor) || !fern_actor_is_alive(worker)) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    worker->supervisor_id = supervisor_id;
+    worker->supervision_max_restarts = max_restarts;
+    worker->supervision_period_sec = period_sec;
+    worker->supervision_window_start_sec = 0;
+    worker->supervision_restart_count = 0;
+
+    if (!fern_actor_supervision_register_child(supervisor, worker, strategy)) {
+        return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+    }
+
+    return fern_actor_monitor(supervisor_id, worker_id);
 }
 
 /**
@@ -2829,6 +3122,28 @@ int64_t fern_actor_monitor(int64_t supervisor_id, int64_t worker_id) {
 }
 
 /**
+ * Remove a monitor relation from supervisor to worker.
+ * @param supervisor_id Supervisor actor id.
+ * @param worker_id Worker actor id.
+ * @return Result: Ok(0) on success, Err(error code) otherwise.
+ */
+int64_t fern_actor_demonitor(int64_t supervisor_id, int64_t worker_id) {
+    if (supervisor_id <= 0 || worker_id <= 0) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    FernActorRecord* supervisor = fern_actor_lookup(state, supervisor_id);
+    FernActorRecord* worker = fern_actor_lookup(state, worker_id);
+    if (supervisor == NULL || worker == NULL || !fern_actor_is_alive(supervisor)) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    (void)fern_actor_remove_monitor(worker, supervisor_id);
+    return fern_result_ok(0);
+}
+
+/**
  * Register supervision policy for a worker with restart intensity limits.
  * Also ensures supervisor monitors worker so DOWN notifications are delivered.
  * @param supervisor_id Supervisor actor id.
@@ -2838,25 +3153,54 @@ int64_t fern_actor_monitor(int64_t supervisor_id, int64_t worker_id) {
  * @return Result: Ok(0) on success, Err(error code) otherwise.
  */
 int64_t fern_actor_supervise(int64_t supervisor_id, int64_t worker_id, int64_t max_restarts, int64_t period_sec) {
-    if (supervisor_id <= 0 || worker_id <= 0 || max_restarts <= 0 || period_sec <= 0) {
-        return fern_result_err(FERN_ERR_IO);
-    }
+    return fern_actor_supervise_with_strategy(
+        supervisor_id,
+        worker_id,
+        max_restarts,
+        period_sec,
+        FERN_SUPERVISION_ONE_FOR_ONE);
+}
 
-    FernActorRuntimeState* state = fern_actor_runtime_state();
-    FernActorRecord* supervisor = fern_actor_lookup(state, supervisor_id);
-    FernActorRecord* worker = fern_actor_lookup(state, worker_id);
-    if (supervisor == NULL || worker == NULL ||
-        !fern_actor_is_alive(supervisor) || !fern_actor_is_alive(worker)) {
-        return fern_result_err(FERN_ERR_IO);
-    }
+/**
+ * Register supervision policy with one_for_all strategy.
+ * @param supervisor_id Supervisor actor id.
+ * @param worker_id Worker actor id.
+ * @param max_restarts Restart attempts allowed inside the time window.
+ * @param period_sec Window size in seconds.
+ * @return Result: Ok(0) on success, Err(error code) otherwise.
+ */
+int64_t fern_actor_supervise_one_for_all(
+    int64_t supervisor_id,
+    int64_t worker_id,
+    int64_t max_restarts,
+    int64_t period_sec) {
+    return fern_actor_supervise_with_strategy(
+        supervisor_id,
+        worker_id,
+        max_restarts,
+        period_sec,
+        FERN_SUPERVISION_ONE_FOR_ALL);
+}
 
-    worker->supervisor_id = supervisor_id;
-    worker->supervision_max_restarts = max_restarts;
-    worker->supervision_period_sec = period_sec;
-    worker->supervision_window_start_sec = 0;
-    worker->supervision_restart_count = 0;
-
-    return fern_actor_monitor(supervisor_id, worker_id);
+/**
+ * Register supervision policy with rest_for_one strategy.
+ * @param supervisor_id Supervisor actor id.
+ * @param worker_id Worker actor id.
+ * @param max_restarts Restart attempts allowed inside the time window.
+ * @param period_sec Window size in seconds.
+ * @return Result: Ok(0) on success, Err(error code) otherwise.
+ */
+int64_t fern_actor_supervise_rest_for_one(
+    int64_t supervisor_id,
+    int64_t worker_id,
+    int64_t max_restarts,
+    int64_t period_sec) {
+    return fern_actor_supervise_with_strategy(
+        supervisor_id,
+        worker_id,
+        max_restarts,
+        period_sec,
+        FERN_SUPERVISION_REST_FOR_ONE);
 }
 
 /**
@@ -2864,14 +3208,14 @@ int64_t fern_actor_supervise(int64_t supervisor_id, int64_t worker_id, int64_t m
  * @param worker Supervised worker actor.
  * @return 1 when restart is allowed, 0 when budget is exhausted/invalid.
  */
-static int fern_actor_supervision_consume_budget(FernActorRecord* worker) {
+static int fern_actor_supervision_consume_budget(FernActorRuntimeState* state, FernActorRecord* worker) {
+    assert(state != NULL);
     assert(worker != NULL);
     if (worker->supervision_max_restarts <= 0 || worker->supervision_period_sec <= 0) {
         return 0;
     }
 
-    time_t raw_now = time(NULL);
-    int64_t now_sec = raw_now > 0 ? (int64_t)raw_now : 0;
+    int64_t now_sec = fern_actor_clock_now_state(state);
 
     if (worker->supervision_window_start_sec == 0 ||
         (now_sec - worker->supervision_window_start_sec) >= worker->supervision_period_sec) {
@@ -2987,6 +3331,24 @@ static char* fern_actor_format_signal_message(const char* tag, int64_t actor_id,
 }
 
 /**
+ * Check whether exit reason should be treated as normal shutdown.
+ * @param reason Exit reason string.
+ * @return 1 when reason is normal/shutdown, 0 otherwise.
+ */
+static int fern_actor_reason_is_normal(const char* reason) {
+    if (reason == NULL || reason[0] == '\0') {
+        return 1;
+    }
+    if (strcmp(reason, "normal") == 0) {
+        return 1;
+    }
+    if (strcmp(reason, "shutdown") == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+/**
  * Build a stable RESTART(old_pid,new_pid) payload.
  * @param old_actor_id Restarted actor id.
  * @param new_actor_id Replacement actor id.
@@ -3012,6 +3374,84 @@ static char* fern_actor_format_restart_message(int64_t old_actor_id, int64_t new
 }
 
 /**
+ * Check whether id is already present in a small target list.
+ * @param ids Target id buffer.
+ * @param len Buffer length.
+ * @param candidate Actor id candidate.
+ * @return 1 when present, 0 otherwise.
+ */
+static int fern_actor_target_list_contains(const int64_t* ids, int64_t len, int64_t candidate) {
+    assert(ids != NULL);
+    assert(len >= 0);
+    assert(candidate > 0);
+    for (int64_t i = 0; i < len; i++) {
+        if (ids[i] == candidate) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Collect restart targets from supervisor child table for crashed actor strategy.
+ * @param supervisor Supervisor actor record.
+ * @param crashed Crashed child actor record.
+ * @param out_ids Output actor id buffer.
+ * @param out_cap Output buffer capacity.
+ * @return Number of collected targets (>=1), or 0 on invalid input.
+ */
+static int64_t fern_actor_collect_restart_targets(
+    const FernActorRecord* supervisor,
+    const FernActorRecord* crashed,
+    int64_t* out_ids,
+    int64_t out_cap) {
+    assert(supervisor != NULL);
+    assert(crashed != NULL);
+    assert(out_ids != NULL);
+    assert(out_cap > 0);
+
+    int64_t strategy = crashed->supervision_strategy;
+    int64_t len = 0;
+
+    if (strategy == FERN_SUPERVISION_ONE_FOR_ONE) {
+        out_ids[len++] = crashed->actor_id;
+        return len;
+    }
+
+    for (int64_t i = 0; i < supervisor->supervision_child_len && len < out_cap; i++) {
+        int64_t child_id = supervisor->supervision_child_ids[i];
+        int64_t child_strategy = supervisor->supervision_child_strategies[i];
+        int64_t child_order = supervisor->supervision_child_orders[i];
+        if (child_id <= 0 || child_strategy != strategy) {
+            continue;
+        }
+
+        if (strategy == FERN_SUPERVISION_ONE_FOR_ALL) {
+            if (!fern_actor_target_list_contains(out_ids, len, child_id)) {
+                out_ids[len++] = child_id;
+            }
+            continue;
+        }
+
+        if (strategy == FERN_SUPERVISION_REST_FOR_ONE) {
+            if (child_order >= crashed->supervision_order &&
+                !fern_actor_target_list_contains(out_ids, len, child_id)) {
+                out_ids[len++] = child_id;
+            }
+        }
+    }
+
+    if (!fern_actor_target_list_contains(out_ids, len, crashed->actor_id) && len < out_cap) {
+        out_ids[len++] = crashed->actor_id;
+    }
+
+    if (len == 0) {
+        out_ids[len++] = crashed->actor_id;
+    }
+    return len;
+}
+
+/**
  * Mark an actor as exited and notify links/monitors.
  * Linked parent receives Exit(pid,reason), monitors receive DOWN(pid,reason).
  * @param actor_id Exiting actor id.
@@ -3032,6 +3472,9 @@ int64_t fern_actor_exit(int64_t actor_id, const char* reason) {
     actor->alive = 0;
     actor->scheduler_tokens = 0;
     actor->scheduler_enqueued = 0;
+    if (state->current_actor_id == actor_id) {
+        state->current_actor_id = 0;
+    }
 
     int delivered = 0;
     if (actor->linked_parent_id > 0) {
@@ -3067,10 +3510,15 @@ int64_t fern_actor_exit(int64_t actor_id, const char* reason) {
         delivered = 1;
     }
 
+    if (fern_actor_reason_is_normal(reason)) {
+        (void)delivered;
+        return fern_result_ok(0);
+    }
+
     if (actor->supervisor_id > 0) {
         FernActorRecord* supervisor = fern_actor_lookup(state, actor->supervisor_id);
         if (supervisor != NULL && fern_actor_is_alive(supervisor)) {
-            if (!fern_actor_supervision_consume_budget(actor)) {
+            if (!fern_actor_supervision_consume_budget(state, actor)) {
                 char* escalate = fern_actor_format_signal_message("ESCALATE", actor_id, reason);
                 if (escalate == NULL) {
                     return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
@@ -3082,21 +3530,61 @@ int64_t fern_actor_exit(int64_t actor_id, const char* reason) {
                 return fern_result_err(FERN_ERR_IO);
             }
 
-            int64_t restarted = fern_actor_restart(actor_id);
-            if (!fern_result_is_ok(restarted)) {
-                return restarted;
+            int64_t target_cap = supervisor->supervision_child_len + 1;
+            if (target_cap < 1) {
+                target_cap = 1;
             }
-            int64_t new_actor_id = fern_result_unwrap(restarted);
-            char* restart_msg = fern_actor_format_restart_message(actor_id, new_actor_id);
-            if (restart_msg == NULL) {
+            int64_t* target_ids = FERN_ALLOC((size_t)target_cap * sizeof(int64_t));
+            if (target_ids == NULL) {
                 return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
             }
-            int64_t restart_status = fern_actor_send(supervisor->actor_id, restart_msg);
-            if (!fern_result_is_ok(restart_status)) {
-                return restart_status;
+
+            int64_t target_len = fern_actor_collect_restart_targets(supervisor, actor, target_ids, target_cap);
+            if (target_len <= 0) {
+                return fern_result_err(FERN_ERR_IO);
             }
-            delivered = 1;
-            return fern_result_ok(new_actor_id);
+
+            for (int64_t i = 0; i < target_len; i++) {
+                int64_t target_id = target_ids[i];
+                if (target_id == actor_id) {
+                    continue;
+                }
+                FernActorRecord* sibling = fern_actor_lookup(state, target_id);
+                if (sibling != NULL && fern_actor_is_alive(sibling)) {
+                    int64_t stop_status = fern_actor_exit(target_id, "shutdown");
+                    if (!fern_result_is_ok(stop_status)) {
+                        return stop_status;
+                    }
+                }
+            }
+
+            int64_t primary_new_actor_id = 0;
+            for (int64_t i = 0; i < target_len; i++) {
+                int64_t old_target_id = target_ids[i];
+                int64_t restarted = fern_actor_restart(old_target_id);
+                if (!fern_result_is_ok(restarted)) {
+                    return restarted;
+                }
+                int64_t new_target_id = fern_result_unwrap(restarted);
+                if (old_target_id == actor_id) {
+                    primary_new_actor_id = new_target_id;
+                }
+
+                char* restart_msg = fern_actor_format_restart_message(old_target_id, new_target_id);
+                if (restart_msg == NULL) {
+                    return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+                }
+                int64_t restart_status = fern_actor_send(supervisor->actor_id, restart_msg);
+                if (!fern_result_is_ok(restart_status)) {
+                    return restart_status;
+                }
+                delivered = 1;
+            }
+
+            if (primary_new_actor_id <= 0) {
+                return fern_result_err(FERN_ERR_IO);
+            }
+            return fern_result_ok(primary_new_actor_id);
         }
     }
 
@@ -3140,10 +3628,19 @@ int64_t fern_actor_restart(int64_t actor_id) {
     }
 
     next->supervisor_id = actor->supervisor_id;
+    next->supervision_strategy = actor->supervision_strategy;
+    next->supervision_order = actor->supervision_order;
     next->supervision_max_restarts = actor->supervision_max_restarts;
     next->supervision_period_sec = actor->supervision_period_sec;
     next->supervision_window_start_sec = actor->supervision_window_start_sec;
     next->supervision_restart_count = actor->supervision_restart_count;
+
+    if (actor->supervisor_id > 0) {
+        FernActorRecord* supervisor = fern_actor_lookup(state, actor->supervisor_id);
+        if (supervisor != NULL) {
+            fern_actor_supervision_replace_child_id(supervisor, actor_id, next_id);
+        }
+    }
 
     return fern_result_ok(next_id);
 }

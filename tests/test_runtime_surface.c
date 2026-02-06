@@ -702,6 +702,8 @@ void test_runtime_actor_spawn_link_exit_notification_contract(void) {
         "    int64_t supervisor = fern_actor_spawn(\"supervisor\");\n"
         "    if (supervisor <= 0) return 80;\n"
         "\n"
+        "    if (fern_actor_set_current(supervisor) != 0) return 86;\n"
+        "\n"
         "    int64_t worker = fern_actor_spawn_link(\"worker\");\n"
         "    if (worker <= supervisor) return 81;\n"
         "\n"
@@ -714,6 +716,28 @@ void test_runtime_actor_spawn_link_exit_notification_contract(void) {
         "    const char* text = (const char*)(intptr_t)fern_result_unwrap(msg);\n"
         "    if (!fern_str_starts_with(text, \"Exit(\")) return 84;\n"
         "    if (!fern_str_contains(text, \"boom\")) return 85;\n"
+        "    if (fern_actor_set_current(0) != 0) return 87;\n"
+        "    return 0;\n"
+        "}\n");
+
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
+void test_runtime_actor_spawn_link_requires_current_actor_contract(void) {
+    BuildRunResult result = build_and_run_c_source(
+        "#include <stdint.h>\n"
+        "#include \"fern_runtime.h\"\n"
+        "\n"
+        "int fern_main(void) {\n"
+        "    int64_t supervisor = fern_actor_spawn(\"supervisor\");\n"
+        "    if (supervisor <= 0) return 90;\n"
+        "\n"
+        "    if (fern_actor_set_current(0) != 0) return 91;\n"
+        "    int64_t worker = fern_actor_spawn_link(\"worker\");\n"
+        "    if (worker != 0) return 92;\n"
         "    return 0;\n"
         "}\n");
 
@@ -750,6 +774,36 @@ void test_runtime_actor_monitor_and_restart_contract(void) {
         "\n"
         "    int64_t new_worker = fern_result_unwrap(restarted);\n"
         "    if (new_worker <= worker) return 107;\n"
+        "    return 0;\n"
+        "}\n");
+
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
+void test_runtime_actor_demonitor_stops_down_notifications_contract(void) {
+    BuildRunResult result = build_and_run_c_source(
+        "#include <stdint.h>\n"
+        "#include \"fern_runtime.h\"\n"
+        "\n"
+        "int fern_main(void) {\n"
+        "    int64_t supervisor = fern_actor_spawn(\"supervisor\");\n"
+        "    int64_t worker = fern_actor_spawn(\"worker\");\n"
+        "    if (supervisor <= 0 || worker <= supervisor) return 150;\n"
+        "\n"
+        "    int64_t mon = fern_actor_monitor(supervisor, worker);\n"
+        "    if (!fern_result_is_ok(mon)) return 151;\n"
+        "\n"
+        "    int64_t dem = fern_actor_demonitor(supervisor, worker);\n"
+        "    if (!fern_result_is_ok(dem)) return 152;\n"
+        "\n"
+        "    int64_t exited = fern_actor_exit(worker, \"boom\");\n"
+        "    if (!fern_result_is_ok(exited)) return 153;\n"
+        "\n"
+        "    int64_t msg = fern_actor_next(supervisor);\n"
+        "    if (fern_result_is_ok(msg)) return 154;\n"
         "    return 0;\n"
         "}\n");
 
@@ -800,6 +854,176 @@ void test_runtime_actor_supervise_restart_intensity_contract(void) {
         "\n"
         "    const char* esc_msg = (const char*)(intptr_t)fern_result_unwrap(escalate);\n"
         "    if (!fern_str_starts_with(esc_msg, \"ESCALATE(\")) return 121;\n"
+        "    return 0;\n"
+        "}\n");
+
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
+void test_runtime_actor_supervise_normal_exit_does_not_restart_contract(void) {
+    BuildRunResult result = build_and_run_c_source(
+        "#include <stdint.h>\n"
+        "#include \"fern_runtime.h\"\n"
+        "\n"
+        "int fern_main(void) {\n"
+        "    int64_t supervisor = fern_actor_spawn(\"supervisor\");\n"
+        "    int64_t worker = fern_actor_spawn(\"worker\");\n"
+        "    if (supervisor <= 0 || worker <= supervisor) return 160;\n"
+        "\n"
+        "    int64_t spec = fern_actor_supervise(supervisor, worker, 3, 60);\n"
+        "    if (!fern_result_is_ok(spec)) return 161;\n"
+        "\n"
+        "    int64_t exited = fern_actor_exit(worker, \"normal\");\n"
+        "    if (!fern_result_is_ok(exited)) return 162;\n"
+        "    if (fern_result_unwrap(exited) != 0) return 163;\n"
+        "\n"
+        "    int64_t down = fern_actor_next(supervisor);\n"
+        "    if (!fern_result_is_ok(down)) return 164;\n"
+        "    const char* down_msg = (const char*)(intptr_t)fern_result_unwrap(down);\n"
+        "    if (!fern_str_starts_with(down_msg, \"DOWN(\")) return 165;\n"
+        "    if (!fern_str_contains(down_msg, \"normal\")) return 166;\n"
+        "\n"
+        "    int64_t msg2 = fern_actor_next(supervisor);\n"
+        "    if (fern_result_is_ok(msg2)) return 167;\n"
+        "    return 0;\n"
+        "}\n");
+
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
+void test_runtime_actor_supervision_uses_deterministic_clock_contract(void) {
+    BuildRunResult result = build_and_run_c_source(
+        "#include <stdint.h>\n"
+        "#include \"fern_runtime.h\"\n"
+        "\n"
+        "int fern_main(void) {\n"
+        "    if (fern_actor_clock_set(100) != 0) return 170;\n"
+        "    if (fern_actor_clock_now() != 100) return 171;\n"
+        "\n"
+        "    int64_t supervisor = fern_actor_spawn(\"supervisor\");\n"
+        "    int64_t worker = fern_actor_spawn(\"worker\");\n"
+        "    if (supervisor <= 0 || worker <= supervisor) return 172;\n"
+        "\n"
+        "    int64_t spec = fern_actor_supervise(supervisor, worker, 1, 5);\n"
+        "    if (!fern_result_is_ok(spec)) return 173;\n"
+        "\n"
+        "    int64_t first = fern_actor_exit(worker, \"boom\");\n"
+        "    if (!fern_result_is_ok(first)) return 174;\n"
+        "    int64_t w2 = fern_result_unwrap(first);\n"
+        "    if (w2 <= worker) return 175;\n"
+        "\n"
+        "    int64_t second = fern_actor_exit(w2, \"boom2\");\n"
+        "    if (fern_result_is_ok(second)) return 176;\n"
+        "\n"
+        "    if (fern_actor_clock_advance(5) != 0) return 177;\n"
+        "    if (fern_actor_clock_now() != 105) return 178;\n"
+        "\n"
+        "    int64_t restarted = fern_actor_restart(w2);\n"
+        "    if (!fern_result_is_ok(restarted)) return 179;\n"
+        "    int64_t w3 = fern_result_unwrap(restarted);\n"
+        "    if (w3 <= w2) return 180;\n"
+        "\n"
+        "    int64_t third = fern_actor_exit(w3, \"boom3\");\n"
+        "    if (!fern_result_is_ok(third)) return 181;\n"
+        "    int64_t w4 = fern_result_unwrap(third);\n"
+        "    if (w4 <= w3) return 182;\n"
+        "    return 0;\n"
+        "}\n");
+
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
+void test_runtime_actor_supervise_one_for_all_restarts_all_children_contract(void) {
+    BuildRunResult result = build_and_run_c_source(
+        "#include <stdint.h>\n"
+        "#include <stdio.h>\n"
+        "#include \"fern_runtime.h\"\n"
+        "\n"
+        "int fern_main(void) {\n"
+        "    int64_t supervisor = fern_actor_spawn(\"supervisor\");\n"
+        "    int64_t a = fern_actor_spawn(\"a\");\n"
+        "    int64_t b = fern_actor_spawn(\"b\");\n"
+        "    if (supervisor <= 0 || a <= supervisor || b <= a) return 190;\n"
+        "\n"
+        "    if (!fern_result_is_ok(fern_actor_supervise_one_for_all(supervisor, a, 3, 60))) return 191;\n"
+        "    if (!fern_result_is_ok(fern_actor_supervise_one_for_all(supervisor, b, 3, 60))) return 192;\n"
+        "\n"
+        "    int64_t exited = fern_actor_exit(a, \"boom\");\n"
+        "    if (!fern_result_is_ok(exited)) return 193;\n"
+        "\n"
+        "    int64_t m1 = fern_actor_next(supervisor);\n"
+        "    int64_t m2 = fern_actor_next(supervisor);\n"
+        "    int64_t m3 = fern_actor_next(supervisor);\n"
+        "    int64_t m4 = fern_actor_next(supervisor);\n"
+        "    if (!fern_result_is_ok(m1) || !fern_result_is_ok(m2) || !fern_result_is_ok(m3) || !fern_result_is_ok(m4)) return 194;\n"
+        "\n"
+        "    const char* s1 = (const char*)(intptr_t)fern_result_unwrap(m1);\n"
+        "    const char* s2 = (const char*)(intptr_t)fern_result_unwrap(m2);\n"
+        "    const char* s3 = (const char*)(intptr_t)fern_result_unwrap(m3);\n"
+        "    const char* s4 = (const char*)(intptr_t)fern_result_unwrap(m4);\n"
+        "    if (!fern_str_starts_with(s1, \"DOWN(\")) return 195;\n"
+        "    if (!fern_str_starts_with(s2, \"DOWN(\")) return 196;\n"
+        "    if (!fern_str_starts_with(s3, \"RESTART(\")) return 197;\n"
+        "    if (!fern_str_starts_with(s4, \"RESTART(\")) return 198;\n"
+        "    return 0;\n"
+        "}\n");
+
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
+void test_runtime_actor_supervise_rest_for_one_restarts_suffix_contract(void) {
+    BuildRunResult result = build_and_run_c_source(
+        "#include <stdint.h>\n"
+        "#include \"fern_runtime.h\"\n"
+        "\n"
+        "int fern_main(void) {\n"
+        "    int64_t supervisor = fern_actor_spawn(\"supervisor\");\n"
+        "    int64_t a = fern_actor_spawn(\"a\");\n"
+        "    int64_t b = fern_actor_spawn(\"b\");\n"
+        "    int64_t c = fern_actor_spawn(\"c\");\n"
+        "    if (supervisor <= 0 || a <= supervisor || b <= a || c <= b) return 210;\n"
+        "\n"
+        "    if (!fern_result_is_ok(fern_actor_supervise_rest_for_one(supervisor, a, 3, 60))) return 211;\n"
+        "    if (!fern_result_is_ok(fern_actor_supervise_rest_for_one(supervisor, b, 3, 60))) return 212;\n"
+        "    if (!fern_result_is_ok(fern_actor_supervise_rest_for_one(supervisor, c, 3, 60))) return 213;\n"
+        "\n"
+        "    int64_t exited = fern_actor_exit(b, \"boom\");\n"
+        "    if (!fern_result_is_ok(exited)) return 214;\n"
+        "\n"
+        "    int64_t m1 = fern_actor_next(supervisor);\n"
+        "    int64_t m2 = fern_actor_next(supervisor);\n"
+        "    int64_t m3 = fern_actor_next(supervisor);\n"
+        "    int64_t m4 = fern_actor_next(supervisor);\n"
+        "    if (!fern_result_is_ok(m1) || !fern_result_is_ok(m2) || !fern_result_is_ok(m3) || !fern_result_is_ok(m4)) return 215;\n"
+        "\n"
+        "    const char* s1 = (const char*)(intptr_t)fern_result_unwrap(m1);\n"
+        "    const char* s2 = (const char*)(intptr_t)fern_result_unwrap(m2);\n"
+        "    const char* s3 = (const char*)(intptr_t)fern_result_unwrap(m3);\n"
+        "    const char* s4 = (const char*)(intptr_t)fern_result_unwrap(m4);\n"
+        "    if (!fern_str_starts_with(s1, \"DOWN(\")) return 216;\n"
+        "    if (!fern_str_starts_with(s2, \"DOWN(\")) return 217;\n"
+        "    if (!fern_str_starts_with(s3, \"RESTART(\")) return 218;\n"
+        "    if (!fern_str_starts_with(s4, \"RESTART(\")) return 219;\n"
+        "\n"
+        "    int64_t ping = fern_actor_send(a, \"ping\");\n"
+        "    if (!fern_result_is_ok(ping)) return 220;\n"
+        "    int64_t recv = fern_actor_receive(a);\n"
+        "    if (!fern_result_is_ok(recv)) return 221;\n"
+        "\n"
+        "    int64_t extra = fern_actor_next(supervisor);\n"
+        "    if (fern_result_is_ok(extra)) return 222;\n"
         "    return 0;\n"
         "}\n");
 
@@ -936,8 +1160,14 @@ void run_runtime_surface_tests(void) {
     TEST_RUN(test_runtime_actors_post_and_next_mailbox_contract);
     TEST_RUN(test_runtime_actor_scheduler_round_robin_contract);
     TEST_RUN(test_runtime_actor_spawn_link_exit_notification_contract);
+    TEST_RUN(test_runtime_actor_spawn_link_requires_current_actor_contract);
     TEST_RUN(test_runtime_actor_monitor_and_restart_contract);
+    TEST_RUN(test_runtime_actor_demonitor_stops_down_notifications_contract);
     TEST_RUN(test_runtime_actor_supervise_restart_intensity_contract);
+    TEST_RUN(test_runtime_actor_supervise_normal_exit_does_not_restart_contract);
+    TEST_RUN(test_runtime_actor_supervision_uses_deterministic_clock_contract);
+    TEST_RUN(test_runtime_actor_supervise_one_for_all_restarts_all_children_contract);
+    TEST_RUN(test_runtime_actor_supervise_rest_for_one_restarts_suffix_contract);
     TEST_RUN(test_runtime_actor_exit_marks_actor_dead_contract);
     TEST_RUN(test_runtime_memory_alloc_dup_drop_contract);
     TEST_RUN(test_runtime_rc_header_and_core_type_ops);

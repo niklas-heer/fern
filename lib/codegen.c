@@ -1892,6 +1892,14 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                                 string_cstr(result), string_cstr(supervisor_id), string_cstr(worker_id));
                             return result;
                         }
+                        /* actors.demonitor(supervisor, worker) -> Result(Int, Int) */
+                        if (strcmp(func, "demonitor") == 0 && call->args->len == 2) {
+                            String* supervisor_id = codegen_expr(cg, call->args->data[0].value);
+                            String* worker_id = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_actor_demonitor(w %s, w %s)\n",
+                                string_cstr(result), string_cstr(supervisor_id), string_cstr(worker_id));
+                            return result;
+                        }
                         /* actors.restart(actor_id) -> Result(Int, Int) */
                         if (strcmp(func, "restart") == 0 && call->args->len == 1) {
                             String* actor_id = codegen_expr(cg, call->args->data[0].value);
@@ -1906,6 +1914,28 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* max_restarts = codegen_expr(cg, call->args->data[2].value);
                             String* period_sec = codegen_expr(cg, call->args->data[3].value);
                             emit(cg, "    %s =l call $fern_actor_supervise(w %s, w %s, w %s, w %s)\n",
+                                string_cstr(result), string_cstr(supervisor_id), string_cstr(worker_id),
+                                string_cstr(max_restarts), string_cstr(period_sec));
+                            return result;
+                        }
+                        /* actors.supervise_one_for_all(supervisor, worker, max_restarts, period_sec) -> Result(Int, Int) */
+                        if (strcmp(func, "supervise_one_for_all") == 0 && call->args->len == 4) {
+                            String* supervisor_id = codegen_expr(cg, call->args->data[0].value);
+                            String* worker_id = codegen_expr(cg, call->args->data[1].value);
+                            String* max_restarts = codegen_expr(cg, call->args->data[2].value);
+                            String* period_sec = codegen_expr(cg, call->args->data[3].value);
+                            emit(cg, "    %s =l call $fern_actor_supervise_one_for_all(w %s, w %s, w %s, w %s)\n",
+                                string_cstr(result), string_cstr(supervisor_id), string_cstr(worker_id),
+                                string_cstr(max_restarts), string_cstr(period_sec));
+                            return result;
+                        }
+                        /* actors.supervise_rest_for_one(supervisor, worker, max_restarts, period_sec) -> Result(Int, Int) */
+                        if (strcmp(func, "supervise_rest_for_one") == 0 && call->args->len == 4) {
+                            String* supervisor_id = codegen_expr(cg, call->args->data[0].value);
+                            String* worker_id = codegen_expr(cg, call->args->data[1].value);
+                            String* max_restarts = codegen_expr(cg, call->args->data[2].value);
+                            String* period_sec = codegen_expr(cg, call->args->data[3].value);
+                            emit(cg, "    %s =l call $fern_actor_supervise_rest_for_one(w %s, w %s, w %s, w %s)\n",
                                 string_cstr(result), string_cstr(supervisor_id), string_cstr(worker_id),
                                 string_cstr(max_restarts), string_cstr(period_sec));
                             return result;

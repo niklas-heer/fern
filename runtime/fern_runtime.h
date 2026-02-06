@@ -882,15 +882,48 @@ int64_t fern_sql_execute(int64_t handle, const char* query);
 int64_t fern_actor_spawn(const char* name);
 
 /**
- * Spawn an actor linked to a supervisor baseline.
+ * Spawn an actor linked to the current actor context.
  *
- * Baseline contract: links to the most recently spawned actor id (if any)
- * so runtime tests can model supervisor restart signals deterministically.
+ * Requires a current actor to be set via `fern_actor_set_current`.
+ * If no current actor exists, spawn_link returns 0.
  *
  * @param name Actor name.
  * @return Actor id (positive integer), or 0 on allocation failure.
  */
 int64_t fern_actor_spawn_link(const char* name);
+
+/**
+ * Set current actor context used by spawn_link.
+ * @param actor_id Actor id to set as current, or 0 to clear context.
+ * @return 0 on success, -1 for invalid/dead actor id.
+ */
+int64_t fern_actor_set_current(int64_t actor_id);
+
+/**
+ * Read current actor context id used by spawn_link.
+ * @return Current actor id, or 0 if no actor is active in context.
+ */
+int64_t fern_actor_self(void);
+
+/**
+ * Set actor runtime clock (seconds) for deterministic supervision timing.
+ * @param now_sec Absolute seconds value (non-negative).
+ * @return 0 on success, -1 on invalid value.
+ */
+int64_t fern_actor_clock_set(int64_t now_sec);
+
+/**
+ * Advance actor runtime clock by delta seconds.
+ * @param delta_sec Seconds to advance (non-negative).
+ * @return 0 on success, -1 on invalid/overflow.
+ */
+int64_t fern_actor_clock_advance(int64_t delta_sec);
+
+/**
+ * Read actor runtime clock seconds used by supervision timing.
+ * @return Current runtime clock seconds.
+ */
+int64_t fern_actor_clock_now(void);
 
 /**
  * Register a monitor relation from supervisor to worker.
@@ -903,6 +936,14 @@ int64_t fern_actor_spawn_link(const char* name);
 int64_t fern_actor_monitor(int64_t supervisor_id, int64_t worker_id);
 
 /**
+ * Remove a monitor relation from supervisor to worker.
+ * @param supervisor_id Supervisor actor id.
+ * @param worker_id Worker actor id.
+ * @return Result: Ok(0) when monitor is removed/already absent, Err(error code) otherwise.
+ */
+int64_t fern_actor_demonitor(int64_t supervisor_id, int64_t worker_id);
+
+/**
  * Register a supervised child spec with restart-intensity policy.
  * @param supervisor_id Supervisor actor id.
  * @param worker_id Worker actor id.
@@ -912,6 +953,26 @@ int64_t fern_actor_monitor(int64_t supervisor_id, int64_t worker_id);
  * Both actors must exist and be alive.
  */
 int64_t fern_actor_supervise(int64_t supervisor_id, int64_t worker_id, int64_t max_restarts, int64_t period_sec);
+
+/**
+ * Register supervised child spec using one_for_all restart strategy.
+ * @param supervisor_id Supervisor actor id.
+ * @param worker_id Worker actor id.
+ * @param max_restarts Maximum restart attempts allowed in period_sec window.
+ * @param period_sec Restart budget window size in seconds.
+ * @return Result: Ok(0) when supervision is configured, Err(error code) otherwise.
+ */
+int64_t fern_actor_supervise_one_for_all(int64_t supervisor_id, int64_t worker_id, int64_t max_restarts, int64_t period_sec);
+
+/**
+ * Register supervised child spec using rest_for_one restart strategy.
+ * @param supervisor_id Supervisor actor id.
+ * @param worker_id Worker actor id.
+ * @param max_restarts Maximum restart attempts allowed in period_sec window.
+ * @param period_sec Restart budget window size in seconds.
+ * @return Result: Ok(0) when supervision is configured, Err(error code) otherwise.
+ */
+int64_t fern_actor_supervise_rest_for_one(int64_t supervisor_id, int64_t worker_id, int64_t max_restarts, int64_t period_sec);
 
 /**
  * Send a message to an actor mailbox.

@@ -1898,6 +1898,21 @@ void test_check_actors_monitor_returns_result(void) {
     arena_destroy(arena);
 }
 
+void test_check_actors_demonitor_returns_result(void) {
+    Arena* arena = arena_create(4096);
+
+    Type* t = check_expr(arena, "actors.demonitor(1, 2)");
+
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(t->data.con.name), "Result");
+    ASSERT_EQ(t->data.con.args->len, 2);
+    ASSERT_EQ(t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(t->data.con.args->data[1]->kind, TYPE_INT);
+
+    arena_destroy(arena);
+}
+
 void test_check_actors_restart_returns_result(void) {
     Arena* arena = arena_create(4096);
 
@@ -1917,6 +1932,36 @@ void test_check_actors_supervise_returns_result(void) {
     Arena* arena = arena_create(4096);
 
     Type* t = check_expr(arena, "actors.supervise(1, 2, 3, 5)");
+
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(t->data.con.name), "Result");
+    ASSERT_EQ(t->data.con.args->len, 2);
+    ASSERT_EQ(t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(t->data.con.args->data[1]->kind, TYPE_INT);
+
+    arena_destroy(arena);
+}
+
+void test_check_actors_supervise_one_for_all_returns_result(void) {
+    Arena* arena = arena_create(4096);
+
+    Type* t = check_expr(arena, "actors.supervise_one_for_all(1, 2, 3, 5)");
+
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(t->data.con.name), "Result");
+    ASSERT_EQ(t->data.con.args->len, 2);
+    ASSERT_EQ(t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(t->data.con.args->data[1]->kind, TYPE_INT);
+
+    arena_destroy(arena);
+}
+
+void test_check_actors_supervise_rest_for_one_returns_result(void) {
+    Arena* arena = arena_create(4096);
+
+    Type* t = check_expr(arena, "actors.supervise_rest_for_one(1, 2, 3, 5)");
 
     ASSERT_NOT_NULL(t);
     ASSERT_EQ(t->kind, TYPE_CON);
@@ -2095,6 +2140,18 @@ void test_check_actors_api_signatures(void) {
     ASSERT_EQ(monitor_t->data.con.args->data[0]->kind, TYPE_INT);
     ASSERT_EQ(monitor_t->data.con.args->data[1]->kind, TYPE_INT);
 
+    Type* demonitor_t = check_expr(arena, "actors.demonitor(1, 2)");
+    ASSERT_NOT_NULL(demonitor_t);
+    ASSERT_EQ(demonitor_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(demonitor_t->data.con.name), "Result");
+    ASSERT_EQ(demonitor_t->data.con.args->len, 2);
+    ASSERT_EQ(demonitor_t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(demonitor_t->data.con.args->data[1]->kind, TYPE_INT);
+
+    Type* bad_demonitor_t = check_expr(arena, "actors.demonitor(1, \"worker\")");
+    ASSERT_NOT_NULL(bad_demonitor_t);
+    ASSERT_EQ(bad_demonitor_t->kind, TYPE_ERROR);
+
     Type* restart_t = check_expr(arena, "actors.restart(1)");
     ASSERT_NOT_NULL(restart_t);
     ASSERT_EQ(restart_t->kind, TYPE_CON);
@@ -2118,6 +2175,24 @@ void test_check_actors_api_signatures(void) {
     Type* bad_supervise_t = check_expr(arena, "actors.supervise(1, 2, \"3\", 5)");
     ASSERT_NOT_NULL(bad_supervise_t);
     ASSERT_EQ(bad_supervise_t->kind, TYPE_ERROR);
+
+    Type* supervise_all_t = check_expr(arena, "actors.supervise_one_for_all(1, 2, 3, 5)");
+    ASSERT_NOT_NULL(supervise_all_t);
+    ASSERT_EQ(supervise_all_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(supervise_all_t->data.con.name), "Result");
+
+    Type* bad_supervise_all_t = check_expr(arena, "actors.supervise_one_for_all(1, 2, \"3\", 5)");
+    ASSERT_NOT_NULL(bad_supervise_all_t);
+    ASSERT_EQ(bad_supervise_all_t->kind, TYPE_ERROR);
+
+    Type* supervise_rest_t = check_expr(arena, "actors.supervise_rest_for_one(1, 2, 3, 5)");
+    ASSERT_NOT_NULL(supervise_rest_t);
+    ASSERT_EQ(supervise_rest_t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(supervise_rest_t->data.con.name), "Result");
+
+    Type* bad_supervise_rest_t = check_expr(arena, "actors.supervise_rest_for_one(1, 2, \"3\", 5)");
+    ASSERT_NOT_NULL(bad_supervise_rest_t);
+    ASSERT_EQ(bad_supervise_rest_t->kind, TYPE_ERROR);
 
     arena_destroy(arena);
 }
@@ -2497,8 +2572,11 @@ void run_checker_tests(void) {
     TEST_RUN(test_check_sql_open_returns_result);
     TEST_RUN(test_check_actors_start_returns_int);
     TEST_RUN(test_check_actors_monitor_returns_result);
+    TEST_RUN(test_check_actors_demonitor_returns_result);
     TEST_RUN(test_check_actors_restart_returns_result);
     TEST_RUN(test_check_actors_supervise_returns_result);
+    TEST_RUN(test_check_actors_supervise_one_for_all_returns_result);
+    TEST_RUN(test_check_actors_supervise_rest_for_one_returns_result);
     TEST_RUN(test_check_fs_api_signatures);
     TEST_RUN(test_check_json_api_signatures);
     TEST_RUN(test_check_http_api_signatures);

@@ -8,7 +8,7 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `just test` passing (**521/521**)
+- Build/tests: `just test` passing (**533/533**)
 - Style: `just style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
 - Release automation: conventional-commit-driven semver + release notes configured via `release-please` (initial version pinned to `0.1.0`, breaking changes map to minor while `<1.0.0`)
@@ -23,6 +23,10 @@ Detailed historical logs and old iteration notes were moved to:
 - Post-Gate D stabilization update: Erlang-inspired monitoring/restart baseline now includes `actors.monitor(...)`, `actors.restart(...)`, and `DOWN(...)` notifications for monitored exits (`test_check_actors_monitor_returns_result`, `test_codegen_actors_monitor_calls_runtime`, `test_runtime_actor_monitor_and_restart_contract`)
 - Post-Gate D stabilization update: supervision intensity baseline now includes `actors.supervise(...)` restart-budget handling with `RESTART(...)` and `ESCALATE(...)` signals (`test_check_actors_supervise_returns_result`, `test_codegen_actors_supervise_calls_runtime`, `test_runtime_actor_supervise_restart_intensity_contract`)
 - Post-Gate D stabilization update: actor lifecycle now enforces exited PID semantics (dead actors reject send/receive/mailbox access and scheduler tickets) with runtime coverage (`test_runtime_actor_exit_marks_actor_dead_contract`)
+- Post-Gate D stabilization update: `spawn_link(...)` now requires explicit current-actor context instead of implicit "last spawned actor" linkage (`fern_actor_set_current`, `fern_actor_self`, `test_runtime_actor_spawn_link_requires_current_actor_contract`)
+- Post-Gate D stabilization update: monitor lifecycle adds `actors.demonitor(...)`, and supervision treats `normal`/`shutdown` exits as non-restart paths (`test_check_actors_demonitor_returns_result`, `test_codegen_actors_demonitor_calls_runtime`, `test_runtime_actor_supervise_normal_exit_does_not_restart_contract`)
+- Post-Gate D stabilization update: supervision timing now uses deterministic runtime clock controls (`fern_actor_clock_set`, `fern_actor_clock_advance`, `fern_actor_clock_now`) instead of direct wall-clock dependence (`test_runtime_actor_supervision_uses_deterministic_clock_contract`)
+- Post-Gate D stabilization update: supervisor child tables now drive `one_for_one`, `one_for_all`, and `rest_for_one` restart targeting via Fern-native APIs (`actors.supervise`, `actors.supervise_one_for_all`, `actors.supervise_rest_for_one`) with runtime coverage (`test_runtime_actor_supervise_one_for_all_restarts_all_children_contract`, `test_runtime_actor_supervise_rest_for_one_restarts_suffix_contract`)
 
 ## Working Model
 
@@ -178,6 +182,10 @@ Gate D pass criteria are now closed and validated with test + workflow coverage.
 - [x] Milestone 8 monitor/restart baseline: `actors.monitor(...)` + `actors.restart(...)` runtime/checker/codegen contract with `DOWN(...)` notifications (`lib/checker.c`, `lib/codegen.c`, `runtime/fern_runtime.c`, `tests/test_runtime_surface.c`)
 - [x] Milestone 8 supervision intensity baseline: `actors.supervise(...)` runtime/checker/codegen contract with restart budget + `RESTART(...)`/`ESCALATE(...)` signaling (`lib/checker.c`, `lib/codegen.c`, `runtime/fern_runtime.c`, `tests/test_runtime_surface.c`)
 - [x] Milestone 8 process lifecycle baseline: exited actors transition to dead PID state (no send/receive/mailbox/scheduler activity) with runtime contract coverage (`runtime/fern_runtime.c`, `tests/test_runtime_surface.c`)
+- [x] Milestone 8 linkage context baseline: `spawn_link(...)` now binds via explicit current-actor runtime context (`fern_actor_set_current`, `fern_actor_self`) instead of implicit last-spawn heuristic (`runtime/fern_runtime.c`, `runtime/fern_runtime.h`, `tests/test_runtime_surface.c`)
+- [x] Milestone 8 monitor lifecycle baseline: `actors.demonitor(...)` + normal-exit supervision semantics (`normal`/`shutdown` do not auto-restart) with checker/codegen/runtime coverage (`lib/checker.c`, `lib/codegen.c`, `runtime/fern_runtime.c`, `runtime/fern_runtime.h`, `tests/test_runtime_surface.c`)
+- [x] Milestone 8 deterministic supervision timing baseline: runtime clock controls for reproducible restart-intensity windows (`runtime/fern_runtime.c`, `runtime/fern_runtime.h`, `tests/test_runtime_surface.c`)
+- [x] Milestone 8 supervision strategy baseline: supervisor child-table tracking with `one_for_all` and `rest_for_one` APIs + runtime strategy behavior tests (`lib/checker.c`, `lib/codegen.c`, `runtime/fern_runtime.c`, `runtime/fern_runtime.h`, `tests/test_runtime_surface.c`)
 - [x] `fern doc` documentation generation pipeline (`src/main.c`, `scripts/generate_docs.py`, `tests/test_cli_main.c`)
 - [x] LSP expansion beyond MVP (completion/rename/code actions)
 - [x] Post-Gate D semantic parity pass for parsed-but-partial expressions: checker support for `%{ ... | ... }` + actor primitives and codegen fallback removal for generic pipe/indirect call/named field/default expr paths (`tests/test_checker.c`, `tests/test_codegen.c`, `lib/checker.c`, `lib/codegen.c`)

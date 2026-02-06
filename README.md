@@ -2,7 +2,7 @@
 
 > A statically-typed, functional language with Python aesthetics that compiles to single binaries.
 
-**Status:** 🚧 In active development - Gate D complete, 521 tests passing, release packaging/benchmark publishing in CI, and a new `Justfile` task runner
+**Status:** 🚧 In active development - Gate D complete, 533 tests passing, release packaging/benchmark publishing in CI, and a new `Justfile` task runner
 
 ## What is Fern?
 
@@ -78,7 +78,7 @@ Fern is implemented with strict TDD. See [DESIGN.md](DESIGN.md) for language det
 - ✅ Gate D (ecosystem/adoption hardening) passed
 
 **Recent outcomes:**
-- ✅ 521/521 tests passing in local `just test`
+- ✅ 533/533 tests passing in local `just test`
 - ✅ Cross-platform CI (Ubuntu + macOS) with build/test/style/perf/fuzz/example checks
 - ✅ Release packaging bundles (`fern` + `libfern_runtime.a` + policy/docs artifacts)
 - ✅ Conventional-commit-driven semver + release notes via `release-please`
