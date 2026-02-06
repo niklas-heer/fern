@@ -2055,6 +2055,7 @@ int64_t fern_actor_start(const char* name) {
     static int64_t next_actor_id = 1;
     assert(name != NULL);
     assert(next_actor_id > 0);
+    (void)name;
     return next_actor_id++;
 }
 
@@ -2067,6 +2068,7 @@ int64_t fern_actor_start(const char* name) {
 int64_t fern_actor_post(int64_t actor_id, const char* msg) {
     assert(actor_id > 0);
     assert(msg != NULL);
+    (void)actor_id;
     (void)msg;
     return fern_result_ok(0);
 }
@@ -2079,6 +2081,7 @@ int64_t fern_actor_post(int64_t actor_id, const char* msg) {
 int64_t fern_actor_next(int64_t actor_id) {
     assert(actor_id > 0);
     assert(actor_id < INT64_MAX);
+    (void)actor_id;
     return fern_result_err(FERN_ERR_IO);
 }
 
