@@ -1,0 +1,4 @@
+fn main() -> Int:
+	match 2:
+		1 -> 10
+		_ -> with x <- Ok(2) do x else Err(e) -> 0

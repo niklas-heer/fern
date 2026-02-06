@@ -14,6 +14,8 @@ void run_type_tests(void);
 void run_checker_tests(void);
 void run_codegen_tests(void);
 void run_repl_tests(void);
+void run_fuzz_generator_tests(void);
+void run_fernsim_tests(void);
 
 int main(void) {
     test_init();
@@ -33,6 +35,8 @@ int main(void) {
     run_checker_tests();
     run_codegen_tests();
     run_repl_tests();
+    run_fuzz_generator_tests();
+    run_fernsim_tests();
     
     return TEST_FINISH();
 }

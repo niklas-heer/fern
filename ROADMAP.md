@@ -8,7 +8,7 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `make test` passing (**422/422**)
+- Build/tests: `make test` passing (**433/433**)
 - Style: `make style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
 - Current focus: pass gates in order, one gate at a time
@@ -25,8 +25,8 @@ All active work follows strict TDD:
 
 Gates are sequential. Only one gate is active at a time.
 
-1. Gate A (current)
-2. Gate B (after Gate A passes)
+1. Gate A (passed)
+2. Gate B (current)
 3. Gate C (after Gate B passes)
 4. Gate D (after Gate C passes)
 
@@ -50,13 +50,13 @@ Gates are sequential. Only one gate is active at a time.
 
 ### Gate B: Reliability and Regression Resistance
 
-**Status:** READY
+**Status:** IN PROGRESS (2026-02-06)
 **Maps to milestones:** 11 + FernFuzz + FernSim foundation
 **Dependency:** Gate A passed
 
 **Implementation checklist:**
-- [ ] Grammar/property fuzzing with seed corpus and CI integration (FernFuzz)
-- [ ] Deterministic actor simulation scaffolding (FernSim foundation)
+- [x] Grammar/property fuzzing with seed corpus and CI integration (FernFuzz) (`tests/fuzz/fuzz_runner.c`, `tests/fuzz/fuzz_generator.c`, `tests/fuzz/corpus/*.fn`, `make fuzz-smoke`, CI step `Run fuzz smoke test`, richer templates for `if`/`match`/`with`/typed signatures/layout)
+- [x] Deterministic actor simulation scaffolding (FernSim foundation) (`include/fernsim.h`, `lib/fernsim.c`, `tests/test_fernsim.c`)
 - [ ] CI performance budgets: compile time, startup latency, binary size
 - [ ] Compatibility/deprecation policy for language and stdlib changes
 
@@ -129,27 +129,26 @@ Gates are sequential. Only one gate is active at a time.
 
 ## Next Session Start Here
 
-Complete in order. Do not start Gate B until Gate A is passed.
+Continue Gate B tasks in order.
 
-1. [x] Gate A / Task 1: Diagnostic UX pass + golden tests (`make check` green, `test_cli_check_syntax_error_includes_note_and_help`, `test_cli_check_type_error_includes_snippet_note_and_help`)
-2. [x] Gate A / Task 2: CLI flag/output consistency pass + tests (`make check` green, CLI flag parity tests passing)
-3. [x] Gate A / Task 3: `fern fmt` deterministic output + CI coverage (`make check` green, `test_cli_fmt_normalizes_and_is_deterministic`)
-4. [x] Gate A / Task 4: E2E command-flow tests (`build`, `check`, `parse`, `fmt`) (`test_cli_e2e_command_flow_fmt_parse_check_build`)
-5. [x] Gate A review: PASS (`make check` green, `test_cli_check_syntax_error_includes_note_and_help`, `test_cli_check_type_error_includes_snippet_note_and_help`, `test_cli_verbose_after_command_emits_debug_lines`, `test_cli_unknown_global_option_reports_unknown_option`, `test_cli_fmt_normalizes_and_is_deterministic`, `test_cli_e2e_command_flow_fmt_parse_check_build`)
+1. [x] Gate B / Task 1: Grammar/property fuzzing with seed corpus + CI smoke (`make fuzz-smoke` green, `tests/fuzz/fuzz_runner.c`, `.github/workflows/ci.yml` step `Run fuzz smoke test`, generator templates include `if`/`match`/`with`/typed signatures/layout)
+2. [x] Gate B / Task 2: Deterministic actor simulation scaffolding (FernSim foundation) (`include/fernsim.h`, `lib/fernsim.c`, `tests/test_fernsim.c`)
+3. [ ] Gate B / Task 3: CI performance budgets (compile time, startup latency, binary size)
+4. [ ] Gate B / Task 4: Compatibility/deprecation policy document and release workflow linkage
 
 ## Active Backlog (By Gate)
 
-### Gate A (Current)
+### Gate A (Passed)
 
 - [x] Diagnostic UX pass (snippets, notes, fix hints, consistency)
 - [x] CLI quality-of-life flag pass and output consistency
 - [x] `fern fmt` (stable formatting + tests)
 - [x] Gate A E2E golden test suite
 
-### Gate B (Upcoming)
+### Gate B (Current)
 
-- [ ] Grammar/property fuzzing framework (FernFuzz)
-- [ ] Deterministic actor simulation foundation (FernSim)
+- [x] Grammar/property fuzzing framework (FernFuzz) + seed corpus + CI smoke
+- [x] Deterministic actor simulation foundation (FernSim) + seeded scheduler/virtual clock tests
 - [ ] Performance budgets in CI (compile time, startup, binary size)
 - [ ] Compatibility/deprecation policy document
 

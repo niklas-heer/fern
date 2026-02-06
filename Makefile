@@ -81,6 +81,9 @@ RUNTIME_LIB = $(BIN_DIR)/libfern_runtime.a
 # Binaries
 FERN_BIN = $(BIN_DIR)/fern
 TEST_BIN = $(BIN_DIR)/test_runner
+FUZZ_BIN = $(BIN_DIR)/fuzz_runner
+FUZZ_SRCS = tests/fuzz/fuzz_runner.c tests/fuzz/fuzz_generator.c
+FUZZ_TEST_OBJ = $(BUILD_DIR)/fuzz_generator_test.o
 
 # Default target
 .PHONY: all
@@ -114,9 +117,14 @@ test: $(FERN_BIN) $(TEST_BIN)
 	@$(TEST_BIN)
 
 # Build test runner (includes linenoise for REPL tests)
-$(TEST_BIN): $(TEST_OBJS) $(LIB_OBJS) $(LINENOISE_OBJS) | $(BIN_DIR)
+$(TEST_BIN): $(TEST_OBJS) $(LIB_OBJS) $(LINENOISE_OBJS) $(FUZZ_TEST_OBJ) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 	@echo "✓ Built test runner: $@"
+
+# Build fuzz runner
+$(FUZZ_BIN): $(FUZZ_SRCS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $(FUZZ_SRCS)
+	@echo "✓ Built fuzz runner: $@"
 
 # Compile source files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
@@ -125,6 +133,10 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 # Compile test files
 $(BUILD_DIR)/test_%.o: $(TEST_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile fuzz generator object for unit tests
+$(FUZZ_TEST_OBJ): tests/fuzz/fuzz_generator.c tests/fuzz/fuzz_generator.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c tests/fuzz/fuzz_generator.c -o $@
 
 # Compile library files
 $(BUILD_DIR)/lib_%.o: $(LIB_DIR)/%.c | $(BUILD_DIR)
@@ -236,6 +248,32 @@ test-examples: debug
 		echo "✓ All examples type check!"; \
 	fi
 
+# Run grammar/property fuzzing for parser + formatter stability
+# Usage:
+#   make fuzz ITERS=1000 SEED=0x1234
+.PHONY: fuzz
+fuzz: debug $(FUZZ_BIN)
+	@iters="$${ITERS:-512}"; \
+	seed="$${SEED:-$$(date +%s)}"; \
+	$(FUZZ_BIN) --iterations "$$iters" --seed "$$seed" --fern-bin "$(FERN_BIN)"
+
+# Run a short fuzzing pass suitable for CI
+.PHONY: fuzz-smoke
+fuzz-smoke: debug $(FUZZ_BIN)
+	@iters="$${ITERS:-64}"; \
+	seed="$${SEED:-0xC0FFEE}"; \
+	$(FUZZ_BIN) --iterations "$$iters" --seed "$$seed" --fern-bin "$(FERN_BIN)"
+
+# Continuously run fuzzing with rolling seeds
+.PHONY: fuzz-forever
+fuzz-forever: debug $(FUZZ_BIN)
+	@iters="$${ITERS:-256}"; \
+	while true; do \
+		seed="$$(date +%s)"; \
+		echo "== FernFuzz run (seed=$$seed, iterations=$$iters) =="; \
+		$(FUZZ_BIN) --iterations "$$iters" --seed "$$seed" --fern-bin "$(FERN_BIN)" || exit $$?; \
+	done
+
 # Generate editor support files (syntax highlighting, grammar, etc.)
 # Run this after changing language keywords/tokens in include/token.h
 .PHONY: editor-support
@@ -272,6 +310,9 @@ help:
 	@echo "  make release      - Build optimized release version"
 	@echo "  make test         - Build and run all tests"
 	@echo "  make test-examples- Type check and run all examples"
+	@echo "  make fuzz         - Run grammar/property fuzzing"
+	@echo "  make fuzz-smoke   - Run short fuzzing pass"
+	@echo "  make fuzz-forever - Run fuzzing in a loop"
 	@echo "  make clean        - Remove build artifacts"
 	@echo "  make install      - Install fern to /usr/local/bin"
 	@echo "  make uninstall    - Remove installed fern"
