@@ -8,7 +8,7 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `make test` passing (**421/421**)
+- Build/tests: `make test` passing (**422/422**)
 - Style: `make style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
 - Current focus: pass gates in order, one gate at a time
@@ -32,7 +32,7 @@ Gates are sequential. Only one gate is active at a time.
 
 ### Gate A: Developer Experience and Language Feel
 
-**Status:** ACTIVE
+**Status:** PASSED (2026-02-06)
 **Maps to milestones:** 6, 10, 10.5
 **Dependency:** none
 
@@ -40,13 +40,13 @@ Gates are sequential. Only one gate is active at a time.
 - [x] Diagnostic UX pass: snippets, notes, fix hints, consistent formatting (`test_cli_check_syntax_error_includes_note_and_help`, `test_cli_check_type_error_includes_snippet_note_and_help`)
 - [x] CLI polish: `--color`, `--quiet`, `--verbose`, stable behavior across commands (`test_cli_verbose_emits_debug_lines`, `test_cli_verbose_after_command_emits_debug_lines`, `test_cli_unknown_global_option_reports_unknown_option`, `test_cli_color_mode_always_and_never`)
 - [x] `fern fmt` with deterministic output and regression tests (`test_cli_fmt_normalizes_and_is_deterministic`)
-- [ ] End-to-end golden tests for `build`/`check`/`parse`/`fmt`
+- [x] End-to-end golden tests for `build`/`check`/`parse`/`fmt` (`test_cli_e2e_command_flow_fmt_parse_check_build`)
 
 **Pass criteria (all required):**
-- [ ] Onboarding flow can be completed from docs/examples without manual intervention
+- [x] Onboarding flow can be completed from docs/examples without manual intervention (validated via `test_cli_e2e_command_flow_fmt_parse_check_build` + `make check` examples pass)
 - [x] Diagnostic golden tests cover representative syntax/type/check failures (`tests/test_cli_parse.c` + `tests/test_cli_main.c`)
 - [x] `fern fmt` determinism is validated in CI (`make check` includes `test_cli_fmt_normalizes_and_is_deterministic`)
-- [ ] `make check` remains green after each merged Gate A task
+- [x] `make check` remains green after each merged Gate A task (Task 1-4 all validated with `make check`)
 
 ### Gate B: Reliability and Regression Resistance
 
@@ -134,8 +134,8 @@ Complete in order. Do not start Gate B until Gate A is passed.
 1. [x] Gate A / Task 1: Diagnostic UX pass + golden tests (`make check` green, `test_cli_check_syntax_error_includes_note_and_help`, `test_cli_check_type_error_includes_snippet_note_and_help`)
 2. [x] Gate A / Task 2: CLI flag/output consistency pass + tests (`make check` green, CLI flag parity tests passing)
 3. [x] Gate A / Task 3: `fern fmt` deterministic output + CI coverage (`make check` green, `test_cli_fmt_normalizes_and_is_deterministic`)
-4. [ ] Gate A / Task 4: E2E command-flow tests (`build`, `check`, `parse`, `fmt`)
-5. [ ] Gate A review: mark pass/fail in this file with evidence (`make check`, test names)
+4. [x] Gate A / Task 4: E2E command-flow tests (`build`, `check`, `parse`, `fmt`) (`test_cli_e2e_command_flow_fmt_parse_check_build`)
+5. [x] Gate A review: PASS (`make check` green, `test_cli_check_syntax_error_includes_note_and_help`, `test_cli_check_type_error_includes_snippet_note_and_help`, `test_cli_verbose_after_command_emits_debug_lines`, `test_cli_unknown_global_option_reports_unknown_option`, `test_cli_fmt_normalizes_and_is_deterministic`, `test_cli_e2e_command_flow_fmt_parse_check_build`)
 
 ## Active Backlog (By Gate)
 
@@ -144,7 +144,7 @@ Complete in order. Do not start Gate B until Gate A is passed.
 - [x] Diagnostic UX pass (snippets, notes, fix hints, consistency)
 - [x] CLI quality-of-life flag pass and output consistency
 - [x] `fern fmt` (stable formatting + tests)
-- [ ] Gate A E2E golden test suite
+- [x] Gate A E2E golden test suite
 
 ### Gate B (Upcoming)
 

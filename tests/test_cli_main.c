@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 
 static char* read_pipe_all(FILE* pipe) {
     if (!pipe) return NULL;
@@ -117,6 +118,19 @@ static char* read_file_all(const char* path) {
     }
     buf[size] = '\0';
     return buf;
+}
+
+static char* make_tmp_output_path(void) {
+    char tmpl[] = "/tmp/fern_cli_out_XXXXXX";
+    int fd = mkstemp(tmpl);
+    if (fd < 0) return NULL;
+    close(fd);
+    unlink(tmpl);
+
+    char* path = (char*)malloc(strlen(tmpl) + 1);
+    if (!path) return NULL;
+    strcpy(path, tmpl);
+    return path;
 }
 
 void test_cli_help_lists_global_flags(void) {
@@ -242,6 +256,62 @@ void test_cli_fmt_normalizes_and_is_deterministic(void) {
     free(source_path);
 }
 
+void test_cli_e2e_command_flow_fmt_parse_check_build(void) {
+    char* source_path = write_tmp_source("fn main():  \r\n\t42\t \r\n");
+    ASSERT_NOT_NULL(source_path);
+    char* output_path = make_tmp_output_path();
+    ASSERT_NOT_NULL(output_path);
+
+    char cmd[768];
+    snprintf(cmd, sizeof(cmd), "./bin/fern fmt %s 2>&1", source_path);
+    CmdResult fmt_result = run_cmd(cmd);
+    ASSERT_EQ(fmt_result.exit_code, 0);
+    ASSERT_NOT_NULL(fmt_result.output);
+
+    char* formatted = read_file_all(source_path);
+    ASSERT_NOT_NULL(formatted);
+    ASSERT_STR_EQ(formatted, "fn main():\n\t42\n");
+
+    snprintf(cmd, sizeof(cmd), "./bin/fern parse %s 2>&1", source_path);
+    CmdResult parse_result = run_cmd(cmd);
+    ASSERT_EQ(parse_result.exit_code, 0);
+    ASSERT_NOT_NULL(parse_result.output);
+    ASSERT_TRUE(strstr(parse_result.output, "AST for ") != NULL);
+    ASSERT_TRUE(strstr(parse_result.output, "Fn: main") != NULL);
+
+    snprintf(cmd, sizeof(cmd), "./bin/fern check %s 2>&1", source_path);
+    CmdResult check_result = run_cmd(cmd);
+    ASSERT_EQ(check_result.exit_code, 0);
+    ASSERT_NOT_NULL(check_result.output);
+    ASSERT_TRUE(strstr(check_result.output, "No type errors") != NULL);
+
+    snprintf(cmd, sizeof(cmd), "./bin/fern build -o %s %s 2>&1", output_path, source_path);
+    CmdResult build_result = run_cmd(cmd);
+    ASSERT_EQ(build_result.exit_code, 0);
+    ASSERT_NOT_NULL(build_result.output);
+    ASSERT_TRUE(strstr(build_result.output, "Created executable:") != NULL);
+
+    struct stat st = {0};
+    ASSERT_EQ(stat(output_path, &st), 0);
+    ASSERT_TRUE((st.st_mode & S_IXUSR) != 0);
+
+    snprintf(cmd, sizeof(cmd), "%s 2>&1", output_path);
+    CmdResult run_result = run_cmd(cmd);
+    ASSERT_EQ(run_result.exit_code, 0);
+    ASSERT_NOT_NULL(run_result.output);
+
+    free(fmt_result.output);
+    free(parse_result.output);
+    free(check_result.output);
+    free(build_result.output);
+    free(run_result.output);
+    free(formatted);
+    unlink(source_path);
+    free(source_path);
+    unlink(output_path);
+    free(output_path);
+}
+
 void test_cli_check_syntax_error_includes_note_and_help(void) {
     char* source_path = write_tmp_source("fn main():\n    let = 5\n");
     ASSERT_NOT_NULL(source_path);
@@ -310,6 +380,7 @@ void run_cli_main_tests(void) {
     TEST_RUN(test_cli_color_mode_always_and_never);
     TEST_RUN(test_cli_unknown_global_option_reports_unknown_option);
     TEST_RUN(test_cli_fmt_normalizes_and_is_deterministic);
+    TEST_RUN(test_cli_e2e_command_flow_fmt_parse_check_build);
     TEST_RUN(test_cli_check_syntax_error_includes_note_and_help);
     TEST_RUN(test_cli_check_type_error_includes_snippet_note_and_help);
     TEST_RUN(test_cli_test_command_runs_unit_tests);
