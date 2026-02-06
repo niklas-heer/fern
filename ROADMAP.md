@@ -8,7 +8,7 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `just test` passing (**506/506**)
+- Build/tests: `just test` passing (**508/508**)
 - Style: `just style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
 - Release automation: conventional-commit-driven semver + release notes configured via `release-please` (initial version pinned to `0.1.0`, breaking changes map to minor while `<1.0.0`)

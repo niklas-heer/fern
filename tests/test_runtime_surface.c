@@ -33,6 +33,10 @@ typedef struct {
     int port;
 } TestHttpServer;
 
+static const char* TEST_HTTPS_SERVER_SCRIPT = "tests/fixtures/runtime_https_server.py";
+static const char* TEST_HTTPS_SERVER_CERT = "tests/fixtures/runtime_https_cert.pem";
+static const char* TEST_HTTPS_SERVER_KEY = "tests/fixtures/runtime_https_key.pem";
+
 static char* dup_cstr(const char* text) {
     if (!text) return NULL;
     size_t len = strlen(text);
@@ -281,6 +285,41 @@ static TestHttpServer start_test_http_server(int port) {
     return server;
 }
 
+static TestHttpServer start_test_https_server(int port) {
+    TestHttpServer server;
+    server.pid = -1;
+    server.port = port;
+
+    if (access(TEST_HTTPS_SERVER_SCRIPT, X_OK) != 0) return server;
+    if (access(TEST_HTTPS_SERVER_CERT, R_OK) != 0) return server;
+    if (access(TEST_HTTPS_SERVER_KEY, R_OK) != 0) return server;
+
+    pid_t pid = fork();
+    if (pid < 0) return server;
+
+    if (pid == 0) {
+        char port_str[32];
+        snprintf(port_str, sizeof(port_str), "%d", port);
+        execlp("python3",
+               "python3",
+               TEST_HTTPS_SERVER_SCRIPT,
+               port_str,
+               TEST_HTTPS_SERVER_CERT,
+               TEST_HTTPS_SERVER_KEY,
+               (char*)NULL);
+        _exit(127);
+    }
+
+    if (!wait_for_http_server_ready(port)) {
+        kill(pid, SIGTERM);
+        waitpid(pid, NULL, 0);
+        return server;
+    }
+
+    server.pid = pid;
+    return server;
+}
+
 static void stop_test_http_server(TestHttpServer server) {
     if (server.pid <= 0) return;
     kill(server.pid, SIGTERM);
@@ -442,6 +481,40 @@ void test_runtime_http_post_returns_ok_body(void) {
     BuildRunResult result = build_and_run_source(
         "fn main() -> Int:\n"
         "    match http.post(\"http://127.0.0.1:19082/echo\", \"ping\"):\n"
+        "        Ok(body) -> if String.eq(body, \"ping\"): 0 else: 10\n"
+        "        Err(_) -> 11\n");
+
+    stop_test_http_server(server);
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
+void test_runtime_http_get_https_returns_ok_body(void) {
+    TestHttpServer server = start_test_https_server(19083);
+    ASSERT_TRUE(server.pid > 0);
+
+    BuildRunResult result = build_and_run_source(
+        "fn main() -> Int:\n"
+        "    match http.get(\"https://127.0.0.1:19083/health\"):\n"
+        "        Ok(body) -> if String.eq(body, \"ok\"): 0 else: 10\n"
+        "        Err(_) -> 11\n");
+
+    stop_test_http_server(server);
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
+void test_runtime_http_post_https_returns_ok_body(void) {
+    TestHttpServer server = start_test_https_server(19084);
+    ASSERT_TRUE(server.pid > 0);
+
+    BuildRunResult result = build_and_run_source(
+        "fn main() -> Int:\n"
+        "    match http.post(\"https://127.0.0.1:19084/echo\", \"ping\"):\n"
         "        Ok(body) -> if String.eq(body, \"ping\"): 0 else: 10\n"
         "        Err(_) -> 11\n");
 
@@ -701,6 +774,8 @@ void run_runtime_surface_tests(void) {
     TEST_RUN(test_runtime_http_get_empty_returns_io_error);
     TEST_RUN(test_runtime_http_get_returns_ok_body);
     TEST_RUN(test_runtime_http_post_returns_ok_body);
+    TEST_RUN(test_runtime_http_get_https_returns_ok_body);
+    TEST_RUN(test_runtime_http_post_https_returns_ok_body);
     TEST_RUN(test_runtime_http_post_invalid_url_returns_io_error);
     TEST_RUN(test_runtime_sql_open_empty_returns_io_error);
     TEST_RUN(test_runtime_sql_open_and_execute_returns_ok);
