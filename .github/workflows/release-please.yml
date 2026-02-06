@@ -11,12 +11,21 @@ permissions:
 
 jobs:
   release-please:
-    if: ${{ secrets.RELEASE_PLEASE_TOKEN != '' }}
     name: Release Please
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check release token
+        id: token-check
+        run: |
+          if [ -n "${{ secrets.RELEASE_PLEASE_TOKEN }}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run release-please
+        if: ${{ steps.token-check.outputs.present == 'true' }}
         id: release
         uses: googleapis/release-please-action@v4
         with:
@@ -24,13 +33,8 @@ jobs:
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
 
-  release-please-token-missing:
-    if: ${{ secrets.RELEASE_PLEASE_TOKEN == '' }}
-    name: Release Please Token Missing
-    runs-on: ubuntu-latest
-
-    steps:
       - name: Explain missing token
+        if: ${{ steps.token-check.outputs.present != 'true' }}
         run: |
           echo "RELEASE_PLEASE_TOKEN is not configured."
           echo "Skipping release-please PR automation for this run."
