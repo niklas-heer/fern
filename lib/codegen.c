@@ -654,6 +654,13 @@ static char qbe_type_for_expr(Codegen* cg, Expr* expr) {
                 return qbe_type_for_expr(cg, expr->data.match_expr.arms->data[0].body);
             }
             return 'w';
+
+        /* With expressions: result type matches do/else body type */
+        case EXPR_WITH:
+            if (expr->data.with_expr.body) {
+                return qbe_type_for_expr(cg, expr->data.with_expr.body);
+            }
+            return 'w';
         
         /* Dot expressions: tuple field access loads 64-bit values */
         case EXPR_DOT: {
@@ -2916,11 +2923,14 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             String* result = fresh_temp(cg);
             String* err_label = fresh_label(cg);
             String* end_label = fresh_label(cg);
+            String* failed_result = fresh_temp(cg);
+            char result_type = qbe_type_for_expr(cg, expr);
             
             /* Process each binding */
             for (size_t i = 0; i < with->bindings->len; i++) {
                 WithBinding* binding = &with->bindings->data[i];
                 String* ok_label = fresh_label(cg);
+                String* binding_err_label = fresh_label(cg);
                 
                 /* Evaluate the binding's value (returns a Result) */
                 String* res_val = codegen_expr(cg, binding->value);
@@ -2932,7 +2942,12 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 
                 /* Branch: if Err, jump to error handling */
                 emit(cg, "    jnz %s, %s, %s\n",
-                    string_cstr(is_ok), string_cstr(ok_label), string_cstr(err_label));
+                    string_cstr(is_ok), string_cstr(ok_label), string_cstr(binding_err_label));
+
+                /* Err path: capture failed result and jump to shared error handler */
+                emit(cg, "%s\n", string_cstr(binding_err_label));
+                emit(cg, "    %s =l copy %s\n", string_cstr(failed_result), string_cstr(res_val));
+                emit(cg, "    jmp %s\n", string_cstr(err_label));
                 
                 /* Ok path: unwrap and bind
                  * Use 'l' since unwrapped value may be a pointer (String, List, etc.) */
@@ -2948,18 +2963,117 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             
             /* All bindings succeeded: evaluate do body */
             String* body_val = codegen_expr(cg, with->body);
-            emit(cg, "    %s =w copy %s\n", string_cstr(result), string_cstr(body_val));
+            emit(cg, "    %s =%c copy %s\n", string_cstr(result), result_type, string_cstr(body_val));
+            if (result_type == 'l') {
+                register_wide_var(cg, result);
+            }
             emit(cg, "    jmp %s\n", string_cstr(end_label));
             
             /* Error path */
             emit(cg, "%s\n", string_cstr(err_label));
             if (with->else_arms && with->else_arms->len > 0) {
-                /* TODO: Match else arms against error */
-                emit(cg, "    # TODO: else arm matching\n");
-                emit(cg, "    %s =w copy 0\n", string_cstr(result));
+                /* Match else arms against the failed Result value. */
+                for (size_t i = 0; i < with->else_arms->len; i++) {
+                    MatchArm* arm = &with->else_arms->data[i];
+                    String* next_arm_label = fresh_label(cg);
+                    String* arm_body_label = fresh_label(cg);
+
+                    switch (arm->pattern->type) {
+                        case PATTERN_WILDCARD:
+                            emit(cg, "    jmp %s\n", string_cstr(arm_body_label));
+                            break;
+
+                        case PATTERN_IDENT:
+                            emit(cg, "    %%%s =l copy %s\n",
+                                string_cstr(arm->pattern->data.ident), string_cstr(failed_result));
+                            register_wide_var(cg, arm->pattern->data.ident);
+                            emit(cg, "    jmp %s\n", string_cstr(arm_body_label));
+                            break;
+
+                        case PATTERN_LIT: {
+                            Expr* lit = arm->pattern->data.literal;
+                            String* lit_temp = codegen_expr(cg, lit);
+                            String* cmp = fresh_temp(cg);
+                            emit(cg, "    %s =w ceqw %s, %s\n",
+                                string_cstr(cmp), string_cstr(failed_result), string_cstr(lit_temp));
+                            emit(cg, "    jnz %s, %s, %s\n",
+                                string_cstr(cmp), string_cstr(arm_body_label), string_cstr(next_arm_label));
+                            break;
+                        }
+
+                        case PATTERN_CONSTRUCTOR: {
+                            ConstructorPattern* ctor = &arm->pattern->data.constructor;
+                            const char* ctor_name = string_cstr(ctor->name);
+
+                            if (strcmp(ctor_name, "Ok") == 0) {
+                                String* tag = fresh_temp(cg);
+                                String* cmp = fresh_temp(cg);
+                                emit(cg, "    %s =w loadw %s\n", string_cstr(tag), string_cstr(failed_result));
+                                emit(cg, "    %s =w ceqw %s, 0\n", string_cstr(cmp), string_cstr(tag));
+                                emit(cg, "    jnz %s, %s, %s\n",
+                                    string_cstr(cmp), string_cstr(arm_body_label), string_cstr(next_arm_label));
+                            } else if (strcmp(ctor_name, "Err") == 0) {
+                                String* tag = fresh_temp(cg);
+                                String* cmp = fresh_temp(cg);
+                                emit(cg, "    %s =w loadw %s\n", string_cstr(tag), string_cstr(failed_result));
+                                emit(cg, "    %s =w ceqw %s, 1\n", string_cstr(cmp), string_cstr(tag));
+                                emit(cg, "    jnz %s, %s, %s\n",
+                                    string_cstr(cmp), string_cstr(arm_body_label), string_cstr(next_arm_label));
+                            } else {
+                                emit(cg, "    # TODO: constructor %s\n", ctor_name);
+                                emit(cg, "    jmp %s\n", string_cstr(arm_body_label));
+                            }
+                            break;
+                        }
+
+                        default:
+                            emit(cg, "    # TODO: pattern type %d\n", arm->pattern->type);
+                            emit(cg, "    jmp %s\n", string_cstr(arm_body_label));
+                    }
+
+                    emit(cg, "%s\n", string_cstr(arm_body_label));
+
+                    if (arm->pattern->type == PATTERN_CONSTRUCTOR) {
+                        ConstructorPattern* ctor = &arm->pattern->data.constructor;
+                        const char* ctor_name = string_cstr(ctor->name);
+
+                        if (strcmp(ctor_name, "Ok") == 0 && ctor->args && ctor->args->len > 0) {
+                            Pattern* inner = ctor->args->data[0];
+                            if (inner->type == PATTERN_IDENT) {
+                                String* val_ptr = fresh_temp(cg);
+                                String* val = fresh_temp(cg);
+                                emit(cg, "    %s =l add %s, 8\n", string_cstr(val_ptr), string_cstr(failed_result));
+                                emit(cg, "    %s =l loadl %s\n", string_cstr(val), string_cstr(val_ptr));
+                                emit(cg, "    %%%s =l copy %s\n", string_cstr(inner->data.ident), string_cstr(val));
+                                register_wide_var(cg, inner->data.ident);
+                            }
+                        } else if (strcmp(ctor_name, "Err") == 0 && ctor->args && ctor->args->len > 0) {
+                            Pattern* inner = ctor->args->data[0];
+                            if (inner->type == PATTERN_IDENT) {
+                                String* val_ptr = fresh_temp(cg);
+                                String* val = fresh_temp(cg);
+                                emit(cg, "    %s =l add %s, 8\n", string_cstr(val_ptr), string_cstr(failed_result));
+                                emit(cg, "    %s =l loadl %s\n", string_cstr(val), string_cstr(val_ptr));
+                                emit(cg, "    %%%s =l copy %s\n", string_cstr(inner->data.ident), string_cstr(val));
+                                register_wide_var(cg, inner->data.ident);
+                            }
+                        }
+                    }
+
+                    String* arm_val = codegen_expr(cg, arm->body);
+                    char arm_type = qbe_type_for_expr(cg, arm->body);
+                    emit(cg, "    %s =%c copy %s\n", string_cstr(result), arm_type, string_cstr(arm_val));
+                    if (arm_type == 'l') {
+                        register_wide_var(cg, result);
+                    }
+                    emit(cg, "    jmp %s\n", string_cstr(end_label));
+                    emit(cg, "%s\n", string_cstr(next_arm_label));
+                }
+
+                emit(cg, "    %s =%c copy 0\n", string_cstr(result), result_type);
             } else {
-                /* No else clause: return the error as-is */
-                emit(cg, "    %s =w copy 0\n", string_cstr(result));
+                /* No else clause: propagate the failed Result like the ? operator. */
+                emit(cg, "    ret %s\n", string_cstr(failed_result));
             }
             
             emit(cg, "%s\n", string_cstr(end_label));

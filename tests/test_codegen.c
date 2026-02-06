@@ -29,6 +29,19 @@ static const char* generate_expr_qbe(Arena* arena, const char* src) {
     return string_cstr(codegen_output(cg));
 }
 
+static int count_substring(const char* haystack, const char* needle) {
+    int count = 0;
+    const char* p = haystack;
+    size_t needle_len = strlen(needle);
+    while (p && *p) {
+        const char* match = strstr(p, needle);
+        if (!match) break;
+        count++;
+        p = match + needle_len;
+    }
+    return count;
+}
+
 /* ========== Integer Literal Tests ========== */
 
 void test_codegen_int_literal(void) {
@@ -565,7 +578,7 @@ void test_codegen_with_simple(void) {
     
     /* Simple with expression - binds result and continues */
     const char* qbe = generate_qbe(arena,
-        "fn process() -> Int: with x <- get_value() do x");
+        "fn process() -> Result(Int, String): with x <- get_value() do Ok(x)");
     
     ASSERT_NOT_NULL(qbe);
     ASSERT_TRUE(strstr(qbe, "$process") != NULL);
@@ -582,7 +595,7 @@ void test_codegen_with_multiple_bindings(void) {
     
     /* Multiple bindings - each checked for Ok/Err */
     const char* qbe = generate_qbe(arena,
-        "fn process() -> Int: with x <- get_a(), y <- get_b() do x");
+        "fn process() -> Result(Int, String): with x <- get_a(), y <- get_b() do Ok(x)");
     
     ASSERT_NOT_NULL(qbe);
     /* Should call both get_a and get_b */
@@ -591,6 +604,37 @@ void test_codegen_with_multiple_bindings(void) {
     /* Should check results */
     ASSERT_TRUE(strstr(qbe, "$fern_result_is_ok") != NULL);
     
+    arena_destroy(arena);
+}
+
+void test_codegen_with_no_else_propagates_error(void) {
+    Arena* arena = arena_create(8192);
+
+    const char* qbe = generate_qbe(arena,
+        "fn process() -> Result(Int, String): with x <- get_value() do Ok(x)");
+
+    ASSERT_NOT_NULL(qbe);
+    /* One early return for Err path + one final function return */
+    ASSERT_TRUE(count_substring(qbe, "ret ") >= 2);
+    ASSERT_TRUE(strstr(qbe, "TODO: else arm matching") == NULL);
+
+    arena_destroy(arena);
+}
+
+void test_codegen_with_else_arms(void) {
+    Arena* arena = arena_create(8192);
+
+    const char* qbe = generate_qbe(arena,
+        "fn process() -> Int: with x <- get_value() do x else Err(e) -> 0");
+
+    ASSERT_NOT_NULL(qbe);
+    /* Else handling should unwrap the failed Result and test constructor arms */
+    ASSERT_TRUE(strstr(qbe, "$fern_result_unwrap") != NULL);
+    ASSERT_TRUE(strstr(qbe, "loadw") != NULL);
+    ASSERT_TRUE(strstr(qbe, "ceqw") != NULL);
+    /* Placeholder TODO emission should be gone */
+    ASSERT_TRUE(strstr(qbe, "TODO: else arm matching") == NULL);
+
     arena_destroy(arena);
 }
 
@@ -757,6 +801,8 @@ void run_codegen_tests(void) {
     /* With expressions */
     TEST_RUN(test_codegen_with_simple);
     TEST_RUN(test_codegen_with_multiple_bindings);
+    TEST_RUN(test_codegen_with_no_else_propagates_error);
+    TEST_RUN(test_codegen_with_else_arms);
     
     /* Pointer type handling */
     TEST_RUN(test_codegen_fn_returns_tuple);

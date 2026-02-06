@@ -33,6 +33,10 @@ static const char* check_expr_error(Arena* arena, const char* src) {
     return NULL;
 }
 
+/* Forward declarations for statement-level checker helpers */
+static bool check_stmt_ok(Arena* arena, const char* src);
+static const char* check_stmt_error(Arena* arena, const char* src);
+
 /* ========== Literal Type Tests ========== */
 
 void test_check_int_literal(void) {
@@ -654,20 +658,12 @@ void test_check_match_result_must_be_exhaustive(void) {
 void test_check_try_unwraps_result(void) {
     Arena* arena = arena_create(4096);
     
-    // Define: fn get_value() -> Result(Int, String)
-    TypeVec* params = TypeVec_new(arena);
-    Type* result_type = type_result(arena, type_int(arena), type_string(arena));
-    Type* fn_type = type_fn(arena, params, result_type);
-    
-    // get_value()? should have type Int (unwrapped from Result)
-    Parser* parser = parser_new(arena, "get_value()?");
-    Expr* expr = parse_expr(parser);
-    Checker* checker = checker_new(arena);
-    checker_define(checker, string_new(arena, "get_value"), fn_type);
-    Type* t = checker_infer_expr(checker, expr);
-    
-    ASSERT_NOT_NULL(t);
-    ASSERT_EQ(t->kind, TYPE_INT);
+    // ? should work inside a Result-returning function body
+    bool ok = check_stmt_ok(arena,
+        "fn get_value() -> Result(Int, String): Ok(42)\n"
+        "fn process() -> Result(Int, String): Ok(get_value()?)");
+
+    ASSERT_TRUE(ok);
     
     arena_destroy(arena);
 }
@@ -805,8 +801,8 @@ void test_check_with_simple(void) {
     Type* result_type = type_result(arena, type_int(arena), type_string(arena));
     Type* fn_type = type_fn(arena, params, result_type);
     
-    // with x <- get_value() do x + 1
-    Parser* parser = parser_new(arena, "with x <- get_value() do x + 1");
+    // with x <- get_value() do x + 1 else _ -> 0
+    Parser* parser = parser_new(arena, "with x <- get_value() do x + 1 else _ -> 0");
     Expr* expr = parse_expr(parser);
     Checker* checker = checker_new(arena);
     checker_define(checker, string_new(arena, "get_value"), fn_type);
@@ -831,8 +827,8 @@ void test_check_with_multiple_bindings(void) {
     TypeVec_push(arena, params_g, type_int(arena));
     Type* fn_g = type_fn(arena, params_g, result_int);
     
-    // with x <- f(), y <- g(x) do x + y
-    Parser* parser = parser_new(arena, "with x <- f(), y <- g(x) do x + y");
+    // with x <- f(), y <- g(x) do x + y else _ -> 0
+    Parser* parser = parser_new(arena, "with x <- f(), y <- g(x) do x + y else _ -> 0");
     Expr* expr = parse_expr(parser);
     Checker* checker = checker_new(arena);
     checker_define(checker, string_new(arena, "f"), fn_f);
@@ -854,6 +850,92 @@ void test_check_with_requires_result(void) {
     ASSERT_NOT_NULL(err);
     // Should report that with binding requires Result type
     
+    arena_destroy(arena);
+}
+
+void test_check_with_else_pattern_binding(void) {
+    Arena* arena = arena_create(4096);
+
+    /* Define: fn get_value() -> Result(Int, String) */
+    TypeVec* params = TypeVec_new(arena);
+    Type* result_type = type_result(arena, type_int(arena), type_string(arena));
+    Type* fn_type = type_fn(arena, params, result_type);
+
+    /* else Err(e) should bind e as String */
+    Parser* parser = parser_new(
+        arena,
+        "with x <- get_value() do x + 1 else Err(e) -> String.len(e)"
+    );
+    Expr* expr = parse_expr(parser);
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "get_value"), fn_type);
+    Type* t = checker_infer_expr(checker, expr);
+
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_INT);
+
+    arena_destroy(arena);
+}
+
+void test_check_with_else_branch_type_mismatch(void) {
+    Arena* arena = arena_create(4096);
+
+    /* Define: fn get_value() -> Result(Int, String) */
+    TypeVec* params = TypeVec_new(arena);
+    Type* result_type = type_result(arena, type_int(arena), type_string(arena));
+    Type* fn_type = type_fn(arena, params, result_type);
+
+    Parser* parser = parser_new(
+        arena,
+        "with x <- get_value() do x + 1 else Err(e) -> e"
+    );
+    Expr* expr = parse_expr(parser);
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "get_value"), fn_type);
+    Type* t = checker_infer_expr(checker, expr);
+
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_ERROR);
+    ASSERT_TRUE(strstr(string_cstr(t->data.error_msg), "with else arm types must match") != NULL);
+
+    arena_destroy(arena);
+}
+
+void test_check_with_without_else_requires_result_context(void) {
+    Arena* arena = arena_create(4096);
+
+    const char* err = check_stmt_error(arena,
+        "fn get_value() -> Result(Int, String): Ok(42)\n"
+        "fn process() -> Int: with x <- get_value() do x");
+
+    ASSERT_NOT_NULL(err);
+    ASSERT_TRUE(strstr(err, "The with operator requires function return type Result") != NULL);
+
+    arena_destroy(arena);
+}
+
+void test_check_with_without_else_error_type_must_match_return_type(void) {
+    Arena* arena = arena_create(4096);
+
+    const char* err = check_stmt_error(arena,
+        "fn get_value() -> Result(Int, String): Ok(42)\n"
+        "fn process() -> Result(Int, Bool): with x <- get_value() do Ok(x)");
+
+    ASSERT_NOT_NULL(err);
+    ASSERT_TRUE(strstr(err, "The with operator requires function return type Result") != NULL);
+
+    arena_destroy(arena);
+}
+
+void test_check_with_without_else_allowed_in_result_function(void) {
+    Arena* arena = arena_create(4096);
+
+    bool ok = check_stmt_ok(arena,
+        "fn get_value() -> Result(Int, String): Ok(42)\n"
+        "fn process() -> Result(Int, String): with x <- get_value() do Ok(x)");
+
+    ASSERT_TRUE(ok);
+
     arena_destroy(arena);
 }
 
@@ -1780,6 +1862,11 @@ void run_checker_tests(void) {
     TEST_RUN(test_check_with_simple);
     TEST_RUN(test_check_with_multiple_bindings);
     TEST_RUN(test_check_with_requires_result);
+    TEST_RUN(test_check_with_else_pattern_binding);
+    TEST_RUN(test_check_with_else_branch_type_mismatch);
+    TEST_RUN(test_check_with_without_else_requires_result_context);
+    TEST_RUN(test_check_with_without_else_error_type_must_match_return_type);
+    TEST_RUN(test_check_with_without_else_allowed_in_result_function);
     TEST_RUN(test_check_with_accesses_outer_scope);
     TEST_RUN(test_check_stmt_expr_rejects_unhandled_result);
     

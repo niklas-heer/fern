@@ -23,6 +23,7 @@ struct Checker {
     TypeEnv* env;
     ErrorNode* errors;
     ErrorNode* errors_tail;
+    Type* current_return_type;
 };
 
 /* ========== Forward Declarations ========== */
@@ -34,6 +35,7 @@ static Type* check_pipe_expr(Checker* checker, BinaryExpr* expr);
 static Type* check_lambda_against(Checker* checker, LambdaExpr* lambda, Type* expected_fn_type);
 static bool is_catch_all_pattern(Pattern* pattern);
 static bool check_match_exhaustiveness(Checker* checker, MatchExpr* expr, Type* scrutinee_type);
+static Type* require_result_propagation_context(Checker* checker, SourceLoc loc, Type* propagated_err, const char* op_name);
 
 /**
  * Map from old var id to new type variable for instantiation.
@@ -1410,6 +1412,7 @@ Checker* checker_new(Arena* arena) {
     checker->env = type_env_new(arena);
     checker->errors = NULL;
     checker->errors_tail = NULL;
+    checker->current_return_type = NULL;
 
     /* Register built-in functions from the runtime library */
     register_io_builtins(checker);
@@ -2512,6 +2515,7 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
              * Body is evaluated with all bindings in scope.
              */
             WithExpr* with = &expr->data.with_expr;
+            Type* with_err_type = NULL;
             
             /* Push a new scope for the bindings */
             checker_push_scope(checker);
@@ -2535,6 +2539,17 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
                 
                 /* Extract Ok type and bind the name */
                 Type* ok_type = value_type->data.con.args->data[0];
+                Type* err_type = value_type->data.con.args->data[1];
+
+                if (with_err_type == NULL) {
+                    with_err_type = err_type;
+                } else if (!type_equals(err_type, with_err_type)) {
+                    checker_pop_scope(checker);
+                    return error_type_at(checker, expr->loc,
+                        "with bindings must share the same error type: expected %s, got %s",
+                        string_cstr(type_to_string(checker->arena, with_err_type)),
+                        string_cstr(type_to_string(checker->arena, err_type)));
+                }
                 checker_define(checker, binding->name, ok_type);
             }
             
@@ -2545,7 +2560,40 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
             
             if (body_type->kind == TYPE_ERROR) return body_type;
             
-            /* TODO: Type check else arms if present */
+            if (with->else_arms && with->else_arms->len > 0) {
+                if (with_err_type == NULL) {
+                    return error_type_at(checker, expr->loc,
+                        "with expression must have at least one binding");
+                }
+
+                Type* failed_result_type = type_result(checker->arena, body_type, with_err_type);
+                for (size_t i = 0; i < with->else_arms->len; i++) {
+                    MatchArm arm = with->else_arms->data[i];
+
+                    checker_push_scope(checker);
+                    bind_pattern(checker, arm.pattern, failed_result_type);
+
+                    Type* arm_type = checker_infer_expr(checker, arm.body);
+                    checker_pop_scope(checker);
+
+                    if (arm_type->kind == TYPE_ERROR) return arm_type;
+
+                    if (!type_equals(arm_type, body_type)) {
+                        return error_type_at(checker, expr->loc,
+                            "with else arm types must match do body type: expected %s, got %s",
+                            string_cstr(type_to_string(checker->arena, body_type)),
+                            string_cstr(type_to_string(checker->arena, arm_type)));
+                    }
+                }
+            } else {
+                if (with_err_type == NULL) {
+                    return error_type_at(checker, expr->loc,
+                        "with expression must have at least one binding");
+                }
+                Type* ctx_err = require_result_propagation_context(
+                    checker, expr->loc, with_err_type, "with");
+                if (ctx_err != NULL) return ctx_err;
+            }
             
             return body_type;
         }
@@ -2879,6 +2927,11 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
                 return error_type_at(checker, expr->loc, "The ? operator requires a Result type, got %s",
                     string_cstr(type_to_string(checker->arena, operand_type)));
             }
+
+            Type* propagated_err = operand_type->data.con.args->data[1];
+            Type* ctx_err = require_result_propagation_context(
+                checker, expr->loc, propagated_err, "?");
+            if (ctx_err != NULL) return ctx_err;
             
             /* Return the Ok type (first type argument) */
             return operand_type->data.con.args->data[0];
@@ -3278,6 +3331,40 @@ static bool check_match_exhaustiveness(Checker* checker, MatchExpr* expr, Type* 
 }
 
 /**
+ * Ensure Result-propagating operators are used in a compatible function context.
+ * @param checker Type checker context.
+ * @param loc Source location for diagnostics.
+ * @param propagated_err Error type being propagated.
+ * @param op_name Operator label for diagnostics.
+ * @return NULL on success, or an error type on failure.
+ */
+static Type* require_result_propagation_context(Checker* checker, SourceLoc loc, Type* propagated_err, const char* op_name) {
+    assert(checker != NULL);
+    assert(propagated_err != NULL);
+    assert(op_name != NULL);
+
+    if (checker->current_return_type == NULL) {
+        return error_type_at(checker, loc,
+            "The %s operator can only be used inside functions returning Result(...)", op_name);
+    }
+
+    int var_id = type_fresh_var_id();
+    Type* any_ok = type_var(checker->arena, string_new(checker->arena, "_ok"), var_id);
+    Type* expected_ret = type_result(checker->arena, any_ok, propagated_err);
+
+    if (!unify(checker->current_return_type, expected_ret)) {
+        Type* current_ret = substitute(checker->arena, checker->current_return_type);
+        return error_type_at(checker, loc,
+            "The %s operator requires function return type Result(_, %s), but function returns %s",
+            op_name,
+            string_cstr(type_to_string(checker->arena, propagated_err)),
+            string_cstr(type_to_string(checker->arena, current_ret)));
+    }
+
+    return NULL;
+}
+
+/**
  * Check types for let statements.
  * @param checker The type checker context.
  * @param stmt The let statement to check.
@@ -3352,6 +3439,7 @@ bool checker_check_stmt(Checker* checker, Stmt* stmt) {
              * - Verify body type matches return type annotation (if present)
              */
             FunctionDef* fn = &stmt->data.fn;
+            Type* prev_return_type = checker->current_return_type;
             
             /* Push scope for function parameters */
             checker_push_scope(checker);
@@ -3366,6 +3454,7 @@ bool checker_check_stmt(Checker* checker, Stmt* stmt) {
                         param_type = resolve_type_expr(checker, param->type_ann);
                         if (!param_type || param_type->kind == TYPE_ERROR) {
                             checker_pop_scope(checker);
+                            checker->current_return_type = prev_return_type;
                             return false;
                         }
                     } else {
@@ -3377,9 +3466,18 @@ bool checker_check_stmt(Checker* checker, Stmt* stmt) {
                     checker_define(checker, param->name, param_type);
                 }
             }
+
+            /* Set current function return type for Result-propagating operators. */
+            Type* fn_sig = type_env_lookup(checker->env, fn->name);
+            if (fn_sig && fn_sig->kind == TYPE_FN) {
+                checker->current_return_type = fn_sig->data.fn.result;
+            } else {
+                checker->current_return_type = NULL;
+            }
             
             /* Type check the function body */
             Type* body_type = checker_infer_expr(checker, fn->body);
+            checker->current_return_type = prev_return_type;
             
             checker_pop_scope(checker);
             
