@@ -101,6 +101,7 @@ We're implementing the compiler using test-driven development. See [DESIGN.md](D
 - [Decision Log](DECISIONS.md) - Architectural decisions
 - [Coding Standards](FERN_STYLE.md) - TigerBeetle-inspired style guide
 - [Development Guidelines](CLAUDE.md) - For AI-assisted development
+- [Compatibility Policy](docs/COMPATIBILITY_POLICY.md) - Upgrade/deprecation guarantees
 
 ## Inspiration
 

@@ -41,10 +41,16 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: make fuzz-smoke ITERS=64 SEED=0xC0FFEE
 
+      - name: Check performance budgets
+        if: matrix.os == 'ubuntu-latest'
+        run: make perf-budget
+
       - name: Build (Release)
+        if: matrix.os == 'macos-latest'
         run: make clean && make release
 
-      - name: Check binary size
+      - name: Check binary size (macOS)
+        if: matrix.os == 'macos-latest'
         run: |
           ls -lh bin/fern
           size bin/fern || echo "size command not available"
@@ -86,3 +92,6 @@ jobs:
 
       - name: Compile with all warnings
         run: make clean && make debug
+
+      - name: Validate compatibility policy
+        run: make release-policy-check

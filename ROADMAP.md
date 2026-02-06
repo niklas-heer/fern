@@ -26,7 +26,7 @@ All active work follows strict TDD:
 Gates are sequential. Only one gate is active at a time.
 
 1. Gate A (passed)
-2. Gate B (current)
+2. Gate B (passed)
 3. Gate C (after Gate B passes)
 4. Gate D (after Gate C passes)
 
@@ -50,20 +50,20 @@ Gates are sequential. Only one gate is active at a time.
 
 ### Gate B: Reliability and Regression Resistance
 
-**Status:** IN PROGRESS (2026-02-06)
+**Status:** PASSED (2026-02-06)
 **Maps to milestones:** 11 + FernFuzz + FernSim foundation
 **Dependency:** Gate A passed
 
 **Implementation checklist:**
 - [x] Grammar/property fuzzing with seed corpus and CI integration (FernFuzz) (`tests/fuzz/fuzz_runner.c`, `tests/fuzz/fuzz_generator.c`, `tests/fuzz/corpus/*.fn`, `make fuzz-smoke`, CI step `Run fuzz smoke test`, richer templates for `if`/`match`/`with`/typed signatures/layout)
 - [x] Deterministic actor simulation scaffolding (FernSim foundation) (`include/fernsim.h`, `lib/fernsim.c`, `tests/test_fernsim.c`)
-- [ ] CI performance budgets: compile time, startup latency, binary size
-- [ ] Compatibility/deprecation policy for language and stdlib changes
+- [x] CI performance budgets: compile time, startup latency, binary size (`scripts/check_perf_budget.py`, `make perf-budget`, CI step `Check performance budgets`)
+- [x] Compatibility/deprecation policy for language and stdlib changes (`docs/COMPATIBILITY_POLICY.md`, `scripts/check_release_policy.py`, `make release-policy-check`, `.github/workflows/release.yml`)
 
 **Pass criteria (all required):**
-- [ ] Regressions are caught by deterministic tests + fuzz jobs in CI
-- [ ] Performance thresholds are enforced with failing CI on regressions
-- [ ] Upgrade policy is documented and referenced in release workflow
+- [x] Regressions are caught by deterministic tests + fuzz jobs in CI (`make check` + CI fuzz smoke + FernSim deterministic unit tests)
+- [x] Performance thresholds are enforced with failing CI on regressions (`make perf-budget` in CI)
+- [x] Upgrade policy is documented and referenced in release workflow (`docs/COMPATIBILITY_POLICY.md` + `.github/workflows/release.yml`)
 
 ### Gate C: Product Surface and Standard Library Quality
 
@@ -129,12 +129,12 @@ Gates are sequential. Only one gate is active at a time.
 
 ## Next Session Start Here
 
-Continue Gate B tasks in order.
+Gate C is now unblocked. Start with API stabilization and deterministic actor scenarios.
 
-1. [x] Gate B / Task 1: Grammar/property fuzzing with seed corpus + CI smoke (`make fuzz-smoke` green, `tests/fuzz/fuzz_runner.c`, `.github/workflows/ci.yml` step `Run fuzz smoke test`, generator templates include `if`/`match`/`with`/typed signatures/layout)
-2. [x] Gate B / Task 2: Deterministic actor simulation scaffolding (FernSim foundation) (`include/fernsim.h`, `lib/fernsim.c`, `tests/test_fernsim.c`)
-3. [ ] Gate B / Task 3: CI performance budgets (compile time, startup latency, binary size)
-4. [ ] Gate B / Task 4: Compatibility/deprecation policy document and release workflow linkage
+1. [ ] Gate C / Task 1: Stabilize stdlib module APIs (`fs`, `http`, `json`, `sql`, `actors`) and document compatibility guarantees
+2. [ ] Gate C / Task 2: Complete actor runtime core (`spawn`, `send`, `receive`, scheduler) building on FernSim scaffolding
+3. [ ] Gate C / Task 3: Add canonical templates/examples (tiny CLI, HTTP API, actor app) with CI validation
+4. [ ] Gate C / Task 4: Advance bootstrapping tools (`fern doc`, `fern test`, `fern-style` parity targets)
 
 ## Active Backlog (By Gate)
 
@@ -145,12 +145,12 @@ Continue Gate B tasks in order.
 - [x] `fern fmt` (stable formatting + tests)
 - [x] Gate A E2E golden test suite
 
-### Gate B (Current)
+### Gate B (Passed)
 
 - [x] Grammar/property fuzzing framework (FernFuzz) + seed corpus + CI smoke
 - [x] Deterministic actor simulation foundation (FernSim) + seeded scheduler/virtual clock tests
-- [ ] Performance budgets in CI (compile time, startup, binary size)
-- [ ] Compatibility/deprecation policy document
+- [x] Performance budgets in CI (compile time, startup, binary size)
+- [x] Compatibility/deprecation policy document + release workflow linkage
 
 ### Gate C/D (Later)
 

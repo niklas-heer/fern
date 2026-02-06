@@ -84,6 +84,8 @@ TEST_BIN = $(BIN_DIR)/test_runner
 FUZZ_BIN = $(BIN_DIR)/fuzz_runner
 FUZZ_SRCS = tests/fuzz/fuzz_runner.c tests/fuzz/fuzz_generator.c
 FUZZ_TEST_OBJ = $(BUILD_DIR)/fuzz_generator_test.o
+PERF_BUDGET_FLAGS ?=
+RELEASE_POLICY_DOC ?= docs/COMPATIBILITY_POLICY.md
 
 # Default target
 .PHONY: all
@@ -274,6 +276,16 @@ fuzz-forever: debug $(FUZZ_BIN)
 		$(FUZZ_BIN) --iterations "$$iters" --seed "$$seed" --fern-bin "$(FERN_BIN)" || exit $$?; \
 	done
 
+# Check CI performance budgets (compile time, startup latency, binary size)
+.PHONY: perf-budget
+perf-budget:
+	@python3 scripts/check_perf_budget.py $(PERF_BUDGET_FLAGS)
+
+# Validate compatibility/deprecation policy document
+.PHONY: release-policy-check
+release-policy-check:
+	@python3 scripts/check_release_policy.py $(RELEASE_POLICY_DOC)
+
 # Generate editor support files (syntax highlighting, grammar, etc.)
 # Run this after changing language keywords/tokens in include/token.h
 .PHONY: editor-support
@@ -313,6 +325,8 @@ help:
 	@echo "  make fuzz         - Run grammar/property fuzzing"
 	@echo "  make fuzz-smoke   - Run short fuzzing pass"
 	@echo "  make fuzz-forever - Run fuzzing in a loop"
+	@echo "  make perf-budget  - Enforce compile/startup/size budgets"
+	@echo "  make release-policy-check - Validate compatibility policy doc"
 	@echo "  make clean        - Remove build artifacts"
 	@echo "  make install      - Install fern to /usr/local/bin"
 	@echo "  make uninstall    - Remove installed fern"

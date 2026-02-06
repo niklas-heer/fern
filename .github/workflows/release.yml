@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  release-readiness:
+    name: Release Readiness
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang make libgc-dev python3
+
+      - name: Build release binary
+        run: make clean && make release
+
+      - name: Validate compatibility policy
+        run: make release-policy-check
+
+      - name: Enforce performance budgets
+        run: make perf-budget PERF_BUDGET_FLAGS=--skip-build
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fern-release-binary
+          path: bin/fern
