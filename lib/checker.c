@@ -36,6 +36,10 @@ static Type* check_lambda_against(Checker* checker, LambdaExpr* lambda, Type* ex
 static bool is_catch_all_pattern(Pattern* pattern);
 static bool check_match_exhaustiveness(Checker* checker, MatchExpr* expr, Type* scrutinee_type);
 static Type* require_result_propagation_context(Checker* checker, SourceLoc loc, Type* propagated_err, const char* op_name);
+static Type* check_record_update_expr(Checker* checker, RecordUpdateExpr* expr, SourceLoc loc);
+static Type* check_spawn_expr(Checker* checker, SpawnExpr* expr, SourceLoc loc);
+static Type* check_send_expr(Checker* checker, SendExpr* expr, SourceLoc loc);
+static Type* check_receive_expr(Checker* checker, ReceiveExpr* expr, SourceLoc loc);
 
 /**
  * Map from old var id to new type variable for instantiation.
@@ -2570,6 +2574,170 @@ static Type* check_match_expr(Checker* checker, MatchExpr* expr) {
     return result_type;
 }
 
+/**
+ * Check types for record update expressions.
+ * @param checker The type checker context.
+ * @param expr The record update expression.
+ * @param loc Source location of the expression.
+ * @return The updated record type.
+ */
+static Type* check_record_update_expr(Checker* checker, RecordUpdateExpr* expr, SourceLoc loc) {
+    assert(checker != NULL);
+    assert(expr != NULL);
+
+    Type* base_type = checker_infer_expr(checker, expr->base);
+    if (base_type->kind == TYPE_ERROR) return base_type;
+
+    for (size_t i = 0; i < expr->fields->len; i++) {
+        RecordField* field = &expr->fields->data[i];
+        Type* value_type = checker_infer_expr(checker, field->value);
+        if (value_type->kind == TYPE_ERROR) {
+            return error_type_at(checker, loc, "Invalid record update field '%s'",
+                string_cstr(field->name));
+        }
+    }
+
+    /* Record field compatibility checks require user-defined record metadata.
+     * For now, preserve base type while ensuring field expressions are valid. */
+    return base_type;
+}
+
+/**
+ * Check types for spawn(expr) actor primitive.
+ * @param checker The type checker context.
+ * @param expr The spawn expression.
+ * @param loc Source location of the expression.
+ * @return Int actor id on success.
+ */
+static Type* check_spawn_expr(Checker* checker, SpawnExpr* expr, SourceLoc loc) {
+    assert(checker != NULL);
+    assert(expr != NULL);
+
+    Type* func_type = checker_infer_expr(checker, expr->func);
+    if (func_type->kind == TYPE_ERROR) return func_type;
+
+    if (func_type->kind != TYPE_FN) {
+        return error_type_at(checker, loc, "spawn expects a function, got %s",
+            string_cstr(type_to_string(checker->arena, func_type)));
+    }
+
+    if (func_type->data.fn.params->len != 0) {
+        return error_type_at(checker, loc, "spawn expects a zero-argument function, got %zu parameters",
+            func_type->data.fn.params->len);
+    }
+
+    return type_int(checker->arena);
+}
+
+/**
+ * Check types for send(pid, message) actor primitive.
+ * @param checker The type checker context.
+ * @param expr The send expression.
+ * @param loc Source location of the expression.
+ * @return Result(Int, Int) indicating send status.
+ */
+static Type* check_send_expr(Checker* checker, SendExpr* expr, SourceLoc loc) {
+    assert(checker != NULL);
+    assert(expr != NULL);
+
+    Type* pid_type = checker_infer_expr(checker, expr->pid);
+    if (pid_type->kind == TYPE_ERROR) return pid_type;
+
+    if (pid_type->kind != TYPE_INT) {
+        return error_type_at(checker, loc, "send expects Int pid, got %s",
+            string_cstr(type_to_string(checker->arena, pid_type)));
+    }
+
+    Type* msg_type = checker_infer_expr(checker, expr->message);
+    if (msg_type->kind == TYPE_ERROR) return msg_type;
+
+    if (msg_type->kind != TYPE_STRING) {
+        return error_type_at(checker, loc, "send expects String message, got %s",
+            string_cstr(type_to_string(checker->arena, msg_type)));
+    }
+
+    return type_result(checker->arena, type_int(checker->arena), type_int(checker->arena));
+}
+
+/**
+ * Check types for receive: pattern -> body actor primitive.
+ * @param checker The type checker context.
+ * @param expr The receive expression.
+ * @param loc Source location of the expression.
+ * @return The common arm result type.
+ */
+static Type* check_receive_expr(Checker* checker, ReceiveExpr* expr, SourceLoc loc) {
+    assert(checker != NULL);
+    assert(expr != NULL);
+
+    if (expr->arms->len == 0 && expr->after_body == NULL) {
+        return error_type_at(checker, loc, "receive requires at least one arm or an after clause");
+    }
+
+    Type* result_type = NULL;
+    Type* message_type = type_string(checker->arena);
+
+    for (size_t i = 0; i < expr->arms->len; i++) {
+        MatchArm* arm = &expr->arms->data[i];
+
+        checker_push_scope(checker);
+        bind_pattern(checker, arm->pattern, message_type);
+
+        if (arm->guard != NULL) {
+            Type* guard_type = checker_infer_expr(checker, arm->guard);
+            if (guard_type->kind == TYPE_ERROR) {
+                checker_pop_scope(checker);
+                return guard_type;
+            }
+            if (guard_type->kind != TYPE_BOOL) {
+                checker_pop_scope(checker);
+                return error_type_at(checker, loc, "receive guard must be Bool, got %s",
+                    string_cstr(type_to_string(checker->arena, guard_type)));
+            }
+        }
+
+        Type* arm_type = checker_infer_expr(checker, arm->body);
+        checker_pop_scope(checker);
+
+        if (arm_type->kind == TYPE_ERROR) return arm_type;
+
+        if (result_type == NULL) {
+            result_type = arm_type;
+        } else if (!type_equals(result_type, arm_type)) {
+            return error_type_at(checker, loc, "receive arm types must be equal: expected %s, got %s",
+                string_cstr(type_to_string(checker->arena, result_type)),
+                string_cstr(type_to_string(checker->arena, arm_type)));
+        }
+    }
+
+    if (expr->after_timeout != NULL || expr->after_body != NULL) {
+        if (expr->after_timeout == NULL || expr->after_body == NULL) {
+            return error_type_at(checker, loc, "receive after clause must provide both timeout and body");
+        }
+
+        Type* timeout_type = checker_infer_expr(checker, expr->after_timeout);
+        if (timeout_type->kind == TYPE_ERROR) return timeout_type;
+        if (timeout_type->kind != TYPE_INT) {
+            return error_type_at(checker, loc, "receive timeout must be Int, got %s",
+                string_cstr(type_to_string(checker->arena, timeout_type)));
+        }
+
+        Type* after_type = checker_infer_expr(checker, expr->after_body);
+        if (after_type->kind == TYPE_ERROR) return after_type;
+
+        if (result_type == NULL) {
+            result_type = after_type;
+        } else if (!type_equals(result_type, after_type)) {
+            return error_type_at(checker, loc, "receive after arm type must match receive arm type: expected %s, got %s",
+                string_cstr(type_to_string(checker->arena, result_type)),
+                string_cstr(type_to_string(checker->arena, after_type)));
+        }
+    }
+
+    if (result_type == NULL) return type_unit(checker->arena);
+    return result_type;
+}
+
 /* ========== Main Type Inference ========== */
 
 /**
@@ -3058,8 +3226,9 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
             return type_string(checker->arena);
         }
             
-        /* TODO: Implement remaining expression types */
         case EXPR_RECORD_UPDATE:
+            return check_record_update_expr(checker, &expr->data.record_update, expr->loc);
+
         case EXPR_TRY: {
             /* The ? operator unwraps Result types */
             Type* operand_type = checker_infer_expr(checker, expr->data.try_expr.operand);
@@ -3081,9 +3250,13 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
         }
             
         case EXPR_SPAWN:
+            return check_spawn_expr(checker, &expr->data.spawn_expr, expr->loc);
+
         case EXPR_SEND:
+            return check_send_expr(checker, &expr->data.send_expr, expr->loc);
+
         case EXPR_RECEIVE:
-            return error_type(checker, "Type checking not yet implemented for this expression type");
+            return check_receive_expr(checker, &expr->data.receive_expr, expr->loc);
     }
     
     return error_type(checker, "Unknown expression type");

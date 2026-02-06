@@ -1340,6 +1340,140 @@ void test_check_tuple_field_out_of_bounds(void) {
     arena_destroy(arena);
 }
 
+/* ========== Record Update and Actor Primitive Tests ========== */
+
+void test_check_record_update_preserves_base_type(void) {
+    Arena* arena = arena_create(4096);
+
+    Checker* checker = checker_new(arena);
+    Type* user_type = type_con(arena, string_new(arena, "User"), NULL);
+    checker_define(checker, string_new(arena, "user"), user_type);
+
+    Parser* parser = parser_new(arena, "%{ user | age: 31 }");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+
+    Type* t = checker_infer_expr(checker, expr);
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(t->data.con.name), "User");
+
+    arena_destroy(arena);
+}
+
+void test_check_record_update_field_error_propagates(void) {
+    Arena* arena = arena_create(4096);
+
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "user"),
+        type_con(arena, string_new(arena, "User"), NULL));
+
+    Parser* parser = parser_new(arena, "%{ user | age: missing }");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+
+    Type* t = checker_infer_expr(checker, expr);
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_ERROR);
+
+    arena_destroy(arena);
+}
+
+void test_check_spawn_returns_int(void) {
+    Arena* arena = arena_create(4096);
+
+    Checker* checker = checker_new(arena);
+    TypeVec* params = TypeVec_new(arena);
+    Type* worker_fn = type_fn(arena, params, type_unit(arena));
+    checker_define(checker, string_new(arena, "worker_loop"), worker_fn);
+
+    Parser* parser = parser_new(arena, "spawn(worker_loop)");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+
+    Type* t = checker_infer_expr(checker, expr);
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_INT);
+
+    arena_destroy(arena);
+}
+
+void test_check_spawn_requires_function(void) {
+    Arena* arena = arena_create(4096);
+
+    const char* err = check_expr_error(arena, "spawn(42)");
+
+    ASSERT_NOT_NULL(err);
+
+    arena_destroy(arena);
+}
+
+void test_check_send_returns_result(void) {
+    Arena* arena = arena_create(4096);
+
+    Type* t = check_expr(arena, "send(1, \"msg\")");
+
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_CON);
+    ASSERT_STR_EQ(string_cstr(t->data.con.name), "Result");
+    ASSERT_EQ(t->data.con.args->len, 2);
+    ASSERT_EQ(t->data.con.args->data[0]->kind, TYPE_INT);
+    ASSERT_EQ(t->data.con.args->data[1]->kind, TYPE_INT);
+
+    arena_destroy(arena);
+}
+
+void test_check_send_requires_int_pid(void) {
+    Arena* arena = arena_create(4096);
+
+    const char* err = check_expr_error(arena, "send(\"pid\", \"msg\")");
+
+    ASSERT_NOT_NULL(err);
+
+    arena_destroy(arena);
+}
+
+void test_check_send_requires_string_message(void) {
+    Arena* arena = arena_create(4096);
+
+    const char* err = check_expr_error(arena, "send(1, 2)");
+
+    ASSERT_NOT_NULL(err);
+
+    arena_destroy(arena);
+}
+
+void test_check_receive_returns_common_arm_type(void) {
+    Arena* arena = arena_create(4096);
+
+    Type* t = check_expr(arena, "receive: Ping -> 1, Shutdown -> 2");
+
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_INT);
+
+    arena_destroy(arena);
+}
+
+void test_check_receive_arm_type_mismatch_errors(void) {
+    Arena* arena = arena_create(4096);
+
+    const char* err = check_expr_error(arena, "receive: Ping -> 1, Shutdown -> \"bad\"");
+
+    ASSERT_NOT_NULL(err);
+
+    arena_destroy(arena);
+}
+
+void test_check_receive_after_timeout_requires_int(void) {
+    Arena* arena = arena_create(4096);
+
+    const char* err = check_expr_error(arena, "receive: Ping -> 1, _ after \"later\" -> 0");
+
+    ASSERT_NOT_NULL(err);
+
+    arena_destroy(arena);
+}
+
 /* ========== Function Definition Tests ========== */
 
 /* Helper to parse and type check a statement */
@@ -2209,6 +2343,18 @@ void run_checker_tests(void) {
     TEST_RUN(test_check_tuple_field_access);
     TEST_RUN(test_check_tuple_field_access_second);
     TEST_RUN(test_check_tuple_field_out_of_bounds);
+
+    // Record update and actor primitives
+    TEST_RUN(test_check_record_update_preserves_base_type);
+    TEST_RUN(test_check_record_update_field_error_propagates);
+    TEST_RUN(test_check_spawn_returns_int);
+    TEST_RUN(test_check_spawn_requires_function);
+    TEST_RUN(test_check_send_returns_result);
+    TEST_RUN(test_check_send_requires_int_pid);
+    TEST_RUN(test_check_send_requires_string_message);
+    TEST_RUN(test_check_receive_returns_common_arm_type);
+    TEST_RUN(test_check_receive_arm_type_mismatch_errors);
+    TEST_RUN(test_check_receive_after_timeout_requires_int);
     
     // Function definitions
     TEST_RUN(test_check_fn_simple);

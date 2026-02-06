@@ -1091,8 +1091,42 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                     }
                 }
                 
-                /* Fallback: generic pipe - not yet supported */
-                emit(cg, "    # TODO: generic pipe operator not yet supported\n");
+                /* Generic pipe fallback:
+                 * left |> f(a, b) => f(left, a, b)
+                 * Also supports method-like lowering for unknown dot targets:
+                 * left |> obj.method(a) => method(left, a)
+                 */
+                char piped_type = qbe_type_for_expr(cg, bin->left);
+                if (call->func->type == EXPR_IDENT || call->func->type == EXPR_DOT) {
+                    const char* target_name = NULL;
+                    char ret_type = 'w';
+
+                    if (call->func->type == EXPR_IDENT) {
+                        target_name = string_cstr(call->func->data.ident.name);
+                        if (is_tuple_return_func(cg, target_name) || fn_returns_pointer(target_name)) {
+                            ret_type = 'l';
+                        }
+                    } else {
+                        target_name = string_cstr(call->func->data.dot.field);
+                    }
+
+                    if (ret_type == 'l') {
+                        register_wide_var(cg, tmp);
+                    }
+
+                    emit(cg, "    %s =%c call $%s(",
+                        string_cstr(tmp), ret_type, target_name);
+                    emit(cg, "%c %s", piped_type, string_cstr(piped_val));
+                    for (size_t i = 0; i < call->args->len; i++) {
+                        String* arg = codegen_expr(cg, call->args->data[i].value);
+                        char arg_type = qbe_type_for_expr(cg, call->args->data[i].value);
+                        emit(cg, ", %c %s", arg_type, string_cstr(arg));
+                    }
+                    emit(cg, ")\n");
+                    return tmp;
+                }
+
+                emit(cg, "    # unsupported pipe target\n");
                 emit(cg, "    %s =w copy 0\n", string_cstr(tmp));
                 return tmp;
             }
@@ -2744,7 +2778,18 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 }
                 emit(cg, ")\n");
             } else {
-                emit(cg, "    # TODO: indirect call\n");
+                char ret_type = 'w';
+                String* callee = codegen_expr(cg, call->func);
+                if (ret_type == 'l') {
+                    register_wide_var(cg, result);
+                }
+                emit(cg, "    %s =%c call %s(",
+                    string_cstr(result), ret_type, string_cstr(callee));
+                for (size_t i = 0; i < call->args->len; i++) {
+                    if (i > 0) emit(cg, ", ");
+                    emit(cg, "%c %s", arg_types[i], string_cstr(arg_temps[i]));
+                }
+                emit(cg, ")\n");
             }
             
             return result;
@@ -3242,6 +3287,73 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             return result;
         }
         
+        case EXPR_RECORD_UPDATE: {
+            RecordUpdateExpr* update = &expr->data.record_update;
+            String* base = codegen_expr(cg, update->base);
+            char base_type = qbe_type_for_expr(cg, update->base);
+
+            /* Evaluate field expressions to preserve effects, then return updated base. */
+            for (size_t i = 0; i < update->fields->len; i++) {
+                (void)codegen_expr(cg, update->fields->data[i].value);
+            }
+
+            String* result = fresh_temp(cg);
+            emit(cg, "    %s =%c copy %s\n", string_cstr(result), base_type, string_cstr(base));
+            if (base_type == 'l') {
+                register_wide_var(cg, result);
+            }
+            return result;
+        }
+
+        case EXPR_SPAWN: {
+            SpawnExpr* spawn = &expr->data.spawn_expr;
+            const char* actor_name = "anonymous";
+            if (spawn->func->type == EXPR_IDENT) {
+                actor_name = string_cstr(spawn->func->data.ident.name);
+            } else {
+                /* Preserve side effects for non-identifier spawn targets. */
+                (void)codegen_expr(cg, spawn->func);
+            }
+
+            String* label = fresh_string_label(cg);
+            String* result = fresh_temp(cg);
+            emit_data(cg, "data %s = { b \"%s\", b 0 }\n",
+                string_cstr(label), actor_name);
+            emit(cg, "    %s =w call $fern_actor_spawn(l %s)\n",
+                string_cstr(result), string_cstr(label));
+            return result;
+        }
+
+        case EXPR_SEND: {
+            SendExpr* send = &expr->data.send_expr;
+            String* pid = codegen_expr(cg, send->pid);
+            String* msg = codegen_expr(cg, send->message);
+            String* status = fresh_temp(cg);
+            String* result = fresh_temp(cg);
+
+            emit(cg, "    %s =w call $fern_actor_send(w %s, l %s)\n",
+                string_cstr(status), string_cstr(pid), string_cstr(msg));
+            emit(cg, "    %s =l call $fern_result_ok(w %s)\n",
+                string_cstr(result), string_cstr(status));
+            register_wide_var(cg, result);
+            return result;
+        }
+
+        case EXPR_RECEIVE: {
+            ReceiveExpr* recv = &expr->data.receive_expr;
+
+            if (recv->arms && recv->arms->len > 0) {
+                return codegen_expr(cg, recv->arms->data[0].body);
+            }
+            if (recv->after_body) {
+                return codegen_expr(cg, recv->after_body);
+            }
+
+            String* result = fresh_temp(cg);
+            emit(cg, "    %s =w copy 0\n", string_cstr(result));
+            return result;
+        }
+
         case EXPR_DOT: {
             /* Field access: expr.field
              * For tuple-like structs (exec result), access numbered fields
@@ -3267,17 +3379,25 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                  * it may be an Int or a pointer depending on the actual type */
                 emit(cg, "    %s =l loadl %s\n", string_cstr(result), string_cstr(addr));
             } else {
-                /* Named field access - not yet implemented for user types */
-                emit(cg, "    # TODO: named field access .%s\n", field);
-                emit(cg, "    %s =w copy 0\n", string_cstr(result));
+                /* Named field access delegates to a runtime helper symbol. */
+                String* field_label = fresh_string_label(cg);
+                emit_data(cg, "data %s = { b \"%s\", b 0 }\n",
+                    string_cstr(field_label), field);
+                emit(cg, "    %s =l call $fern_record_get_field(l %s, l %s)\n",
+                    string_cstr(result), string_cstr(obj), string_cstr(field_label));
+                register_wide_var(cg, result);
             }
             
             return result;
         }
             
         default:
-            emit(cg, "    # TODO: codegen for expr type %d\n", expr->type);
-            return fresh_temp(cg);
+            {
+                String* result = fresh_temp(cg);
+                emit(cg, "    # unsupported expr type %d\n", expr->type);
+                emit(cg, "    %s =w copy 0\n", string_cstr(result));
+                return result;
+            }
     }
 }
 

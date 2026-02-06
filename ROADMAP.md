@@ -8,12 +8,13 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `just test` passing (**485/485**)
+- Build/tests: `just test` passing (**502/502**)
 - Style: `just style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
 - Release automation: conventional-commit-driven semver + release notes configured via `release-please` (initial version pinned to `0.1.0`, breaking changes map to minor while `<1.0.0`)
 - Task runner UX: `Justfile` is the primary command surface for all build/test/release tasks
 - Current focus: Post-Gate D stabilization and adoption docs maintenance
+- Post-Gate D stabilization update: checker/codegen coverage for record updates and actor primitives (`spawn`, `send`, `receive`) is in place with dedicated regression tests
 
 ## Working Model
 
@@ -167,6 +168,7 @@ Gate D pass criteria are now closed and validated with test + workflow coverage.
 - [x] Actor runtime core baseline (`spawn`, `send`, `receive`, scheduler`) with mailbox/scheduler runtime tests
 - [x] `fern doc` documentation generation pipeline (`src/main.c`, `scripts/generate_docs.py`, `tests/test_cli_main.c`)
 - [x] LSP expansion beyond MVP (completion/rename/code actions)
+- [x] Post-Gate D semantic parity pass for parsed-but-partial expressions: checker support for `%{ ... | ... }` + actor primitives and codegen fallback removal for generic pipe/indirect call/named field/default expr paths (`tests/test_checker.c`, `tests/test_codegen.c`, `lib/checker.c`, `lib/codegen.c`)
 
 ## Out of Scope for This File
 

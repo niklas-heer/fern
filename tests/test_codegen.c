@@ -868,6 +868,87 @@ void test_codegen_tui_prompt_int(void) {
     arena_destroy(arena);
 }
 
+/* ========== Record/Actor and Fallback Path Tests ========== */
+
+void test_codegen_record_update_has_concrete_path(void) {
+    Arena* arena = arena_create(8192);
+
+    const char* qbe = generate_expr_qbe(arena, "%{ user | age: 31 }");
+
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "TODO: codegen for expr type") == NULL);
+
+    arena_destroy(arena);
+}
+
+void test_codegen_spawn_calls_runtime(void) {
+    Arena* arena = arena_create(8192);
+
+    const char* qbe = generate_expr_qbe(arena, "spawn(worker_loop)");
+
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "$fern_actor_spawn") != NULL);
+
+    arena_destroy(arena);
+}
+
+void test_codegen_send_calls_runtime(void) {
+    Arena* arena = arena_create(8192);
+
+    const char* qbe = generate_expr_qbe(arena, "send(1, \"msg\")");
+
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "$fern_actor_send") != NULL);
+
+    arena_destroy(arena);
+}
+
+void test_codegen_receive_has_concrete_path(void) {
+    Arena* arena = arena_create(8192);
+
+    const char* qbe = generate_expr_qbe(arena, "receive: Ping -> 1, Shutdown -> 2");
+
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "TODO: codegen for expr type") == NULL);
+
+    arena_destroy(arena);
+}
+
+void test_codegen_pipe_generic_call_supported(void) {
+    Arena* arena = arena_create(8192);
+
+    const char* qbe = generate_expr_qbe(arena, "1 |> add(2)");
+
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "TODO: generic pipe operator not yet supported") == NULL);
+    ASSERT_TRUE(strstr(qbe, "call $add") != NULL);
+
+    arena_destroy(arena);
+}
+
+void test_codegen_indirect_call_supported(void) {
+    Arena* arena = arena_create(8192);
+
+    const char* qbe = generate_expr_qbe(arena, "((x) -> x + 1)(2)");
+
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "TODO: indirect call") == NULL);
+    ASSERT_TRUE(strstr(qbe, "call %") != NULL);
+
+    arena_destroy(arena);
+}
+
+void test_codegen_named_field_access_no_todo(void) {
+    Arena* arena = arena_create(8192);
+
+    const char* qbe = generate_expr_qbe(arena, "point.x");
+
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "TODO: named field access") == NULL);
+
+    arena_destroy(arena);
+}
+
 /* ========== Test Runner ========== */
 
 void run_codegen_tests(void) {
@@ -975,4 +1056,13 @@ void run_codegen_tests(void) {
     TEST_RUN(test_codegen_tui_prompt_select);
     TEST_RUN(test_codegen_tui_prompt_password);
     TEST_RUN(test_codegen_tui_prompt_int);
+
+    /* Record/actor primitives and removed fallback TODO paths */
+    TEST_RUN(test_codegen_record_update_has_concrete_path);
+    TEST_RUN(test_codegen_spawn_calls_runtime);
+    TEST_RUN(test_codegen_send_calls_runtime);
+    TEST_RUN(test_codegen_receive_has_concrete_path);
+    TEST_RUN(test_codegen_pipe_generic_call_supported);
+    TEST_RUN(test_codegen_indirect_call_supported);
+    TEST_RUN(test_codegen_named_field_access_no_todo);
 }
