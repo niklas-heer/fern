@@ -8,6 +8,7 @@ debug_flags := "-g -O0 -DDEBUG"
 release_flags := "-O2 -DNDEBUG"
 qbe_cflags := "-std=c99 -Ideps/qbe -Wno-unused-parameter -Wno-sign-compare"
 linenoise_cflags := "-std=c11 -Ideps/linenoise -Wno-unused-parameter -Wno-missing-field-initializers"
+civetweb_cflags := "-std=c11 -Ideps/civetweb/include -Ideps/civetweb/src -DNO_SSL -DNO_CGI"
 
 runtime_sources := "runtime/*.c"
 src_sources := "src/*.c"
@@ -83,6 +84,7 @@ _build-runtime mode:
 
     cc="{{cc}}"
     base=( {{base_cflags}} )
+    civetweb=( {{civetweb_cflags}} )
 
     gc_cflags=()
     if pkg-config --exists bdw-gc >/dev/null 2>&1; then
@@ -94,9 +96,12 @@ _build-runtime mode:
     runtime_objs=()
     for src in {{runtime_sources}}; do
       obj="build/runtime_$(basename "${src%.c}").o"
-      "$cc" "${base[@]}" "${mode_flags[@]}" "${gc_cflags[@]}" -Iruntime -c "$src" -o "$obj"
+      "$cc" "${base[@]}" "${mode_flags[@]}" "${gc_cflags[@]}" -Iruntime -Ideps/civetweb/include -c "$src" -o "$obj"
       runtime_objs+=("$obj")
     done
+
+    "$cc" "${civetweb[@]}" "${mode_flags[@]}" -c deps/civetweb/src/civetweb.c -o build/runtime_civetweb.o
+    runtime_objs+=("build/runtime_civetweb.o")
 
     ar rcs bin/libfern_runtime.a "${runtime_objs[@]}"
     echo "✓ Built runtime library: bin/libfern_runtime.a"

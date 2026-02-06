@@ -134,6 +134,7 @@ def compile_microbenchmark(source_path: Path, output_path: Path) -> None:
         "-Iruntime",
         str(source_path),
         "bin/libfern_runtime.a",
+        "-pthread",
         "-o",
         str(output_path),
         *gc_libs,

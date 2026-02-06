@@ -24,7 +24,7 @@ Ok(process(validated))
 
 **No surprises** - The language actively prevents the bugs that waste your afternoon. If it compiles, it probably works.
 
-**Jetpack surface included** - Core modules ship with the compiler; SQL now has a concrete SQLite runtime backend, while HTTP remains placeholder-backed pre-1.0.
+**Jetpack surface included** - Core modules ship with the compiler; SQL now has a concrete SQLite runtime backend, and HTTP GET/POST calls are backed by the civetweb runtime client.
 
 ### Core Principles
 
@@ -55,7 +55,7 @@ Ok(process(validated))
 - **Garbage collected runtime** - Boehm-backed runtime plus Perceus baseline ownership primitives
 - **Language tooling** - LSP with diagnostics, hover, definition, completion, rename, and code actions
 - **Stable stdlib API surface** - `fs`, `http`, `json`, `sql`, `actors`, and `File` alias compatibility
-- **Explicit runtime readiness** - SQL is SQLite-backed today; HTTP currently returns placeholder `Err(FERN_ERR_IO)` and is documented as such
+- **Explicit runtime readiness** - SQL is SQLite-backed today; HTTP GET/POST are runtime-backed (HTTP URLs) with deterministic `Err(FERN_ERR_IO)` on invalid URLs/network failures
 - **Helpful diagnostics** - snippets, notes, and fix hints in CLI workflows
 - **Reproducible quality gates** - `just check`, fuzz smoke, perf budgets, release policy checks
 
@@ -78,7 +78,7 @@ Fern is implemented with strict TDD. See [DESIGN.md](DESIGN.md) for language det
 - ✅ Gate D (ecosystem/adoption hardening) passed
 
 **Recent outcomes:**
-- ✅ 504/504 tests passing in local `just test`
+- ✅ 506/506 tests passing in local `just test`
 - ✅ Cross-platform CI (Ubuntu + macOS) with build/test/style/perf/fuzz/example checks
 - ✅ Release packaging bundles (`fern` + `libfern_runtime.a` + policy/docs artifacts)
 - ✅ Conventional-commit-driven semver + release notes via `release-please`
@@ -109,7 +109,7 @@ Fern takes inspiration from the best features of:
 
 ## Philosophy in Action
 
-**Full-stack shape (stable API surface, SQL backend available, HTTP placeholder pre-1.0):**
+**Full-stack shape (stable API surface, SQL + HTTP runtime backends available):**
 ```fern
 # No Redis, no RabbitMQ, no separate database
 fn main() -> Result((), Int):
@@ -160,7 +160,7 @@ apt install just
 dnf install just
 ```
 
-> **Note:** QBE is embedded in the compiler - no external `qbe` binary needed. Boehm GC is statically linked into compiled programs. SQL stdlib calls link against SQLite (`sqlite3`) and HTTP stdlib calls currently use placeholder runtime contracts (`Err(FERN_ERR_IO)`).
+> **Note:** QBE is embedded in the compiler - no external `qbe` binary needed. Boehm GC is statically linked into compiled programs. SQL stdlib calls link against SQLite (`sqlite3`) and HTTP stdlib calls are implemented via vendored civetweb client code in the runtime.
 
 **Preferred task runner (`Justfile`):**
 ```bash

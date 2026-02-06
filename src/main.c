@@ -633,21 +633,22 @@ static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
         return 1;
     }
 
-    // Find and link with runtime library + GC + sqlite3 runtime dependency for sql.*
+    // Find and link with runtime library + GC + sqlite3 runtime dependencies.
     char runtime_lib[512];
     const char* gc_link = "$(pkg-config --variable=libdir bdw-gc 2>/dev/null | xargs -I{} echo {}/libgc.a || "
                           "for d in /opt/homebrew/lib /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu; do "
                           "[ -f $d/libgc.a ] && echo $d/libgc.a && break; done)";
     const char* sqlite_link = "$(pkg-config --libs sqlite3 2>/dev/null || echo -lsqlite3)";
+    const char* thread_link = "-pthread";
     if (g_exe_path && find_runtime_lib(g_exe_path, runtime_lib, sizeof(runtime_lib))) {
         log_verbose("verbose: linking with runtime %s\n", runtime_lib);
-        snprintf(cmd, sizeof(cmd), "cc -o %s %s %s %s %s 2>&1",
-            output_file, obj_file, runtime_lib, gc_link, sqlite_link);
+        snprintf(cmd, sizeof(cmd), "cc -o %s %s %s %s %s %s 2>&1",
+            output_file, obj_file, runtime_lib, gc_link, sqlite_link, thread_link);
     } else {
         // Fall back to linking without runtime (will fail if runtime functions used)
         log_verbose("verbose: runtime library not found near executable, linking fallback path\n");
-        snprintf(cmd, sizeof(cmd), "cc -o %s %s %s %s 2>&1",
-            output_file, obj_file, gc_link, sqlite_link);
+        snprintf(cmd, sizeof(cmd), "cc -o %s %s %s %s %s 2>&1",
+            output_file, obj_file, gc_link, sqlite_link, thread_link);
     }
 
     ret = system(cmd);

@@ -11,10 +11,12 @@
 
 #include "fern_runtime.h"
 #include "fern_gc.h"
+#include "civetweb.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <limits.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <dirent.h>
@@ -1997,31 +1999,309 @@ int64_t fern_json_stringify(const char* text) {
     return fern_result_ok((int64_t)(intptr_t)copy);
 }
 
+typedef struct {
+    const char* host;
+    size_t host_len;
+    const char* path;
+    int port;
+    int use_ssl;
+} FernHttpUrl;
+
+static int g_fern_http_client_initialized = 0;
+
+/**
+ * Initialize civetweb client globals once for the process lifetime.
+ * @return 1 on success, 0 when initialization fails.
+ */
+static int fern_http_ensure_client_initialized(void) {
+    if (g_fern_http_client_initialized) return 1;
+    unsigned features = mg_init_library(MG_FEATURES_DEFAULT);
+    (void)features;
+    g_fern_http_client_initialized = 1;
+    return 1;
+}
+
+/**
+ * Parse a positive TCP port from a URL segment.
+ * @param start Port segment start (inclusive).
+ * @param end Port segment end (exclusive).
+ * @param port_out Parsed port number output.
+ * @return 1 when parsing succeeds, 0 otherwise.
+ */
+static int fern_http_parse_port(const char* start, const char* end, int* port_out) {
+    assert(start != NULL);
+    assert(end != NULL);
+    assert(port_out != NULL);
+    if (!start || !end || !port_out || start >= end) return 0;
+
+    size_t len = (size_t)(end - start);
+    if (len >= 16) return 0;
+
+    char buf[16];
+    memcpy(buf, start, len);
+    buf[len] = '\0';
+
+    char* parse_end = NULL;
+    long parsed = strtol(buf, &parse_end, 10);
+    if (parse_end == NULL || *parse_end != '\0') return 0;
+    if (parsed <= 0 || parsed > 65535) return 0;
+    *port_out = (int)parsed;
+    return 1;
+}
+
+/**
+ * Parse an HTTP/HTTPS URL into request target components.
+ * @param url Input URL.
+ * @param parsed Parsed output target.
+ * @return 1 on success, 0 on invalid URL.
+ */
+static int fern_http_parse_url(const char* url, FernHttpUrl* parsed) {
+    assert(url != NULL);
+    assert(parsed != NULL);
+    if (!url || !parsed) return 0;
+
+    const char* p = url;
+    memset(parsed, 0, sizeof(*parsed));
+    if (strncmp(p, "http://", 7) == 0) {
+        parsed->use_ssl = 0;
+        parsed->port = 80;
+        p += 7;
+    } else if (strncmp(p, "https://", 8) == 0) {
+        parsed->use_ssl = 1;
+        parsed->port = 443;
+        p += 8;
+    } else {
+        return 0;
+    }
+
+    if (*p == '\0') return 0;
+
+    const char* host_start = p;
+    const char* host_end = p;
+    if (*p == '[') {
+        host_start = ++p;
+        while (*p != '\0' && *p != ']') p++;
+        if (*p != ']' || p == host_start) return 0;
+        host_end = p;
+        p++;
+    } else {
+        while (*p != '\0' && *p != '/' && *p != ':' && *p != '?' && *p != '#') p++;
+        host_end = p;
+    }
+
+    if (host_end <= host_start) return 0;
+
+    if (*p == ':') {
+        const char* port_start = ++p;
+        while (*p != '\0' && *p != '/' && *p != '?' && *p != '#') p++;
+        if (!fern_http_parse_port(port_start, p, &parsed->port)) return 0;
+    }
+
+    parsed->host = host_start;
+    parsed->host_len = (size_t)(host_end - host_start);
+    parsed->path = (*p == '\0' || *p == '#') ? "/" : p;
+    return 1;
+}
+
+/**
+ * Build null-terminated host and Host header values from parsed URL.
+ * @param target Parsed URL target.
+ * @param host_out Host output for civetweb connect.
+ * @param host_out_len Host output buffer length.
+ * @param host_header_out HTTP Host header output.
+ * @param host_header_out_len Host header output buffer length.
+ * @return 1 on success, 0 on buffer overflow.
+ */
+static int fern_http_build_host_values(const FernHttpUrl* target,
+                                       char* host_out,
+                                       size_t host_out_len,
+                                       char* host_header_out,
+                                       size_t host_header_out_len) {
+    assert(target != NULL);
+    assert(host_out != NULL);
+    assert(host_header_out != NULL);
+    if (!target || !host_out || !host_header_out) return 0;
+
+    if (target->host_len + 1 > host_out_len) return 0;
+    memcpy(host_out, target->host, target->host_len);
+    host_out[target->host_len] = '\0';
+
+    int is_default_port = (!target->use_ssl && target->port == 80) ||
+                          (target->use_ssl && target->port == 443);
+    if (is_default_port) {
+        size_t host_len = strlen(host_out);
+        if (host_len + 1 > host_header_out_len) return 0;
+        memcpy(host_header_out, host_out, host_len + 1);
+        return 1;
+    }
+
+    int written = snprintf(host_header_out, host_header_out_len, "%s:%d", host_out, target->port);
+    if (written <= 0) return 0;
+    return (size_t)written < host_header_out_len;
+}
+
+/**
+ * Read the full HTTP response body from an open civetweb connection.
+ * @param conn Open client connection.
+ * @param content_length Declared HTTP content length (-1 if unknown).
+ * @param err_out Output Fern error code on failure.
+ * @return Newly allocated body string on success, NULL on failure.
+ */
+static char* fern_http_read_body(struct mg_connection* conn, long long content_length, int64_t* err_out) {
+    assert(conn != NULL);
+    assert(err_out != NULL);
+    if (!conn || !err_out) return NULL;
+
+    *err_out = FERN_ERR_IO;
+    if (content_length < -1) return NULL;
+
+    size_t cap = 1024;
+    if (content_length == 0) {
+        cap = 1;
+    } else if (content_length > 0) {
+        if ((unsigned long long)content_length >= (unsigned long long)SIZE_MAX) return NULL;
+        cap = (size_t)content_length + 1;
+    }
+
+    char* body = FERN_ALLOC(cap);
+    if (body == NULL) {
+        *err_out = FERN_ERR_OUT_OF_MEMORY;
+        return NULL;
+    }
+
+    size_t len = 0;
+    while (1) {
+        if (len + 1 >= cap) {
+            size_t next_cap = cap * 2;
+            if (next_cap <= cap) return NULL;
+            char* next = FERN_REALLOC(body, next_cap);
+            if (next == NULL) {
+                *err_out = FERN_ERR_OUT_OF_MEMORY;
+                return NULL;
+            }
+            body = next;
+            cap = next_cap;
+        }
+
+        int nread = mg_read(conn, body + len, cap - len - 1);
+        if (nread < 0) return NULL;
+        if (nread == 0) break;
+        len += (size_t)nread;
+
+        if (content_length >= 0 && len >= (size_t)content_length) break;
+    }
+
+    if (content_length >= 0 && len < (size_t)content_length) {
+        return NULL;
+    }
+
+    body[len] = '\0';
+    return body;
+}
+
+/**
+ * Execute a basic HTTP request using civetweb client APIs.
+ * @param method HTTP method literal ("GET"/"POST").
+ * @param url Request URL.
+ * @param body Optional request body for POST; NULL for GET.
+ * @return Result: Ok(response body) or Err(error code).
+ */
+static int64_t fern_http_request(const char* method, const char* url, const char* body) {
+    assert(method != NULL);
+    assert(url != NULL);
+    if (!method || !url) return fern_result_err(FERN_ERR_IO);
+    if (!fern_http_ensure_client_initialized()) return fern_result_err(FERN_ERR_IO);
+
+    FernHttpUrl target;
+    if (!fern_http_parse_url(url, &target)) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    char host[512];
+    char host_header[640];
+    if (!fern_http_build_host_values(&target, host, sizeof(host), host_header, sizeof(host_header))) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    char err_buf[256];
+    err_buf[0] = '\0';
+    struct mg_connection* conn = NULL;
+    if (body == NULL) {
+        conn = mg_download(host,
+                           target.port,
+                           target.use_ssl,
+                           err_buf,
+                           sizeof(err_buf),
+                           "%s %s HTTP/1.1\r\n"
+                           "Host: %s\r\n"
+                           "Connection: close\r\n"
+                           "\r\n",
+                           method,
+                           target.path,
+                           host_header);
+    } else {
+        size_t body_len = strlen(body);
+        conn = mg_download(host,
+                           target.port,
+                           target.use_ssl,
+                           err_buf,
+                           sizeof(err_buf),
+                           "%s %s HTTP/1.1\r\n"
+                           "Host: %s\r\n"
+                           "Content-Type: text/plain\r\n"
+                           "Content-Length: %zu\r\n"
+                           "Connection: close\r\n"
+                           "\r\n"
+                           "%s",
+                           method,
+                           target.path,
+                           host_header,
+                           body_len,
+                           body);
+    }
+    if (conn == NULL) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    const struct mg_response_info* info = mg_get_response_info(conn);
+    if (info == NULL || info->status_code < 200 || info->status_code >= 300) {
+        mg_close_connection(conn);
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    int64_t body_err = FERN_ERR_IO;
+    char* response_body = fern_http_read_body(conn, info->content_length, &body_err);
+    mg_close_connection(conn);
+    if (response_body == NULL) {
+        return fern_result_err(body_err);
+    }
+
+    return fern_result_ok((int64_t)(intptr_t)response_body);
+}
+
 /**
  * Perform an HTTP GET request.
- * Current Gate C contract returns Err(FERN_ERR_IO) until HTTP backend lands.
  * @param url Request URL.
- * @return Result: Err(error code).
+ * @return Result: Ok(response body) or Err(error code).
  */
 int64_t fern_http_get(const char* url) {
     if (url == NULL || url[0] == '\0') {
         return fern_result_err(FERN_ERR_IO);
     }
-    return fern_result_err(FERN_ERR_IO);
+    return fern_http_request("GET", url, NULL);
 }
 
 /**
  * Perform an HTTP POST request.
- * Current Gate C contract returns Err(FERN_ERR_IO) until HTTP backend lands.
  * @param url Request URL.
  * @param body Request body payload.
- * @return Result: Err(error code).
+ * @return Result: Ok(response body) or Err(error code).
  */
 int64_t fern_http_post(const char* url, const char* body) {
     if (url == NULL || url[0] == '\0' || body == NULL) {
         return fern_result_err(FERN_ERR_IO);
     }
-    return fern_result_err(FERN_ERR_IO);
+    return fern_http_request("POST", url, body);
 }
 
 typedef struct {

@@ -13,6 +13,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <signal.h>
+#include <errno.h>
 
 typedef struct {
     int exit_code;
@@ -23,6 +27,11 @@ typedef struct {
     CmdResult build;
     CmdResult run;
 } BuildRunResult;
+
+typedef struct {
+    pid_t pid;
+    int port;
+} TestHttpServer;
 
 static char* dup_cstr(const char* text) {
     if (!text) return NULL;
@@ -135,6 +144,149 @@ static void free_build_run_result(BuildRunResult* result) {
     free_cmd_result(&result->run);
 }
 
+static int parse_content_length(const char* request) {
+    if (!request) return -1;
+    const char* marker = strstr(request, "Content-Length:");
+    if (!marker) return -1;
+    marker += strlen("Content-Length:");
+    while (*marker == ' ') marker++;
+    return atoi(marker);
+}
+
+static int write_http_response(int fd, int status, const char* body, size_t body_len) {
+    const char* status_text = status == 200 ? "OK" : "Not Found";
+    char header[256];
+    int header_len = snprintf(
+        header,
+        sizeof(header),
+        "HTTP/1.1 %d %s\r\n"
+        "Content-Length: %zu\r\n"
+        "Connection: close\r\n"
+        "Content-Type: text/plain\r\n"
+        "\r\n",
+        status,
+        status_text,
+        body_len
+    );
+    if (header_len <= 0 || (size_t)header_len >= sizeof(header)) {
+        return -1;
+    }
+    if (write(fd, header, (size_t)header_len) < 0) return -1;
+    if (body_len > 0 && write(fd, body, body_len) < 0) return -1;
+    return 0;
+}
+
+static int run_test_http_server(int port) {
+    int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_fd < 0) return 1;
+
+    int yes = 1;
+    setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)port);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    if (bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+        close(listen_fd);
+        return 2;
+    }
+    if (listen(listen_fd, 8) != 0) {
+        close(listen_fd);
+        return 3;
+    }
+
+    for (int i = 0; i < 6; i++) {
+        int client_fd = accept(listen_fd, NULL, NULL);
+        if (client_fd < 0) {
+            if (errno == EINTR) continue;
+            close(listen_fd);
+            return 4;
+        }
+
+        char req[8192];
+        ssize_t nread = read(client_fd, req, sizeof(req) - 1);
+        if (nread <= 0) {
+            close(client_fd);
+            continue;
+        }
+        req[nread] = '\0';
+
+        const char* body_start = strstr(req, "\r\n\r\n");
+        if (body_start) body_start += 4;
+
+        if (strncmp(req, "GET /health ", 12) == 0) {
+            write_http_response(client_fd, 200, "ok", 2);
+        } else if (strncmp(req, "POST /echo ", 11) == 0 && body_start) {
+            int body_len = parse_content_length(req);
+            if (body_len < 0) {
+                body_len = (int)strlen(body_start);
+            }
+            if (body_len < 0) body_len = 0;
+            write_http_response(client_fd, 200, body_start, (size_t)body_len);
+        } else {
+            write_http_response(client_fd, 404, "not found", 9);
+        }
+
+        close(client_fd);
+    }
+
+    close(listen_fd);
+    return 0;
+}
+
+static bool wait_for_http_server_ready(int port) {
+    for (int i = 0; i < 50; i++) {
+        int fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (fd < 0) return false;
+
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((uint16_t)port);
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+        int rc = connect(fd, (struct sockaddr*)&addr, sizeof(addr));
+        close(fd);
+        if (rc == 0) {
+            return true;
+        }
+        usleep(20 * 1000);
+    }
+    return false;
+}
+
+static TestHttpServer start_test_http_server(int port) {
+    TestHttpServer server;
+    server.pid = -1;
+    server.port = port;
+
+    pid_t pid = fork();
+    if (pid < 0) return server;
+
+    if (pid == 0) {
+        int code = run_test_http_server(port);
+        _exit(code);
+    }
+
+    if (!wait_for_http_server_ready(port)) {
+        kill(pid, SIGTERM);
+        waitpid(pid, NULL, 0);
+        return server;
+    }
+
+    server.pid = pid;
+    return server;
+}
+
+static void stop_test_http_server(TestHttpServer server) {
+    if (server.pid <= 0) return;
+    kill(server.pid, SIGTERM);
+    waitpid(server.pid, NULL, 0);
+}
+
 static BuildRunResult build_and_run_source(const char* source) {
     BuildRunResult result;
     result.build.exit_code = -1;
@@ -208,6 +360,7 @@ static BuildRunResult build_and_run_c_source(const char* source) {
         "%s bin/libfern_runtime.a "
         "$(pkg-config --libs bdw-gc 2>/dev/null || echo -lgc) "
         "$(pkg-config --libs sqlite3 2>/dev/null || echo -lsqlite3) "
+        "-pthread "
         "-o %s 2>&1",
         source_path,
         output_path
@@ -264,10 +417,44 @@ void test_runtime_http_get_empty_returns_io_error(void) {
     free_build_run_result(&result);
 }
 
-void test_runtime_http_post_placeholder_returns_io_error(void) {
+void test_runtime_http_get_returns_ok_body(void) {
+    TestHttpServer server = start_test_http_server(19081);
+    ASSERT_TRUE(server.pid > 0);
+
     BuildRunResult result = build_and_run_source(
         "fn main() -> Int:\n"
-        "    match http.post(\"https://example.com\", \"payload\"):\n"
+        "    match http.get(\"http://127.0.0.1:19081/health\"):\n"
+        "        Ok(body) -> if String.eq(body, \"ok\"): 0 else: 10\n"
+        "        Err(_) -> 11\n");
+
+    stop_test_http_server(server);
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
+void test_runtime_http_post_returns_ok_body(void) {
+    TestHttpServer server = start_test_http_server(19082);
+    ASSERT_TRUE(server.pid > 0);
+
+    BuildRunResult result = build_and_run_source(
+        "fn main() -> Int:\n"
+        "    match http.post(\"http://127.0.0.1:19082/echo\", \"ping\"):\n"
+        "        Ok(body) -> if String.eq(body, \"ping\"): 0 else: 10\n"
+        "        Err(_) -> 11\n");
+
+    stop_test_http_server(server);
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
+void test_runtime_http_post_invalid_url_returns_io_error(void) {
+    BuildRunResult result = build_and_run_source(
+        "fn main() -> Int:\n"
+        "    match http.post(\"not-a-url\", \"payload\"):\n"
         "        Ok(_) -> 10\n"
         "        Err(code) -> if code == 3: 0 else: 11\n");
 
@@ -511,7 +698,9 @@ void run_runtime_surface_tests(void) {
     TEST_RUN(test_runtime_json_parse_empty_returns_err_code);
     TEST_RUN(test_runtime_json_stringify_empty_returns_ok_empty);
     TEST_RUN(test_runtime_http_get_empty_returns_io_error);
-    TEST_RUN(test_runtime_http_post_placeholder_returns_io_error);
+    TEST_RUN(test_runtime_http_get_returns_ok_body);
+    TEST_RUN(test_runtime_http_post_returns_ok_body);
+    TEST_RUN(test_runtime_http_post_invalid_url_returns_io_error);
     TEST_RUN(test_runtime_sql_open_empty_returns_io_error);
     TEST_RUN(test_runtime_sql_open_and_execute_returns_ok);
     TEST_RUN(test_runtime_sql_execute_invalid_handle_returns_io_error);

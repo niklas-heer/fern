@@ -4,6 +4,13 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 36 Civetweb runtime backend for `http.get`/`http.post` (ship now)
+* **Date**: 2026-02-06
+* **Status**: ✅ Accepted
+* **Decision**: I will implement Fern's HTTP runtime backend using vendored civetweb now, replacing placeholder `Err(FERN_ERR_IO)` behavior for successful HTTP requests.
+* **Context**: The stdlib HTTP surface (`http.get`, `http.post`) was already stabilized in checker/codegen and only lacked runtime execution. We considered layered socket/parser composition versus a single dependency and prioritized the "best option now" for maturity, auditability, and delivery speed.
+* **Consequences**: Runtime now performs real HTTP client requests via civetweb and returns `Ok(response_body)` on `2xx` responses; invalid URLs, non-`2xx` responses, and transport failures return `Err(FERN_ERR_IO)`. Civetweb v1.16 is vendored under `deps/civetweb`, runtime build/link paths include civetweb + pthread requirements, and runtime-surface coverage now includes local loopback GET/POST success tests (`tests/test_runtime_surface.c`). TLS/HTTPS is deferred in this baseline build configuration.
+
 ### 35 SQLite-first SQL runtime backend with libsql-compatible API surface
 * **Date**: 2026-02-06
 * **Status**: ✅ Accepted

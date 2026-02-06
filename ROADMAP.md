@@ -8,7 +8,7 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `just test` passing (**504/504**)
+- Build/tests: `just test` passing (**506/506**)
 - Style: `just style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
 - Release automation: conventional-commit-driven semver + release notes configured via `release-please` (initial version pinned to `0.1.0`, breaking changes map to minor while `<1.0.0`)
@@ -16,7 +16,7 @@ Detailed historical logs and old iteration notes were moved to:
 - Current focus: Post-Gate D stabilization and adoption docs maintenance
 - Post-Gate D stabilization update: checker/codegen coverage for record updates and actor primitives (`spawn`, `send`, `receive`) is in place with dedicated regression tests
 - Post-Gate D stabilization update: docs/examples now use canonical `Result(T, E)` syntax and module naming guidance (`fs`, `json`, `http`, `sql`, `actors`; `File.*` alias retained)
-- Post-Gate D stabilization update: README/stdlib compatibility docs now explicitly call out current runtime readiness (`sql` SQLite-backed, `http` placeholder)
+- Post-Gate D stabilization update: README/stdlib compatibility docs now explicitly call out current runtime readiness (`sql` SQLite-backed, `http` civetweb-backed for HTTP URLs)
 - Post-Gate D stabilization update: CLI type diagnostics now include snippet/note/help coverage for binary operator mismatches (`test_cli_check_binary_type_error_includes_snippet_note_and_help`)
 - Post-Gate D stabilization update: SQL runtime now has concrete SQLite behavior (`sql.open`, `sql.execute`) with runtime surface coverage in `tests/test_runtime_surface.c`
 

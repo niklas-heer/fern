@@ -54,8 +54,9 @@ Gate C runtime behavior is stabilized as:
 2. `json.stringify(text)`:
    - `Ok(copy_of_text)` for all string inputs (including empty).
 3. `http.get(url)` / `http.post(url, body)`:
-   - `Err(FERN_ERR_IO)` placeholder response.
-   - Signature stability is guaranteed; runtime backend is not implemented yet.
+   - `Ok(response_body)` for successful (`2xx`) HTTP responses.
+   - `Err(FERN_ERR_IO)` for invalid URLs, non-`2xx` responses, and transport/read failures.
+   - Current runtime build uses civetweb with HTTP client support; HTTPS/TLS paths are not enabled in this baseline.
 4. `sql.open(path)` / `sql.execute(handle, query)`:
    - `sql.open(path)` returns `Ok(handle)` for valid paths and `Err(FERN_ERR_IO)` for invalid input/open failure.
    - `sql.execute(handle, query)` returns `Ok(rows_affected)` for valid handles/statements and `Err(FERN_ERR_IO)` for invalid handles/input/SQL errors.
