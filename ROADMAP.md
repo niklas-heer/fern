@@ -8,7 +8,7 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `make test` passing (**471/471**)
+- Build/tests: `make test` passing (**475/475**)
 - Style: `make style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
 - Current focus: Gate D kickoff (LSP depth, packaging/release hardening, reproducible benchmark publishing)
@@ -97,7 +97,7 @@ Gates are sequential. Only one gate is active at a time.
 **Dependency:** Gate C passed
 
 **Implementation checklist:**
-- [ ] Expand LSP beyond MVP (completion, rename, code actions, better positions)
+- [x] Expand LSP beyond MVP (completion, rename, code actions, better positions) (`include/lsp.h`, `lib/lsp.c`, `tests/test_lsp.c`)
 - [ ] Harden packaging/release workflow for single-binary distribution
 - [ ] Publish reproducible benchmarks and case studies
 
@@ -138,7 +138,7 @@ Gates are sequential. Only one gate is active at a time.
 
 Gate C pass criteria are fully closed and verified via `make check`. Continue with Gate D execution.
 
-1. [ ] Gate D / Task 1: Expand LSP beyond MVP (completion, rename, code actions, better source positions)
+1. [x] Gate D / Task 1: Expand LSP beyond MVP (completion, rename, code actions, better source positions)
 2. [ ] Gate D / Task 2: Harden packaging/release workflow for single-binary distribution
 3. [ ] Gate D / Task 3: Publish reproducible benchmarks and case studies
 
@@ -164,7 +164,7 @@ Gate C pass criteria are fully closed and verified via `make check`. Continue wi
 - [x] Milestone 7.7 WASM memory/runtime implementation tranche (abstraction + RC baseline + codegen subset + decision artifact)
 - [x] Actor runtime core baseline (`spawn`, `send`, `receive`, scheduler`) with mailbox/scheduler runtime tests
 - [x] `fern doc` documentation generation pipeline (`src/main.c`, `scripts/generate_docs.py`, `tests/test_cli_main.c`)
-- [ ] LSP expansion beyond MVP (completion/rename/code actions)
+- [x] LSP expansion beyond MVP (completion/rename/code actions)
 
 ## Out of Scope for This File
 

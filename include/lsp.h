@@ -102,6 +102,32 @@ typedef struct {
     String* source;  /* "fern" */
 } LspDiagnostic;
 
+/**
+ * LSP completion item.
+ */
+typedef struct {
+    String* label;
+    String* detail;
+    int kind;
+} LspCompletionItem;
+
+/**
+ * LSP text edit.
+ */
+typedef struct {
+    LspRange range;
+    String* new_text;
+} LspTextEdit;
+
+/**
+ * LSP code action.
+ */
+typedef struct {
+    String* title;
+    String* kind;
+    String* command;
+} LspCodeAction;
+
 /* ========== Server Lifecycle ========== */
 
 /**
@@ -196,6 +222,41 @@ String* lsp_get_hover(LspServer* server, const char* uri,
  */
 LspLocation* lsp_get_definition(LspServer* server, const char* uri,
                                  LspPosition pos);
+
+/**
+ * Get completion items at a position.
+ * @param server The LSP server.
+ * @param uri Document URI.
+ * @param pos Position to query.
+ * @param out_count Output: number of completion items.
+ * @return Array of completion items, or NULL if none.
+ */
+LspCompletionItem* lsp_get_completions(LspServer* server, const char* uri,
+                                       LspPosition pos, size_t* out_count);
+
+/**
+ * Get rename edits for symbol at a position.
+ * @param server The LSP server.
+ * @param uri Document URI.
+ * @param pos Position of symbol to rename.
+ * @param new_name Replacement identifier.
+ * @param out_count Output: number of text edits.
+ * @return Array of edits, or NULL if rename is unavailable.
+ */
+LspTextEdit* lsp_get_rename_edits(LspServer* server, const char* uri,
+                                  LspPosition pos, const char* new_name,
+                                  size_t* out_count);
+
+/**
+ * Get code actions for a range.
+ * @param server The LSP server.
+ * @param uri Document URI.
+ * @param range Requested range.
+ * @param out_count Output: number of code actions.
+ * @return Array of code actions, or NULL if none.
+ */
+LspCodeAction* lsp_get_code_actions(LspServer* server, const char* uri,
+                                    LspRange range, size_t* out_count);
 
 /* ========== JSON-RPC Helpers ========== */
 
