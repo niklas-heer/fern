@@ -150,6 +150,47 @@ void test_cli_color_mode_always_and_never(void) {
     free(never.output);
 }
 
+void test_cli_check_syntax_error_includes_note_and_help(void) {
+    char* source_path = write_tmp_source("fn main():\n    let = 5\n");
+    ASSERT_NOT_NULL(source_path);
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "./bin/fern check %s 2>&1", source_path);
+    CmdResult result = run_cmd(cmd);
+
+    ASSERT_EQ(result.exit_code, 1);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_TRUE(strstr(result.output, "error:") != NULL);
+    ASSERT_TRUE(strstr(result.output, "let = 5") != NULL);
+    ASSERT_TRUE(strstr(result.output, "note:") != NULL);
+    ASSERT_TRUE(strstr(result.output, "help:") != NULL);
+
+    free(result.output);
+    unlink(source_path);
+    free(source_path);
+}
+
+void test_cli_check_type_error_includes_snippet_note_and_help(void) {
+    char* source_path = write_tmp_source("fn main() -> Int:\n    \"oops\"\n");
+    ASSERT_NOT_NULL(source_path);
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "./bin/fern check %s 2>&1", source_path);
+    CmdResult result = run_cmd(cmd);
+
+    ASSERT_EQ(result.exit_code, 1);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_TRUE(strstr(result.output, "error:") != NULL);
+    ASSERT_TRUE(strstr(result.output, "declared return type") != NULL);
+    ASSERT_TRUE(strstr(result.output, "\"oops\"") != NULL);
+    ASSERT_TRUE(strstr(result.output, "note:") != NULL);
+    ASSERT_TRUE(strstr(result.output, "help:") != NULL);
+
+    free(result.output);
+    unlink(source_path);
+    free(source_path);
+}
+
 void test_cli_test_command_runs_unit_tests(void) {
     CmdResult result = run_cmd("FERN_TEST_CMD='echo unit-tests-ok' ./bin/fern test 2>&1");
     ASSERT_EQ(result.exit_code, 0);
@@ -174,6 +215,8 @@ void run_cli_main_tests(void) {
     TEST_RUN(test_cli_quiet_suppresses_check_success_output);
     TEST_RUN(test_cli_verbose_emits_debug_lines);
     TEST_RUN(test_cli_color_mode_always_and_never);
+    TEST_RUN(test_cli_check_syntax_error_includes_note_and_help);
+    TEST_RUN(test_cli_check_type_error_includes_snippet_note_and_help);
     TEST_RUN(test_cli_test_command_runs_unit_tests);
     TEST_RUN(test_cli_test_doc_command_runs_doc_tests);
 }

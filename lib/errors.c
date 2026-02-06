@@ -128,6 +128,23 @@ void note_print(const char* fmt, ...) {
 }
 
 /**
+ * Print a help/fix hint message with optional color.
+ * @param fmt Printf-style format string.
+ * @param ... Format arguments.
+ */
+void help_print(const char* fmt, ...) {
+    // FERN_STYLE: allow(assertion-density) variadic print function
+    fprintf(stderr, "%shelp:%s ", color(ANSI_BOLD_GREEN), color(ANSI_RESET));
+
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+
+    fprintf(stderr, "\n");
+}
+
+/**
  * Print a source location header.
  * @param filename The source file name.
  * @param line The line number (1-based).
@@ -152,13 +169,14 @@ void error_source_line(const char* source_line, int col, int len) {
     // FERN_STYLE: allow(assertion-density) formatting function
     if (!source_line) return;
     if (len <= 0) len = 1;
+    size_t line_len = strcspn(source_line, "\n");
     
     // Print the source line
-    fprintf(stderr, "  %s%s%s\n", color(ANSI_DIM), source_line, color(ANSI_RESET));
+    fprintf(stderr, "  %s%.*s%s\n", color(ANSI_DIM), (int)line_len, source_line, color(ANSI_RESET));
     
     // Print the indicator line
     fprintf(stderr, "  ");
-    for (int i = 1; i < col && source_line[i-1] != '\0'; i++) {
+    for (int i = 1; i < col && i <= (int)line_len; i++) {
         fprintf(stderr, " ");
     }
     fprintf(stderr, "%s^", color(ANSI_BOLD_RED));

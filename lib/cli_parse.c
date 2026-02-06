@@ -27,8 +27,9 @@ int fern_parse_source(Arena* arena, const char* filename, const char* source, FI
     StmtVec* stmts = parse_stmts(parser);
 
     if (parser_had_error(parser)) {
-        error_location(filename, 1, 0);
-        error_print("parse error");
+        error_print("parse error in %s", filename);
+        note_print("while parsing %s", filename);
+        help_print("fix the highlighted syntax and rerun: fern parse %s", filename);
         return 1;
     }
 

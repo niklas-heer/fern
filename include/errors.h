@@ -87,6 +87,14 @@ void warning_print(const char* fmt, ...);
 void note_print(const char* fmt, ...);
 
 /**
+ * Print a help/fix hint message with optional color.
+ * Format: "help: <message>"
+ * @param fmt Printf-style format string.
+ * @param ... Format arguments.
+ */
+void help_print(const char* fmt, ...);
+
+/**
  * Print a source location header.
  * Format: "<file>:<line>:<col>: "
  * @param filename The source file name.

@@ -81,6 +81,37 @@ static void add_error(Checker* checker, const char* fmt, ...) {
 }
 
 /**
+ * Add a located error message to the checker's error list.
+ * @param checker The type checker context.
+ * @param loc Source location for this error.
+ * @param fmt The format string.
+ * @param ... The format arguments.
+ */
+static void add_error_at(Checker* checker, SourceLoc loc, const char* fmt, ...) {
+    assert(checker != NULL);
+    assert(fmt != NULL);
+    va_list args;
+    va_start(args, fmt);
+
+    char msg_buf[1024];
+    vsnprintf(msg_buf, sizeof(msg_buf), fmt, args);
+    va_end(args);
+
+    char full_buf[1280];
+    if (loc.filename && loc.line > 0) {
+        snprintf(full_buf, sizeof(full_buf), "%s:%zu:%zu: %s",
+            string_cstr(loc.filename), loc.line, loc.column, msg_buf);
+    } else if (loc.line > 0) {
+        snprintf(full_buf, sizeof(full_buf), "%zu:%zu: %s",
+            loc.line, loc.column, msg_buf);
+    } else {
+        snprintf(full_buf, sizeof(full_buf), "%s", msg_buf);
+    }
+
+    add_error(checker, "%s", full_buf);
+}
+
+/**
  * Create an error type and add error message.
  * @param checker The type checker context.
  * @param fmt The format string.
@@ -3495,7 +3526,9 @@ bool checker_check_stmt(Checker* checker, Stmt* stmt) {
                 /* Use unify instead of type_assignable to handle type variables
                  * (e.g., Ok(42) returns Result(Int, e) which should unify with Result(Int, String)) */
                 if (!unify(body_type, return_type)) {
-                    add_error(checker, "Function '%s' body has type %s, but declared return type is %s",
+                    SourceLoc err_loc = fn->body ? fn->body->loc : stmt->loc;
+                    add_error_at(checker, err_loc,
+                        "Function '%s' body has type %s, but declared return type is %s",
                         string_cstr(fn->name),
                         string_cstr(type_to_string(checker->arena, body_type)),
                         string_cstr(type_to_string(checker->arena, return_type)));

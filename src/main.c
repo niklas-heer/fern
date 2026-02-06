@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <assert.h>
+#include <limits.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -127,6 +128,8 @@ static int cmd_parse(Arena* arena, const char* filename);
 static int cmd_test(Arena* arena, const char* filename);
 static int cmd_lsp(Arena* arena, const char* filename);
 static int cmd_repl(Arena* arena, const char* filename);
+static void report_parse_failure(const char* filename);
+static void report_type_failure(const char* filename, const char* source, const char* err);
 static void log_info(const char* fmt, ...);
 static void log_verbose(const char* fmt, ...);
 
@@ -210,6 +213,197 @@ static const Command* find_command(const char* name) {
 }
 
 /**
+ * Parse a positive integer segment from a substring.
+ * @param start Segment start (inclusive).
+ * @param end Segment end (exclusive).
+ * @param value_out Parsed integer output.
+ * @return True if parsing succeeded.
+ */
+static bool parse_positive_int_segment(const char* start, const char* end, int* value_out) {
+    // FERN_STYLE: allow(assertion-density) bounded numeric parsing helper
+    assert(start != NULL);
+    assert(end != NULL);
+    assert(value_out != NULL);
+    if (!start || !end || !value_out || start >= end) {
+        return false;
+    }
+
+    size_t len = (size_t)(end - start);
+    if (len >= 32) {
+        return false;
+    }
+
+    char buf[32];
+    memcpy(buf, start, len);
+    buf[len] = '\0';
+
+    char* parse_end = NULL;
+    long value = strtol(buf, &parse_end, 10);
+    if (!parse_end || *parse_end != '\0') {
+        return false;
+    }
+    if (value <= 0 || value > INT_MAX) {
+        return false;
+    }
+
+    *value_out = (int)value;
+    return true;
+}
+
+/**
+ * Parse checker error text and extract location/message when available.
+ * Supports "file:line:col: message" and "line:col: message".
+ * @param err Raw checker error message.
+ * @param line_out Parsed line number.
+ * @param col_out Parsed column number.
+ * @param message_out Parsed message (or original err).
+ * @return True if a valid location was extracted.
+ */
+static bool parse_checker_error_location(const char* err, int* line_out, int* col_out, const char** message_out) {
+    // FERN_STYLE: allow(assertion-density) structured parse with guarded fallbacks
+    assert(err != NULL);
+    assert(line_out != NULL);
+    assert(col_out != NULL);
+    assert(message_out != NULL);
+    if (!err || !line_out || !col_out || !message_out) {
+        return false;
+    }
+
+    *line_out = 0;
+    *col_out = 0;
+    *message_out = err;
+
+    const char* c1 = strchr(err, ':');
+    if (!c1) {
+        return false;
+    }
+    const char* c2 = strchr(c1 + 1, ':');
+    if (!c2) {
+        return false;
+    }
+    const char* c3 = strchr(c2 + 1, ':');
+
+    int line = 0;
+    int col = 0;
+    if (c3 &&
+        parse_positive_int_segment(c1 + 1, c2, &line) &&
+        parse_positive_int_segment(c2 + 1, c3, &col)) {
+        *line_out = line;
+        *col_out = col;
+        *message_out = c3 + 1;
+        while (**message_out == ' ') {
+            (*message_out)++;
+        }
+        return true;
+    }
+
+    if (parse_positive_int_segment(err, c1, &line) &&
+        parse_positive_int_segment(c1 + 1, c2, &col)) {
+        *line_out = line;
+        *col_out = col;
+        *message_out = c2 + 1;
+        while (**message_out == ' ') {
+            (*message_out)++;
+        }
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Get the start pointer for a specific 1-indexed source line.
+ * @param source Full source text.
+ * @param target_line The target line number (1-indexed).
+ * @return Pointer to line start, or NULL if line does not exist.
+ */
+static const char* source_line_start(const char* source, int target_line) {
+    // FERN_STYLE: allow(assertion-density) simple bounded scan over input text
+    // FERN_STYLE: allow(no-raw-char) source is immutable UTF-8 source input
+    assert(source != NULL);
+    assert(target_line > 0);
+    if (!source || target_line <= 0) {
+        return NULL;
+    }
+
+    int line = 1;
+    const char* p = source;
+    while (*p && line < target_line) {
+        if (*p == '\n') {
+            line++;
+        }
+        p++;
+    }
+
+    if (line != target_line) {
+        return NULL;
+    }
+    return p;
+}
+
+/**
+ * Print parse failure guidance after parser diagnostics are emitted.
+ * @param filename Source filename used in CLI context.
+ */
+static void report_parse_failure(const char* filename) {
+    // FERN_STYLE: allow(assertion-density) concise diagnostic guidance
+    assert(filename != NULL);
+    assert(filename[0] != '\0');
+    if (!filename || filename[0] == '\0') {
+        return;
+    }
+
+    note_print("while parsing %s", filename);
+    help_print("fix the highlighted syntax and rerun: fern check %s", filename);
+}
+
+/**
+ * Print type-check failure with snippet, note, and fix hint.
+ * @param filename Source filename used in CLI context.
+ * @param source Full source text.
+ * @param err Raw checker error message.
+ */
+static void report_type_failure(const char* filename, const char* source, const char* err) {
+    // FERN_STYLE: allow(assertion-density) centralized type diagnostics formatting
+    assert(filename != NULL);
+    assert(source != NULL);
+    assert(filename[0] != '\0');
+    int line = 0;
+    int col = 0;
+    const char* message = err ? err : "type error";
+
+    if (err && parse_checker_error_location(err, &line, &col, &message)) {
+        if (line > 0 && col > 0) {
+            error_location(filename, line, col);
+            error_print("%s", message);
+            const char* line_text = source_line_start(source, line);
+            if (line_text) {
+                error_source_line(line_text, col, 1);
+            }
+        } else {
+            error_print("%s", message);
+        }
+    } else {
+        error_print("%s", message);
+    }
+
+    note_print("type checking failed for %s", filename);
+    if (err && strstr(err, "Unhandled Result value") != NULL) {
+        help_print("handle the Result with match, with, or ? before continuing");
+        return;
+    }
+    if (err && strstr(err, "declared return type") != NULL) {
+        help_print("return a value that matches the function return type, or update the annotation");
+        return;
+    }
+    if (err && strstr(err, "Type mismatch") != NULL) {
+        help_print("align the expression type with the expected type annotation");
+        return;
+    }
+    help_print("adjust the highlighted expression or nearby type annotations");
+}
+
+/**
  * Compile a Fern source file to QBE IR.
  * @param arena The arena for allocations.
  * @param source The source code.
@@ -225,8 +419,7 @@ static Codegen* compile_to_qbe(Arena* arena, const char* source, const char* fil
     StmtVec* stmts = parse_stmts(parser);
     
     if (parser_had_error(parser)) {
-        error_location(filename, 1, 0);
-        error_print("parse error");
+        report_parse_failure(filename);
         return NULL;
     }
     
@@ -243,7 +436,7 @@ static Codegen* compile_to_qbe(Arena* arena, const char* source, const char* fil
     
     if (!check_ok || checker_has_errors(checker)) {
         const char* err = checker_first_error(checker);
-        error_print("%s", err ? err : "type error");
+        report_type_failure(filename, source, err);
         return NULL;
     }
     
@@ -562,8 +755,7 @@ static int cmd_check(Arena* arena, const char* filename) {
     StmtVec* stmts = parse_stmts(parser);
     
     if (parser_had_error(parser)) {
-        error_location(filename, 1, 0);
-        error_print("parse error");
+        report_parse_failure(filename);
         return 1;
     }
     
@@ -573,7 +765,7 @@ static int cmd_check(Arena* arena, const char* filename) {
     
     if (!check_ok || checker_has_errors(checker)) {
         const char* err = checker_first_error(checker);
-        error_print("%s", err ? err : "type error");
+        report_type_failure(filename, source, err);
         return 1;
     }
     
