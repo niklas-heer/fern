@@ -1323,22 +1323,69 @@ char* fern_home(void) {
 /* ========== Memory Functions ========== */
 
 /**
+ * Allocate memory through the active backend.
+ * @param size Number of bytes.
+ * @return Allocated pointer.
+ */
+static void* fern_memory_backend_alloc(size_t size) {
+    return FERN_ALLOC(size);
+}
+
+/**
+ * Duplicate ownership through the active backend.
+ * @param ptr Pointer to duplicate.
+ * @return Duplicated pointer.
+ */
+static void* fern_memory_backend_dup(void* ptr) {
+    /* Boehm backend: tracing GC, no refcount increment required. */
+    return ptr;
+}
+
+/**
+ * Drop ownership through the active backend.
+ * @param ptr Pointer to drop.
+ */
+static void fern_memory_backend_drop(void* ptr) {
+    /* Boehm backend: explicit drop is a semantic no-op. */
+    FERN_FREE(ptr);
+}
+
+/**
  * Allocate memory.
  * @param size Number of bytes.
  * @return Pointer to allocated memory.
  */
 void* fern_alloc(size_t size) {
-    void* ptr = FERN_ALLOC(size);
+    void* ptr = fern_memory_backend_alloc(size);
     assert(ptr != NULL);
     return ptr;
 }
 
 /**
+ * Duplicate an owned reference.
+ * @param ptr Pointer to duplicate ownership for.
+ * @return Duplicated pointer (or NULL).
+ */
+void* fern_dup(void* ptr) {
+    if (ptr == NULL) return NULL;
+    return fern_memory_backend_dup(ptr);
+}
+
+/**
+ * Drop an owned reference.
+ * @param ptr Pointer to drop ownership for.
+ */
+void fern_drop(void* ptr) {
+    if (ptr == NULL) return;
+    fern_memory_backend_drop(ptr);
+}
+
+/**
  * Free memory.
- * @param ptr Pointer to free.
+ * @param ptr Pointer to release.
  */
 void fern_free(void* ptr) {
-    FERN_FREE(ptr);
+    fern_drop(ptr);
 }
 
 /* ========== Result Type ========== */

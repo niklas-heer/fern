@@ -90,6 +90,24 @@ static char* write_tmp_source(const char* source) {
     return dup_cstr(tmpl);
 }
 
+static char* write_tmp_c_source(const char* source) {
+    char tmpl[] = "/tmp/fern_runtime_surface_XXXXXX.c";
+    int fd = mkstemps(tmpl, 2);
+    if (fd < 0) return NULL;
+
+    FILE* file = fdopen(fd, "w");
+    if (!file) {
+        close(fd);
+        unlink(tmpl);
+        return NULL;
+    }
+
+    fputs(source, file);
+    fclose(file);
+
+    return dup_cstr(tmpl);
+}
+
 static char* make_tmp_output_path(void) {
     char tmpl[] = "/tmp/fern_runtime_surface_out_XXXXXX";
     int fd = mkstemp(tmpl);
@@ -134,6 +152,52 @@ static BuildRunResult build_and_run_source(const char* source) {
 
     char cmd[1024];
     snprintf(cmd, sizeof(cmd), "./bin/fern build -o %s %s 2>&1", output_path, source_path);
+    result.build = run_cmd(cmd);
+    if (result.build.exit_code == 0) {
+        snprintf(cmd, sizeof(cmd), "%s 2>&1", output_path);
+        result.run = run_cmd(cmd);
+    }
+
+    unlink(source_path);
+    unlink(output_path);
+    free(source_path);
+    free(output_path);
+    return result;
+}
+
+static BuildRunResult build_and_run_c_source(const char* source) {
+    BuildRunResult result;
+    result.build.exit_code = -1;
+    result.build.output = NULL;
+    result.run.exit_code = -1;
+    result.run.output = NULL;
+
+    char* source_path = write_tmp_c_source(source);
+    if (!source_path) {
+        result.build.output = dup_cstr("failed to create temporary C source");
+        return result;
+    }
+
+    char* output_path = make_tmp_output_path();
+    if (!output_path) {
+        result.build.output = dup_cstr("failed to create temporary C output path");
+        unlink(source_path);
+        free(source_path);
+        return result;
+    }
+
+    char cmd[1536];
+    snprintf(
+        cmd,
+        sizeof(cmd),
+        "make bin/libfern_runtime.a >/dev/null 2>&1 && "
+        "cc -std=c11 -Wall -Wextra -Werror -Iruntime "
+        "%s bin/libfern_runtime.a "
+        "$(pkg-config --libs bdw-gc 2>/dev/null || echo -lgc) "
+        "-o %s 2>&1",
+        source_path,
+        output_path
+    );
     result.build = run_cmd(cmd);
     if (result.build.exit_code == 0) {
         snprintf(cmd, sizeof(cmd), "%s 2>&1", output_path);
@@ -262,6 +326,37 @@ void test_runtime_actors_post_and_next_placeholder_contract(void) {
     free_build_run_result(&result);
 }
 
+void test_runtime_memory_alloc_dup_drop_contract(void) {
+    BuildRunResult result = build_and_run_c_source(
+        "#include <stdint.h>\n"
+        "#include \"fern_runtime.h\"\n"
+        "\n"
+        "int fern_main(void) {\n"
+        "    int64_t* values = (int64_t*)fern_alloc(sizeof(int64_t) * 2);\n"
+        "    if (values == NULL) return 10;\n"
+        "\n"
+        "    values[0] = 41;\n"
+        "    values[1] = 0;\n"
+        "\n"
+        "    if (fern_dup(NULL) != NULL) return 11;\n"
+        "    fern_drop(NULL);\n"
+        "\n"
+        "    int64_t* alias = (int64_t*)fern_dup(values);\n"
+        "    if (alias != values) return 12;\n"
+        "    alias[1] = 1;\n"
+        "    if (values[0] + values[1] != 42) return 13;\n"
+        "\n"
+        "    fern_drop(alias);\n"
+        "    fern_drop(values);\n"
+        "    return 0;\n"
+        "}\n");
+
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
 void run_runtime_surface_tests(void) {
     printf("\n=== Runtime Surface Tests ===\n");
     TEST_RUN(test_runtime_json_parse_empty_returns_err_code);
@@ -272,4 +367,5 @@ void run_runtime_surface_tests(void) {
     TEST_RUN(test_runtime_sql_execute_placeholder_returns_io_error);
     TEST_RUN(test_runtime_actors_start_returns_monotonic_ids);
     TEST_RUN(test_runtime_actors_post_and_next_placeholder_contract);
+    TEST_RUN(test_runtime_memory_alloc_dup_drop_contract);
 }

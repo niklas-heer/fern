@@ -639,8 +639,31 @@ char* fern_home(void);
 void* fern_alloc(size_t size);
 
 /**
- * Free memory.
- * @param ptr Pointer to free.
+ * Duplicate an owned reference.
+ *
+ * Memory backend contract:
+ * - Boehm backend (current): returns the same pointer
+ * - Perceus backend (future): increments reference count
+ *
+ * @param ptr Pointer to duplicate ownership for.
+ * @return The duplicated pointer (or NULL if ptr is NULL).
+ */
+void* fern_dup(void* ptr);
+
+/**
+ * Drop an owned reference.
+ *
+ * Memory backend contract:
+ * - Boehm backend (current): no-op
+ * - Perceus backend (future): decrements reference count and may free
+ *
+ * @param ptr Pointer to drop ownership for.
+ */
+void fern_drop(void* ptr);
+
+/**
+ * Free memory (compatibility alias for fern_drop()).
+ * @param ptr Pointer to release.
  */
 void fern_free(void* ptr);
 

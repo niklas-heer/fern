@@ -57,6 +57,23 @@ Until full `json/http/sql/actors` runtimes land, the current runtime behavior is
 
 These behaviors are regression-tested in `tests/test_runtime_surface.c` and treated as the compatibility baseline for Gate C placeholders.
 
+### Milestone 7.7 Step A Memory API Contract (2026-02-06)
+
+Fern runtime now exposes an explicit memory ownership API surface:
+
+1. `fern_alloc(size)`:
+   - Allocates managed memory.
+2. `fern_dup(ptr)`:
+   - Boehm backend: returns the same pointer.
+   - Future RC backend: increments reference count.
+3. `fern_drop(ptr)`:
+   - Boehm backend: no-op semantic drop.
+   - Future RC backend: decrements reference count and may reclaim.
+4. `fern_free(ptr)`:
+   - Compatibility alias for `fern_drop(ptr)`.
+
+These semantics are regression-tested via runtime C-ABI harness coverage in `test_runtime_memory_alloc_dup_drop_contract` (`tests/test_runtime_surface.c`).
+
 ## Deprecation Lifecycle
 
 Every removal or incompatible behavior change must follow this sequence:

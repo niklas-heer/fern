@@ -8,10 +8,10 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `make test` passing (**451/451**)
+- Build/tests: `make test` passing (**452/452**)
 - Style: `make style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
-- Current focus: Gate C Milestone 7.7 Step A (`alloc/dup/drop` runtime abstraction), then remaining 7.7 steps before actor runtime core work
+- Current focus: Gate C Milestone 7.7 Step B (Perceus object header + RC ops), then remaining 7.7 steps before actor runtime core work
 
 ## Working Model
 
@@ -73,7 +73,7 @@ Gates are sequential. Only one gate is active at a time.
 
 **Implementation checklist:**
 - [x] Stabilize stdlib module APIs (`fs`, `http`, `json`, `sql`, `actors`) - completed with compiler/checker/codegen coverage plus runtime placeholder contract tests and compatibility docs (`tests/test_checker.c`, `tests/test_codegen.c`, `tests/test_runtime_surface.c`, `docs/COMPATIBILITY_POLICY.md`)
-- [ ] Milestone 7.7 / Step A: Introduce runtime memory abstraction (`alloc/dup/drop` API surface) behind current Boehm implementation
+- [x] Milestone 7.7 / Step A: Introduce runtime memory abstraction (`alloc/dup/drop` API surface) behind current Boehm implementation (`runtime/fern_runtime.h`, `runtime/fern_runtime.c`, `test_runtime_memory_alloc_dup_drop_contract`)
 - [ ] Milestone 7.7 / Step B: Add Perceus object header + refcount ops for core heap value types
 - [ ] Milestone 7.7 / Step C: Add initial dup/drop insertion in codegen for a constrained, test-covered subset
 - [ ] Milestone 7.7 / Step D: Benchmark/compare Boehm bridge vs Perceus baseline vs WasmGC feasibility and record default + fallback path
@@ -134,15 +134,14 @@ Gates are sequential. Only one gate is active at a time.
 
 ## Next Session Start Here
 
-Gate C Task 1 is complete. Continue with Milestone 7.7 implementation tranche before actor runtime core work.
+Gate C Task 1 and Milestone 7.7 Step A are complete. Continue with remaining 7.7 tranche before actor runtime core work.
 
-1. [ ] Gate C / Task 1.5a: Milestone 7.7 - implement runtime memory abstraction layer (`alloc/dup/drop`) backed by Boehm
-2. [ ] Gate C / Task 1.5b: Milestone 7.7 - implement Perceus object header and RC ops for core heap types
-3. [ ] Gate C / Task 1.5c: Milestone 7.7 - add constrained dup/drop insertion in codegen with focused tests
-4. [ ] Gate C / Task 1.5d: Milestone 7.7 - benchmark WASM memory/runtime options and finalize default + fallback path in docs/decisions
-5. [ ] Gate C / Task 2: Complete actor runtime core (`spawn`, `send`, `receive`, scheduler) building on FernSim scaffolding
-6. [ ] Gate C / Task 3: Add canonical templates/examples (tiny CLI, HTTP API, actor app) with CI validation
-7. [ ] Gate C / Task 4: Advance bootstrapping tools (`fern doc`, `fern test`, `fern-style` parity targets)
+1. [ ] Gate C / Task 1.5b: Milestone 7.7 - implement Perceus object header and RC ops for core heap types
+2. [ ] Gate C / Task 1.5c: Milestone 7.7 - add constrained dup/drop insertion in codegen with focused tests
+3. [ ] Gate C / Task 1.5d: Milestone 7.7 - benchmark WASM memory/runtime options and finalize default + fallback path in docs/decisions
+4. [ ] Gate C / Task 2: Complete actor runtime core (`spawn`, `send`, `receive`, scheduler) building on FernSim scaffolding
+5. [ ] Gate C / Task 3: Add canonical templates/examples (tiny CLI, HTTP API, actor app) with CI validation
+6. [ ] Gate C / Task 4: Advance bootstrapping tools (`fern doc`, `fern test`, `fern-style` parity targets)
 
 ## Active Backlog (By Gate)
 
