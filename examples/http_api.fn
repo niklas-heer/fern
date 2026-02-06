@@ -1,23 +1,25 @@
 # HTTP API template
-# Demonstrates an API-style flow with HTTP + JSON module calls.
+# Demonstrates API-style flow with the current runtime contract:
+# - http.* signatures are stable but runtime is placeholder-backed (Err)
+# - json.parse has concrete behavior for non-empty input
 
-fn fetch_health_status(url: String) -> Int:
+fn http_get_placeholder_status(url: String) -> Int:
     match http.get(url):
-        Ok(body) -> if String.is_empty(body): 0 else: 0
+        Ok(_) -> 1
         Err(_) -> 0
 
-fn send_create_request(url: String, payload: String) -> Int:
+fn http_post_placeholder_status(url: String, payload: String) -> Int:
     match http.post(url, payload):
-        Ok(_) -> 0
+        Ok(_) -> 1
         Err(_) -> 0
 
-fn decode_payload(payload: String) -> Int:
+fn json_parse_status(payload: String) -> Int:
     match json.parse(payload):
         Ok(_) -> 0
-        Err(_) -> 0
+        Err(_) -> 1
 
 fn main() -> Int:
-    let health = fetch_health_status("https://example.com/health")
-    let created = send_create_request("https://example.com/users", "name=fern")
-    let decoded = decode_payload("status=ok")
-    if health == 0 and created == 0 and decoded == 0: 0 else: 1
+    let get_status = http_get_placeholder_status("https://example.com/health")
+    let post_status = http_post_placeholder_status("https://example.com/users", "name=fern")
+    let json_status = json_parse_status("status=ok")
+    if get_status == 0 and post_status == 0 and json_status == 0: 0 else: 1

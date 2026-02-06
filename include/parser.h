@@ -85,8 +85,8 @@ Expr* parse_primary(Parser* parser);
 /**
  * @brief Parse a type expression.
  *
- * Parses type annotations like `Int`, `String`, `List[Int]`,
- * `Result[String, Error]`, `(Int, String) -> Bool`.
+ * Parses type annotations like `Int`, `String`, `List(Int)`,
+ * `Result(String, Error)`, `(Int, String) -> Bool`.
  *
  * @param parser Parser instance (must not be NULL)
  * @return Parsed type expression

@@ -15,6 +15,9 @@ Detailed historical logs and old iteration notes were moved to:
 - Task runner UX: `Justfile` is the primary command surface for all build/test/release tasks
 - Current focus: Post-Gate D stabilization and adoption docs maintenance
 - Post-Gate D stabilization update: checker/codegen coverage for record updates and actor primitives (`spawn`, `send`, `receive`) is in place with dedicated regression tests
+- Post-Gate D stabilization update: docs/examples now use canonical `Result(T, E)` syntax and module naming guidance (`fs`, `json`, `http`, `sql`, `actors`; `File.*` alias retained)
+- Post-Gate D stabilization update: README/stdlib compatibility docs now explicitly call out current placeholder runtime status for `http` and `sql`
+- Post-Gate D stabilization update: CLI type diagnostics now include snippet/note/help coverage for binary operator mismatches (`test_cli_check_binary_type_error_includes_snippet_note_and_help`)
 
 ## Working Model
 

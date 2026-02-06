@@ -1,60 +1,61 @@
 # File I/O operations example
-# Demonstrates File module functions for reading, writing, and file utilities
+# Demonstrates canonical fs module functions for reading, writing, and file utilities
+# Note: File.* remains supported as a compatibility alias.
 
 fn bool_to_int(b: Bool) -> Int:
     if b: 1 else: 0
 
 fn main():
-    # Test File.exists on non-existent file
-    let exists_before = File.exists("/tmp/fern_test_file.txt")
+    # Test fs.exists on non-existent file
+    let exists_before = fs.exists("/tmp/fern_test_file.txt")
     println(bool_to_int(exists_before))
 
     # Write a file
-    let write_result = File.write("/tmp/fern_test_file.txt", "Hello from Fern!")
+    let write_result = fs.write("/tmp/fern_test_file.txt", "Hello from Fern!")
     match write_result:
         Ok(_) -> println(1)
         Err(_) -> println(0)
 
     # Check file exists after writing
-    let exists_after = File.exists("/tmp/fern_test_file.txt")
+    let exists_after = fs.exists("/tmp/fern_test_file.txt")
     println(bool_to_int(exists_after))
 
     # Get file size
-    let size_result = File.size("/tmp/fern_test_file.txt")
+    let size_result = fs.size("/tmp/fern_test_file.txt")
     match size_result:
         Ok(size) -> println(size)
         Err(e) -> println(e)
 
     # Read the file back
-    let read_result = File.read("/tmp/fern_test_file.txt")
+    let read_result = fs.read("/tmp/fern_test_file.txt")
     match read_result:
         Ok(content) -> println(String.len(content))
         Err(e) -> println(e)
 
     # Append to the file
-    let append_result = File.append("/tmp/fern_test_file.txt", " More content.")
+    let append_result = fs.append("/tmp/fern_test_file.txt", " More content.")
     match append_result:
         Ok(_) -> println(1)
         Err(_) -> println(0)
 
     # Check new file size after append
-    let size_after = File.size("/tmp/fern_test_file.txt")
+    let size_after = fs.size("/tmp/fern_test_file.txt")
     match size_after:
         Ok(size) -> println(size)
         Err(e) -> println(e)
 
     # Delete the file
-    let delete_result = File.delete("/tmp/fern_test_file.txt")
+    let delete_result = fs.delete("/tmp/fern_test_file.txt")
     match delete_result:
         Ok(_) -> println(1)
         Err(_) -> println(0)
 
     # Verify file no longer exists
-    let exists_deleted = File.exists("/tmp/fern_test_file.txt")
+    let exists_deleted = fs.exists("/tmp/fern_test_file.txt")
     println(bool_to_int(exists_deleted))
 
     # Try to read non-existent file (should fail)
-    let read_missing = File.read("/tmp/nonexistent_file_12345.txt")
+    let read_missing = fs.read("/tmp/nonexistent_file_12345.txt")
     match read_missing:
         Ok(_) -> println(1)
         Err(_) -> println(0)

@@ -24,6 +24,7 @@ struct Checker {
     ErrorNode* errors;
     ErrorNode* errors_tail;
     Type* current_return_type;
+    SourceLoc current_expr_loc;
 };
 
 /* ========== Forward Declarations ========== */
@@ -128,12 +129,24 @@ static Type* error_type(Checker* checker, const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
     
-    char buf[1024];
-    vsnprintf(buf, sizeof(buf), fmt, args);
+    char msg_buf[1024];
+    vsnprintf(msg_buf, sizeof(msg_buf), fmt, args);
     va_end(args);
-    
-    add_error(checker, "%s", buf);
-    return type_error(checker->arena, string_new(checker->arena, buf));
+
+    SourceLoc loc = checker->current_expr_loc;
+    char full_buf[1280];
+    if (loc.filename && loc.line > 0) {
+        snprintf(full_buf, sizeof(full_buf), "%s:%zu:%zu: %s",
+            string_cstr(loc.filename), loc.line, loc.column, msg_buf);
+    } else if (loc.line > 0) {
+        snprintf(full_buf, sizeof(full_buf), "%zu:%zu: %s",
+            loc.line, loc.column, msg_buf);
+    } else {
+        snprintf(full_buf, sizeof(full_buf), "%s", msg_buf);
+    }
+
+    add_error(checker, "%s", full_buf);
+    return type_error(checker->arena, string_new(checker->arena, full_buf));
 }
 
 /**
@@ -1560,6 +1573,7 @@ Checker* checker_new(Arena* arena) {
     checker->errors = NULL;
     checker->errors_tail = NULL;
     checker->current_return_type = NULL;
+    checker->current_expr_loc = (SourceLoc){0};
 
     /* Register built-in functions from the runtime library */
     register_io_builtins(checker);
@@ -2746,7 +2760,7 @@ static Type* check_receive_expr(Checker* checker, ReceiveExpr* expr, SourceLoc l
  * @param expr The expression to type check.
  * @return The inferred type.
  */
-Type* checker_infer_expr(Checker* checker, Expr* expr) {
+static Type* checker_infer_expr_impl(Checker* checker, Expr* expr) {
     // FERN_STYLE: allow(function-length) main type inference handles all expression types in one switch
     assert(checker != NULL);
     assert(expr != NULL);
@@ -3260,6 +3274,23 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
     }
     
     return error_type(checker, "Unknown expression type");
+}
+
+/**
+ * Infer the type of an expression with location-aware diagnostics.
+ * @param checker The type checker context.
+ * @param expr The expression to type check.
+ * @return The inferred type.
+ */
+Type* checker_infer_expr(Checker* checker, Expr* expr) {
+    assert(checker != NULL);
+    assert(expr != NULL);
+
+    SourceLoc previous_loc = checker->current_expr_loc;
+    checker->current_expr_loc = expr->loc;
+    Type* result = checker_infer_expr_impl(checker, expr);
+    checker->current_expr_loc = previous_loc;
+    return result;
 }
 
 /* ========== Type Expression Resolution ========== */

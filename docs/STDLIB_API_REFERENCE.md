@@ -19,11 +19,18 @@ Compatibility alias:
 
 1. `File.*` is a compatibility alias for `fs.*`.
 
-## Error Code Type
+Canonical naming in new code/docs:
+
+1. Prefer `fs.*` over `File.*`.
+2. Keep service modules lowercase: `json`, `http`, `sql`, `actors`.
+3. Keep core utility modules in PascalCase: `String`, `List`, `System`, `Regex`, `Result`, `Option`, `Tui.*`.
+
+## Result Type Syntax and Error Code Type
 
 Current placeholder/runtime-facing APIs use `Int` for error codes.
 
-1. `Result(T, Int)` means `Err(Int)` where integer values map to runtime error constants.
+1. Fern generic type syntax is `Result(T, E)` (parentheses, not brackets).
+2. `Result(T, Int)` means `Err(Int)` where integer values map to runtime error constants.
 
 ## Module Signatures
 
@@ -66,6 +73,12 @@ actors.start(name: String) -> Int
 actors.post(actor_id: Int, message: String) -> Result(Int, Int)
 actors.next(actor_id: Int) -> Result(String, Int)
 ```
+
+## Runtime Readiness (2026-02-06)
+
+1. `fs`, `json`, and `actors` have concrete runtime behavior covered by regression tests.
+2. `http` and `sql` signatures are stable, but current runtime implementations are placeholders returning `Err(FERN_ERR_IO)`.
+3. `File.*` is maintained for compatibility and maps to the same runtime surface as `fs.*`.
 
 ### `File` compatibility alias
 

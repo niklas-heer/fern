@@ -6,7 +6,7 @@
 
 ## What is Fern?
 
-Fern is a programming language designed to make both **fast CLI tools** (<1 MB) and **full-stack applications** (2-4 MB) with the same elegant syntax. No runtime dependencies, no crashes, predictable behavior.
+Fern is a programming language designed to make both **fast CLI tools** (<1 MB) and **full-stack applications** (2-4 MB) with the same elegant syntax. Compiler outputs are standalone and behavior is designed to stay predictable.
 
 ```fern
 # Clean, readable syntax with explicit error handling
@@ -24,7 +24,7 @@ Ok(process(validated))
 
 **No surprises** - The language actively prevents the bugs that waste your afternoon. If it compiles, it probably works.
 
-**Jetpack included** - Everything you need is built-in: actors, databases, HTTP, CLI tools, TUI. Like Bun, but compiled.
+**Jetpack surface included** - Core modules ship with the compiler; pre-1.0 HTTP/SQL runtime paths are currently placeholder-backed while fs/json/actors/TUI workflows are regression-tested.
 
 ### Core Principles
 
@@ -35,7 +35,7 @@ Ok(process(validated))
 | **Safe** | No null, no exceptions, no panics - only Result/Option types |
 | **Predictable** | Explicit error handling, no hidden control flow, exhaustive matching |
 | **Fast** | Compiles to native code, ~35x faster than Python |
-| **Portable** | Single binary, no runtime dependencies |
+| **Portable** | Single-binary distribution with embedded toolchain/runtime |
 
 ### What We Prevent
 
@@ -55,8 +55,17 @@ Ok(process(validated))
 - **Garbage collected runtime** - Boehm-backed runtime plus Perceus baseline ownership primitives
 - **Language tooling** - LSP with diagnostics, hover, definition, completion, rename, and code actions
 - **Stable stdlib API surface** - `fs`, `http`, `json`, `sql`, `actors`, and `File` alias compatibility
+- **Explicit runtime readiness** - HTTP/SQL contracts are currently placeholder-backed (`Err(FERN_ERR_IO)`) and documented
 - **Helpful diagnostics** - snippets, notes, and fix hints in CLI workflows
 - **Reproducible quality gates** - `just check`, fuzz smoke, perf budgets, release policy checks
+
+## Module Naming
+
+Canonical module naming in docs/examples:
+
+- `String`, `List`, `System`, `Regex`, `Result`, `Option`, and `Tui.*`
+- `fs`, `json`, `http`, `sql`, and `actors`
+- `File.*` remains supported as a compatibility alias for `fs.*`
 
 ## Current Status
 
@@ -100,11 +109,11 @@ Fern takes inspiration from the best features of:
 
 ## Philosophy in Action
 
-**Replace your infrastructure:**
+**Aspirational full-stack shape (stable API surface, placeholder-backed HTTP/SQL runtime today):**
 ```fern
 # No Redis, no RabbitMQ, no separate database
-fn main() -> Result[(), Error]:
-    let db = sql.open("app.db")?           # Embedded database
+fn main() -> Result((), Int):
+    let db = sql.open("app.db")?            # Current runtime returns Err(FERN_ERR_IO)
     let cache = spawn(cache_actor)          # In-memory cache (actor)
     let queue = spawn(job_queue)            # Job queue (actor)
 
@@ -116,10 +125,10 @@ fn main() -> Result[(), Error]:
 **CLI tools stay tiny:**
 ```fern
 # Fast, small, no runtime
-fn main() -> Result[(), Error]:
-    let data = read_file("data.csv")?
+fn main() -> Result((), Int):
+    let data = fs.read("data.csv")?
     let processed = process(data)?
-    write_file("output.csv", processed)?
+    fs.write("output.csv", processed)?
     Ok(())
 
 # 600KB binary, <5ms startup
@@ -151,7 +160,7 @@ apt install just
 dnf install just
 ```
 
-> **Note:** QBE is embedded in the compiler - no external `qbe` binary needed. Boehm GC is statically linked into compiled programs. The fern binary and compiled programs are **fully standalone** - no runtime dependencies, just like Go.
+> **Note:** QBE is embedded in the compiler - no external `qbe` binary needed. Boehm GC is statically linked into compiled programs. The fern binary and compiled programs are **fully standalone**. HTTP/SQL stdlib entry points currently use placeholder runtime contracts (`Err(FERN_ERR_IO)`) until those runtime backends land.
 
 **Preferred task runner (`Justfile`):**
 ```bash

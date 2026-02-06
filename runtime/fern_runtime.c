@@ -1997,7 +1997,8 @@ int64_t fern_json_stringify(const char* text) {
 }
 
 /**
- * Perform an HTTP GET request (placeholder).
+ * Perform an HTTP GET request.
+ * Current Gate C contract returns Err(FERN_ERR_IO) until HTTP backend lands.
  * @param url Request URL.
  * @return Result: Err(error code).
  */
@@ -2009,7 +2010,8 @@ int64_t fern_http_get(const char* url) {
 }
 
 /**
- * Perform an HTTP POST request (placeholder).
+ * Perform an HTTP POST request.
+ * Current Gate C contract returns Err(FERN_ERR_IO) until HTTP backend lands.
  * @param url Request URL.
  * @param body Request body payload.
  * @return Result: Err(error code).
@@ -2022,7 +2024,8 @@ int64_t fern_http_post(const char* url, const char* body) {
 }
 
 /**
- * Open a SQL connection (placeholder).
+ * Open a SQL connection.
+ * Current Gate C contract returns Err(FERN_ERR_IO) until SQL backend lands.
  * @param path Database path/URL.
  * @return Result: Err(error code).
  */
@@ -2034,7 +2037,8 @@ int64_t fern_sql_open(const char* path) {
 }
 
 /**
- * Execute SQL against a connection (placeholder).
+ * Execute SQL against a connection.
+ * Current Gate C contract returns Err(FERN_ERR_IO) until SQL backend lands.
  * @param handle SQL handle.
  * @param query SQL statement.
  * @return Result: Err(error code).
