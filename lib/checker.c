@@ -32,6 +32,8 @@ static bool unify(Type* a, Type* b);
 static Type* substitute(Arena* arena, Type* type);
 static Type* check_pipe_expr(Checker* checker, BinaryExpr* expr);
 static Type* check_lambda_against(Checker* checker, LambdaExpr* lambda, Type* expected_fn_type);
+static bool is_catch_all_pattern(Pattern* pattern);
+static bool check_match_exhaustiveness(Checker* checker, MatchExpr* expr, Type* scrutinee_type);
 
 /**
  * Map from old var id to new type variable for instantiation.
@@ -2414,6 +2416,10 @@ static Type* check_match_expr(Checker* checker, MatchExpr* expr) {
                 string_cstr(type_to_string(checker->arena, arm_type)));
         }
     }
+
+    if (!check_match_exhaustiveness(checker, expr, scrutinee_type)) {
+        return type_error(checker->arena, string_new(checker->arena, "Non-exhaustive match"));
+    }
     
     return result_type;
 }
@@ -3157,6 +3163,121 @@ static bool bind_pattern(Checker* checker, Pattern* pattern, Type* type) {
 }
 
 /**
+ * Check whether a pattern is catch-all (covers any value).
+ * @param pattern Pattern to inspect.
+ * @return True if pattern catches all values.
+ */
+static bool is_catch_all_pattern(Pattern* pattern) {
+    assert(pattern != NULL);
+    assert(pattern->type >= PATTERN_IDENT && pattern->type <= PATTERN_REST);
+    return pattern->type == PATTERN_WILDCARD || pattern->type == PATTERN_IDENT;
+}
+
+/**
+ * Check if a match expression is exhaustive for built-in sum types.
+ * Currently checks Bool, Option, and Result.
+ * @param checker Type checker context.
+ * @param expr Match expression.
+ * @param scrutinee_type Type being matched.
+ * @return True if exhaustive or if type is not yet checked for exhaustiveness.
+ */
+static bool check_match_exhaustiveness(Checker* checker, MatchExpr* expr, Type* scrutinee_type) {
+    // FERN_STYLE: allow(function-length) exhaustiveness logic handles Bool/Option/Result coverage in one pass
+    assert(checker != NULL);
+    assert(expr != NULL);
+    assert(scrutinee_type != NULL);
+
+    bool has_catch_all = false;
+    bool has_true = false;
+    bool has_false = false;
+    bool has_some = false;
+    bool has_none = false;
+    bool has_ok = false;
+    bool has_err = false;
+
+    for (size_t i = 0; i < expr->arms->len; i++) {
+        MatchArm arm = expr->arms->data[i];
+        Pattern* pattern = arm.pattern;
+
+        assert(pattern != NULL);
+
+        /* Guarded arms are not total coverage for a pattern. */
+        if (arm.guard != NULL) {
+            continue;
+        }
+
+        if (is_catch_all_pattern(pattern)) {
+            has_catch_all = true;
+            break;
+        }
+
+        if (scrutinee_type->kind == TYPE_BOOL &&
+            pattern->type == PATTERN_LIT &&
+            pattern->data.literal != NULL &&
+            pattern->data.literal->type == EXPR_BOOL_LIT) {
+            if (pattern->data.literal->data.bool_lit.value) {
+                has_true = true;
+            } else {
+                has_false = true;
+            }
+            continue;
+        }
+
+        if (scrutinee_type->kind == TYPE_CON && pattern->type == PATTERN_CONSTRUCTOR) {
+            const char* type_name = string_cstr(scrutinee_type->data.con.name);
+            const char* ctor_name = string_cstr(pattern->data.constructor.name);
+
+            if (strcmp(type_name, "Option") == 0) {
+                if (strcmp(ctor_name, "Some") == 0) {
+                    has_some = true;
+                } else if (strcmp(ctor_name, "None") == 0) {
+                    has_none = true;
+                }
+            } else if (strcmp(type_name, "Result") == 0) {
+                if (strcmp(ctor_name, "Ok") == 0) {
+                    has_ok = true;
+                } else if (strcmp(ctor_name, "Err") == 0) {
+                    has_err = true;
+                }
+            }
+        }
+    }
+
+    if (has_catch_all) {
+        return true;
+    }
+
+    if (scrutinee_type->kind == TYPE_BOOL) {
+        if (has_true && has_false) {
+            return true;
+        }
+        add_error(checker, "Non-exhaustive match for Bool: missing %s",
+            has_true ? "false arm" : "true arm");
+        return false;
+    }
+
+    if (type_is_option(scrutinee_type)) {
+        if (has_some && has_none) {
+            return true;
+        }
+        add_error(checker, "Non-exhaustive match for Option: missing %s",
+            has_some ? "None arm" : "Some arm");
+        return false;
+    }
+
+    if (type_is_result(scrutinee_type)) {
+        if (has_ok && has_err) {
+            return true;
+        }
+        add_error(checker, "Non-exhaustive match for Result: missing %s",
+            has_ok ? "Err arm" : "Ok arm");
+        return false;
+    }
+
+    return true;
+}
+
+/**
  * Check types for let statements.
  * @param checker The type checker context.
  * @param stmt The let statement to check.
@@ -3211,8 +3332,18 @@ bool checker_check_stmt(Checker* checker, Stmt* stmt) {
             
         case STMT_EXPR:
             /* Type check the expression but discard the result */
-            checker_infer_expr(checker, stmt->data.expr.expr);
-            return !checker_has_errors(checker);
+            {
+                Type* expr_type = checker_infer_expr(checker, stmt->data.expr.expr);
+                if (expr_type->kind == TYPE_ERROR) {
+                    return false;
+                }
+                if (type_is_result(expr_type)) {
+                    add_error(checker, "Unhandled Result value of type %s; use match, with, or ?",
+                        string_cstr(type_to_string(checker->arena, expr_type)));
+                    return false;
+                }
+                return !checker_has_errors(checker);
+            }
             
         case STMT_FN: {
             /* Function definition: fn name(params) -> return_type: body

@@ -626,6 +626,29 @@ void test_check_match_binds_pattern_var(void) {
     arena_destroy(arena);
 }
 
+void test_check_match_result_must_be_exhaustive(void) {
+    Arena* arena = arena_create(4096);
+
+    // Define: fn get_data() -> Result(Int, String)
+    TypeVec* params = TypeVec_new(arena);
+    Type* result_type = type_result(arena, type_int(arena), type_string(arena));
+    Type* fn_type = type_fn(arena, params, result_type);
+
+    // Missing Err arm should fail exhaustiveness check
+    Parser* parser = parser_new(arena, "match get_data(): Ok(n) -> n * 2");
+    Expr* expr = parse_expr(parser);
+    Checker* checker = checker_new(arena);
+    checker_define(checker, string_new(arena, "get_data"), fn_type);
+    Type* t = checker_infer_expr(checker, expr);
+
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_ERROR);
+    ASSERT_TRUE(checker_has_errors(checker));
+    ASSERT_TRUE(strstr(checker_first_error(checker), "Non-exhaustive match for Result") != NULL);
+
+    arena_destroy(arena);
+}
+
 /* ========== Try Operator Tests ========== */
 
 void test_check_try_unwraps_result(void) {
@@ -1330,6 +1353,19 @@ void test_check_with_accesses_outer_scope(void) {
     arena_destroy(arena);
 }
 
+void test_check_stmt_expr_rejects_unhandled_result(void) {
+    Arena* arena = arena_create(4096);
+
+    const char* err = check_stmt_error(arena,
+        "fn get_data() -> Result(Int, String): Ok(42)\n"
+        "get_data()");
+
+    ASSERT_NOT_NULL(err);
+    ASSERT_TRUE(strstr(err, "Unhandled Result value") != NULL);
+
+    arena_destroy(arena);
+}
+
 /* ========== Type Definition Tests ========== */
 
 void test_check_type_def_simple(void) {
@@ -1725,6 +1761,7 @@ void run_checker_tests(void) {
     TEST_RUN(test_check_match_simple);
     TEST_RUN(test_check_match_branch_types_must_match);
     TEST_RUN(test_check_match_binds_pattern_var);
+    TEST_RUN(test_check_match_result_must_be_exhaustive);
     
     // Try operator (?)
     TEST_RUN(test_check_try_unwraps_result);
@@ -1744,6 +1781,7 @@ void run_checker_tests(void) {
     TEST_RUN(test_check_with_multiple_bindings);
     TEST_RUN(test_check_with_requires_result);
     TEST_RUN(test_check_with_accesses_outer_scope);
+    TEST_RUN(test_check_stmt_expr_rejects_unhandled_result);
     
     // Lambda expressions
     TEST_RUN(test_check_lambda_simple);
