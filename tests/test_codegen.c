@@ -892,6 +892,17 @@ void test_codegen_spawn_calls_runtime(void) {
     arena_destroy(arena);
 }
 
+void test_codegen_spawn_link_calls_runtime(void) {
+    Arena* arena = arena_create(8192);
+
+    const char* qbe = generate_expr_qbe(arena, "spawn_link(worker_loop)");
+
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "$fern_actor_spawn_link") != NULL);
+
+    arena_destroy(arena);
+}
+
 void test_codegen_send_calls_runtime(void) {
     Arena* arena = arena_create(8192);
 
@@ -1060,6 +1071,7 @@ void run_codegen_tests(void) {
     /* Record/actor primitives and removed fallback TODO paths */
     TEST_RUN(test_codegen_record_update_has_concrete_path);
     TEST_RUN(test_codegen_spawn_calls_runtime);
+    TEST_RUN(test_codegen_spawn_link_calls_runtime);
     TEST_RUN(test_codegen_send_calls_runtime);
     TEST_RUN(test_codegen_receive_has_concrete_path);
     TEST_RUN(test_codegen_pipe_generic_call_supported);

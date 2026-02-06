@@ -1452,6 +1452,26 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
         case EXPR_CALL: {
             CallExpr* call = &expr->data.call;
             String* result = fresh_temp(cg);
+
+            if (call->func->type == EXPR_IDENT &&
+                strcmp(string_cstr(call->func->data.ident.name), "spawn_link") == 0 &&
+                call->args->len == 1) {
+                Expr* target = call->args->data[0].value;
+                const char* actor_name = "anonymous";
+
+                if (target->type == EXPR_IDENT) {
+                    actor_name = string_cstr(target->data.ident.name);
+                } else {
+                    (void)codegen_expr(cg, target);
+                }
+
+                String* label = fresh_string_label(cg);
+                emit_data(cg, "data %s = { b \"%s\", b 0 }\n",
+                    string_cstr(label), actor_name);
+                emit(cg, "    %s =w call $fern_actor_spawn_link(l %s)\n",
+                    string_cstr(result), string_cstr(label));
+                return result;
+            }
             
             /* Check for module.function calls (e.g., String.len, Tui.Panel.new) */
             if (call->func->type == EXPR_DOT) {

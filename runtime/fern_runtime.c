@@ -2458,6 +2458,7 @@ int64_t fern_sql_execute(int64_t handle, const char* query) {
 
 typedef struct {
     int64_t actor_id;
+    int64_t linked_parent_id;
     char* name;
     char** mailbox_data;
     int64_t mailbox_head;
@@ -2669,14 +2670,14 @@ static void fern_actor_ready_rotate(FernActorRuntimeState* state) {
 }
 
 /**
- * Spawn an actor and return its id.
+ * Spawn actor record with an optional linked supervisor id.
  * @param name Actor name.
+ * @param linked_parent_id Supervisor actor id, or 0 for none.
  * @return Actor id (positive integer), or 0 on allocation failure.
  */
-int64_t fern_actor_spawn(const char* name) {
-    if (name == NULL) {
-        return 0;
-    }
+static int64_t fern_actor_spawn_with_link(const char* name, int64_t linked_parent_id) {
+    assert(name != NULL);
+    assert(linked_parent_id >= 0);
 
     FernActorRuntimeState* state = fern_actor_runtime_state();
     if (!fern_actor_registry_reserve(state, state->actor_len + 1)) {
@@ -2687,10 +2688,43 @@ int64_t fern_actor_spawn(const char* name) {
     FernActorRecord* actor = &state->actors[state->actor_len];
     memset(actor, 0, sizeof(*actor));
     actor->actor_id = actor_id;
+    actor->linked_parent_id = linked_parent_id;
     actor->name = FERN_STRDUP(name);
     state->actor_len++;
 
     return actor_id;
+}
+
+/**
+ * Spawn an actor and return its id.
+ * @param name Actor name.
+ * @return Actor id (positive integer), or 0 on allocation failure.
+ */
+int64_t fern_actor_spawn(const char* name) {
+    if (name == NULL) {
+        return 0;
+    }
+
+    return fern_actor_spawn_with_link(name, 0);
+}
+
+/**
+ * Spawn an actor linked to the latest known supervisor baseline actor.
+ * @param name Actor name.
+ * @return Actor id (positive integer), or 0 on allocation failure.
+ */
+int64_t fern_actor_spawn_link(const char* name) {
+    if (name == NULL) {
+        return 0;
+    }
+
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    int64_t linked_parent_id = 0;
+    if (state->actor_len > 0) {
+        linked_parent_id = state->actors[state->actor_len - 1].actor_id;
+    }
+
+    return fern_actor_spawn_with_link(name, linked_parent_id);
 }
 
 /**
@@ -2765,6 +2799,59 @@ int64_t fern_actor_receive(int64_t actor_id) {
     }
 
     return fern_result_ok((int64_t)(intptr_t)msg);
+}
+
+/**
+ * Build a stable Exit(pid, reason) message payload.
+ * @param actor_id Exiting actor id.
+ * @param reason Exit reason string.
+ * @return Newly allocated message string, or NULL on allocation failure.
+ */
+static char* fern_actor_format_exit_message(int64_t actor_id, const char* reason) {
+    assert(actor_id > 0);
+
+    const char* safe_reason = (reason != NULL && reason[0] != '\0') ? reason : "unknown";
+    int needed = snprintf(NULL, 0, "Exit(%lld,%s)", (long long)actor_id, safe_reason);
+    if (needed < 0) {
+        return NULL;
+    }
+
+    char* message = FERN_ALLOC((size_t)needed + 1);
+    if (message == NULL) {
+        return NULL;
+    }
+    snprintf(message, (size_t)needed + 1, "Exit(%lld,%s)", (long long)actor_id, safe_reason);
+    return message;
+}
+
+/**
+ * Mark an actor as exited and notify its linked supervisor.
+ * @param actor_id Exiting actor id.
+ * @param reason Exit reason string.
+ * @return Result: Ok(0) when queued, Err(error code) otherwise.
+ */
+int64_t fern_actor_exit(int64_t actor_id, const char* reason) {
+    if (actor_id <= 0) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    FernActorRuntimeState* state = fern_actor_runtime_state();
+    FernActorRecord* actor = fern_actor_lookup(state, actor_id);
+    if (actor == NULL || actor->linked_parent_id <= 0) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    FernActorRecord* parent = fern_actor_lookup(state, actor->linked_parent_id);
+    if (parent == NULL) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+
+    char* msg = fern_actor_format_exit_message(actor_id, reason);
+    if (msg == NULL) {
+        return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+    }
+
+    return fern_actor_send(parent->actor_id, msg);
 }
 
 /**

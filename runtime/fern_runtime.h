@@ -882,6 +882,17 @@ int64_t fern_sql_execute(int64_t handle, const char* query);
 int64_t fern_actor_spawn(const char* name);
 
 /**
+ * Spawn an actor linked to a supervisor baseline.
+ *
+ * Baseline contract: links to the most recently spawned actor id (if any)
+ * so runtime tests can model supervisor restart signals deterministically.
+ *
+ * @param name Actor name.
+ * @return Actor id (positive integer), or 0 on allocation failure.
+ */
+int64_t fern_actor_spawn_link(const char* name);
+
+/**
  * Send a message to an actor mailbox.
  * @param actor_id Destination actor id.
  * @param msg Message payload.
@@ -895,6 +906,14 @@ int64_t fern_actor_send(int64_t actor_id, const char* msg);
  * @return Result: Ok(message) or Err(error code) if mailbox is empty/invalid.
  */
 int64_t fern_actor_receive(int64_t actor_id);
+
+/**
+ * Mark an actor as exited and notify its linked supervisor.
+ * @param actor_id Exiting actor id.
+ * @param reason Exit reason string.
+ * @return Result: Ok(0) when notification is queued, Err(error code) otherwise.
+ */
+int64_t fern_actor_exit(int64_t actor_id, const char* reason);
 
 /**
  * Get current mailbox length for an actor.

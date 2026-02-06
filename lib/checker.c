@@ -39,6 +39,7 @@ static bool check_match_exhaustiveness(Checker* checker, MatchExpr* expr, Type* 
 static Type* require_result_propagation_context(Checker* checker, SourceLoc loc, Type* propagated_err, const char* op_name);
 static Type* check_record_update_expr(Checker* checker, RecordUpdateExpr* expr, SourceLoc loc);
 static Type* check_spawn_expr(Checker* checker, SpawnExpr* expr, SourceLoc loc);
+static Type* check_spawn_link_call_expr(Checker* checker, CallExpr* expr, SourceLoc loc);
 static Type* check_send_expr(Checker* checker, SendExpr* expr, SourceLoc loc);
 static Type* check_receive_expr(Checker* checker, ReceiveExpr* expr, SourceLoc loc);
 
@@ -2363,6 +2364,11 @@ static Type* check_call_expr(Checker* checker, Expr* call_expr) {
     
     CallExpr* expr = &call_expr->data.call;
     SourceLoc loc = call_expr->loc;
+
+    if (expr->func->type == EXPR_IDENT &&
+        strcmp(string_cstr(expr->func->data.ident.name), "spawn_link") == 0) {
+        return check_spawn_link_call_expr(checker, expr, loc);
+    }
     
     /* Infer the type of the callee */
     Type* callee_type = checker_infer_expr(checker, expr->func);
@@ -2641,6 +2647,27 @@ static Type* check_spawn_expr(Checker* checker, SpawnExpr* expr, SourceLoc loc) 
     }
 
     return type_int(checker->arena);
+}
+
+/**
+ * Check types for spawn_link(expr) supervision primitive.
+ * @param checker The type checker context.
+ * @param expr The call expression.
+ * @param loc Source location of the expression.
+ * @return Int actor id on success.
+ */
+static Type* check_spawn_link_call_expr(Checker* checker, CallExpr* expr, SourceLoc loc) {
+    assert(checker != NULL);
+    assert(expr != NULL);
+
+    if (expr->args->len != 1) {
+        return error_type_at(checker, loc, "spawn_link expects exactly 1 argument, got %zu",
+            expr->args->len);
+    }
+
+    SpawnExpr spawn_expr;
+    spawn_expr.func = expr->args->data[0].value;
+    return check_spawn_expr(checker, &spawn_expr, loc);
 }
 
 /**

@@ -8,7 +8,7 @@ Detailed historical logs and old iteration notes were moved to:
 
 ## Current Snapshot
 
-- Build/tests: `just test` passing (**508/508**)
+- Build/tests: `just test` passing (**512/512**)
 - Style: `just style` passing
 - Foundation status: lexer, parser, type checker, codegen pipeline, core runtime, and embedded toolchain are working
 - Release automation: conventional-commit-driven semver + release notes configured via `release-please` (initial version pinned to `0.1.0`, breaking changes map to minor while `<1.0.0`)
@@ -19,6 +19,7 @@ Detailed historical logs and old iteration notes were moved to:
 - Post-Gate D stabilization update: README/stdlib compatibility docs now explicitly call out current runtime readiness (`sql` SQLite-backed, `http` civetweb-backed with TLS support)
 - Post-Gate D stabilization update: CLI type diagnostics now include snippet/note/help coverage for binary operator mismatches (`test_cli_check_binary_type_error_includes_snippet_note_and_help`)
 - Post-Gate D stabilization update: SQL runtime now has concrete SQLite behavior (`sql.open`, `sql.execute`) with runtime surface coverage in `tests/test_runtime_surface.c`
+- Post-Gate D stabilization update: supervision baseline now includes `spawn_link(...)` checker/codegen coverage and linked `Exit(...)` notifications in runtime surface tests (`test_check_spawn_link_returns_int`, `test_codegen_spawn_link_calls_runtime`, `test_runtime_actor_spawn_link_exit_notification_contract`)
 
 ## Working Model
 
@@ -133,11 +134,11 @@ Gates are sequential. Only one gate is active at a time.
 - Milestone 6: CLI tool polish and command surface
 - Milestone 7: Extended standard library modules
 - Milestone 7.7: WASM target + memory model implementation tranche (active, pre-actor-runtime dependency)
+- Milestone 8: Actor runtime and supervision model (baseline `spawn_link` + exit notification contract in place)
 - Milestone 10: TUI library completion
 
 ### Not Started / Future
 
-- Milestone 8: Actor runtime and supervision model
 - Milestone 9: Bootstrapping Fern tooling in Fern
 - Milestone 11: Polish and optimization wave
 
@@ -170,6 +171,7 @@ Gate D pass criteria are now closed and validated with test + workflow coverage.
 - [x] Extended stdlib modules with doc tests (`scripts/run_doc_tests.py`, `docs/doctests/stdlib_modules.fn`, `fern test --doc`, `test_cli_test_doc_command_honors_file_argument`)
 - [x] Milestone 7.7 WASM memory/runtime implementation tranche (abstraction + RC baseline + codegen subset + decision artifact)
 - [x] Actor runtime core baseline (`spawn`, `send`, `receive`, scheduler`) with mailbox/scheduler runtime tests
+- [x] Milestone 8 supervision baseline: `spawn_link(...)` lowering + linked `Exit(...)` notification contract (`lib/checker.c`, `lib/codegen.c`, `runtime/fern_runtime.c`, `tests/test_runtime_surface.c`)
 - [x] `fern doc` documentation generation pipeline (`src/main.c`, `scripts/generate_docs.py`, `tests/test_cli_main.c`)
 - [x] LSP expansion beyond MVP (completion/rename/code actions)
 - [x] Post-Gate D semantic parity pass for parsed-but-partial expressions: checker support for `%{ ... | ... }` + actor primitives and codegen fallback removal for generic pipe/indirect call/named field/default expr paths (`tests/test_checker.c`, `tests/test_codegen.c`, `lib/checker.c`, `lib/codegen.c`)

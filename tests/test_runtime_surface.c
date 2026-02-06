@@ -693,6 +693,36 @@ void test_runtime_actor_scheduler_round_robin_contract(void) {
     free_build_run_result(&result);
 }
 
+void test_runtime_actor_spawn_link_exit_notification_contract(void) {
+    BuildRunResult result = build_and_run_c_source(
+        "#include <stdint.h>\n"
+        "#include \"fern_runtime.h\"\n"
+        "\n"
+        "int fern_main(void) {\n"
+        "    int64_t supervisor = fern_actor_spawn(\"supervisor\");\n"
+        "    if (supervisor <= 0) return 80;\n"
+        "\n"
+        "    int64_t worker = fern_actor_spawn_link(\"worker\");\n"
+        "    if (worker <= supervisor) return 81;\n"
+        "\n"
+        "    int64_t exit_status = fern_actor_exit(worker, \"boom\");\n"
+        "    if (!fern_result_is_ok(exit_status)) return 82;\n"
+        "\n"
+        "    int64_t msg = fern_actor_next(supervisor);\n"
+        "    if (!fern_result_is_ok(msg)) return 83;\n"
+        "\n"
+        "    const char* text = (const char*)(intptr_t)fern_result_unwrap(msg);\n"
+        "    if (!fern_str_starts_with(text, \"Exit(\")) return 84;\n"
+        "    if (!fern_str_contains(text, \"boom\")) return 85;\n"
+        "    return 0;\n"
+        "}\n");
+
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+
+    free_build_run_result(&result);
+}
+
 void test_runtime_memory_alloc_dup_drop_contract(void) {
     BuildRunResult result = build_and_run_c_source(
         "#include <stdint.h>\n"
@@ -783,6 +813,7 @@ void run_runtime_surface_tests(void) {
     TEST_RUN(test_runtime_actors_start_returns_monotonic_ids);
     TEST_RUN(test_runtime_actors_post_and_next_mailbox_contract);
     TEST_RUN(test_runtime_actor_scheduler_round_robin_contract);
+    TEST_RUN(test_runtime_actor_spawn_link_exit_notification_contract);
     TEST_RUN(test_runtime_memory_alloc_dup_drop_contract);
     TEST_RUN(test_runtime_rc_header_and_core_type_ops);
 }

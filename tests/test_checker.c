@@ -1398,10 +1398,39 @@ void test_check_spawn_returns_int(void) {
     arena_destroy(arena);
 }
 
+void test_check_spawn_link_returns_int(void) {
+    Arena* arena = arena_create(4096);
+
+    Checker* checker = checker_new(arena);
+    TypeVec* params = TypeVec_new(arena);
+    Type* worker_fn = type_fn(arena, params, type_unit(arena));
+    checker_define(checker, string_new(arena, "worker_loop"), worker_fn);
+
+    Parser* parser = parser_new(arena, "spawn_link(worker_loop)");
+    Expr* expr = parse_expr(parser);
+    ASSERT_NOT_NULL(expr);
+
+    Type* t = checker_infer_expr(checker, expr);
+    ASSERT_NOT_NULL(t);
+    ASSERT_EQ(t->kind, TYPE_INT);
+
+    arena_destroy(arena);
+}
+
 void test_check_spawn_requires_function(void) {
     Arena* arena = arena_create(4096);
 
     const char* err = check_expr_error(arena, "spawn(42)");
+
+    ASSERT_NOT_NULL(err);
+
+    arena_destroy(arena);
+}
+
+void test_check_spawn_link_requires_function(void) {
+    Arena* arena = arena_create(4096);
+
+    const char* err = check_expr_error(arena, "spawn_link(42)");
 
     ASSERT_NOT_NULL(err);
 
@@ -2348,7 +2377,9 @@ void run_checker_tests(void) {
     TEST_RUN(test_check_record_update_preserves_base_type);
     TEST_RUN(test_check_record_update_field_error_propagates);
     TEST_RUN(test_check_spawn_returns_int);
+    TEST_RUN(test_check_spawn_link_returns_int);
     TEST_RUN(test_check_spawn_requires_function);
+    TEST_RUN(test_check_spawn_link_requires_function);
     TEST_RUN(test_check_send_returns_result);
     TEST_RUN(test_check_send_requires_int_pid);
     TEST_RUN(test_check_send_requires_string_message);
