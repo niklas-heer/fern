@@ -1,6 +1,6 @@
 # Fern Roadmap
 
-Last updated: 2026-02-06
+Last updated: 2026-02-09
 
 This file is the only active roadmap. Historical context is in [`docs/HISTORY.md`](docs/HISTORY.md).
 
@@ -38,7 +38,7 @@ Status: Active
 - [x] Fix release staging validation mismatch (`release-package-check` now stages and validates `dist/staging`)
 - [x] Keep generated outputs out of source control by default (release artifacts, benchmark binaries)
 - [x] Keep documentation cross-linked and remove stale process instructions
-- [ ] Add a lightweight docs consistency check to CI (link + key status marker validation)
+- [x] Add a lightweight docs consistency check to CI (link + key status marker validation)
 
 Exit criteria:
 - Working tree does not accumulate tracked generated binaries during normal benchmark/release flows.

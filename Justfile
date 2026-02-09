@@ -295,8 +295,13 @@ test-doc: debug
 docs:
     python3 scripts/generate_unified_docs.py ${DOC_FLAGS:-}
 
+# Lightweight docs consistency checks (local links + status markers)
+docs-consistency:
+    python3 scripts/check_docs_consistency.py ${DOCS_CONSISTENCY_FLAGS:-}
+
 # Validate docs generation + public API documentation + doc examples
 docs-check: debug
+    just docs-consistency
     python3 scripts/generate_unified_docs.py --check ${DOC_FLAGS:-}
     python3 scripts/run_doc_tests.py ${DOC_TEST_FLAGS:-}
 

@@ -85,6 +85,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Check docs consistency
+        run: just docs-consistency
+
       - name: Check FERN_STYLE compliance
         run: |
           echo "Checking FERN_STYLE compliance..."

@@ -59,9 +59,18 @@ void test_release_automation_config_tracks_version_header(void) {
     free(version_header);
 }
 
+void test_ci_workflow_runs_docs_consistency_check(void) {
+    char* workflow = read_file_text(".github/workflows/ci.yml");
+    ASSERT_NOT_NULL(workflow);
+    ASSERT_TRUE(strstr(workflow, "name: Check docs consistency") != NULL);
+    ASSERT_TRUE(strstr(workflow, "run: just docs-consistency") != NULL);
+    free(workflow);
+}
+
 void run_release_automation_tests(void) {
     printf("\n=== Release Automation Tests ===\n");
     TEST_RUN(test_release_automation_files_exist);
     TEST_RUN(test_release_automation_workflow_uses_release_please);
     TEST_RUN(test_release_automation_config_tracks_version_header);
+    TEST_RUN(test_ci_workflow_runs_docs_consistency_check);
 }
