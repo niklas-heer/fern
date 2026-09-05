@@ -298,6 +298,8 @@ typedef struct {
 
 /* Expression node */
 struct Expr {
+    /* Checker-owned semantic type; NULL for parser-only ASTs. */
+    struct Type* checked_type;
     ExprType type;
     SourceLoc loc;
     union {
@@ -521,6 +523,8 @@ typedef struct {
 } ConstructorPattern;
 
 struct Pattern {
+    /* Checker-owned semantic type; initialized NULL by parser/constructors. */
+    struct Type* checked_type;
     PatternType type;
     SourceLoc loc;
     union {

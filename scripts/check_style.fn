@@ -170,8 +170,9 @@ fn check_examples() -> (Bool, String):
     if not File.exists("examples"):
         (true, "No examples directory")
     else:
-        let files = File.list_dir("examples")
-        check_example_files(files, 0, 0)
+        match File.list_dir("examples"):
+            Ok(files) -> check_example_files(files, 0, 0)
+            Err(code) -> (false, "Cannot list examples: error {code}")
 
 fn check_example_files(files: List(String), passed: Int, failed: Int) -> (Bool, String):
     if List.is_empty(files):
@@ -244,8 +245,11 @@ fn check_single_file(path: String, is_c_file: Bool) -> (Int, Int):
 
 # Check all .c files in a directory
 fn check_directory(dir: String) -> (Int, Int):
-    let entries = File.list_dir(dir)
-    check_entries(dir, entries, 0, 0)
+    match File.list_dir(dir):
+        Ok(entries) -> check_entries(dir, entries, 0, 0)
+        Err(code) ->
+            println("Cannot list {dir}: error {code}")
+            (0, 1)
 
 # Helper to process directory entries recursively
 fn check_entries(dir: String, entries: List(String), files: Int, violations: Int) -> (Int, Int):

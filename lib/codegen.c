@@ -5,6 +5,7 @@
 
 #include "codegen.h"
 #include "ast.h"
+#include "type.h"
 #include "arena.h"
 #include "fern_string.h"
 #include <stdio.h>
@@ -40,6 +41,8 @@ struct Codegen {
     /* Track variables that are 64-bit (pointers: lists, strings) */
     String* wide_vars[MAX_WIDE_VARS];
     int wide_var_count;
+    Pattern* bound_patterns[MAX_WIDE_VARS];
+    int bound_pattern_count;
 
     /* Track named owned pointer variables for constrained dup/drop insertion. */
     String* owned_ptr_vars[MAX_WIDE_VARS];
@@ -222,6 +225,78 @@ static bool is_wide_var(Codegen* cg, String* name) {
     return false;
 }
 
+/**
+ * Resolve checker-recorded binder types without interpreting transport width as a type.
+ * @param cg Current codegen scopes.
+ * @param name Identifier of the bound variable.
+ * @return Resolved semantic type, or NULL for unchecked legacy ASTs.
+ */
+static Type* bound_pattern_type(Codegen* cg, String* name) {
+    assert(cg != NULL);
+    assert(name != NULL);
+    for (int index = cg->bound_pattern_count - 1; index >= 0; index--) {
+        Pattern* pattern = cg->bound_patterns[index];
+        if (!string_equal(pattern->data.ident, name)) continue;
+        Type* type = pattern->checked_type;
+        for (int depth = 0; depth < MAX_WIDE_VARS && type && type->kind == TYPE_VAR; depth++) {
+            if (!type->data.var.bound) break;
+            type = type->data.var.bound;
+        }
+        return type;
+    }
+    return NULL;
+}
+
+/**
+ * Choose storage for a checked binder; preserve fallback for parser-only codegen tests.
+ * @param type Semantic type, possibly NULL.
+ * @param fallback Prior storage convention for unchecked ASTs.
+ * @return QBE width for the checked semantic type.
+ */
+static char pattern_width(Type* type, char fallback) {
+    assert(fallback == 'w' || fallback == 'l' || fallback == 'd');
+    if (!type || type->kind == TYPE_VAR) return fallback;
+    assert(type->kind != TYPE_ERROR);
+    if (type->kind == TYPE_FLOAT) return 'd';
+    if (type->kind == TYPE_STRING || type->kind == TYPE_CON ||
+        type->kind == TYPE_TUPLE || type->kind == TYPE_FN) return 'l';
+    return 'w';
+}
+
+/**
+ * Read resolved expression metadata after checker unification, without source-name guesses.
+ * @param expr AST node with an optional checker-owned type in the same live arena.
+ * @return Resolved type, or NULL for parser-only expressions.
+ */
+static Type* checked_expr_type(Expr* expr) {
+    assert(expr != NULL);
+    assert(expr->loc.line >= 0);
+    Type* type = expr->checked_type;
+    for (int depth = 0; depth < MAX_WIDE_VARS && type && type->kind == TYPE_VAR; depth++) {
+        if (!type->data.var.bound) break;
+        type = type->data.var.bound;
+    }
+    return type;
+}
+
+/**
+ * Bind a constructor payload using checker semantics, retaining pointer and Float bits.
+ * @param cg Current context.
+ * @param pattern Identifier binder with checker-owned semantic metadata.
+ * @param value Full-width payload already loaded after its constructor tag check.
+ * @param fallback Storage convention for unchecked legacy ASTs.
+ */
+static void emit_pattern_binding(Codegen* cg, Pattern* pattern, String* value, char fallback) {
+    assert(cg != NULL && pattern != NULL);
+    assert(pattern->type == PATTERN_IDENT && value != NULL);
+    assert(cg->bound_pattern_count < MAX_WIDE_VARS);
+    cg->bound_patterns[cg->bound_pattern_count++] = pattern;
+    char width = pattern_width(bound_pattern_type(cg, pattern->data.ident), fallback);
+    emit(cg, "    %%%s =%c %s %s\n", string_cstr(pattern->data.ident), width,
+        width == 'd' ? "cast" : "copy", string_cstr(value));
+    if (width == 'l') register_wide_var(cg, pattern->data.ident);
+}
+
 static void clear_wide_vars(Codegen* cg) __attribute__((unused));
 /**
  * Clear wide variable tracking (call at start of each function).
@@ -232,6 +307,7 @@ static void clear_wide_vars(Codegen* cg) {
     /* FERN_STYLE: allow(assertion-density) - simple reset function */
     assert(cg != NULL);
     cg->wide_var_count = 0;
+    cg->bound_pattern_count = 0;
 }
 
 /**
@@ -415,7 +491,12 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
     assert(cg != NULL);
     assert(cg->arena != NULL);
     if (expr == NULL) return PRINT_INT;
-    
+    Type* semantic = checked_expr_type(expr);
+    if (semantic && semantic->kind != TYPE_VAR) {
+        if (semantic->kind == TYPE_STRING) return PRINT_STRING;
+        if (semantic->kind == TYPE_BOOL) return PRINT_BOOL;
+        return PRINT_INT;
+    }
     switch (expr->type) {
         case EXPR_STRING_LIT:
         case EXPR_INTERP_STRING:
@@ -428,13 +509,19 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
         case EXPR_FLOAT_LIT:
             return PRINT_INT;
         
-        case EXPR_IDENT:
-            /* Check if variable is a wide type (string/list) */
+        case EXPR_IDENT: {
+            Type* bound = bound_pattern_type(cg, expr->data.ident.name);
+            if (bound && bound->kind != TYPE_VAR) {
+                if (bound->kind == TYPE_STRING) return PRINT_STRING;
+                if (bound->kind == TYPE_BOOL) return PRINT_BOOL;
+                return PRINT_INT;
+            }
+            /* Unchecked legacy ASTs retain the existing fallback. */
             if (is_wide_var(cg, expr->data.ident.name)) {
                 return PRINT_STRING;
             }
             return PRINT_INT;
-        
+        }
         case EXPR_DOT: {
             /* Field access - without type info, default to PRINT_INT
              * User can use type annotation or explicit conversion for strings */
@@ -564,6 +651,8 @@ static char qbe_type_for_expr(Codegen* cg, Expr* expr) {
     // FERN_STYLE: allow(function-length) type dispatch handles all module return types
     /* FERN_STYLE: allow(assertion-density) - simple type lookup */
     if (expr == NULL) return 'w';
+    Type* semantic = checked_expr_type(expr);
+    if (semantic && semantic->kind != TYPE_VAR) return pattern_width(semantic, 'w');
     
     switch (expr->type) {
         /* Pointer types (64-bit) */
@@ -580,6 +669,9 @@ static char qbe_type_for_expr(Codegen* cg, Expr* expr) {
         
         /* Identifiers: check if tracked as wide variable */
         case EXPR_IDENT:
+            if (cg != NULL && bound_pattern_type(cg, expr->data.ident.name)) {
+                return pattern_width(bound_pattern_type(cg, expr->data.ident.name), 'w');
+            }
             if (cg != NULL && is_wide_var(cg, expr->data.ident.name)) {
                 return 'l';
             }
@@ -847,6 +939,7 @@ Codegen* codegen_new(Arena* arena) {
     cg->string_counter = 0;
     cg->defer_count = 0;
     cg->wide_var_count = 0;
+    cg->bound_pattern_count = 0;
     cg->owned_ptr_var_count = 0;
     cg->tuple_func_count = 0;
     cg->returned = false;
@@ -952,6 +1045,23 @@ static String* fresh_string_label(Codegen* cg) {
 }
 
 /* ========== Expression Code Generation ========== */
+
+/**
+ * Evaluate a Result payload once and pass all 64 bits to the native constructor.
+ * @param cg Codegen context.
+ * @param expr Checked payload, or parser-only test expression.
+ * @return A long QBE value preserving pointer, signed integer, or Float representation.
+ */
+static String* codegen_result_payload(Codegen* cg, Expr* expr) {
+    assert(cg != NULL);
+    assert(expr != NULL);
+    String* value = codegen_expr(cg, expr);
+    char width = qbe_type_for_expr(cg, expr);
+    if (width == 'l') return value;
+    String* payload = fresh_temp(cg);
+    emit(cg, "    %s =l %s %s\n", string_cstr(payload), width == 'd' ? "cast" : "extsw", string_cstr(value));
+    return payload;
+}
 
 /**
  * Generate QBE IR code for an expression.
@@ -1314,7 +1424,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             /* Variable reference - return the variable name as a QBE temporary */
             String* tmp = fresh_temp(cg);
             /* Check if variable is a wide type (pointer) */
-            char type_spec = is_wide_var(cg, expr->data.ident.name) ? 'l' : 'w';
+            char type_spec = qbe_type_for_expr(cg, expr);
             emit(cg, "    %s =%c copy %%%s\n", string_cstr(tmp), type_spec, 
                 string_cstr(expr->data.ident.name));
             return tmp;
@@ -1406,6 +1516,8 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             /* Generate code for each arm */
             for (size_t i = 0; i < match->arms->len; i++) {
                 MatchArm* arm = &match->arms->data[i];
+                int bound_scope = cg->bound_pattern_count;
+                int wide_scope = cg->wide_var_count;
                 String* next_arm_label = fresh_label(cg);
                 String* arm_body_label = fresh_label(cg);
                 
@@ -1501,7 +1613,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (inner->type == PATTERN_IDENT) {
                             String* val = fresh_temp(cg);
                             emit(cg, "    %s =l shr %s, 32\n", string_cstr(val), string_cstr(scrutinee));
-                            emit(cg, "    %%%s =w copy %s\n", string_cstr(inner->data.ident), string_cstr(val));
+                            emit_pattern_binding(cg, inner, val, 'w');
                         }
                     } else if (strcmp(ctor_name, "Ok") == 0 && ctor->args && ctor->args->len > 0) {
                         Pattern* inner = ctor->args->data[0];
@@ -1510,8 +1622,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* val = fresh_temp(cg);
                             emit(cg, "    %s =l add %s, 8\n", string_cstr(val_ptr), string_cstr(scrutinee));
                             emit(cg, "    %s =l loadl %s\n", string_cstr(val), string_cstr(val_ptr));
-                            emit(cg, "    %%%s =l copy %s\n", string_cstr(inner->data.ident), string_cstr(val));
-                            register_wide_var(cg, inner->data.ident);
+                            emit_pattern_binding(cg, inner, val, 'l');
                         }
                     } else if (strcmp(ctor_name, "Err") == 0 && ctor->args && ctor->args->len > 0) {
                         Pattern* inner = ctor->args->data[0];
@@ -1520,14 +1631,15 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* val = fresh_temp(cg);
                             emit(cg, "    %s =l add %s, 8\n", string_cstr(val_ptr), string_cstr(scrutinee));
                             emit(cg, "    %s =l loadl %s\n", string_cstr(val), string_cstr(val_ptr));
-                            emit(cg, "    %%%s =l copy %s\n", string_cstr(inner->data.ident), string_cstr(val));
-                            register_wide_var(cg, inner->data.ident);
+                            emit_pattern_binding(cg, inner, val, 'l');
                         }
                     }
                 }
                 
                 String* arm_val = codegen_expr(cg, arm->body);
                 char arm_type = qbe_type_for_expr(cg, arm->body);
+                cg->bound_pattern_count = bound_scope;
+                cg->wide_var_count = wide_scope;
                 emit(cg, "    %s =%c copy %s\n", string_cstr(result), arm_type, string_cstr(arm_val));
                 if (arm_type == 'l') {
                     register_wide_var(cg, result);
@@ -1893,10 +2005,10 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                                 string_cstr(result), string_cstr(path));
                             return result;
                         }
-                        /* File.list_dir(path) -> List(String) */
+                        /* File.list_dir(path) -> Result(List(String), Int) */
                         if (strcmp(func, "list_dir") == 0 && call->args->len == 1) {
                             String* path = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =l call $fern_list_dir(l %s)\n",
+                            emit(cg, "    %s =l call $fern_read_dir_result(l %s)\n",
                                 string_cstr(result), string_cstr(path));
                             return result;
                         }
@@ -2650,18 +2762,18 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 
                 /* Handle Ok(value) - creates a successful Result */
                 if (strcmp(fn_name, "Ok") == 0 && call->args->len == 1) {
-                    String* val = codegen_expr(cg, call->args->data[0].value);
-                    /* Call runtime to create Ok result */
-                    emit(cg, "    %s =l call $fern_result_ok(w %s)\n",
+                    String* val = codegen_result_payload(cg, call->args->data[0].value);
+                    /* Native Result payloads are always full-width values. */
+                    emit(cg, "    %s =l call $fern_result_ok(l %s)\n",
                         string_cstr(result), string_cstr(val));
                     return result;
                 }
                 
                 /* Handle Err(error) - creates an error Result */
                 if (strcmp(fn_name, "Err") == 0 && call->args->len == 1) {
-                    String* err = codegen_expr(cg, call->args->data[0].value);
-                    /* Call runtime to create Err result */
-                    emit(cg, "    %s =l call $fern_result_err(w %s)\n",
+                    String* err = codegen_result_payload(cg, call->args->data[0].value);
+                    /* Native Result payloads are always full-width values. */
+                    emit(cg, "    %s =l call $fern_result_err(l %s)\n",
                         string_cstr(result), string_cstr(err));
                     return result;
                 }
@@ -2984,7 +3096,8 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             if (call->func->type == EXPR_IDENT) {
                 const char* func_name = string_cstr(call->func->data.ident.name);
                 /* Check if function returns a tuple (pointer type) */
-                char ret_type = is_tuple_return_func(cg, func_name) ? 'l' : 'w';
+                char ret_type = expr->checked_type ? qbe_type_for_expr(cg, expr) :
+                    (is_tuple_return_func(cg, func_name) ? 'l' : 'w');
                 if (ret_type == 'l') {
                     register_wide_var(cg, result);
                 }
@@ -3400,6 +3513,8 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 /* Match else arms against the failed Result value. */
                 for (size_t i = 0; i < with->else_arms->len; i++) {
                     MatchArm* arm = &with->else_arms->data[i];
+                    int bound_scope = cg->bound_pattern_count;
+                    int wide_scope = cg->wide_var_count;
                     String* next_arm_label = fresh_label(cg);
                     String* arm_body_label = fresh_label(cg);
 
@@ -3469,8 +3584,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                                 String* val = fresh_temp(cg);
                                 emit(cg, "    %s =l add %s, 8\n", string_cstr(val_ptr), string_cstr(failed_result));
                                 emit(cg, "    %s =l loadl %s\n", string_cstr(val), string_cstr(val_ptr));
-                                emit(cg, "    %%%s =l copy %s\n", string_cstr(inner->data.ident), string_cstr(val));
-                                register_wide_var(cg, inner->data.ident);
+                                emit_pattern_binding(cg, inner, val, 'l');
                             }
                         } else if (strcmp(ctor_name, "Err") == 0 && ctor->args && ctor->args->len > 0) {
                             Pattern* inner = ctor->args->data[0];
@@ -3479,14 +3593,15 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                                 String* val = fresh_temp(cg);
                                 emit(cg, "    %s =l add %s, 8\n", string_cstr(val_ptr), string_cstr(failed_result));
                                 emit(cg, "    %s =l loadl %s\n", string_cstr(val), string_cstr(val_ptr));
-                                emit(cg, "    %%%s =l copy %s\n", string_cstr(inner->data.ident), string_cstr(val));
-                                register_wide_var(cg, inner->data.ident);
+                                emit_pattern_binding(cg, inner, val, 'l');
                             }
                         }
                     }
 
                     String* arm_val = codegen_expr(cg, arm->body);
                     char arm_type = qbe_type_for_expr(cg, arm->body);
+                    cg->bound_pattern_count = bound_scope;
+                    cg->wide_var_count = wide_scope;
                     emit(cg, "    %s =%c copy %s\n", string_cstr(result), arm_type, string_cstr(arm_val));
                     if (arm_type == 'l') {
                         register_wide_var(cg, result);
@@ -3632,6 +3747,7 @@ static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
     /* Clear defer stack, wide vars, and return flag at function start */
     clear_defers(cg);
     cg->wide_var_count = 0;
+    cg->bound_pattern_count = 0;
     cg->owned_ptr_var_count = 0;
     cg->returned = false;
     
@@ -3648,8 +3764,11 @@ static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
         } else if (fn->return_type->kind == TYPEEXPR_NAMED) {
             const char* type_name = string_cstr(fn->return_type->data.named.name);
             /* String and List are pointer types */
-            if (strcmp(type_name, "String") == 0 || strcmp(type_name, "List") == 0) {
+            if (strcmp(type_name, "String") == 0 || strcmp(type_name, "List") == 0 ||
+                strcmp(type_name, "Result") == 0 || strcmp(type_name, "Option") == 0) {
                 ret_type = 'l';
+            } else if (strcmp(type_name, "Float") == 0) {
+                ret_type = 'd';
             }
         }
     }
@@ -3673,6 +3792,7 @@ static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
                     register_owned_ptr_var(cg, param->name);
                 } else if (param->type_ann->kind == TYPEEXPR_NAMED) {
                     const char* type_name = string_cstr(param->type_ann->data.named.name);
+                    if (strcmp(type_name, "Float") == 0) param_type = 'd';
                     /* String, List are heap pointers; Option is packed 64-bit; Result is heap pointer */
                     if (strcmp(type_name, "String") == 0 || strcmp(type_name, "List") == 0 ||
                         strcmp(type_name, "Option") == 0 || strcmp(type_name, "Result") == 0) {

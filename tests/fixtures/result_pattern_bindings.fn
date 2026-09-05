@@ -1,0 +1,13 @@
+fn numbers(result: Result(Int, Int)) -> Int:
+    match result:
+        Ok(value) -> value + 1
+        Err(value) -> value + 100
+fn strings(result: Result(Int, String)) -> String:
+    match result:
+        Ok(_) -> "success"
+        Err(value) -> value + "!"
+fn main():
+    println(numbers(Err(5)))
+    println(numbers(Ok(6)))
+    println(strings(Err("failure")))
+    println(strings(Ok(7)))

@@ -1984,43 +1984,54 @@ int64_t fern_is_dir(const char* path) {
  */
 FernStringList* fern_list_dir(const char* path) {
     assert(path != NULL);
-    
+    int64_t result = fern_read_dir_result(path);
+    assert(result != 0);
+    return fern_result_is_ok(result) ? (FernStringList*)(intptr_t)fern_result_unwrap(result) : NULL;
+}
+
+/**
+ * Enumerate directory names as a Result, preserving open/read/close failures.
+ * @param path Non-NULL directory path; at most 1,048,576 entries are accepted.
+ * @return Ok(managed StringList) or Err(file-not-found, permission, not-directory, or IO).
+ */
+int64_t fern_read_dir_result(const char* path) {
+    assert(path != NULL);
     DIR* dir = opendir(path);
+    int error = dir ? 0 : errno;
     if (!dir) {
-        return NULL;
+        int code = error == ENOENT ? FERN_ERR_FILE_NOT_FOUND :
+            error == ENOTDIR ? FERN_ERR_NOT_A_DIR :
+            (error == EACCES || error == EPERM) ? FERN_ERR_PERMISSION : FERN_ERR_IO;
+        return fern_result_err(code);
     }
-    
     FernStringList* list = fern_rc_alloc(sizeof(FernStringList), FERN_RC_TYPE_STRING_LIST);
     assert(list != NULL);
     list->cap = 16;
     list->len = 0;
     list->data = FERN_ALLOC((size_t)list->cap * sizeof(char*));
     assert(list->data != NULL);
-    
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != NULL) {
-        /* Skip . and .. */
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-        
-        /* Grow if needed */
-        if (list->len >= list->cap) {
+    error = EOVERFLOW;
+    for (size_t visited = 0; visited < 1048579; visited++) {
+        errno = 0;
+        struct dirent* entry = readdir(dir);
+        if (!entry) { error = errno; break; }
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        if (list->len == 1048576) break;
+        if (list->len == list->cap) {
             list->cap *= 2;
             list->data = FERN_REALLOC(list->data, (size_t)list->cap * sizeof(char*));
             assert(list->data != NULL);
         }
-        
-        /* Copy entry name */
-        size_t name_len = strlen(entry->d_name);
-        char* name = FERN_ALLOC(name_len + 1);
-        assert(name != NULL);
-        memcpy(name, entry->d_name, name_len + 1);
-        list->data[list->len++] = name;
+        list->data[list->len] = FERN_STRDUP(entry->d_name);
+        assert(list->data[list->len] != NULL);
+        list->len++;
     }
-    
-    closedir(dir);
-    return list;
+    if (closedir(dir) != 0 && error == 0) error = errno;
+    if (error != 0) {
+        int code = (error == EACCES || error == EPERM) ? FERN_ERR_PERMISSION : FERN_ERR_IO;
+        return fern_result_err(code);
+    }
+    return fern_result_ok((int64_t)(intptr_t)list);
 }
 
 /* ========== Gate C Stdlib Runtime Surface ========== */

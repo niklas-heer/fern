@@ -43,7 +43,13 @@ fs.append(path: String, content: String) -> Result(Int, Int)
 fs.exists(path: String) -> Bool
 fs.delete(path: String) -> Result(Int, Int)
 fs.size(path: String) -> Result(Int, Int)
+fs.list_dir(path: String) -> Result(List(String), Int)
 ```
+
+Directory listing excludes `.` and `..`; order is unspecified. Empty directories
+return `Ok([])`. Errors use codes 1 (missing), 2 (permission), 5 (not a directory),
+and 3 (other IO or more than 1,048,576 entries). This signature is an explicit
+unreleased migration change; see the compatibility policy and Decision 50.
 
 ### `json`
 

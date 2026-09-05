@@ -2632,7 +2632,7 @@ let deleted = File.delete("temp.txt")      # Result(Int, Int)
 
 # Directory operations
 let is_dir = File.is_dir("src")            # Bool
-let entries = File.list_dir("src")         # List(String)
+let entries = File.list_dir("src")         # Result(List(String), Int); handle errors
 ```
 
 ### System Module

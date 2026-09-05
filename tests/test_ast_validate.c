@@ -24,6 +24,7 @@ void test_validate_expr_binary_missing_left(void) {
 
     Expr* right = expr_int_lit(arena, 1, (SourceLoc){0});
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_BINARY;
     expr->loc = (SourceLoc){
         .filename = string_new(arena, "test.fn"),

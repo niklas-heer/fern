@@ -2,6 +2,7 @@
 
 #include "test.h"
 #include "codegen.h"
+#include "checker.h"
 #include "parser.h"
 #include "arena.h"
 #include "fern_string.h"
@@ -314,6 +315,39 @@ void test_codegen_match_wildcard(void) {
     ASSERT_NOT_NULL(qbe);
     ASSERT_TRUE(strstr(qbe, "copy 0") != NULL);
     
+    arena_destroy(arena);
+}
+
+/** Checked match binders retain semantic kinds independently of payload width. */
+void test_codegen_result_pattern_binding_semantic_types(void) {
+    Arena* arena = arena_create(16384);
+    const char* source =
+        "fn ints(value: Result(Int, Int)) -> Int:\n"
+        "    match value:\n        Ok(number) -> number + 1\n        Err(code) -> code + 100\n"
+        "fn texts(value: Result(Int, String)) -> String:\n"
+        "    match value:\n        Ok(_) -> \"ok\"\n        Err(message) -> message + \"!\"\n"
+        "fn shadow(value: Result(Int, String)) -> Int:\n"
+        "    match value:\n        Ok(_) -> 0\n        Err(message) ->\n            let message = 3\n            message + 1\n"
+        "fn main():\n    println(ints(Err(-5)))\n    println(texts(Err(\"failure\")))\n";
+    Parser* parser = parser_new(arena, source);
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    Checker* checker = checker_new(arena);
+    ASSERT_TRUE(checker_check_stmts(checker, stmts));
+    Codegen* cg = codegen_new(arena);
+    codegen_program(cg, stmts);
+    const char* qbe = string_cstr(codegen_output(cg));
+    ASSERT_TRUE(strstr(qbe, "%code =w copy") != NULL);
+    ASSERT_TRUE(strstr(qbe, "%number =w copy") != NULL);
+    ASSERT_TRUE(strstr(qbe, "%message =l copy") != NULL);
+    ASSERT_TRUE(strstr(qbe, "call $ints(l %") != NULL);
+    ASSERT_TRUE(strstr(qbe, "call $texts(l %") != NULL);
+    ASSERT_TRUE(strstr(qbe, "call $fern_result_err(w ") == NULL);
+    ASSERT_TRUE(strstr(qbe, "call $fern_result_err(l ") != NULL);
+    ASSERT_TRUE(strstr(qbe, "=l extsw") != NULL);
+    const char* concat = strstr(qbe, "call $fern_str_concat");
+    ASSERT_NOT_NULL(concat);
+    ASSERT_TRUE(strstr(concat + 1, "call $fern_str_concat") == NULL);
     arena_destroy(arena);
 }
 
@@ -1069,6 +1103,7 @@ void run_codegen_tests(void) {
     TEST_RUN(test_codegen_float_literal);
     
     /* Match expressions */
+    TEST_RUN(test_codegen_result_pattern_binding_semantic_types);
     TEST_RUN(test_codegen_match_int);
     TEST_RUN(test_codegen_match_wildcard);
     

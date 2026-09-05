@@ -6,7 +6,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 
 ## Current Status Snapshot
 
-- Quality gate: `just check` passing (542 C tests, native workflow/string/print tests, 13 TUI tests, 18 examples, strict style); validated with stale host `LIBRARY_PATH` excluded
+- Quality gate: `just check` passing (550 C tests, native workflow/string/print tests, 13 TUI tests, 18 examples, strict style); validated with stale host `LIBRARY_PATH` excluded
 - Perf gate: `just perf-budget` passing on macOS arm64 (7.49 s build, 549,384-byte compiler, 2.82 ms startup p95)
 - Fuzz gate: `just fuzz-smoke` passing (64 cases, seed `0xC0FFEE`)
 - Docs gate: `just docs-check` passing (consistency, generation, doc tests); LSP RPC smoke passing
@@ -44,6 +44,8 @@ Status: Complete for the bounded prototype; `just check`, `just rust-check`, and
 - [x] Record evidence, gaps, and a migration recommendation before expanding scope ([evaluation](docs/RUST_FRONTEND_EVALUATION.md)): continue Rust incrementally; require parity before switching defaults.
 
 ## Active Priorities
+
+- [x] Make directory listing failures explicit Results, migrate native callers and preserve semantic payload/argument widths (directory and Int/String Result native regressions).
 
 - [x] Parse multiline match arms and mixed conditional layouts without losing outer scope; terminate on syntax errors (seven parser regressions and native bootstrap parity).
 

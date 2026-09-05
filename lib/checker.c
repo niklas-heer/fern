@@ -625,11 +625,15 @@ static Type* lookup_module_function(Checker* checker, const char* module, const 
             TypeVec_push(arena, params, type_string(arena));
             return type_fn(arena, params, type_bool(arena));
         }
-        /* File.list_dir(String) -> List(String) */
+        /* File.list_dir(String) -> Result(List(String), Int) */
         if (strcmp(func, "list_dir") == 0) {
             params = TypeVec_new(arena);
             TypeVec_push(arena, params, type_string(arena));
-            return type_fn(arena, params, type_list(arena, type_string(arena)));
+            result_args = TypeVec_new(arena);
+            TypeVec_push(arena, result_args, type_list(arena, type_string(arena)));
+            TypeVec_push(arena, result_args, type_int(arena));
+            result_type = type_con(arena, string_new(arena, "Result"), result_args);
+            return type_fn(arena, params, result_type);
         }
     }
 
@@ -3446,6 +3450,7 @@ Type* checker_infer_expr(Checker* checker, Expr* expr) {
     SourceLoc previous_loc = checker->current_expr_loc;
     checker->current_expr_loc = expr->loc;
     Type* result = checker_infer_expr_impl(checker, expr);
+    expr->checked_type = result;
     checker->current_expr_loc = previous_loc;
     return result;
 }
@@ -3632,6 +3637,7 @@ static bool bind_pattern(Checker* checker, Pattern* pattern, Type* type) {
     assert(pattern != NULL);
     switch (pattern->type) {
         case PATTERN_IDENT:
+            pattern->checked_type = type;
             checker_define(checker, pattern->data.ident, type);
             return true;
             

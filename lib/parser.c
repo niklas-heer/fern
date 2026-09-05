@@ -703,6 +703,7 @@ static Expr* parse_postfix_call(Parser* parser, Expr* expr) {
     consume(parser, TOKEN_RPAREN, "Expected ')' after arguments");
     
     Expr* call = arena_alloc(parser->arena, sizeof(Expr));
+    call->checked_type = NULL;
     call->type = EXPR_CALL;
     call->loc = loc;
     call->data.call.func = expr;
@@ -831,6 +832,7 @@ static Pattern* parse_pattern(Parser* parser) {
     // Literal patterns: integers, strings, booleans
     Expr* pattern_expr = parse_primary_internal(parser);
     Pattern* pat = arena_alloc(parser->arena, sizeof(Pattern));
+    pat->checked_type = NULL;
     pat->type = PATTERN_LIT;
     pat->loc = pattern_expr->loc;
     pat->data.literal = pattern_expr;

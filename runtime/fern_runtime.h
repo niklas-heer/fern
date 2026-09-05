@@ -811,6 +811,13 @@ int64_t fern_is_dir(const char* path);
  */
 FernStringList* fern_list_dir(const char* path);
 
+/**
+ * List directory names with explicit filesystem errors; path must not be NULL.
+ * @param path Directory to enumerate; dot entries are excluded.
+ * @return Result: Ok(FernStringList pointer) or Err(FERN_ERR_*); no partial success.
+ */
+int64_t fern_read_dir_result(const char* path);
+
 /* Error codes for file operations */
 #define FERN_ERR_FILE_NOT_FOUND  1
 #define FERN_ERR_PERMISSION      2

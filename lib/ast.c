@@ -16,6 +16,7 @@ Expr* expr_int_lit(Arena* arena, int64_t value, SourceLoc loc) {
     assert(loc.line >= 0);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_INT_LIT;
     expr->loc = loc;
     expr->data.int_lit.value = value;
@@ -35,6 +36,7 @@ Expr* expr_float_lit(Arena* arena, double value, SourceLoc loc) {
     assert(loc.line >= 0);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_FLOAT_LIT;
     expr->loc = loc;
     expr->data.float_lit.value = value;
@@ -54,6 +56,7 @@ Expr* expr_string_lit(Arena* arena, String* value, SourceLoc loc) {
     assert(value != NULL);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_STRING_LIT;
     expr->loc = loc;
     expr->data.string_lit.value = value;
@@ -73,6 +76,7 @@ Expr* expr_bool_lit(Arena* arena, bool value, SourceLoc loc) {
     assert(loc.line >= 0);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_BOOL_LIT;
     expr->loc = loc;
     expr->data.bool_lit.value = value;
@@ -92,6 +96,7 @@ Expr* expr_ident(Arena* arena, String* name, SourceLoc loc) {
     assert(name != NULL);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_IDENT;
     expr->loc = loc;
     expr->data.ident.name = name;
@@ -114,6 +119,7 @@ Expr* expr_binary(Arena* arena, BinaryOp op, Expr* left, Expr* right, SourceLoc 
     assert(right != NULL);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_BINARY;
     expr->loc = loc;
     expr->data.binary.op = op;
@@ -136,6 +142,7 @@ Expr* expr_unary(Arena* arena, UnaryOp op, Expr* operand, SourceLoc loc) {
     assert(operand != NULL);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_UNARY;
     expr->loc = loc;
     expr->data.unary.op = op;
@@ -167,6 +174,7 @@ Expr* expr_call(Arena* arena, Expr* func, Expr** args, size_t num_args, SourceLo
     }
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_CALL;
     expr->loc = loc;
     expr->data.call.func = func;
@@ -191,6 +199,7 @@ Expr* expr_if(Arena* arena, Expr* condition, Expr* then_branch, Expr* else_branc
     // else_branch can be NULL
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_IF;
     expr->loc = loc;
     expr->data.if_expr.condition = condition;
@@ -213,6 +222,7 @@ Expr* expr_match(Arena* arena, Expr* value, MatchArmVec* arms, SourceLoc loc) {
     assert(arms != NULL);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_MATCH;
     expr->loc = loc;
     expr->data.match_expr.value = value;
@@ -234,6 +244,7 @@ Expr* expr_block(Arena* arena, StmtVec* stmts, Expr* final_expr, SourceLoc loc) 
     assert(stmts != NULL);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_BLOCK;
     expr->loc = loc;
     expr->data.block.stmts = stmts;
@@ -254,6 +265,7 @@ Expr* expr_list(Arena* arena, ExprVec* elements, SourceLoc loc) {
     assert(elements != NULL);
     
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_LIST;
     expr->loc = loc;
     expr->data.list.elements = elements;
@@ -275,6 +287,7 @@ Expr* expr_bind(Arena* arena, String* name, Expr* value, SourceLoc loc) {
     assert(value != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_BIND;
     expr->loc = loc;
     expr->data.bind.name = name;
@@ -298,6 +311,7 @@ Expr* expr_with(Arena* arena, WithBindingVec* bindings, Expr* body, MatchArmVec*
     assert(body != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_WITH;
     expr->loc = loc;
     expr->data.with_expr.bindings = bindings;
@@ -321,6 +335,7 @@ Expr* expr_dot(Arena* arena, Expr* object, String* field, SourceLoc loc) {
     assert(field != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_DOT;
     expr->loc = loc;
     expr->data.dot.object = object;
@@ -344,6 +359,7 @@ Expr* expr_range(Arena* arena, Expr* start, Expr* end, bool inclusive, SourceLoc
     assert(end != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_RANGE;
     expr->loc = loc;
     expr->data.range.start = start;
@@ -369,6 +385,7 @@ Expr* expr_for(Arena* arena, String* var_name, Expr* iterable, Expr* body, Sourc
     assert(body != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_FOR;
     expr->loc = loc;
     expr->data.for_loop.var_name = var_name;
@@ -392,6 +409,7 @@ Expr* expr_lambda(Arena* arena, StringVec* params, Expr* body, SourceLoc loc) {
     assert(body != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_LAMBDA;
     expr->loc = loc;
     expr->data.lambda.params = params;
@@ -412,6 +430,7 @@ Expr* expr_tuple(Arena* arena, ExprVec* elements, SourceLoc loc) {
     assert(elements != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_TUPLE;
     expr->loc = loc;
     expr->data.tuple.elements = elements;
@@ -433,6 +452,7 @@ Expr* expr_record_update(Arena* arena, Expr* base, RecordFieldVec* fields, Sourc
     assert(fields != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_RECORD_UPDATE;
     expr->loc = loc;
     expr->data.record_update.base = base;
@@ -458,6 +478,7 @@ Expr* expr_list_comp(Arena* arena, Expr* body, String* var_name, Expr* iterable,
     assert(iterable != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_LIST_COMP;
     expr->loc = loc;
     expr->data.list_comp.body = body;
@@ -482,6 +503,7 @@ Expr* expr_index(Arena* arena, Expr* object, Expr* index, SourceLoc loc) {
     assert(index != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_INDEX;
     expr->loc = loc;
     expr->data.index_expr.object = object;
@@ -502,6 +524,7 @@ Expr* expr_spawn(Arena* arena, Expr* func, SourceLoc loc) {
     assert(func != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_SPAWN;
     expr->loc = loc;
     expr->data.spawn_expr.func = func;
@@ -523,6 +546,7 @@ Expr* expr_send(Arena* arena, Expr* pid, Expr* message, SourceLoc loc) {
     assert(message != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_SEND;
     expr->loc = loc;
     expr->data.send_expr.pid = pid;
@@ -545,6 +569,7 @@ Expr* expr_receive(Arena* arena, MatchArmVec* arms, Expr* after_timeout, Expr* a
     assert(arms != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_RECEIVE;
     expr->loc = loc;
     expr->data.receive_expr.arms = arms;
@@ -566,6 +591,7 @@ Expr* expr_try(Arena* arena, Expr* operand, SourceLoc loc) {
     assert(operand != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_TRY;
     expr->loc = loc;
     expr->data.try_expr.operand = operand;
@@ -585,6 +611,7 @@ Expr* expr_map(Arena* arena, MapEntryVec* entries, SourceLoc loc) {
     assert(entries != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_MAP;
     expr->loc = loc;
     expr->data.map.entries = entries;
@@ -604,6 +631,7 @@ Expr* expr_interp_string(Arena* arena, ExprVec* parts, SourceLoc loc) {
     assert(parts != NULL);
 
     Expr* expr = arena_alloc(arena, sizeof(Expr));
+    expr->checked_type = NULL;
     expr->type = EXPR_INTERP_STRING;
     expr->loc = loc;
     expr->data.interp_string.parts = parts;
@@ -984,6 +1012,7 @@ Pattern* pattern_ident(Arena* arena, String* name, SourceLoc loc) {
     assert(name != NULL);
     
     Pattern* pat = arena_alloc(arena, sizeof(Pattern));
+    pat->checked_type = NULL;
     pat->type = PATTERN_IDENT;
     pat->loc = loc;
     pat->data.ident = name;
@@ -1002,6 +1031,7 @@ Pattern* pattern_wildcard(Arena* arena, SourceLoc loc) {
     assert(loc.line >= 0);
     
     Pattern* pat = arena_alloc(arena, sizeof(Pattern));
+    pat->checked_type = NULL;
     pat->type = PATTERN_WILDCARD;
     pat->loc = loc;
     
@@ -1020,6 +1050,7 @@ Pattern* pattern_tuple(Arena* arena, PatternVec* elements, SourceLoc loc) {
     assert(elements != NULL);
 
     Pattern* pat = arena_alloc(arena, sizeof(Pattern));
+    pat->checked_type = NULL;
     pat->type = PATTERN_TUPLE;
     pat->loc = loc;
     pat->data.tuple = elements;
@@ -1040,6 +1071,7 @@ Pattern* pattern_rest(Arena* arena, String* name, SourceLoc loc) {
     /* name can be NULL for .._ */
 
     Pattern* pat = arena_alloc(arena, sizeof(Pattern));
+    pat->checked_type = NULL;
     pat->type = PATTERN_REST;
     pat->loc = loc;
     pat->data.rest_name = name;
@@ -1061,6 +1093,7 @@ Pattern* pattern_constructor(Arena* arena, String* name, PatternVec* args, Sourc
     assert(args != NULL);
 
     Pattern* pat = arena_alloc(arena, sizeof(Pattern));
+    pat->checked_type = NULL;
     pat->type = PATTERN_CONSTRUCTOR;
     pat->loc = loc;
     pat->data.constructor.name = name;

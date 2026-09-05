@@ -133,6 +133,22 @@ Fern codegen now inserts initial ownership operations for a constrained subset:
 
 These semantics are regression-tested in `tests/test_codegen.c` via `test_codegen_dup_inserted_for_pointer_alias_binding` and `test_codegen_drop_inserted_for_unreturned_pointer_bindings`.
 
+## Unreleased Directory Listing Migration (2026-09-05)
+
+Decision 50 changes `fs.list_dir(path)` and `File.list_dir(path)` from
+`List(String)` to `Result(List(String), Int)` in both frontends. This is an
+explicit breaking source change for the unreleased migration, not a compatible
+patch/minor change. A release carrying it must identify the break and follow
+the major-release and migration-note requirements above.
+
+Replace `let entries = fs.list_dir(path)` followed by List operations with a
+match on `Ok(entries)` / `Err(code)`, or use `fs.list_dir(path)?` inside a
+function returning a compatible Result. Empty directories produce `Ok([])`.
+Missing paths return code 1, permission failures 2, non-directories 5, and
+other open/read/close or enumeration-limit failures 3. No partial list is
+reported as successful. The legacy nullable C helper remains available for
+existing C callers; newly compiled Fern source uses the Result helper.
+
 ## Deprecation Lifecycle
 
 Every removal or incompatible behavior change must follow this sequence:
