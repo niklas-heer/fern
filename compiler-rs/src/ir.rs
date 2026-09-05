@@ -7,9 +7,17 @@ use crate::{
 pub struct LocalId(pub usize);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FunctionId(pub usize);
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Program {
     pub functions: Vec<Function>,
+    pub types: Vec<TypeLayout>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TypeLayout {
+    pub ty: Type,
+    pub variants: Vec<Vec<Type>>,
+    pub fields: Vec<String>,
 }
 #[derive(Clone, Debug)]
 pub struct Function {
@@ -34,12 +42,23 @@ pub struct Expr {
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Int(i64),
+    Float(f64),
     Bool(bool),
     String(String),
+    Interpolate(Vec<Expr>),
     Local(LocalId),
     Unit,
     List(Vec<Expr>),
+    Tuple(Vec<Expr>),
     Try(Box<Expr>),
+    CustomConstruct {
+        tag: usize,
+        fields: Vec<Expr>,
+    },
+    Field {
+        value: Box<Expr>,
+        index: usize,
+    },
     Construct {
         constructor: Constructor,
         value: Option<Box<Expr>>,
@@ -72,17 +91,23 @@ pub enum ExprKind {
 #[derive(Clone, Debug)]
 pub struct MatchArm {
     pub pattern: Pattern,
+    pub guard: Option<Expr>,
     pub body: Expr,
     pub span: Span,
 }
 
 #[derive(Clone, Debug)]
 pub enum Pattern {
+    Tuple(Vec<Pattern>),
     Wildcard,
     Bind(LocalId),
     Int(i64),
     Bool(bool),
     String(String),
+    Variant {
+        tag: usize,
+        fields: Vec<Pattern>,
+    },
     Constructor {
         constructor: Constructor,
         binding: Option<LocalId>,
@@ -97,6 +122,7 @@ pub enum Stmt {
 pub enum CallTarget {
     Function(FunctionId),
     Builtin(Builtin),
+    Runtime(usize),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Builtin {

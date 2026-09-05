@@ -17,6 +17,8 @@ just rust-build
 ./hello-rs
 ./bin/fern-rs run compiler-rs/tests/corpus/string_function.fn
 ./bin/fern-rs run compiler-rs/tests/collections/propagation.fn
+./bin/fern-rs run compiler-rs/tests/types/project/main.fn
+./bin/fern-rs fmt source.fn
 just rust-check
 ```
 
@@ -32,17 +34,23 @@ cargo run --locked --offline --manifest-path compiler-rs/Cargo.toml -- check exa
 The helper and archive are located beside `fern-rs`, then in the development
 checkout. `FERN_QBE` and `FERN_RUNTIME_LIB` override their paths; `CC` selects a
 single compiler executable (not a shell command). `run source.fn -- args` forwards
-literal arguments, although this subset has no argument-reading builtin yet.
+literal arguments, available through `System.arg`, `System.args`, and `System.args_count`.
 
 ## Supported language
 
 - Top-level functions, typed parameters, explicit return annotations, forward and
   recursive calls. Parameterless `main` returns `Int` or `Unit`; omitted `main`
   return type means `Unit`. Other functions require a return annotation.
-- Signed 64-bit `Int`, `Bool`, UTF-8 `String`, `Unit`/`()`, and recursively nested
+- Signed 64-bit `Int`, IEEE double `Float`, `Bool`, UTF-8 `String`, `Unit`/`()`, and recursively nested
   concrete `List(T)`, `Option(T)`, and `Result(T, E)` types.
+- Custom sum and record declarations, concrete generic type applications, record fields,
+  and generic functions specialized for their concrete call types.
+- Module declarations, public functions/types, qualified/aliased/selected imports,
+  and public reexports from `module.fn` or `module/mod.fn`.
 - Immutable `let` with inferred or annotated type, lexical scopes, and shadowing.
-- Integer arithmetic, comparisons, string addition/equality, boolean operators
+- Structural tuple types/literals, nested tuple patterns/destructuring, and `.0` field access.
+- Standard and placeholder pipes evaluate their input exactly once before other arguments.
+- Integer/Float arithmetic and comparisons, string addition/equality, boolean operators
   with short-circuit evaluation, and unary `-`/`not`.
 - Inline and indented `if`/`else`, including value-producing branches. An `if`
   without `else` has type `Unit`.
@@ -52,20 +60,29 @@ literal arguments, although this subset has no argument-reading builtin yet.
 - `Some`, `None`, `Ok`, and `Err`, with payload types inferred from bindings,
   function signatures, calls, and branches. Empty lists also use this context.
 - Exhaustive `match` on scalar literals, Bool, Option, or Result, with wildcard
-  and name catchalls, constructor payload bindings, and scoped multiline arms.
+  and name catchalls, recursively nested constructor patterns, guards, and scoped multiline arms.
+  Guarded arms do not establish exhaustiveness.
 - Postfix `?` unwraps Ok or immediately returns Err from a Result-returning helper;
   the enclosing error type must agree. Result expressions cannot be silently
   discarded. Main still returns Int or Unit and must explicitly handle errors.
 - `Option.is_some/is_none/unwrap_or` and `Result.is_ok/is_err/unwrap_or`.
 - Multiline lists, calls, and type arguments with checked delimiters.
+- Nested string interpolation with Int/Float/Bool/String expressions and escaped literal braces.
 - Line comments, string escapes, and source-located diagnostics.
+- Audited runtime bindings for files, strings, regex, arguments/processes, SQLite,
+  HTTP clients, explicit mailboxes and terminal UI. Opaque annotations are qualified
+  (`Tui.Panel`, `Tui.Tree`, etc.), keeping ordinary user-defined names available.
 
-Unsupported syntax produces diagnostics. Gaps include modules/imports, public
-declarations, user-defined generics and algebraic types, maps/tuples/records,
-nested constructor patterns, match guards, closures, pipelines, actors, the wider
-standard library, multiline strings, interpolation, block comments, named arguments,
-non-ASCII identifiers, and inferred return types outside `main`. There is no
-formatter, REPL, package manager, or LSP in this prototype.
+Unsupported syntax produces diagnostics. Gaps include maps, closures/higher-order
+calls, actor execution, triple-quoted multiline strings, block comments, named
+arguments, non-ASCII identifiers, and inferred return types outside `main`.
+`with`, general early returns and full release parity remain migration work.
+
+`fmt` formats the supported syntax in place, preserves comments, and verifies that
+the complete syntax tree remains equivalent before replacing the file atomically.
+Comments inside multiline arguments may move adjacent to their statement. Invalid
+source remains untouched. Generic bodies are checked at concrete instantiation;
+unused generic bodies currently receive structural/signature validation only.
 
 An expression such as `let empty = []` or `let missing = None` needs enough later
 usage or an annotation to determine its payload type. For example,
@@ -81,10 +98,27 @@ arithmetic error handling (including divide by zero) remains future work. A sour
 file is limited to 1 MiB, 65,536 tokens, and a syntax nesting depth of 128. These
 explicit prototype limits prevent unbounded parser recursion/allocation.
 
+## Interactive and editor tools
+
+`fern-rs repl` evaluates expressions, successful `let` bindings and typed function
+or type definitions. Submit an indented block with a blank line. `:help`, `:reset`
+and `:quit` control the session. It checks typed IR and retains values without
+replaying earlier effects. Core values, matching, tuples, generics, common string
+and list APIs, and local file operations execute interactively. Unsupported native
+APIs produce a source-facing diagnostic; use `run` for those programs. Evaluation,
+input, allocations and value previews are bounded. Session errors preserve prior
+bindings; already completed filesystem effects cannot be rolled back.
+
+`fern-rs lsp` serves JSON-RPC on standard input/output. It supports lifecycle,
+UTF-16 diagnostics, full/incremental document changes and module-aware checking
+against unsaved buffers. Imported errors retain their source URI; dependency edits
+recheck callers and clear stale diagnostics. It currently reports the first error
+per checked module graph and advertises diagnostics/synchronization only.
+
 ## Architecture
 
 ```text
-UTF-8 source → Rust lexer/parser → source AST
+UTF-8 module graph → Rust lexer/parser → qualified source AST
             → name/type checking → typed IR (Type, FunctionId, LocalId)
             → QBE text → fern-qbe process → assembly
             → host C compiler/linker + existing C runtime → executable
@@ -104,8 +138,8 @@ runtime semantics are unchanged. Lists and Results reuse the C runtime's existin
 heap representations. Rust Options also use its heap-backed Result allocation,
 tag, and payload helpers internally: Some is Ok and None is Err with unused zero
 payload. This preserves full 64-bit integers and pointers. The C compiler's packed
-Option ABI truncates payloads to 32 bits, so Rust does not call those Option APIs;
-future C APIs returning packed Options will need explicit adapters. Semantic
+Option ABI truncates payloads to 32 bits. Rust explicitly adapts the lossless byte
+payload from `String.char_at`; additional packed APIs require an ABI audit. Semantic
 Option and Result types remain distinct in checked IR.
 
 Native tools receive literal argument vectors. Private temporary directories own

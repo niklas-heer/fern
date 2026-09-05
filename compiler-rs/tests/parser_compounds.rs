@@ -89,12 +89,6 @@ fn scalar_and_wildcard_match_patterns() {
 #[test]
 fn unsupported_patterns_and_bad_compound_syntax_are_explicit() {
     for (source, message) in [
-        (
-            "fn main():\n    match 0:\n        Some(Some(x)) -> 0",
-            "nested",
-        ),
-        ("fn main():\n    match 0:\n        Some(1) -> 0", "payload"),
-        ("fn main():\n    match 0:\n        x if true -> 0", "guards"),
         ("fn main():\n    match 0:\n        None(x) -> 0", "None"),
         ("fn main(xs: List()) -> Int: 0", "type"),
         ("fn main(xs: Result(Int)) -> Int: 0", "','"),
@@ -125,7 +119,26 @@ fn compound_type_and_literal_depth_are_bounded() {
 #[test]
 fn nested_nullary_constructor_is_not_a_payload_binding() {
     let source = "fn main():\n    match None:\n        Some(None) -> 0\n";
-    assert!(parse(source).unwrap_err().message.contains("nested"));
+    let program = parse(source).unwrap();
+    let ExprKind::Block(statements) = &program.functions[0].body.kind else {
+        panic!()
+    };
+    let Stmt::Expr(value) = &statements[0] else {
+        panic!()
+    };
+    let ExprKind::Match { arms, .. } = &value.kind else {
+        panic!()
+    };
+    let PatternKind::NamedConstructor { fields, .. } = &arms[0].pattern.kind else {
+        panic!()
+    };
+    assert!(matches!(
+        &fields[0].kind,
+        PatternKind::Constructor {
+            constructor: Constructor::None,
+            ..
+        }
+    ));
 }
 
 #[test]

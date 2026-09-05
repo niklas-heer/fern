@@ -48,7 +48,10 @@ fn main_fn(body: Expr) -> Function {
     fun("main", None, body)
 }
 fn checked(functions: Vec<Function>) -> Result<ir::Program, fern_prototype::Diagnostic> {
-    check::check(&Program { functions })
+    check::check(&Program {
+        functions,
+        ..Program::default()
+    })
 }
 fn rejects(functions: Vec<Function>, fragment: &str) {
     let diagnostic = checked(functions).expect_err("invalid AST accepted");
@@ -168,7 +171,7 @@ fn validates_all_builtin_contracts() {
         rejects(vec![main_fn(call(n, vec![]))], "argument");
         rejects(
             vec![main_fn(call(n, vec![block(vec![])]))],
-            "Int, Bool, or String",
+            "print argument must be",
         );
     }
     for (n, args, ty) in [

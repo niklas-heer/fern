@@ -1,0 +1,20 @@
+fn probe(value: Int) -> Bool:
+    println(value)
+    value > 1
+
+fn describe(value: Option(Option(Bool))) -> String:
+    match value:
+        Some(Some(true)) -> "yes"
+        Some(Some(false)) -> "no"
+        Some(None) -> "inner empty"
+        None -> "outer empty"
+
+fn main():
+    println(describe(Some(Some(true))))
+    println(describe(Some(Some(false))))
+    println(describe(Some(None)))
+    println(describe(None))
+    match Some(2):
+        Some(n) if probe(1) -> println(n + 100)
+        Some(n) if probe(n) -> println(n)
+        _ -> println(0)

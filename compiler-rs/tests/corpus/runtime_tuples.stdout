@@ -1,0 +1,26 @@
+7
+stdout
+stderr
+0
+literal ' ; $(echo forbidden) 🌿
+true
+-1
+No command specified
+2
+5
+abc
+true
+true
+0
+0
+true
+3
+abc123
+abc
+123
+3
+6
+0
+0
+80
+24

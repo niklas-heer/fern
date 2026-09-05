@@ -1,0 +1,15 @@
+fn number(value: Int) -> Int:
+    println(value)
+    value
+
+fn describe(value: a) -> String:
+    "generic={value}"
+
+fn main():
+    let name = "🌿"
+    println("Hello {name}, answer={40 + 2}!")
+    println("{9223372036854775807} {-9223372036854775808}")
+    println("bool={true}/{false} float={1.25}")
+    println("literal \{brace\}; {"nested {name} # text"}")
+    println("{number(1)}:{number(2)}")
+    println(describe(42))

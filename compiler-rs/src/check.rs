@@ -1,6 +1,11 @@
 //! Resolve source names and types once, including local compound-type inference.
-use crate::{ast, ir, Constructor, Diagnostic, Span, Type};
+use crate::{ast, ir, runtime, Constructor, Diagnostic, Span, Type};
 use std::collections::{HashMap, HashSet};
+mod coverage;
+mod nominal;
+mod pipes;
+mod preflight;
+mod specialize;
 
 const MAX_EXPR_DEPTH: usize = 128;
 const MAX_EXPR_COUNT: usize = 100_000;
@@ -15,6 +20,7 @@ struct Signature {
     id: ir::FunctionId,
     params: Vec<Type>,
     result: Type,
+    generics: Vec<String>,
 }
 #[derive(Default)]
 struct Inference {
@@ -23,6 +29,7 @@ struct Inference {
 }
 struct Checker<'a> {
     signatures: &'a HashMap<String, Signature>,
+    registry: &'a nominal::Registry,
     scopes: Vec<HashMap<String, (ir::LocalId, Type)>>,
     local_count: usize,
     expr_count: usize,
@@ -33,27 +40,17 @@ struct Checker<'a> {
 /// Resolve `program` into fully concrete IR or its first source diagnostic.
 /// No preconditions: caller-created syntax and recursive types are validated too.
 pub fn check(program: &ast::Program) -> Checked<ir::Program> {
-    let signatures = signatures(program)?;
-    let functions = program
-        .functions
-        .iter()
-        .map(|function| {
-            Checker {
-                signatures: &signatures,
-                scopes: vec![HashMap::new()],
-                local_count: 0,
-                expr_count: 0,
-                inference: Inference::default(),
-                function_return: Type::Unit,
-            }
-            .function(function)
-        })
-        .collect::<Checked<Vec<_>>>()?;
-    Ok(ir::Program { functions })
+    preflight::check(program)?;
+    let registry = nominal::Registry::new(program)?;
+    let signatures = signatures(program, &registry)?;
+    specialize::run(program, &registry, &signatures)
 }
 
 /// Collect validated concrete signatures from `program` before checking bodies.
-fn signatures(program: &ast::Program) -> Checked<HashMap<String, Signature>> {
+fn signatures(
+    program: &ast::Program,
+    registry: &nominal::Registry,
+) -> Checked<HashMap<String, Signature>> {
     if program.functions.len() > MAX_FUNCTIONS {
         return Err(Diagnostic::new(
             Span::default(),
@@ -71,7 +68,7 @@ fn signatures(program: &ast::Program) -> Checked<HashMap<String, Signature>> {
                 ),
             ));
         }
-        if reserved(&function.name) {
+        if reserved(&function.name) || registry.constructor(&function.name).is_some() {
             return Err(Diagnostic::new(
                 function.span,
                 format!(
@@ -83,6 +80,18 @@ fn signatures(program: &ast::Program) -> Checked<HashMap<String, Signature>> {
         let result = function_result(function)?;
         validate_type(&result, function.span)?;
         validate_parameters(function)?;
+        let generics = nominal::generics(
+            function
+                .params
+                .iter()
+                .map(|p| p.ty.clone())
+                .chain(std::iter::once(result.clone())),
+        );
+        let allowed = generics.iter().cloned().collect();
+        registry.validate(&result, &allowed, function.span)?;
+        for param in &function.params {
+            registry.validate(&param.ty, &allowed, param.span)?;
+        }
         signatures.insert(
             function.name.clone(),
             Signature {
@@ -93,6 +102,7 @@ fn signatures(program: &ast::Program) -> Checked<HashMap<String, Signature>> {
                     .map(|param| param.ty.clone())
                     .collect(),
                 result,
+                generics,
             },
         );
     }
@@ -107,7 +117,15 @@ fn signatures(program: &ast::Program) -> Checked<HashMap<String, Signature>> {
 
 /// Return whether `name` denotes a builtin function, namespace, or sum constructor.
 fn reserved(name: &str) -> bool {
+    if runtime::native_type(name).is_some() {
+        return true;
+    }
     builtin(name).is_some()
+        || runtime::lookup(name).is_some()
+        || runtime::names().iter().any(|api| {
+            api.strip_prefix(name)
+                .is_some_and(|suffix| suffix.starts_with('.'))
+        })
         || matches!(
             name,
             "String" | "List" | "Option" | "Result" | "Some" | "None" | "Ok" | "Err"
@@ -177,7 +195,8 @@ fn validate_type(ty: &Type, span: Span) -> Checked<()> {
             Type::Infer(_) => return Err(Diagnostic::new(span, "explicit types cannot contain inference variables; generic definitions are unsupported")),
             Type::List(inner) | Type::Option(inner) => pending.push((inner, depth + 1)),
             Type::Result(ok, err) => { pending.push((ok, depth + 1)); pending.push((err, depth + 1)); }
-            Type::Int | Type::Bool | Type::String | Type::Unit => {}
+            Type::Tuple(args) | Type::Named(_, args) => pending.extend(args.iter().map(|a|(a, depth + 1))),
+            Type::Native(_) | Type::Generic(_) | Type::Float | Type::Int | Type::Bool | Type::String | Type::Unit => {}
         }
     }
     Ok(())
@@ -219,6 +238,17 @@ impl Inference {
                 Some(None) => ty.clone(),
                 None => return Err(Diagnostic::new(span, "invalid inference variable")),
             },
+            Type::Tuple(args) => Type::Tuple(
+                args.iter()
+                    .map(|a| self.resolve_inner(a, span, depth + 1, budget))
+                    .collect::<Checked<Vec<_>>>()?,
+            ),
+            Type::Named(name, args) => Type::Named(
+                name.clone(),
+                args.iter()
+                    .map(|a| self.resolve_inner(a, span, depth + 1, budget))
+                    .collect::<Checked<Vec<_>>>()?,
+            ),
             Type::List(inner) => Type::List(Box::new(self.resolve_inner(
                 inner,
                 span,
@@ -251,6 +281,18 @@ impl Inference {
             (Type::List(a), Type::List(b)) | (Type::Option(a), Type::Option(b)) => {
                 self.unify(a, b, span, context)
             }
+            (Type::Named(a, xs), Type::Named(b, ys)) if a == b && xs.len() == ys.len() => {
+                for (x, y) in xs.iter().zip(ys) {
+                    self.unify(x, y, span, context)?;
+                }
+                Ok(())
+            }
+            (Type::Tuple(xs), Type::Tuple(ys)) if xs.len() == ys.len() => {
+                for (x, y) in xs.iter().zip(ys) {
+                    self.unify(x, y, span, context)?;
+                }
+                Ok(())
+            }
             (Type::Result(a, b), Type::Result(c, d)) => {
                 self.unify(a, c, span, context)?;
                 self.unify(b, d, span, context)
@@ -282,6 +324,7 @@ impl Inference {
                     pending.push(ok);
                     pending.push(err);
                 }
+                Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
                 _ => {}
             }
         }
@@ -309,7 +352,7 @@ impl Inference {
         let mut pending = vec![&ty];
         while let Some(ty) = pending.pop() {
             match ty {
-                Type::Infer(_) => {
+                Type::Infer(_) | Type::Generic(_) => {
                     return Err(Diagnostic::new(
                         span,
                         "cannot infer compound payload type; add a concrete type annotation",
@@ -320,6 +363,7 @@ impl Inference {
                     pending.push(ok);
                     pending.push(err);
                 }
+                Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
                 _ => {}
             }
         }
@@ -332,7 +376,7 @@ impl Checker<'_> {
     fn function(&mut self, function: &ast::Function) -> Checked<ir::Function> {
         let signature = &self.signatures[&function.name];
         let id = signature.id;
-        let return_type = signature.result.clone();
+        let return_type = function_result(function)?;
         self.function_return = return_type.clone();
         let params: Vec<ir::Param> = function
             .params
@@ -349,9 +393,9 @@ impl Checker<'_> {
                 .unify(&body.ty, &return_type, body.span, "function return")?;
         }
         self.finalize(&mut body)?;
-        reject_unused_results(&body, &params)?;
+        reject_unused_results(&body, &params, self.registry)?;
         if unit_main {
-            reject_discard(&body)?;
+            reject_discard(&body, self.registry)?;
         }
         Ok(ir::Function {
             id,
@@ -401,11 +445,31 @@ impl Checker<'_> {
         }
         let (kind, ty) = match &expr.kind {
             ast::ExprKind::Int(n) => (ir::ExprKind::Int(*n), Type::Int),
+            ast::ExprKind::Float(n) => (ir::ExprKind::Float(*n), Type::Float),
             ast::ExprKind::Bool(b) => (ir::ExprKind::Bool(*b), Type::Bool),
             ast::ExprKind::String(s) => (ir::ExprKind::String(s.clone()), Type::String),
+            ast::ExprKind::Interpolate(parts) => self.interpolate(parts, expr.span, depth + 1)?,
             ast::ExprKind::Unit => (ir::ExprKind::Unit, Type::Unit),
             ast::ExprKind::Try(value) => self.propagate(value, expr.span, depth + 1)?,
+            ast::ExprKind::Pipe {
+                value,
+                name,
+                args,
+                position,
+            } => self.pipe(value, name, args, *position, expr.span, depth + 1)?,
+            ast::ExprKind::Field { value, name } => {
+                let value = self.expression(value, depth + 1)?;
+                self.field(value, name, expr.span)?
+            }
             ast::ExprKind::Name(name) => self.name(name, expr.span)?,
+            ast::ExprKind::Tuple(values) => {
+                let values = values
+                    .iter()
+                    .map(|v| self.expression(v, depth + 1))
+                    .collect::<Checked<Vec<_>>>()?;
+                let ty = Type::Tuple(values.iter().map(|v| v.ty.clone()).collect());
+                (ir::ExprKind::Tuple(values), ty)
+            }
             ast::ExprKind::List(values) => self.list(values, depth + 1)?,
             ast::ExprKind::Match { value, arms } => {
                 self.matching(value, arms, expr.span, depth + 1)?
@@ -427,6 +491,27 @@ impl Checker<'_> {
             ty,
             span: expr.span,
         })
+    }
+
+    /// Lower text and embedded values in their original evaluation order.
+    fn interpolate(
+        &mut self,
+        parts: &[ast::StringPart],
+        span: Span,
+        depth: usize,
+    ) -> Checked<TypedKind> {
+        let mut values = Vec::new();
+        for part in parts {
+            values.push(match part {
+                ast::StringPart::Text(text) => ir::Expr {
+                    kind: ir::ExprKind::String(text.clone()),
+                    ty: Type::String,
+                    span,
+                },
+                ast::StringPart::Value(value) => self.expression(value, depth)?,
+            });
+        }
+        Ok((ir::ExprKind::Interpolate(values), Type::String))
     }
 
     /// Propagate an error from `value` only within a compatible Result-returning function.
@@ -452,6 +537,23 @@ impl Checker<'_> {
     fn name(&mut self, name: &str, span: Span) -> Checked<TypedKind> {
         if let Some((id, ty)) = self.local(name) {
             return Ok((ir::ExprKind::Local(id), ty));
+        }
+        if let Some((root, rest)) = name.split_once('.') {
+            if let Some((id, ty)) = self.local(root) {
+                let mut value = ir::Expr {
+                    kind: ir::ExprKind::Local(id),
+                    ty,
+                    span,
+                };
+                for field in rest.split('.') {
+                    let (kind, ty) = self.field(value, field, span)?;
+                    value = ir::Expr { kind, ty, span };
+                }
+                return Ok((value.kind, value.ty));
+            }
+        }
+        if self.registry.constructor(name).is_some() {
+            return self.custom_construct(name, &[], span, 0);
         }
         if name == "None" {
             return Ok((
@@ -495,7 +597,7 @@ impl Checker<'_> {
                     span,
                 } => {
                     if let Some(expected) = annotation {
-                        validate_type(expected, *span)?;
+                        self.registry.validate(expected, &HashSet::new(), *span)?;
                     }
                     let value = self.expression(value, depth)?;
                     if let Some(expected) = annotation {
@@ -504,6 +606,22 @@ impl Checker<'_> {
                     }
                     let id = self.bind(name, value.ty.clone());
                     checked.push(ir::Stmt::Let { id, value });
+                    ty = Type::Unit;
+                }
+                ast::Stmt::LetPattern {
+                    pattern,
+                    annotation,
+                    value,
+                    span,
+                } => {
+                    self.destructure(
+                        pattern,
+                        annotation.as_ref(),
+                        value,
+                        *span,
+                        depth,
+                        &mut checked,
+                    )?;
                     ty = Type::Unit;
                 }
                 ast::Stmt::Expr(value) => {
@@ -517,10 +635,97 @@ impl Checker<'_> {
         Ok((ir::ExprKind::Block(checked), ty))
     }
 
+    /// Bind an irrefutable tuple once, then lower each binding to typed field access.
+    fn destructure(
+        &mut self,
+        pattern: &ast::Pattern,
+        annotation: Option<&Type>,
+        value: &ast::Expr,
+        span: Span,
+        depth: usize,
+        statements: &mut Vec<ir::Stmt>,
+    ) -> Checked<()> {
+        if let Some(ty) = annotation {
+            self.registry.validate(ty, &HashSet::new(), span)?;
+        }
+        let value = self.expression(value, depth)?;
+        if let Some(ty) = annotation {
+            self.inference
+                .unify(&value.ty, ty, span, "let annotation")?;
+        }
+        let checked = self.pattern(pattern, &value.ty, &mut HashSet::new(), 0)?;
+        let ty = self.inference.resolve(&value.ty, span)?;
+        let id = self.bind("_", ty.clone());
+        statements.push(ir::Stmt::Let { id, value });
+        Self::destructure_fields(
+            &checked,
+            ir::Expr {
+                kind: ir::ExprKind::Local(id),
+                ty,
+                span,
+            },
+            statements,
+            self.registry,
+            0,
+        )
+    }
+
+    /// Project nested tuple bindings without reevaluating their original initializer.
+    fn destructure_fields(
+        pattern: &ir::Pattern,
+        value: ir::Expr,
+        statements: &mut Vec<ir::Stmt>,
+        registry: &nominal::Registry,
+        depth: usize,
+    ) -> Checked<()> {
+        if depth >= MAX_EXPR_DEPTH {
+            return Err(Diagnostic::new(
+                value.span,
+                "tuple binding depth limit exceeded",
+            ));
+        }
+        match pattern {
+            ir::Pattern::Bind(id) => statements.push(ir::Stmt::Let { id: *id, value }),
+            ir::Pattern::Wildcard => reject_discard(&value, registry)?,
+            ir::Pattern::Tuple(patterns) if patterns.is_empty() && value.ty == Type::Unit => {}
+            ir::Pattern::Tuple(patterns) => {
+                let Type::Tuple(types) = &value.ty else {
+                    return Err(Diagnostic::new(
+                        value.span,
+                        "tuple binding requires a tuple",
+                    ));
+                };
+                for (index, (pattern, ty)) in patterns.iter().zip(types).enumerate() {
+                    let field = ir::Expr {
+                        kind: ir::ExprKind::Field {
+                            value: Box::new(value.clone()),
+                            index,
+                        },
+                        ty: ty.clone(),
+                        span: value.span,
+                    };
+                    Self::destructure_fields(pattern, field, statements, registry, depth + 1)?;
+                }
+            }
+            _ => {
+                return Err(Diagnostic::new(
+                    value.span,
+                    "let patterns must be irrefutable; use match for literals or constructors",
+                ))
+            }
+        }
+        Ok(())
+    }
+
     /// Check `op` and `value` at `depth`, returning a concretely constrained unary node.
     fn unary(&mut self, op: ast::UnaryOp, value: &ast::Expr, depth: usize) -> Checked<TypedKind> {
         let value = self.expression(value, depth)?;
         let ty = match op {
+            ast::UnaryOp::Negate
+                if self.inference.resolve(&value.ty, value.span)? == Type::Float =>
+            {
+                Type::Float
+            }
             ast::UnaryOp::Negate => Type::Int,
             ast::UnaryOp::Not => Type::Bool,
         };
@@ -553,12 +758,19 @@ impl Checker<'_> {
             Add => left.ty.clone(),
             Eq | Ne => Type::Bool,
             Subtract | Multiply | Divide | Remainder | Lt | Le | Gt | Ge => {
+                let numeric = if op != Remainder
+                    && self.inference.resolve(&left.ty, left.span)? == Type::Float
+                {
+                    Type::Float
+                } else {
+                    Type::Int
+                };
                 self.inference
-                    .unify(&left.ty, &Type::Int, left.span, "binary operator")?;
+                    .unify(&left.ty, &numeric, left.span, "binary operator")?;
                 if matches!(op, Lt | Le | Gt | Ge) {
                     Type::Bool
                 } else {
-                    Type::Int
+                    numeric
                 }
             }
             And | Or => {
@@ -637,15 +849,74 @@ impl Checker<'_> {
         if let Some(builtin) = builtin(name) {
             let (params, result) = self.builtin_signature(builtin);
             Ok((ir::CallTarget::Builtin(builtin), params, result))
+        } else if runtime::lookup(name).is_some() {
+            self.runtime_signature(name, span)
         } else if let Some(signature) = self.signatures.get(name) {
+            let values = signature
+                .generics
+                .iter()
+                .map(|n| (n.clone(), self.inference.fresh()))
+                .collect();
             Ok((
                 ir::CallTarget::Function(signature.id),
-                signature.params.clone(),
-                signature.result.clone(),
+                signature
+                    .params
+                    .iter()
+                    .map(|ty| nominal::substitute(ty, &values))
+                    .collect::<Checked<Vec<_>>>()?,
+                nominal::substitute(&signature.result, &values)?,
+            ))
+        } else if let Some(omission) = runtime::omissions()
+            .iter()
+            .find(|entry| entry.names.contains(&name))
+        {
+            Err(Diagnostic::new(
+                span,
+                format!("runtime API '{name}' is unsupported: {}", omission.reason),
             ))
         } else {
             Err(Diagnostic::new(span, format!("unknown function '{name}'")))
         }
+    }
+
+    /// Instantiate audited runtime signatures only when their ABI lowering is available.
+    fn runtime_signature(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> Checked<(ir::CallTarget, Vec<Type>, Type)> {
+        let id = runtime::resolve(name)
+            .ok_or_else(|| Diagnostic::new(span, "missing runtime registry identity"))?;
+        let signature = runtime::signature(id)
+            .ok_or_else(|| Diagnostic::new(span, "missing runtime registry signature"))?;
+        if signature.return_abi == runtime::ValueAbi::NullableStringList
+            || signature
+                .parameter_abi
+                .contains(&runtime::ValueAbi::NullableStringList)
+        {
+            return Err(Diagnostic::new(
+                span,
+                format!("runtime API '{name}' requires an unavailable representation adapter"),
+            ));
+        }
+        let generics = nominal::generics(
+            signature
+                .parameters
+                .iter()
+                .cloned()
+                .chain(std::iter::once(signature.return_type.clone())),
+        );
+        let values = generics
+            .into_iter()
+            .map(|name| (name, self.inference.fresh()))
+            .collect();
+        let params = signature
+            .parameters
+            .iter()
+            .map(|ty| nominal::substitute(ty, &values))
+            .collect::<Checked<Vec<_>>>()?;
+        let result = nominal::substitute(&signature.return_type, &values)?;
+        Ok((ir::CallTarget::Runtime(id), params, result))
     }
 
     /// Resolve callable `name` and unify each argument with its instantiated signature.
@@ -657,6 +928,9 @@ impl Checker<'_> {
         depth: usize,
     ) -> Checked<TypedKind> {
         self.callable_name(name, span)?;
+        if self.registry.constructor(name).is_some() {
+            return self.custom_construct(name, args, span, depth);
+        }
         if let Some(constructor) = constructor(name) {
             return self.construct(constructor, args, span, depth);
         }
@@ -747,7 +1021,7 @@ impl Checker<'_> {
         }
     }
 
-    /// Check scoped match arms, enforce reachability and unify their result types.
+    /// Check every nested pattern and guard in its own lexical arm scope.
     fn matching(
         &mut self,
         value: &ast::Expr,
@@ -755,36 +1029,34 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
+        if arms.is_empty() {
+            return Err(Diagnostic::new(span, "match must be exhaustive"));
+        }
         let value = self.expression(value, depth)?;
         let ty = self.inference.fresh();
-        let mut coverage = HashSet::new();
         let mut checked = Vec::new();
         for arm in arms {
-            let subject = self.inference.resolve(&value.ty, span)?;
-            if exhaustive(&subject, &coverage) || !coverage.insert(pattern_key(&arm.pattern.kind)) {
-                return Err(Diagnostic::new(
-                    arm.span,
-                    "unreachable duplicate or already-covered match arm",
-                ));
-            }
             self.scopes.push(HashMap::new());
-            let pattern = self.pattern(&arm.pattern, &value.ty)?;
+            let pattern = self.pattern(&arm.pattern, &value.ty, &mut HashSet::new(), 0)?;
+            let guard = arm
+                .guard
+                .as_ref()
+                .map(|g| self.expression(g, depth))
+                .transpose()?;
+            if let Some(guard) = &guard {
+                self.inference
+                    .unify(&guard.ty, &Type::Bool, guard.span, "match guard")?;
+            }
             let body = self.expression(&arm.body, depth)?;
             self.scopes.pop();
             self.inference
                 .unify(&body.ty, &ty, body.span, "match branch")?;
             checked.push(ir::MatchArm {
                 pattern,
+                guard,
                 body,
                 span: arm.span,
             });
-        }
-        let subject = self.inference.resolve(&value.ty, span)?;
-        if !exhaustive(&subject, &coverage) {
-            return Err(Diagnostic::new(
-                span,
-                "match must be exhaustive; cover every variant or add a catchall arm",
-            ));
         }
         Ok((
             ir::ExprKind::Match {
@@ -795,25 +1067,199 @@ impl Checker<'_> {
         ))
     }
 
-    /// Check a flat `pattern` against its subject `ty` and create scoped payload IDs.
-    fn pattern(&mut self, pattern: &ast::Pattern, ty: &Type) -> Checked<ir::Pattern> {
+    /// Check recursively nested patterns, rejecting duplicate binders within one arm.
+    fn pattern(
+        &mut self,
+        pattern: &ast::Pattern,
+        ty: &Type,
+        names: &mut HashSet<String>,
+        depth: usize,
+    ) -> Checked<ir::Pattern> {
         use ast::PatternKind::*;
+        if depth >= MAX_EXPR_DEPTH {
+            return Err(Diagnostic::new(
+                pattern.span,
+                "pattern nesting limit exceeded",
+            ));
+        }
         let (checked, expected) = match &pattern.kind {
+            Tuple(fields) if fields.is_empty() => {
+                self.inference
+                    .unify(ty, &Type::Unit, pattern.span, "unit pattern")?;
+                return Ok(ir::Pattern::Tuple(vec![]));
+            }
+            Tuple(fields) => {
+                let types: Vec<_> = fields.iter().map(|_| self.inference.fresh()).collect();
+                self.inference.unify(
+                    ty,
+                    &Type::Tuple(types.clone()),
+                    pattern.span,
+                    "tuple pattern",
+                )?;
+                let fields = fields
+                    .iter()
+                    .zip(types)
+                    .map(|(p, t)| self.pattern(p, &t, names, depth + 1))
+                    .collect::<Checked<Vec<_>>>()?;
+                return Ok(ir::Pattern::Tuple(fields));
+            }
             Wildcard => return Ok(ir::Pattern::Wildcard),
-            Bind(name) => return Ok(ir::Pattern::Bind(self.bind(name, ty.clone()))),
+            Bind(name) => {
+                self.pattern_name(name, names, pattern.span)?;
+                return Ok(ir::Pattern::Bind(self.bind(name, ty.clone())));
+            }
             Int(n) => (ir::Pattern::Int(*n), Type::Int),
-            Bool(value) => (ir::Pattern::Bool(*value), Type::Bool),
-            String(value) => (ir::Pattern::String(value.clone()), Type::String),
+            Bool(b) => (ir::Pattern::Bool(*b), Type::Bool),
+            String(s) => (ir::Pattern::String(s.clone()), Type::String),
             Constructor {
                 constructor,
                 binding,
             } => {
-                return self.constructor_pattern(*constructor, binding.as_deref(), ty, pattern.span)
+                if let Some(name) = binding {
+                    self.pattern_name(name, names, pattern.span)?;
+                }
+                return self.constructor_pattern(
+                    *constructor,
+                    binding.as_deref(),
+                    ty,
+                    pattern.span,
+                );
+            }
+            NamedConstructor { name, fields } => {
+                return self.named_pattern(name, fields, ty, names, pattern.span, depth + 1)
             }
         };
         self.inference
             .unify(ty, &expected, pattern.span, "match pattern")?;
         Ok(checked)
+    }
+
+    /// Record a name introduced within a pattern, allowing shadowing only across scopes.
+    fn pattern_name(&self, name: &str, names: &mut HashSet<String>, span: Span) -> Checked<()> {
+        if name != "_" && !names.insert(name.into()) {
+            return Err(Diagnostic::new(span, "duplicate pattern binding"));
+        }
+        Ok(())
+    }
+
+    /// Instantiate and check a named custom or builtin constructor's nested fields.
+    fn named_pattern(
+        &mut self,
+        name: &str,
+        fields: &[ast::Pattern],
+        ty: &Type,
+        names: &mut HashSet<String>,
+        span: Span,
+        depth: usize,
+    ) -> Checked<ir::Pattern> {
+        let (expected, tag, payload) = self.pattern_signature(name, span)?;
+        self.inference
+            .unify(ty, &expected, span, "constructor pattern")?;
+        if fields.len() != payload.len() {
+            return Err(Diagnostic::new(
+                span,
+                "constructor pattern field arity mismatch",
+            ));
+        }
+        let fields = fields
+            .iter()
+            .zip(payload)
+            .map(|(p, t)| self.pattern(p, &t, names, depth))
+            .collect::<Checked<Vec<_>>>()?;
+        Ok(ir::Pattern::Variant { tag, fields })
+    }
+
+    /// Instantiate a nominal constructor or the common builtin sum tag convention.
+    fn pattern_signature(&mut self, name: &str, span: Span) -> Checked<(Type, usize, Vec<Type>)> {
+        if let Some((owner, params, tag, fields)) = self.registry.constructor(name) {
+            let args: Vec<_> = params.iter().map(|_| self.inference.fresh()).collect();
+            let values = params.into_iter().zip(args.iter().cloned()).collect();
+            return Ok((
+                Type::Named(owner, args),
+                tag,
+                fields
+                    .iter()
+                    .map(|t| nominal::substitute(t, &values))
+                    .collect::<Checked<Vec<_>>>()?,
+            ));
+        }
+        let a = self.inference.fresh();
+        let b = self.inference.fresh();
+        match name {
+            "Some" => Ok((Type::Option(Box::new(a.clone())), 0, vec![a])),
+            "None" => Ok((Type::Option(Box::new(a)), 1, vec![])),
+            "Ok" => Ok((Type::Result(Box::new(a.clone()), Box::new(b)), 0, vec![a])),
+            "Err" => Ok((Type::Result(Box::new(a), Box::new(b.clone())), 1, vec![b])),
+            _ => Err(Diagnostic::new(
+                span,
+                format!("unknown constructor '{name}'"),
+            )),
+        }
+    }
+
+    /// Check a custom constructor call against fresh nominal type parameters.
+    fn custom_construct(
+        &mut self,
+        name: &str,
+        args: &[ast::Expr],
+        span: Span,
+        depth: usize,
+    ) -> Checked<TypedKind> {
+        let (ty, tag, fields) = self.pattern_signature(name, span)?;
+        if args.len() != fields.len() {
+            return Err(Diagnostic::new(
+                span,
+                format!("constructor '{name}' expects {} arguments", fields.len()),
+            ));
+        }
+        let mut checked = Vec::new();
+        for (arg, field) in args.iter().zip(fields) {
+            let arg = self.expression(arg, depth)?;
+            self.inference
+                .unify(&arg.ty, &field, arg.span, "constructor argument")?;
+            checked.push(arg);
+        }
+        Ok((
+            ir::ExprKind::CustomConstruct {
+                tag,
+                fields: checked,
+            },
+            ty,
+        ))
+    }
+
+    /// Resolve a record field once, retaining its index and instantiated semantic type.
+    fn field(&mut self, value: ir::Expr, name: &str, span: Span) -> Checked<TypedKind> {
+        let ty = self.inference.resolve(&value.ty, span)?;
+        if let Type::Tuple(fields) = &ty {
+            let index = name
+                .parse::<usize>()
+                .map_err(|_| Diagnostic::new(span, "tuple field must be a numeric index"))?;
+            let field = fields
+                .get(index)
+                .cloned()
+                .ok_or_else(|| Diagnostic::new(span, "tuple field index is out of range"))?;
+            return Ok((
+                ir::ExprKind::Field {
+                    value: Box::new(value),
+                    index,
+                },
+                field,
+            ));
+        }
+        let layout = self.registry.layout(&ty, span)?;
+        let index = layout
+            .fields
+            .iter()
+            .position(|field| field == name)
+            .ok_or_else(|| Diagnostic::new(span, format!("unknown record field '{name}'")))?;
+        Ok((
+            ir::ExprKind::Field {
+                value: Box::new(value),
+                index,
+            },
+            layout.variants[0][index].clone(),
+        ))
     }
 
     /// Constrain a constructor's subject and bind its selected payload, if requested.
@@ -847,7 +1293,9 @@ impl Checker<'_> {
     fn finalize(&self, expr: &mut ir::Expr) -> Checked<()> {
         expr.ty = self.inference.concrete(&expr.ty, expr.span)?;
         match &mut expr.kind {
-            ir::ExprKind::Unary { value, .. } | ir::ExprKind::Try(value) => self.finalize(value)?,
+            ir::ExprKind::Unary { value, .. }
+            | ir::ExprKind::Try(value)
+            | ir::ExprKind::Field { value, .. } => self.finalize(value)?,
             ir::ExprKind::Binary { op, left, right } => {
                 self.finalize(left)?;
                 self.finalize(right)?;
@@ -864,7 +1312,10 @@ impl Checker<'_> {
                 }
                 validate_builtin(*target, args, expr.span)?;
             }
-            ir::ExprKind::List(values) => {
+            ir::ExprKind::Interpolate(values) => self.finalize_interpolation(values)?,
+            ir::ExprKind::Tuple(values)
+            | ir::ExprKind::List(values)
+            | ir::ExprKind::CustomConstruct { fields: values, .. } => {
                 for value in values {
                     self.finalize(value)?;
                 }
@@ -882,17 +1333,38 @@ impl Checker<'_> {
                 if let Some(branch) = else_branch {
                     self.finalize(branch)?;
                 } else {
-                    reject_discard(then_branch)?;
+                    reject_discard(then_branch, self.registry)?;
                 }
             }
             ir::ExprKind::Match { value, arms } => {
                 self.finalize(value)?;
-                for arm in arms {
+                for arm in arms.iter_mut() {
+                    if let Some(guard) = &mut arm.guard {
+                        self.finalize(guard)?;
+                    }
                     self.finalize(&mut arm.body)?;
                 }
+                coverage::validate(&value.ty, arms, self.registry, expr.span)?;
             }
             ir::ExprKind::Block(stmts) => self.finalize_block(stmts)?,
             _ => {}
+        }
+        Ok(())
+    }
+
+    /// Resolve interpolated expressions before validating their printable scalar types.
+    fn finalize_interpolation(&self, values: &mut [ir::Expr]) -> Checked<()> {
+        for value in values {
+            self.finalize(value)?;
+            if !matches!(
+                value.ty,
+                Type::Int | Type::Float | Type::Bool | Type::String
+            ) {
+                return Err(Diagnostic::new(
+                    value.span,
+                    "interpolation requires Int, Float, Bool, or String",
+                ));
+            }
         }
         Ok(())
     }
@@ -906,7 +1378,7 @@ impl Checker<'_> {
                 ir::Stmt::Expr(value) => {
                     self.finalize(value)?;
                     if index + 1 != len {
-                        reject_discard(value)?;
+                        reject_discard(value, self.registry)?;
                     }
                 }
             }
@@ -915,35 +1387,9 @@ impl Checker<'_> {
     }
 }
 
-/// Return a stable coverage key for a flat pattern, treating all bindings as catchalls.
-fn pattern_key(pattern: &ast::PatternKind) -> String {
-    match pattern {
-        ast::PatternKind::Wildcard | ast::PatternKind::Bind(_) => "all".into(),
-        ast::PatternKind::Int(n) => format!("int:{n}"),
-        ast::PatternKind::Bool(b) => format!("bool:{b}"),
-        ast::PatternKind::String(s) => format!("string:{s}"),
-        ast::PatternKind::Constructor { constructor, .. } => format!("constructor:{constructor:?}"),
-    }
-}
-
-/// Return whether flat arm `coverage` exhausts `ty`'s domain.
-fn exhaustive(ty: &Type, coverage: &HashSet<String>) -> bool {
-    coverage.contains("all")
-        || match ty {
-            Type::Bool => coverage.contains("bool:true") && coverage.contains("bool:false"),
-            Type::Option(_) => {
-                coverage.contains("constructor:Some") && coverage.contains("constructor:None")
-            }
-            Type::Result(_, _) => {
-                coverage.contains("constructor:Ok") && coverage.contains("constructor:Err")
-            }
-            _ => false,
-        }
-}
-
 /// Reject ignored fallible values; binding, returning or consuming them is explicit handling.
-fn reject_discard(expr: &ir::Expr) -> Checked<()> {
-    if matches!(expr.ty, Type::Result(_, _)) {
+fn reject_discard(expr: &ir::Expr, registry: &nominal::Registry) -> Checked<()> {
+    if registry.contains_result(&expr.ty)? {
         Err(Diagnostic::new(
             expr.span,
             "Result value must be handled; bind, return, or match it",
@@ -956,12 +1402,23 @@ fn reject_discard(expr: &ir::Expr) -> Checked<()> {
 /// Validate scalar-only builtin operations after argument inference is complete.
 fn validate_builtin(target: ir::CallTarget, args: &[ir::Expr], span: Span) -> Checked<()> {
     match target {
+        ir::CallTarget::Runtime(id) => {
+            let signature = runtime::signature(id)
+                .ok_or_else(|| Diagnostic::new(span, "invalid runtime registry identity"))?;
+            if signature.operation == runtime::Operation::ScalarContains && !scalar(&args[1].ty) {
+                return Err(Diagnostic::new(
+                    span,
+                    "runtime contains requires scalar Int, Bool, or String elements",
+                ));
+            }
+            Ok(())
+        }
         ir::CallTarget::Builtin(ir::Builtin::Print | ir::Builtin::Println)
-            if !scalar(&args[0].ty) =>
+            if !scalar(&args[0].ty) && args[0].ty != Type::Float =>
         {
             Err(Diagnostic::new(
                 span,
-                "print argument must be Int, Bool, or String",
+                "print argument must be Int, Bool, String, or Float",
             ))
         }
         ir::CallTarget::Builtin(ir::Builtin::ListContains) if !scalar(&args[1].ty) => {
@@ -1026,74 +1483,49 @@ fn binary_result(op: ast::BinaryOp, left: &Type, right: &Type) -> Option<Type> {
     match op {
         Add if *left == Type::String => Some(Type::String),
         Add | Subtract | Multiply | Divide | Remainder if *left == Type::Int => Some(Type::Int),
-        Eq | Ne if scalar(left) => Some(Type::Bool),
-        Lt | Le | Gt | Ge if *left == Type::Int => Some(Type::Bool),
+        Add | Subtract | Multiply | Divide if *left == Type::Float => Some(Type::Float),
+        Eq | Ne if scalar(left) || *left == Type::Float => Some(Type::Bool),
+        Lt | Le | Gt | Ge if matches!(left, Type::Int | Type::Float) => Some(Type::Bool),
         And | Or if *left == Type::Bool => Some(Type::Bool),
         _ => None,
     }
 }
 
-/// Reject unused parameters, lets and named patterns whose types contain Results.
-/// Alias chains end at another checked binding; deeper control-flow ownership is deferred.
-fn reject_unused_results(expr: &ir::Expr, params: &[ir::Param]) -> Checked<()> {
+/// Reject unconsumed fallible bindings, including custom fields and guarded patterns.
+fn reject_unused_results(
+    expr: &ir::Expr,
+    params: &[ir::Param],
+    registry: &nominal::Registry,
+) -> Checked<()> {
     let mut pending = vec![expr];
     let mut referenced = HashSet::new();
-    let mut fallible_bindings: Vec<_> = params
-        .iter()
-        .filter(|param| contains_result(&param.ty))
-        .map(|param| (param.id.0, expr.span))
-        .collect();
-    while let Some(expr) = pending.pop() {
-        match &expr.kind {
-            ir::ExprKind::Local(id) => {
-                referenced.insert(id.0);
-            }
-            ir::ExprKind::Block(stmts) => {
-                for stmt in stmts {
-                    match stmt {
-                        ir::Stmt::Let { id, value } => {
-                            if contains_result(&value.ty) {
-                                fallible_bindings.push((id.0, value.span));
-                            }
-                            pending.push(value);
-                        }
-                        ir::Stmt::Expr(value) => pending.push(value),
-                    }
-                }
-            }
-            ir::ExprKind::Unary { value, .. } | ir::ExprKind::Try(value) => pending.push(value),
-            ir::ExprKind::Binary { left, right, .. } => {
-                pending.push(left);
-                pending.push(right);
-            }
-            ir::ExprKind::Call { args, .. } | ir::ExprKind::List(args) => pending.extend(args),
-            ir::ExprKind::Construct {
-                value: Some(value), ..
-            } => pending.push(value),
-            ir::ExprKind::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
-                pending.push(condition);
-                pending.push(then_branch);
-                if let Some(value) = else_branch {
-                    pending.push(value);
-                }
-            }
-            ir::ExprKind::Match { value, arms } => {
-                pending.push(value);
-                for arm in arms {
-                    if let Some(id) = fallible_pattern(&arm.pattern, &value.ty) {
-                        fallible_bindings.push((id.0, arm.span));
-                    }
-                    pending.push(&arm.body);
-                }
-            }
-            _ => {}
+    let mut fallible = Vec::new();
+    for param in params {
+        if registry.contains_result(&param.ty)? {
+            fallible.push((param.id.0, expr.span));
         }
     }
-    for (id, span) in fallible_bindings {
+    while let Some(expr) = pending.pop() {
+        if let ir::ExprKind::Local(id) = &expr.kind {
+            referenced.insert(id.0);
+        }
+        if let ir::ExprKind::Block(stmts) = &expr.kind {
+            for stmt in stmts {
+                if let ir::Stmt::Let { id, value } = stmt {
+                    if registry.contains_result(&value.ty)? {
+                        fallible.push((id.0, value.span));
+                    }
+                }
+            }
+        }
+        if let ir::ExprKind::Match { value, arms } = &expr.kind {
+            for arm in arms {
+                fallible_bindings(&arm.pattern, &value.ty, arm.span, registry, &mut fallible)?;
+            }
+        }
+        pending.extend(nominal::children(expr));
+    }
+    for (id, span) in fallible {
         if !referenced.contains(&id) {
             return Err(Diagnostic::new(
                 span,
@@ -1104,46 +1536,48 @@ fn reject_unused_results(expr: &ir::Expr, params: &[ir::Param]) -> Checked<()> {
     Ok(())
 }
 
-/// Return whether a concrete type contains a Result, including through list/option wrappers.
-fn contains_result(ty: &Type) -> bool {
-    let mut current = ty;
-    for _ in 0..MAX_TYPE_DEPTH {
-        match current {
-            Type::Result(_, _) => return true,
-            Type::List(inner) | Type::Option(inner) => current = inner,
-            _ => return false,
+/// Collect fallible named bindings through nested constructor fields.
+fn fallible_bindings(
+    pattern: &ir::Pattern,
+    ty: &Type,
+    span: Span,
+    registry: &nominal::Registry,
+    bindings: &mut Vec<(usize, Span)>,
+) -> Checked<()> {
+    match pattern {
+        ir::Pattern::Bind(id) => {
+            if registry.contains_result(ty)? {
+                bindings.push((id.0, span));
+            }
         }
+        ir::Pattern::Tuple(fields) if fields.is_empty() && *ty == Type::Unit => {}
+        ir::Pattern::Tuple(fields) => {
+            let variants = registry.variants(ty, span)?;
+            for (pattern, ty) in fields.iter().zip(&variants[0]) {
+                fallible_bindings(pattern, ty, span, registry, bindings)?;
+            }
+        }
+        ir::Pattern::Variant { tag, fields } => {
+            let variants = registry.variants(ty, span)?;
+            for (pattern, ty) in fields.iter().zip(&variants[*tag]) {
+                fallible_bindings(pattern, ty, span, registry, bindings)?;
+            }
+        }
+        ir::Pattern::Constructor {
+            constructor,
+            binding: Some(id),
+        } => {
+            let tag = if matches!(constructor, Constructor::Some | Constructor::Ok) {
+                0
+            } else {
+                1
+            };
+            let variants = registry.variants(ty, span)?;
+            if registry.contains_result(&variants[tag][0])? {
+                bindings.push((id.0, span));
+            }
+        }
+        _ => {}
     }
-    false
-}
-
-/// Find a named fallible binding introduced by `pattern` for a concrete `subject`.
-/// Wildcard patterns remain explicit handling; only named payload obligations are tracked.
-fn fallible_pattern(pattern: &ir::Pattern, subject: &Type) -> Option<ir::LocalId> {
-    let (id, ty) = match (pattern, subject) {
-        (ir::Pattern::Bind(id), ty) => (*id, ty),
-        (
-            ir::Pattern::Constructor {
-                constructor: Constructor::Some,
-                binding: Some(id),
-            },
-            Type::Option(payload),
-        ) => (*id, payload.as_ref()),
-        (
-            ir::Pattern::Constructor {
-                constructor: Constructor::Ok,
-                binding: Some(id),
-            },
-            Type::Result(payload, _),
-        ) => (*id, payload.as_ref()),
-        (
-            ir::Pattern::Constructor {
-                constructor: Constructor::Err,
-                binding: Some(id),
-            },
-            Type::Result(_, payload),
-        ) => (*id, payload.as_ref()),
-        _ => return None,
-    };
-    contains_result(ty).then_some(id)
+    Ok(())
 }

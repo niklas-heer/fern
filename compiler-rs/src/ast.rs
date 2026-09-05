@@ -1,9 +1,45 @@
 //! Source syntax for the bounded Rust prototype.
 use crate::{Constructor, Span, Type};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Program {
     pub functions: Vec<Function>,
+    pub types: Vec<TypeDecl>,
+    pub module: Option<String>,
+    pub imports: Vec<Import>,
+    pub exports: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Import {
+    pub module: String,
+    pub alias: Option<String>,
+    pub items: Option<Vec<String>>,
+    pub public: bool,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct TypeDecl {
+    pub name: String,
+    pub parameters: Vec<String>,
+    pub variants: Vec<Variant>,
+    pub record: bool,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct Variant {
+    pub name: String,
+    pub fields: Vec<Field>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct Field {
+    pub name: Option<String>,
+    pub ty: Type,
+    pub span: Span,
 }
 #[derive(Clone, Debug)]
 pub struct Function {
@@ -27,12 +63,25 @@ pub struct Expr {
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Int(i64),
+    Float(f64),
     Bool(bool),
     String(String),
+    Interpolate(Vec<StringPart>),
     Name(String),
     Unit,
     List(Vec<Expr>),
+    Tuple(Vec<Expr>),
     Try(Box<Expr>),
+    Pipe {
+        value: Box<Expr>,
+        name: String,
+        args: Vec<Expr>,
+        position: usize,
+    },
+    Field {
+        value: Box<Expr>,
+        name: String,
+    },
     Match {
         value: Box<Expr>,
         arms: Vec<MatchArm>,
@@ -58,9 +107,17 @@ pub enum ExprKind {
     Block(Vec<Stmt>),
 }
 
+/// Preserve literal segments separately from embedded expressions for formatting.
+#[derive(Clone, Debug)]
+pub enum StringPart {
+    Text(String),
+    Value(Expr),
+}
+
 #[derive(Clone, Debug)]
 pub struct MatchArm {
     pub pattern: Pattern,
+    pub guard: Option<Expr>,
     pub body: Expr,
     pub span: Span,
 }
@@ -73,11 +130,16 @@ pub struct Pattern {
 
 #[derive(Clone, Debug)]
 pub enum PatternKind {
+    Tuple(Vec<Pattern>),
     Wildcard,
     Bind(String),
     Int(i64),
     Bool(bool),
     String(String),
+    NamedConstructor {
+        name: String,
+        fields: Vec<Pattern>,
+    },
     Constructor {
         constructor: Constructor,
         binding: Option<String>,
@@ -85,6 +147,12 @@ pub enum PatternKind {
 }
 #[derive(Clone, Debug)]
 pub enum Stmt {
+    LetPattern {
+        pattern: Pattern,
+        annotation: Option<Type>,
+        value: Expr,
+        span: Span,
+    },
     Let {
         name: String,
         annotation: Option<Type>,

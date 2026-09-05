@@ -1,0 +1,5 @@
+module model
+pub type Item:
+    name: String
+    quantity: Int
+pub fn item(name: String, quantity: Int) -> Item: Item(name, quantity)

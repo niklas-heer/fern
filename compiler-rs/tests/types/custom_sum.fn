@@ -1,0 +1,15 @@
+type Status:
+    Active
+    Pending(since: Int, reason: String)
+
+fn describe(status: Status) -> String:
+    match status:
+        Active -> "active"
+        Pending(0, reason) -> reason
+        Pending(since, reason) if since > 0 -> String.concat("waiting: ", reason)
+        Pending(_, _) -> "invalid"
+
+fn main():
+    println(describe(Active))
+    println(describe(Pending(0, "now")))
+    println(describe(Pending(1, "approval")))

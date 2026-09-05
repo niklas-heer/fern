@@ -1,7 +1,7 @@
 # Incremental Rust migration
 
-The Rust frontend now supports immutable lists and built-in error/optional values
-from source parsing through native execution. The shipping `fern` compiler stays
+The Rust frontend now supports custom types, generic functions, modules, immutable
+lists, and error/optional values from source parsing through native execution. The shipping `fern` compiler stays
 C while language and tooling parity are developed. The original
 [evaluation](RUST_FRONTEND_EVALUATION.md) is a snapshot of the initial scalar
 prototype; its measurements do not describe the expanded compiler.
@@ -20,7 +20,7 @@ prototype; its measurements do not describe the expanded compiler.
   its helper immediately, checking compatibility with the enclosing error type.
 - Diagnostics for discarded Result expressions, unused Result-bearing bindings,
   parameters, named pattern bindings and terminal aliases, nonexhaustive/unreachable
-  arms, type mismatches, and unsupported guards/nested patterns. General
+  arms and type mismatches. General
   path-sensitive ownership analysis remains open.
 - Multiline calls, lists, and type arguments, with explicit source/token/type/depth
   limits and an occurs check against recursive inferred types.
@@ -38,6 +38,42 @@ The propagation example prints `continued`, then `four`, then `division by zero`
 The failure returns before the second `continued` could execute. Main explicitly
 matches the helper's Result; Rust main still returns Int or Unit.
 
+## Custom types, modules, and formatting — 2026-09-05
+
+- Nominal sum and record types, recursive generic layouts, field access, and
+  bounded concrete specialization of generic functions.
+- Nested pattern coverage, guarded arms with scoped bindings, and tag checks
+  before loading payload fields. Guards never count toward exhaustiveness.
+- Bounded module loading with aliases, selective imports, reexports, visibility,
+  cycle checks, and diagnostics attributed to their original source files.
+- A Rust formatter with comment preservation, idempotence, complete structural
+  validation, and atomic updates. It never invokes the C formatter.
+- Six native applications cover recursive trees, full-width record payloads,
+  contextual generic inference, guard evaluation order, and a multi-file project.
+
+Generic signatures and structural bounds are validated eagerly; generic bodies
+are type-checked when concretely instantiated. Checking unused generic bodies
+remains a diagnostic-parity limitation.
+
+## Numeric, application, and interactive expansion — 2026-09-05
+
+Float arithmetic/comparison/printing retains IEEE doubles through generic payloads;
+signed zero and NaN behavior are checked natively. Structural tuples support nested
+patterns, destructuring and projections. Pipes preserve evaluation order, and
+interpolation supports nested expressions with typed scalar conversion.
+
+The runtime registry describes source signatures and their physical transport.
+String-list, packed byte Option, regex tuple and process-result adapters copy into
+the Rust layouts explicitly. Substring offsets bypass the old narrowing ABI.
+Opaque terminal objects cannot be fabricated from user records or integers.
+The process runtime now executes `System.exec_args` as literal argv with
+`posix_spawnp`, fixing an existing quote-expansion allocation bug.
+
+A persistent typed-IR REPL retains successful bindings without replaying effects.
+The Rust LSP tracks UTF-16 edits and imports across unsaved buffers. Both enforce
+resource limits and recover from invalid user entries. These tools do not yet
+establish complete editor or runtime parity.
+
 ## Runtime representation
 
 Semantic types stay distinct throughout IR even when they have identical machine
@@ -47,15 +83,20 @@ unused zero payload. This avoids the old packed Option representation, which
 truncates payloads to 32 bits. Native tests retain full Int values and String/list
 pointers, including nested sum values and 1,500 allocations.
 
-The shipping C Option ABI is unchanged. Rust calls to external APIs returning that
-packed representation will need explicit adapters. No packed Option runtime call
-is emitted by this frontend. Valid-index and nonempty-list preconditions of
+The shipping C Option ABI is unchanged. Rust uses an explicit adapter for the
+lossless packed byte result from `String.char_at`; substring offsets use a
+full-width implementation. Further packed Option APIs still require auditing. Valid-index and nonempty-list preconditions of
 `List.get`/`List.head` remain unchanged; callers must check lengths before reading.
 
 ## Verification
 
-The complete Rust suite has 94 passing tests, including 24 parser tests,
-29 checker tests, and 28 emitter tests. The existing 542 C tests remain passing.
+The collections checkpoint had 94 passing Rust tests and 542 passing C tests.
+The expanded checkpoint has 243 passing Rust tests, 550 passing C tests and 81 core native programs,
+plus 34 rejected invalid programs. Directory contracts add four C ABI cases,
+eight native programs and two Result binder regressions across both frontends.
+The 192-case seeded mutation suite checks diagnostic termination, formatter
+stability and unchanged output behavior. Format, clippy, C quality, documentation
+and native/Python style-checker parity gates pass locally on macOS arm64.
 
 The milestone adds 31 native programs (19 fixed, 12 seeded generated) and 22
 negative compile cases. Fixed cases cover wide signed values, strings, booleans,
@@ -64,7 +105,7 @@ order, propagation, and retained pointers under repeated allocation. Invalid
 programs must fail with source diagnostics and preserve an existing output file.
 
 These are exact expected-output tests. The original 32-program differential
-suite against C remains in place and continues to report its five known backend
+suite against C remains in place and currently reports four known backend
 differences. The new heap Option representation is checked against Fern semantics
 directly because it deliberately differs from C's packed ABI.
 
@@ -72,7 +113,7 @@ Run `just rust-check`, `just check`, and `just docs-check` to reproduce the gate
 The same Rust gates are configured in the existing Linux/macOS CI matrix; this
 milestone was verified locally on macOS arm64.
 
-## Updated release measurements
+## Collections-stage release measurements
 
 `just rust-evaluate` passed with the expanded frontend, using the same 101-function
 shared-subset fixture, 15 check/emit samples and three verified native builds per
@@ -96,12 +137,27 @@ collection-heavy compilation separately.
 
 ## Remaining migration work
 
-User-defined algebraic types and generics, records/tuples/maps, nested patterns and
-guards, modules, closures/higher-order calls, `with`, full standard-library bindings,
-and diagnostic/tooling parity remain open. Main Result exit semantics, safe
-collection indexing, and the runtime's packed Option interoperability also need
-explicit follow-up. Formatter, REPL, LSP, packaging, and full release parity must
-pass before switching the default.
+Maps, closures/higher-order calls, `with`, full actor execution, multiline strings,
+block comments, and diagnostic/tooling parity remain open. Main Result exit semantics, safe
+collection indexing, and packed Option interoperability also need follow-up.
+REPL/native semantic coverage, additional LSP features, packaging, and full release
+parity must pass before switching defaults.
 
 See the [supported-feature guide](../compiler-rs/README.md),
 [decision 46](../DECISIONS.md), and the [roadmap](../ROADMAP.md).
+
+Directory native parity exposed a C backend defect: matched Result payloads were
+classified as Strings solely because their storage was 64 bits. Pattern binders and expressions
+now retain checker-owned semantic types through emission, with all AST factories
+initializing that metadata and match-arm scopes restoring it. Native regression
+coverage distinguishes integer error arithmetic from String error concatenation;
+this correction also supports the explicit directory Result migration in Decision 50.
+Result constructors explicitly extend integer payloads or bitcast floating
+payloads into the native full-width representation. Checked expression types
+also determine function argument/result widths and prevent an outer pattern
+binder from changing the type of a shadowing inner let expression.
+
+The native bootstrap gate also exposed multiline match arms being parsed as single
+expressions. C now retains their statement blocks, consumes only owned indentation
+boundaries and stops after parse errors. Seven regressions cover mixed branch layouts, nested arms,
+condition-only matches, following declarations and malformed-input termination.

@@ -53,6 +53,7 @@ fn print(value: Expr) -> Expr {
 }
 fn emit(body: Expr) -> Result<String, fern_prototype::Diagnostic> {
     qbe::emit(&Program {
+        types: vec![],
         functions: vec![Function {
             id: FunctionId(0),
             name: "main".into(),
@@ -65,6 +66,7 @@ fn emit(body: Expr) -> Result<String, fern_prototype::Diagnostic> {
 }
 fn arm(pattern: Pattern, body: Expr) -> MatchArm {
     MatchArm {
+        guard: None,
         pattern,
         body,
         span: Span::default(),
@@ -417,6 +419,7 @@ fn result_try_returns_original_error_and_unpacks_full_width_success() {
     let attempt = ex(ExprKind::Try(Box::new(operand)), Type::Bool);
     let body = ctor(Constructor::Ok, Some(attempt), result.clone());
     let mut p = Program {
+        types: vec![],
         functions: vec![
             Function {
                 id: FunctionId(0),

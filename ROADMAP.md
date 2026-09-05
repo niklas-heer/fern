@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (94 Rust tests, 4 measurement-harness tests, 63 native programs, 27 invalid inputs); collections/error-value frontend remains opt-in
+- Rust migration: `just rust-check` passing (243 Rust tests, 4 measurement-harness tests, 81 core native programs, 34 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -45,11 +45,36 @@ Status: Complete for the bounded prototype; `just check`, `just rust-check`, and
 
 ## Active Priorities
 
-- [x] Make directory listing failures explicit Results, migrate native callers and preserve semantic payload/argument widths (directory and Int/String Result native regressions).
+### Rust Migration Completion
 
-- [x] Parse multiline match arms and mixed conditional layouts without losing outer scope; terminate on syntax errors (seven parser regressions and native bootstrap parity).
+User authorization: continue through every migration milestone without stopping
+for approval between milestones. C remains the default until the parity gates pass.
 
-- [x] Execute `System.exec_args` with literal argv and independent capture streams (nine native regression cases).
+- [x] Custom algebraic/record types, generic functions, nested patterns and guards (41 checker and 36 emitter tests; native recursive values and guarded matching).
+- [x] Modules/imports/visibility and a realistic application spanning multiple files (13 loader tests including visibility bypass regressions, native project execution).
+- [ ] Remaining executable language parity: functions/closures, tuples/maps, numeric/string operations, control flow and error handling.
+- [ ] Standard-library/native ABI compatibility and executable application coverage.
+- [ ] Diagnostics, formatting, REPL/LSP, documentation and developer-command parity.
+- [ ] Linux/macOS verification, fuzz/performance/packaging gates and default migration.
+
+Each checkpoint below records verified scope; this completion list stays open
+until all of its acceptance criteria are actually satisfied.
+
+### Rust Migration: Expanded Language and Tools
+
+Status: Expanded checkpoint verified on macOS arm64; the default remains C.
+
+- [x] Custom records/sums, generic specialization, guarded nested matches and modules.
+- [x] IEEE Float values, structural tuples/destructuring, pipelines and interpolation.
+- [x] Registry-driven runtime signatures and full-width/native-object adapters.
+- [x] Formatter preserving syntax/comments and persistent typed-IR interactive evaluation.
+- [x] Module-aware LSP diagnostics over unsaved buffers and UTF-16 edits.
+- [x] Replace unsafe argv shell reconstruction with literal process spawning (nine native regressions).
+- [x] Return explicit directory listing errors in both frontends and migrate native callers (four ABI, eight native, two binder and two alias checks).
+- [x] Preserve semantic C argument/payload widths and multiline match-arm scope; parser errors terminate (seven parser regressions and native bootstrap parity).
+- [x] Verify the complete expanded checkpoint and record test counts (Rust/C/docs/fuzz/native style parity).
+- [ ] Functions/closures and higher-order collection/error operations.
+- [ ] Maps, remaining control flow, multiline strings and complete native-language audit.
 
 ### Rust Migration: Collections and Error Values
 
@@ -152,9 +177,8 @@ Do not interpret the historical Gate A–D labels as language completion.
 
 ## Next Session Start Here
 
-For the active Rust migration, next implement user-defined algebraic types and
-generic functions through the typed pipeline, followed by modules and tooling
-parity. Preserve the concrete type/ABI and native-output gates in
+For the active Rust migration, next implement closures and higher-order
+operations, then maps, remaining control flow and full native/tooling parity. Preserve the concrete type/ABI and native-output gates in
 [migration progress](docs/RUST_MIGRATION.md).
 
 1. Implement real actor execution and descendant lifecycle; preserve the deterministic contracts.

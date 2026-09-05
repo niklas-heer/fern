@@ -1,0 +1,27 @@
+fn source() -> ((Int, Bool), (String, Float)):
+    println("once")
+    ((9223372036854775807, true), ("🌿", 1.25))
+
+fn swap(pair: (a, b)) -> (b, a):
+    (pair.1, pair.0)
+
+fn describe(value: (Bool, Option(Int))) -> Int:
+    match value:
+        (true, Some(number)) -> number
+        (false, Some(_)) -> 0
+        (_, None) -> -1
+
+fn main():
+    let ((number, flag), (text, fraction)) = source()
+    println(number)
+    println(flag)
+    println(text)
+    println(fraction)
+    let (first, second) = swap((41, "swapped"))
+    println(first)
+    println(second + 1)
+    let single: (Int,) = (7,)
+    println(single.0)
+    println(describe((true, Some(42))))
+    println(describe((false, Some(42))))
+    println(describe((true, None)))

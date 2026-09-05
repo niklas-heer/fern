@@ -1,0 +1,271 @@
+//! Work-list monomorphization: concrete IR is the only input to lowering.
+use super::{nominal, Checked, Checker, Inference, Signature, MAX_FUNCTIONS};
+use crate::{ast, ir, Diagnostic, Span, Type};
+use std::collections::HashMap;
+
+struct Instance {
+    template: usize,
+    arguments: Vec<Type>,
+}
+struct Driver<'a> {
+    source: &'a ast::Program,
+    signatures: &'a HashMap<String, Signature>,
+    instances: Vec<Instance>,
+    seen: HashMap<(usize, Vec<Type>), ir::FunctionId>,
+}
+
+/// Check nongeneric definitions and every demanded generic specialization.
+pub(super) fn run(
+    program: &ast::Program,
+    registry: &nominal::Registry,
+    signatures: &HashMap<String, Signature>,
+) -> Checked<ir::Program> {
+    let mut driver = Driver {
+        source: program,
+        signatures,
+        instances: Vec::new(),
+        seen: HashMap::new(),
+    };
+    for (index, function) in program.functions.iter().enumerate() {
+        if signatures[&function.name].generics.is_empty() {
+            driver.enqueue(index, Vec::new())?;
+        }
+    }
+    let mut functions = Vec::new();
+    let mut index = 0;
+    while index < driver.instances.len() {
+        let instance = &driver.instances[index];
+        let original = &program.functions[instance.template];
+        let substitutions = signatures[&original.name]
+            .generics
+            .iter()
+            .cloned()
+            .zip(instance.arguments.iter().cloned())
+            .collect();
+        let function = source_instance(original, &substitutions)?;
+        let mut checked = Checker {
+            signatures,
+            registry,
+            scopes: vec![HashMap::new()],
+            local_count: 0,
+            expr_count: 0,
+            inference: Inference::default(),
+            function_return: Type::Unit,
+        }
+        .function(&function)?;
+        checked.id = ir::FunctionId(index);
+        driver.rewrite(&mut checked.body)?;
+        functions.push(checked);
+        index += 1;
+    }
+    let types = registry.layouts(&functions)?;
+    Ok(ir::Program { functions, types })
+}
+
+impl Driver<'_> {
+    /// Deduplicate an instance before its body is checked so recursion terminates.
+    fn enqueue(&mut self, template: usize, arguments: Vec<Type>) -> Checked<ir::FunctionId> {
+        let key = (template, arguments.clone());
+        if let Some(id) = self.seen.get(&key) {
+            return Ok(*id);
+        }
+        if self.instances.len() >= MAX_FUNCTIONS {
+            return Err(Diagnostic::new(
+                Span::default(),
+                "generic specialization limit exceeded",
+            ));
+        }
+        let id = ir::FunctionId(self.instances.len());
+        self.seen.insert(key, id);
+        self.instances.push(Instance {
+            template,
+            arguments,
+        });
+        Ok(id)
+    }
+
+    /// Infer the demanded concrete instance from this already checked call signature.
+    fn target(
+        &mut self,
+        template: usize,
+        args: &[ir::Expr],
+        result: &Type,
+    ) -> Checked<ir::FunctionId> {
+        let function = &self.source.functions[template];
+        let signature = &self.signatures[&function.name];
+        let mut values = HashMap::new();
+        for (parameter, arg) in signature.params.iter().zip(args) {
+            nominal::capture(parameter, &arg.ty, &mut values, 0)?;
+        }
+        nominal::capture(&signature.result, result, &mut values, 0)?;
+        let arguments = signature
+            .generics
+            .iter()
+            .map(|n| {
+                values.get(n).cloned().ok_or_else(|| {
+                    Diagnostic::new(Span::default(), format!("cannot infer generic type '{n}'"))
+                })
+            })
+            .collect::<Checked<Vec<_>>>()?;
+        self.enqueue(template, arguments)
+    }
+
+    /// Replace source-template call IDs and recursively queue all reachable instances.
+    fn rewrite(&mut self, expr: &mut ir::Expr) -> Checked<()> {
+        match &mut expr.kind {
+            ir::ExprKind::Call { target, args } => {
+                for arg in args.iter_mut() {
+                    self.rewrite(arg)?;
+                }
+                if let ir::CallTarget::Function(id) = target {
+                    *id = self.target(id.0, args, &expr.ty)?;
+                }
+            }
+            ir::ExprKind::Unary { value, .. }
+            | ir::ExprKind::Try(value)
+            | ir::ExprKind::Field { value, .. } => self.rewrite(value)?,
+            ir::ExprKind::Binary { left, right, .. } => {
+                self.rewrite(left)?;
+                self.rewrite(right)?;
+            }
+            ir::ExprKind::Construct {
+                value: Some(value), ..
+            } => self.rewrite(value)?,
+            ir::ExprKind::Interpolate(values)
+            | ir::ExprKind::Tuple(values)
+            | ir::ExprKind::List(values)
+            | ir::ExprKind::CustomConstruct { fields: values, .. } => {
+                for value in values {
+                    self.rewrite(value)?;
+                }
+            }
+            ir::ExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.rewrite(condition)?;
+                self.rewrite(then_branch)?;
+                if let Some(value) = else_branch {
+                    self.rewrite(value)?;
+                }
+            }
+            ir::ExprKind::Match { value, arms } => {
+                self.rewrite(value)?;
+                for arm in arms {
+                    if let Some(guard) = &mut arm.guard {
+                        self.rewrite(guard)?;
+                    }
+                    self.rewrite(&mut arm.body)?;
+                }
+            }
+            ir::ExprKind::Block(stmts) => {
+                for stmt in stmts {
+                    match stmt {
+                        ir::Stmt::Let { value, .. } | ir::Stmt::Expr(value) => {
+                            self.rewrite(value)?
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+/// Substitute a template's API and local annotations without changing source names.
+fn source_instance(
+    source: &ast::Function,
+    values: &HashMap<String, Type>,
+) -> Checked<ast::Function> {
+    let mut source = source.clone();
+    for param in &mut source.params {
+        param.ty = nominal::substitute(&param.ty, values)?;
+    }
+    source.return_type = source
+        .return_type
+        .as_ref()
+        .map(|t| nominal::substitute(t, values))
+        .transpose()?;
+    substitute_expr(&mut source.body, values)?;
+    Ok(source)
+}
+
+/// Substitute the bounded expression tree's explicit local annotations and guards.
+fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Type>) -> Checked<()> {
+    match &mut expr.kind {
+        ast::ExprKind::Unary { value, .. }
+        | ast::ExprKind::Try(value)
+        | ast::ExprKind::Field { value, .. } => substitute_expr(value, values)?,
+        ast::ExprKind::Binary { left, right, .. } => {
+            substitute_expr(left, values)?;
+            substitute_expr(right, values)?;
+        }
+        ast::ExprKind::Pipe { value, args, .. } => {
+            substitute_expr(value, values)?;
+            for arg in args {
+                substitute_expr(arg, values)?;
+            }
+        }
+        ast::ExprKind::Interpolate(parts) => {
+            for part in parts {
+                if let ast::StringPart::Value(value) = part {
+                    substitute_expr(value, values)?;
+                }
+            }
+        }
+        ast::ExprKind::Call { args, .. }
+        | ast::ExprKind::Tuple(args)
+        | ast::ExprKind::List(args) => {
+            for arg in args {
+                substitute_expr(arg, values)?;
+            }
+        }
+        ast::ExprKind::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            substitute_expr(condition, values)?;
+            substitute_expr(then_branch, values)?;
+            if let Some(value) = else_branch {
+                substitute_expr(value, values)?;
+            }
+        }
+        ast::ExprKind::Match { value, arms } => {
+            substitute_expr(value, values)?;
+            for arm in arms {
+                if let Some(guard) = &mut arm.guard {
+                    substitute_expr(guard, values)?;
+                }
+                substitute_expr(&mut arm.body, values)?;
+            }
+        }
+        ast::ExprKind::Block(stmts) => substitute_block(stmts, values)?,
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Substitute block annotations while preserving initializer and statement traversal order.
+fn substitute_block(stmts: &mut [ast::Stmt], values: &HashMap<String, Type>) -> Checked<()> {
+    for stmt in stmts {
+        match stmt {
+            ast::Stmt::Let {
+                annotation, value, ..
+            }
+            | ast::Stmt::LetPattern {
+                annotation, value, ..
+            } => {
+                *annotation = annotation
+                    .as_ref()
+                    .map(|t| nominal::substitute(t, values))
+                    .transpose()?;
+                substitute_expr(value, values)?;
+            }
+            ast::Stmt::Expr(value) => substitute_expr(value, values)?,
+        }
+    }
+    Ok(())
+}

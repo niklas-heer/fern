@@ -1,7 +1,7 @@
 //! Independent, bounded lexer and recursive-descent parser for the prototype.
 use crate::ast::{
-    BinaryOp, Expr, ExprKind, Function, MatchArm, Param, Pattern, PatternKind, Program, Stmt,
-    UnaryOp,
+    BinaryOp, Expr, ExprKind, Field, Function, Import, MatchArm, Param, Pattern, PatternKind,
+    Program, Stmt, TypeDecl, UnaryOp, Variant,
 };
 use crate::{Constructor, Diagnostic, Span, Type};
 
@@ -15,14 +15,21 @@ enum Kind {
     Name(String),
     Number(String),
     Text(String),
+    StringOpen,
+    StringClose,
+    HoleOpen,
+    HoleClose,
     Left,
     Right,
     LeftBracket,
     RightBracket,
+    LeftBrace,
+    RightBrace,
     Colon,
     Comma,
     Dot,
     Arrow,
+    Pipe,
     Assign,
     Plus,
     Minus,
@@ -81,7 +88,7 @@ fn push(tokens: &mut Vec<Token>, kind: Kind, start: usize, end: usize) -> ParseR
 
 /// Tokenize lines with explicit indentation; blank/comment lines have no layout.
 fn lex(source: &str) -> ParseResult<Vec<Token>> {
-    let mut tokens = Vec::new();
+    let mut tokens: Vec<Token> = Vec::new();
     let mut levels = vec![0];
     let mut delimiters = Vec::new();
     let mut offset = 0;
@@ -101,7 +108,16 @@ fn lex(source: &str) -> ParseResult<Vec<Token>> {
         }
         if !rest.is_empty() && !rest.starts_with('#') {
             if delimiters.is_empty() {
-                layout(&mut tokens, &mut levels, indent, offset)?;
+                if rest.starts_with("|>") && indent >= *levels.last().unwrap() {
+                    if tokens
+                        .last()
+                        .is_some_and(|token| token.kind == Kind::Newline)
+                    {
+                        tokens.pop();
+                    }
+                } else {
+                    layout(&mut tokens, &mut levels, indent, offset)?;
+                }
             }
             let from = tokens.len();
             lex_line(content, indent, offset, &mut tokens)?;
@@ -131,7 +147,7 @@ fn lex(source: &str) -> ParseResult<Vec<Token>> {
 fn track_delimiters(tokens: &[Token], stack: &mut Vec<Token>) -> ParseResult<()> {
     for token in tokens {
         match token.kind {
-            Kind::Left | Kind::LeftBracket => {
+            Kind::Left | Kind::LeftBracket | Kind::LeftBrace => {
                 if stack.len() >= MAX_DEPTH {
                     return Err(Diagnostic::new(
                         token.span,
@@ -140,11 +156,13 @@ fn track_delimiters(tokens: &[Token], stack: &mut Vec<Token>) -> ParseResult<()>
                 }
                 stack.push(token.clone());
             }
-            Kind::Right | Kind::RightBracket => {
+            Kind::Right | Kind::RightBracket | Kind::RightBrace => {
                 let expected = if token.kind == Kind::Right {
                     Kind::Left
-                } else {
+                } else if token.kind == Kind::RightBracket {
                     Kind::LeftBracket
+                } else {
+                    Kind::LeftBrace
                 };
                 if stack.pop().map(|opening| opening.kind) != Some(expected) {
                     return Err(Diagnostic::new(token.span, "mismatched closing delimiter"));
@@ -203,113 +221,281 @@ fn layout(
 
 /// Scan one physical line with byte offsets; strings retain UTF-8 content.
 fn lex_line(line: &str, mut at: usize, offset: usize, tokens: &mut Vec<Token>) -> ParseResult<()> {
-    let bytes = line.as_bytes();
-    for _ in 0..=bytes.len() {
-        if at >= bytes.len() || bytes[at] == b'#' {
-            return Ok(());
+    while at < line.len() {
+        if line.as_bytes()[at] == b'#' {
+            break;
         }
-        if bytes[at] == b' ' {
+        if line.as_bytes()[at] == b' ' {
             at += 1;
             continue;
         }
-        let start = at;
-        let kind = match bytes[at] {
-            b'"' => {
-                let (text, end) = string(line, at, offset)?;
-                at = end;
-                Kind::Text(text)
-            }
-            b'0'..=b'9' => {
-                at += 1;
-                while at < bytes.len() && bytes[at].is_ascii_digit() {
-                    at += 1;
-                }
-                if at < bytes.len()
-                    && (bytes[at].is_ascii_alphabetic() || matches!(bytes[at], b'_' | b'.'))
-                {
-                    return Err(Diagnostic::new(
-                        Span {
-                            start: offset + start,
-                            end: offset + at + 1,
-                        },
-                        "unsupported numeric literal; expected decimal Int",
-                    ));
-                }
-                Kind::Number(line[start..at].to_owned())
-            }
-            b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
-                at += 1;
-                while at < bytes.len() && (bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_') {
-                    at += 1;
-                }
-                Kind::Name(line[start..at].to_owned())
-            }
-            _ => {
-                let (kind, width) = punctuation(&line[at..], offset + at)?;
-                at += width;
-                kind
-            }
-        };
-        push(tokens, kind, offset + start, offset + at)?;
+        at = lex_token(line, at, offset, tokens, 0)?;
     }
     Ok(())
 }
 
-/// Decode supported escapes; reject interpolation and multiline strings explicitly.
-fn string(line: &str, start: usize, offset: usize) -> ParseResult<(String, usize)> {
+/// Scan one expression token; embedded strings share the caller's token budget.
+fn lex_token(
+    line: &str,
+    mut at: usize,
+    offset: usize,
+    tokens: &mut Vec<Token>,
+    depth: usize,
+) -> ParseResult<usize> {
+    let bytes = line.as_bytes();
+    let start = at;
+    let kind = match bytes[at] {
+        b'"' => return scan_string(line, at, offset, tokens, depth),
+        b'0'..=b'9' => {
+            at = if tokens.last().is_some_and(|t| t.kind == Kind::Dot) {
+                let mut end = at;
+                while end < bytes.len() && bytes[end].is_ascii_digit() {
+                    end += 1;
+                }
+                end
+            } else {
+                number_end(line, at, offset)?
+            };
+            Kind::Number(line[start..at].into())
+        }
+        b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+            at += 1;
+            while at < bytes.len() && (bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_') {
+                at += 1;
+            }
+            Kind::Name(line[start..at].into())
+        }
+        _ => {
+            let (kind, width) = punctuation(&line[at..], offset + at)?;
+            at += width;
+            kind
+        }
+    };
+    push(tokens, kind, offset + start, offset + at)?;
+    Ok(at)
+}
+
+struct StringScan {
+    start: usize,
+    at: usize,
+    segment: usize,
+    text: String,
+    interpolated: bool,
+}
+
+/// Decode one quoted string, flattening interpolation tokens with exact byte locations.
+fn scan_string(
+    line: &str,
+    start: usize,
+    offset: usize,
+    tokens: &mut Vec<Token>,
+    depth: usize,
+) -> ParseResult<usize> {
     let span = Span {
         start: offset + start,
         end: offset + line.len(),
     };
+    if depth >= MAX_DEPTH {
+        return Err(Diagnostic::new(span, "string nesting limit exceeded"));
+    }
     if line[start..].starts_with("\"\"\"") {
         return Err(Diagnostic::new(
             span,
             "multiline strings are unsupported in the Rust prototype",
         ));
     }
-    let mut text = String::new();
-    let mut chars = line[start + 1..].char_indices();
-    while let Some((i, c)) = chars.next() {
+    let mut state = StringScan {
+        start,
+        at: start + 1,
+        segment: start + 1,
+        text: String::new(),
+        interpolated: false,
+    };
+    while state.at < line.len() {
+        let c = line[state.at..]
+            .chars()
+            .next()
+            .expect("remaining UTF-8 character");
         match c {
-            '"' => return Ok((text, start + 1 + i + 1)),
-            '{' | '}' => {
+            '"' => return close_string(&mut state, offset, tokens),
+            '{' => string_hole(&mut state, line, offset, tokens, depth)?,
+            '}' => {
                 return Err(Diagnostic::new(
-                    span,
-                    "string interpolation is unsupported in the Rust prototype",
+                    Span {
+                        start: offset + state.at,
+                        end: offset + state.at + 1,
+                    },
+                    "unmatched '}' in string; escape literal braces with a backslash",
                 ))
             }
-            '\\' => {
-                let escaped = match chars.next().map(|(_, c)| c) {
-                    Some('n') => '\n',
-                    Some('r') => '\r',
-                    Some('t') => '\t',
-                    Some('"') => '"',
-                    Some('\\') => '\\',
-                    _ => {
-                        return Err(Diagnostic::new(
-                            span,
-                            "invalid or unsupported string escape",
-                        ))
-                    }
-                };
-                text.push(escaped);
-            }
+            '\\' => scan_escape(&mut state, line, offset, span)?,
             '\0' => {
                 return Err(Diagnostic::new(
                     span,
                     "NUL is unsupported in prototype strings",
                 ))
             }
-            _ => text.push(c),
+            _ => {
+                state.text.push(c);
+                state.at += c.len_utf8();
+            }
         }
     }
     Err(Diagnostic::new(span, "unterminated string literal"))
+}
+
+/// Consume one escape at the current string cursor, retaining the original byte span.
+fn scan_escape(state: &mut StringScan, line: &str, offset: usize, span: Span) -> ParseResult<()> {
+    state.at += 1;
+    let c = line
+        .get(state.at..)
+        .and_then(|rest| rest.chars().next())
+        .ok_or_else(|| Diagnostic::new(span, "unterminated string escape"))?;
+    state.text.push(string_escape(
+        c,
+        Span {
+            start: offset + state.at - 1,
+            end: offset + state.at + c.len_utf8(),
+        },
+    )?);
+    state.at += c.len_utf8();
+    Ok(())
+}
+
+/// Finish either a plain literal token or the final interpolated text segment.
+fn close_string(
+    state: &mut StringScan,
+    offset: usize,
+    tokens: &mut Vec<Token>,
+) -> ParseResult<usize> {
+    let text = Kind::Text(std::mem::take(&mut state.text));
+    if state.interpolated {
+        push(tokens, text, offset + state.segment, offset + state.at)?;
+        push(
+            tokens,
+            Kind::StringClose,
+            offset + state.at,
+            offset + state.at + 1,
+        )?;
+    } else {
+        push(tokens, text, offset + state.start, offset + state.at + 1)?;
+    }
+    Ok(state.at + 1)
+}
+
+/// Flush literal text before parsing a hole and resume immediately after its closing brace.
+fn string_hole(
+    state: &mut StringScan,
+    line: &str,
+    offset: usize,
+    tokens: &mut Vec<Token>,
+    depth: usize,
+) -> ParseResult<()> {
+    if !state.interpolated {
+        push(
+            tokens,
+            Kind::StringOpen,
+            offset + state.start,
+            offset + state.start + 1,
+        )?;
+        state.interpolated = true;
+    }
+    push(
+        tokens,
+        Kind::Text(std::mem::take(&mut state.text)),
+        offset + state.segment,
+        offset + state.at,
+    )?;
+    push(
+        tokens,
+        Kind::HoleOpen,
+        offset + state.at,
+        offset + state.at + 1,
+    )?;
+    state.at = scan_hole(line, state.at + 1, offset, tokens, depth + 1)?;
+    state.segment = state.at;
+    Ok(())
+}
+
+/// Scan one interpolation expression, balancing braces without entering nested strings twice.
+fn scan_hole(
+    line: &str,
+    mut at: usize,
+    offset: usize,
+    tokens: &mut Vec<Token>,
+    depth: usize,
+) -> ParseResult<usize> {
+    let start = at;
+    let mut braces = 0;
+    while at < line.len() {
+        match line.as_bytes()[at] {
+            b' ' => {
+                at += 1;
+                continue;
+            }
+            b'}' if braces == 0 => {
+                push(tokens, Kind::HoleClose, offset + at, offset + at + 1)?;
+                return Ok(at + 1);
+            }
+            b'}' => braces -= 1,
+            b'{' => {
+                braces += 1;
+                if braces >= MAX_DEPTH {
+                    return Err(Diagnostic::new(
+                        Span {
+                            start: offset + start,
+                            end: offset + at,
+                        },
+                        "interpolation nesting limit exceeded",
+                    ));
+                }
+            }
+            b'#' => break,
+            _ => {}
+        }
+        at = lex_token(line, at, offset, tokens, depth)?;
+    }
+    Err(Diagnostic::new(
+        Span {
+            start: offset + start,
+            end: offset + at,
+        },
+        "unterminated interpolation; expected '}'",
+    ))
+}
+
+/// Decode Fern's supported escapes, including literal interpolation delimiters.
+fn string_escape(c: char, span: Span) -> ParseResult<char> {
+    Ok(match c {
+        'n' => '\n',
+        'r' => '\r',
+        't' => '\t',
+        '"' => '"',
+        '\\' => '\\',
+        '{' => '{',
+        '}' => '}',
+        _ => {
+            return Err(Diagnostic::new(
+                span,
+                "invalid or unsupported string escape",
+            ))
+        }
+    })
+}
+
+/// Return the trailing comment boundary using the same string grammar as the parser.
+pub(crate) fn comment_offset(line: &str) -> Option<usize> {
+    let mut tokens = Vec::new();
+    lex_line(line, 0, 0, &mut tokens).ok()?;
+    let end = tokens.last().map_or(0, |t| t.span.end);
+    line.get(end..)?.find('#').map(|at| at + end)
 }
 
 /// Recognize punctuation or report unsupported characters at a UTF-8 boundary.
 fn punctuation(rest: &str, start: usize) -> ParseResult<(Kind, usize)> {
     let pairs = [
         ("->", Kind::Arrow),
+        ("|>", Kind::Pipe),
         ("==", Kind::Eq),
         ("!=", Kind::Ne),
         ("<=", Kind::Le),
@@ -326,6 +512,8 @@ fn punctuation(rest: &str, start: usize) -> ParseResult<(Kind, usize)> {
         ')' => Kind::Right,
         '[' => Kind::LeftBracket,
         ']' => Kind::RightBracket,
+        '{' => Kind::LeftBrace,
+        '}' => Kind::RightBrace,
         ':' => Kind::Colon,
         ',' => Kind::Comma,
         '.' => Kind::Dot,
@@ -417,22 +605,230 @@ impl Parser {
         Diagnostic::new(self.current().span, message)
     }
 
-    /// Parse all top-level functions, rejecting unsupported declarations.
+    /// Parse module declarations, imports, public exports, functions and custom types.
     fn program(&mut self) -> ParseResult<Program> {
-        let mut functions = Vec::new();
+        let mut program = Program::default();
         for _ in 0..self.tokens.len() {
             if self.eat(&Kind::Newline) {
                 continue;
             }
             if self.current().kind == Kind::End {
-                return Ok(Program { functions });
+                return Ok(program);
             }
-            if !self.word("fn") {
-                return Err(self.error("expected fn; other top-level declarations are unsupported in the Rust prototype"));
+            let public = if self.word("pub") {
+                self.take();
+                true
+            } else {
+                false
+            };
+            if self.word("fn") {
+                let function = self.function()?;
+                if public {
+                    program.exports.push(function.name.clone());
+                }
+                program.functions.push(function);
+            } else if self.word("type") {
+                let declaration = self.type_declaration()?;
+                if public {
+                    program.exports.push(declaration.name.clone());
+                }
+                program.types.push(declaration);
+            } else if self.word("import") {
+                program.imports.push(self.import(public)?);
+            } else if self.word("module") && !public {
+                if program.module.is_some() {
+                    return Err(self.error("duplicate module declaration"));
+                }
+                self.take();
+                program.module = Some(self.qualified_name()?.0);
+                self.line_end()?;
+            } else {
+                return Err(self.error("expected fn, type, import, or module declaration"));
             }
-            functions.push(self.function()?);
         }
         Err(self.error("parser token limit exceeded"))
+    }
+
+    /// Require a physical declaration boundary without consuming enclosing layout.
+    fn line_end(&mut self) -> ParseResult<()> {
+        if self.eat(&Kind::Newline) || self.current().kind == Kind::End {
+            Ok(())
+        } else {
+            Err(self.error("expected end of line after declaration"))
+        }
+    }
+
+    /// Read a dotted name without consuming import selectors after the final dot.
+    fn qualified_name(&mut self) -> ParseResult<(String, Span)> {
+        let (mut name, mut span) = self.name()?;
+        for _ in 0..self.tokens.len() {
+            if self.current().kind != Kind::Dot
+                || !self
+                    .tokens
+                    .get(self.position + 1)
+                    .is_some_and(|t| matches!(t.kind, Kind::Name(_)))
+            {
+                break;
+            }
+            self.take();
+            let (part, next) = self.name()?;
+            name.push('.');
+            name.push_str(&part);
+            span.end = next.end;
+        }
+        Ok((name, span))
+    }
+
+    /// Capture full/selective/wildcard imports and aliases without loading modules.
+    fn import(&mut self, public: bool) -> ParseResult<Import> {
+        let start = self.take().span.start;
+        let (module, _) = self.qualified_name()?;
+        let items = if self.eat(&Kind::Dot) {
+            if self.eat(&Kind::Star) {
+                Some(vec!["*".into()])
+            } else {
+                self.expect(
+                    Kind::LeftBrace,
+                    "expected '{items}' or '*' after import module",
+                )?;
+                let mut names = Vec::new();
+                for _ in 0..self.tokens.len() {
+                    if self.eat(&Kind::RightBrace) {
+                        break;
+                    }
+                    names.push(self.name()?.0);
+                    if !self.eat(&Kind::Comma) {
+                        self.expect(Kind::RightBrace, "expected ',' or '}' after import item")?;
+                        break;
+                    }
+                }
+                if names.is_empty() {
+                    return Err(self.error("selective import requires at least one item"));
+                }
+                Some(names)
+            }
+        } else {
+            None
+        };
+        let alias = if self.word("as") {
+            self.take();
+            Some(self.name()?.0)
+        } else {
+            None
+        };
+        let end = self.tokens[self.position.saturating_sub(1)].span.end;
+        self.line_end()?;
+        Ok(Import {
+            module,
+            alias,
+            items,
+            public,
+            span: Span { start, end },
+        })
+    }
+
+    /// Parse generic parameter names and either record fields or sum constructors.
+    fn type_declaration(&mut self) -> ParseResult<TypeDecl> {
+        let start = self.take().span.start;
+        let (name, _) = self.name()?;
+        let mut parameters = Vec::new();
+        if self.eat(&Kind::Left) {
+            for _ in 0..self.tokens.len() {
+                if self.eat(&Kind::Right) {
+                    break;
+                }
+                parameters.push(self.name()?.0);
+                if !self.eat(&Kind::Comma) {
+                    self.expect(Kind::Right, "expected ',' or ')' after type parameter")?;
+                    break;
+                }
+            }
+        }
+        self.expect(Kind::Colon, "expected ':' before type body")?;
+        self.expect(Kind::Newline, "type declarations require an indented body")?;
+        self.expect(Kind::Indent, "type declarations require an indented body")?;
+        let record = self
+            .tokens
+            .get(self.position + 1)
+            .is_some_and(|t| t.kind == Kind::Colon);
+        let mut variants = Vec::new();
+        let mut fields = Vec::new();
+        for _ in 0..self.tokens.len() {
+            if self.eat(&Kind::Dedent) {
+                break;
+            }
+            if record {
+                fields.push(self.declaration_field(true)?);
+            } else {
+                variants.push(self.variant()?);
+            }
+            self.line_end()?;
+        }
+        let end = self.tokens[self.position.saturating_sub(1)].span.end;
+        let span = Span { start, end };
+        if record {
+            variants.push(Variant {
+                name: name.clone(),
+                fields,
+                span,
+            });
+        }
+        if variants.is_empty() {
+            return Err(Diagnostic::new(span, "type requires fields or variants"));
+        }
+        Ok(TypeDecl {
+            name,
+            parameters,
+            variants,
+            record,
+            span,
+        })
+    }
+
+    /// Parse one optional-name field and retain its complete type source range.
+    fn declaration_field(&mut self, require_name: bool) -> ParseResult<Field> {
+        let start = self.current().span.start;
+        let named = self
+            .tokens
+            .get(self.position + 1)
+            .is_some_and(|t| t.kind == Kind::Colon);
+        let name = if named || require_name {
+            let name = self.name()?.0;
+            self.expect(Kind::Colon, "expected ':' after record field name")?;
+            Some(name)
+        } else {
+            None
+        };
+        let ty = self.ty()?;
+        let end = self.tokens[self.position.saturating_sub(1)].span.end;
+        Ok(Field {
+            name,
+            ty,
+            span: Span { start, end },
+        })
+    }
+
+    /// Parse a named sum constructor with positional or named payload fields.
+    fn variant(&mut self) -> ParseResult<Variant> {
+        let (name, mut span) = self.name()?;
+        let mut fields = Vec::new();
+        if self.eat(&Kind::Left) {
+            for _ in 0..self.tokens.len() {
+                if self.current().kind == Kind::Right {
+                    span.end = self.take().span.end;
+                    break;
+                }
+                fields.push(self.declaration_field(false)?);
+                if !self.eat(&Kind::Comma) {
+                    span.end = self
+                        .expect(Kind::Right, "expected ',' or ')' after variant field")?
+                        .span
+                        .end;
+                    break;
+                }
+            }
+        }
+        Ok(Variant { name, fields, span })
     }
 
     /// Parse a function with explicit parameter types and optional return type.
@@ -505,30 +901,86 @@ impl Parser {
         result
     }
 
-    /// Parse primitive types, unit (), and List/Option/Result type applications.
+    /// Parse primitive, nominal, and generic types without resolving declarations.
     fn type_value(&mut self) -> ParseResult<Type> {
         if self.eat(&Kind::Left) {
-            self.expect(Kind::Right, "only unit () type is supported here")?;
+            return self.tuple_type();
+        }
+        let (name, span) = self
+            .qualified_name()
+            .map_err(|_| self.error("expected type annotation"))?;
+        let mut arguments = Vec::new();
+        if self.eat(&Kind::Left) {
+            for _ in 0..self.tokens.len() {
+                if self.eat(&Kind::Right) {
+                    break;
+                }
+                arguments.push(self.ty()?);
+                if !self.eat(&Kind::Comma) {
+                    self.expect(Kind::Right, "expected ',' or ')' after type argument")?;
+                    break;
+                }
+            }
+        }
+        let arity = match name.as_str() {
+            "List" | "Option" => Some(1),
+            "Result" => Some(2),
+            "Int" | "Float" | "Bool" | "String" | "Unit" => Some(0),
+            _ => None,
+        };
+        if arity.is_some_and(|arity| arguments.len() != arity) {
+            return Err(Diagnostic::new(
+                span,
+                format!("wrong type argument count for {name}; separate arguments with ','"),
+            ));
+        }
+        Ok(match name.as_str() {
+            "Int" => Type::Int,
+            "Float" => Type::Float,
+            "Unit" => Type::Unit,
+            "Bool" => Type::Bool,
+            "String" => Type::String,
+            "List" => Type::List(Box::new(arguments.remove(0))),
+            "Option" => Type::Option(Box::new(arguments.remove(0))),
+            "Result" => {
+                let error = arguments.remove(1);
+                Type::Result(Box::new(arguments.remove(0)), Box::new(error))
+            }
+            _ if arguments.is_empty()
+                && !name.contains('.')
+                && name.starts_with(|c: char| c.is_ascii_lowercase()) =>
+            {
+                Type::Generic(name)
+            }
+            _ if crate::runtime::native_type(&name).is_some() && arguments.is_empty() => {
+                Type::Native(crate::runtime::native_type(&name).expect("checked native name"))
+            }
+            _ => Type::Named(name, arguments),
+        })
+    }
+
+    /// Parse Unit and comma-separated structural types after their opening delimiter.
+    fn tuple_type(&mut self) -> ParseResult<Type> {
+        if self.eat(&Kind::Right) {
             return Ok(Type::Unit);
         }
-        let token = self.take();
-        match &token.kind {
-            Kind::Name(name) => match name.as_str() {
-                "Int" => Ok(Type::Int), "Bool" => Ok(Type::Bool), "String" => Ok(Type::String),
-                "List" | "Option" | "Result" => {
-                    self.expect(Kind::Left, "expected '(' before type arguments")?;
-                    let first = Box::new(self.ty()?);
-                    let value = if name == "Result" {
-                        self.expect(Kind::Comma, "expected ',' between Result type arguments")?;
-                        Type::Result(first, Box::new(self.ty()?))
-                    } else if name == "List" { Type::List(first) } else { Type::Option(first) };
-                    self.expect(Kind::Right, "expected ')' after type arguments")?;
-                    Ok(value)
-                }
-                _ => Err(Diagnostic::new(token.span, "unsupported type; supports Int, Bool, String, (), List(T), Option(T), Result(T, E)")),
-            },
-            _ => Err(Diagnostic::new(token.span, "expected type annotation")),
+        let first = self.ty()?;
+        if !self.eat(&Kind::Comma) {
+            self.expect(Kind::Right, "expected ',' or ')' after type")?;
+            return Ok(first);
         }
+        let mut fields = vec![first];
+        for _ in 0..self.tokens.len() {
+            if self.eat(&Kind::Right) {
+                break;
+            }
+            fields.push(self.ty()?);
+            if !self.eat(&Kind::Comma) {
+                self.expect(Kind::Right, "expected ',' or ')' after tuple type")?;
+                break;
+            }
+        }
+        Ok(Type::Tuple(fields))
     }
 
     /// Parse one inline expression or an indented block of bindings/expressions.
@@ -573,7 +1025,15 @@ impl Parser {
     fn statement(&mut self) -> ParseResult<(Stmt, usize, usize)> {
         if self.word("let") {
             let start = self.take().span.start;
-            let (name, _) = self.name()?;
+            let pattern = if self.current().kind == Kind::Left {
+                self.pattern()?
+            } else {
+                let (name, span) = self.name()?;
+                Pattern {
+                    kind: PatternKind::Bind(name),
+                    span,
+                }
+            };
             let annotation = if self.eat(&Kind::Colon) {
                 Some(self.ty()?)
             } else {
@@ -583,11 +1043,25 @@ impl Parser {
             let value = self.expr(0)?;
             let end = value.node.span.end;
             Ok((
-                Stmt::Let {
-                    name,
-                    annotation,
-                    value: value.node,
-                    span: Span { start, end },
+                match pattern.kind {
+                    PatternKind::Bind(name) => Stmt::Let {
+                        name,
+                        annotation,
+                        value: value.node,
+                        span: Span { start, end },
+                    },
+                    PatternKind::Wildcard => Stmt::Let {
+                        name: "_".into(),
+                        annotation,
+                        value: value.node,
+                        span: Span { start, end },
+                    },
+                    _ => Stmt::LetPattern {
+                        pattern,
+                        annotation,
+                        value: value.node,
+                        span: Span { start, end },
+                    },
                 },
                 value.depth,
                 end,
@@ -614,6 +1088,11 @@ impl Parser {
     fn binary(&mut self, minimum: u8) -> ParseResult<Parsed> {
         let mut left = self.postfix()?;
         for _ in 0..self.tokens.len() {
+            if minimum == 0 && self.eat(&Kind::Pipe) {
+                let right = self.expr(1)?;
+                left = pipe(left, right)?;
+                continue;
+            }
             let Some((op, precedence)) = operator(&self.current().kind) else {
                 break;
             };
@@ -644,14 +1123,40 @@ impl Parser {
     fn postfix(&mut self) -> ParseResult<Parsed> {
         let mut value = self.prefix()?;
         for _ in 0..self.tokens.len() {
-            if self.current().kind != Kind::Question {
+            if self.current().kind == Kind::Question {
+                let span = Span {
+                    start: value.node.span.start,
+                    end: self.take().span.end,
+                };
+                value = expression(ExprKind::Try(Box::new(value.node)), span, value.depth + 1)?;
+            } else if self.eat(&Kind::Dot) {
+                let (name, end) = if let Kind::Number(number) = self.current().kind.clone() {
+                    let token = self.take();
+                    if !number.bytes().all(|b| b.is_ascii_digit()) {
+                        return Err(Diagnostic::new(
+                            token.span,
+                            "tuple index must be a nonnegative integer",
+                        ));
+                    }
+                    (number, token.span)
+                } else {
+                    self.name()?
+                };
+                let span = Span {
+                    start: value.node.span.start,
+                    end: end.end,
+                };
+                value = expression(
+                    ExprKind::Field {
+                        value: Box::new(value.node),
+                        name,
+                    },
+                    span,
+                    value.depth + 1,
+                )?;
+            } else {
                 break;
             }
-            let span = Span {
-                start: value.node.span.start,
-                end: self.take().span.end,
-            };
-            value = expression(ExprKind::Try(Box::new(value.node)), span, value.depth + 1)?;
         }
         Ok(value)
     }
@@ -669,34 +1174,84 @@ impl Parser {
         }
         let token = self.take();
         match token.kind {
-            Kind::Number(text) => integer(&text, token.span),
+            Kind::Number(text) => number(&text, token.span),
             Kind::Text(text) => expression(ExprKind::String(text), token.span, 1),
+            Kind::StringOpen => self.interpolation(token.span),
             Kind::Name(name) if name == "true" || name == "false" => {
                 expression(ExprKind::Bool(name == "true"), token.span, 1)
             }
             Kind::Name(name) if !reserved(&name) => self.named(name, token.span),
             Kind::LeftBracket => self.list(token.span),
-            Kind::Left => {
-                if self.current().kind == Kind::Right {
-                    let end = self.take().span.end;
-                    return expression(
-                        ExprKind::Unit,
-                        Span {
-                            start: token.span.start,
-                            end,
-                        },
-                        1,
-                    );
-                }
-                let value = self.expr(0)?;
-                self.expect(Kind::Right, "expected ')' after grouped expression")?;
-                Ok(value)
-            }
+            Kind::Left => self.parenthesized(token.span),
             _ => Err(Diagnostic::new(
                 token.span,
                 "expected expression; this syntax is unsupported in the Rust prototype",
             )),
         }
+    }
+
+    /// Parse embedded expressions using the ordinary grammar and one shared depth bound.
+    fn interpolation(&mut self, mut span: Span) -> ParseResult<Parsed> {
+        let mut parts = Vec::new();
+        let mut depth = 1;
+        for _ in 0..self.tokens.len() {
+            let token = self.take();
+            match token.kind {
+                Kind::Text(text) => parts.push(crate::ast::StringPart::Text(text)),
+                Kind::HoleOpen => {
+                    let value = self.expr(0)?;
+                    depth = depth.max(value.depth + 1);
+                    self.expect(
+                        Kind::HoleClose,
+                        "expected '}' after interpolation expression",
+                    )?;
+                    parts.push(crate::ast::StringPart::Value(value.node));
+                }
+                Kind::StringClose => {
+                    span.end = token.span.end;
+                    return expression(ExprKind::Interpolate(parts), span, depth);
+                }
+                _ => {
+                    return Err(Diagnostic::new(
+                        token.span,
+                        "expected string segment or interpolation",
+                    ))
+                }
+            }
+        }
+        Err(Diagnostic::new(span, "unterminated interpolated string"))
+    }
+
+    /// Distinguish Unit, grouping, and structural tuples by a comma.
+    fn parenthesized(&mut self, mut span: Span) -> ParseResult<Parsed> {
+        if self.current().kind == Kind::Right {
+            span.end = self.take().span.end;
+            return expression(ExprKind::Unit, span, 1);
+        }
+        let first = self.expr(0)?;
+        if !self.eat(&Kind::Comma) {
+            self.expect(Kind::Right, "expected ',' or ')' after expression")?;
+            return Ok(first);
+        }
+        let mut depth = first.depth + 1;
+        let mut fields = vec![first.node];
+        for _ in 0..self.tokens.len() {
+            if self.current().kind == Kind::Right {
+                span.end = self.take().span.end;
+                break;
+            }
+            let value = self.expr(0)?;
+            depth = depth.max(value.depth + 1);
+            fields.push(value.node);
+            if !self.eat(&Kind::Comma) {
+                span.end = self
+                    .expect(Kind::Right, "expected ',' or ')' after tuple field")?
+                    .span
+                    .end;
+                break;
+            }
+        }
+        expression(ExprKind::Tuple(fields), span, depth)
     }
 
     /// Parse immutable list literals with optional trailing commas.
@@ -737,10 +1292,14 @@ impl Parser {
                 break;
             }
             let pattern = self.pattern()?;
-            if self.word("if") {
-                return Err(
-                    self.error("match guards are unsupported; use an if expression inside the arm")
-                );
+            let guard = if self.word("if") {
+                self.take();
+                Some(self.expr(0)?)
+            } else {
+                None
+            };
+            if let Some(guard) = &guard {
+                depth = depth.max(guard.depth + 1);
             }
             self.expect(Kind::Arrow, "expected '->' after match pattern")?;
             let body = self.suite()?;
@@ -751,6 +1310,7 @@ impl Parser {
                 end,
             };
             arms.push(MatchArm {
+                guard: guard.map(|value| value.node),
                 pattern,
                 body: body.node,
                 span,
@@ -775,8 +1335,43 @@ impl Parser {
         )
     }
 
-    /// Parse scalar/catchall patterns and built-in constructors with simple payloads.
+    /// Bound recursive patterns before parsing constructor payloads.
     fn pattern(&mut self) -> ParseResult<Pattern> {
+        if self.depth >= MAX_DEPTH {
+            return Err(self.error("pattern depth limit exceeded"));
+        }
+        self.depth += 1;
+        let result = self.pattern_value();
+        self.depth -= 1;
+        result
+    }
+
+    /// Parse nested constructors, scalar literals, wildcard and lowercase bindings.
+    fn pattern_value(&mut self) -> ParseResult<Pattern> {
+        if self.current().kind == Kind::Left {
+            return self.tuple_pattern();
+        }
+        if matches!(self.current().kind, Kind::Name(_)) && !self.word("true") && !self.word("false")
+        {
+            let (name, span) = self.qualified_name()?;
+            if name == "_" {
+                return Ok(Pattern {
+                    kind: PatternKind::Wildcard,
+                    span,
+                });
+            }
+            if name
+                .rsplit('.')
+                .next()
+                .is_some_and(|part| part.starts_with(|c: char| c.is_ascii_uppercase()))
+            {
+                return self.named_pattern(name, span);
+            }
+            return Ok(Pattern {
+                kind: PatternKind::Bind(name),
+                span,
+            });
+        }
         let token = self.take();
         let mut span = token.span;
         let kind = match token.kind {
@@ -793,61 +1388,96 @@ impl Parser {
             Kind::Name(name) if name == "true" || name == "false" => {
                 PatternKind::Bool(name == "true")
             }
-            Kind::Name(name) if name == "_" => PatternKind::Wildcard,
-            Kind::Name(name) if !reserved(&name) => {
-                if let Some(constructor) = builtin_constructor(&name) {
-                    return self.constructor_pattern(constructor, span);
-                }
-                PatternKind::Bind(name)
+            _ => {
+                return Err(Diagnostic::new(
+                    span,
+                    "unsupported pattern; expected literal, binding, wildcard or constructor",
+                ))
             }
-            _ => return Err(Diagnostic::new(
-                span,
-                "unsupported pattern; expected scalar, binding, wildcard or built-in constructor",
-            )),
         };
         Ok(Pattern { kind, span })
     }
 
-    /// Restrict constructor payloads to bindings/wildcards until nested matching is checked.
-    fn constructor_pattern(
-        &mut self,
-        constructor: Constructor,
-        mut span: Span,
-    ) -> ParseResult<Pattern> {
-        let binding = if constructor == Constructor::None {
-            if self.current().kind == Kind::Left {
-                return Err(self.error("None patterns do not accept a payload"));
+    /// Parse positional patterns, retaining singleton commas and grouping.
+    fn tuple_pattern(&mut self) -> ParseResult<Pattern> {
+        let mut span = self.take().span;
+        let mut fields = Vec::new();
+        if self.current().kind != Kind::Right {
+            let first = self.pattern()?;
+            if !self.eat(&Kind::Comma) {
+                self.expect(Kind::Right, "expected ',' or ')' after pattern")?;
+                return Ok(first);
             }
-            None
-        } else {
-            self.expect(
-                Kind::Left,
-                "constructor pattern requires a payload binding or wildcard",
-            )?;
-            let (name, _) = self.name().map_err(|_| self.error("constructor payload pattern must be a binding or wildcard; nested patterns are unsupported"))?;
-            if self.current().kind == Kind::Left || builtin_constructor(&name).is_some() {
-                return Err(self.error("nested constructor patterns are unsupported"));
+            fields.push(first);
+            for _ in 0..self.tokens.len() {
+                if self.current().kind == Kind::Right {
+                    break;
+                }
+                fields.push(self.pattern()?);
+                if !self.eat(&Kind::Comma) {
+                    break;
+                }
             }
-            span.end = self
-                .expect(
-                    Kind::Right,
-                    "constructor payload pattern must be a single binding or wildcard",
-                )?
-                .span
-                .end;
-            if name == "_" {
-                None
-            } else {
-                Some(name)
-            }
-        };
+        }
+        span.end = self
+            .expect(Kind::Right, "expected ',' or ')' after tuple pattern")?
+            .span
+            .end;
         Ok(Pattern {
-            kind: PatternKind::Constructor {
-                constructor,
-                binding,
-            },
+            kind: PatternKind::Tuple(fields),
             span,
         })
+    }
+
+    /// Parse recursive constructor fields while retaining the compatible flat AST form.
+    fn named_pattern(&mut self, name: String, mut span: Span) -> ParseResult<Pattern> {
+        let mut fields = Vec::new();
+        if self.eat(&Kind::Left) {
+            for _ in 0..self.tokens.len() {
+                if self.current().kind == Kind::Right {
+                    span.end = self.take().span.end;
+                    break;
+                }
+                fields.push(self.pattern()?);
+                if !self.eat(&Kind::Comma) {
+                    span.end = self
+                        .expect(Kind::Right, "expected ',' or ')' after payload pattern")?
+                        .span
+                        .end;
+                    break;
+                }
+            }
+        }
+        let kind = if let Some(constructor) = builtin_constructor(&name) {
+            if constructor == Constructor::None && !fields.is_empty() {
+                return Err(Diagnostic::new(
+                    span,
+                    "None patterns do not accept a payload",
+                ));
+            }
+            if constructor == Constructor::None {
+                PatternKind::Constructor {
+                    constructor,
+                    binding: None,
+                }
+            } else if fields.len() == 1
+                && matches!(fields[0].kind, PatternKind::Bind(_) | PatternKind::Wildcard)
+            {
+                let binding = match &fields[0].kind {
+                    PatternKind::Bind(name) => Some(name.clone()),
+                    _ => None,
+                };
+                PatternKind::Constructor {
+                    constructor,
+                    binding,
+                }
+            } else {
+                PatternKind::NamedConstructor { name, fields }
+            }
+        } else {
+            PatternKind::NamedConstructor { name, fields }
+        };
+        Ok(Pattern { kind, span })
     }
 
     /// Parse unary operands, accepting the Int minimum without positive overflow.
@@ -862,7 +1492,7 @@ impl Parser {
             if let Kind::Number(text) = &self.current().kind {
                 let text = format!("-{text}");
                 let end = self.take().span.end;
-                return integer(
+                return number(
                     &text,
                     Span {
                         start: token.span.start,
@@ -889,9 +1519,15 @@ impl Parser {
     /// Parse a qualified name and optional positional argument list.
     fn named(&mut self, mut name: String, mut span: Span) -> ParseResult<Parsed> {
         for _ in 0..self.tokens.len() {
-            if !self.eat(&Kind::Dot) {
+            if self.current().kind != Kind::Dot
+                || !matches!(
+                    self.tokens.get(self.position + 1).map(|t| &t.kind),
+                    Some(Kind::Name(_))
+                )
+            {
                 break;
             }
+            self.take();
             let (part, part_span) = self.name()?;
             name.push('.');
             name.push_str(&part);
@@ -1048,5 +1684,120 @@ fn reserved(name: &str) -> bool {
             | "newtype"
             | "send"
             | "after"
+    )
+}
+
+/// Scan decimal integer/float tokens, rejecting malformed suffixes at their source.
+fn number_end(line: &str, start: usize, offset: usize) -> ParseResult<usize> {
+    let bytes = line.as_bytes();
+    let mut at = start;
+    while at < bytes.len() && bytes[at].is_ascii_digit() {
+        at += 1;
+    }
+    if bytes.get(at) == Some(&b'.') {
+        at += 1;
+        let fraction = at;
+        while at < bytes.len() && bytes[at].is_ascii_digit() {
+            at += 1;
+        }
+        if at == fraction {
+            return Err(Diagnostic::new(
+                Span {
+                    start: offset + start,
+                    end: offset + at,
+                },
+                "expected digits after decimal point",
+            ));
+        }
+    }
+    if matches!(bytes.get(at), Some(b'e' | b'E')) {
+        at += 1;
+        if matches!(bytes.get(at), Some(b'+' | b'-')) {
+            at += 1;
+        }
+        let exponent = at;
+        while at < bytes.len() && bytes[at].is_ascii_digit() {
+            at += 1;
+        }
+        if at == exponent {
+            return Err(Diagnostic::new(
+                Span {
+                    start: offset + start,
+                    end: offset + at,
+                },
+                "expected exponent digits",
+            ));
+        }
+    }
+    if bytes
+        .get(at)
+        .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'_' | b'.'))
+    {
+        return Err(Diagnostic::new(
+            Span {
+                start: offset + start,
+                end: offset + at + 1,
+            },
+            "unsupported numeric literal suffix",
+        ));
+    }
+    Ok(at)
+}
+
+/// Preserve decimal Float literals as IEEE doubles; overflowing literals are diagnosed.
+fn number(text: &str, span: Span) -> ParseResult<Parsed> {
+    if !text.contains(['.', 'e', 'E']) {
+        return integer(text, span);
+    }
+    let value = text
+        .parse::<f64>()
+        .map_err(|_| Diagnostic::new(span, "invalid Float literal"))?;
+    if !value.is_finite() {
+        return Err(Diagnostic::new(span, "Float literal exceeds finite range"));
+    }
+    expression(ExprKind::Float(value), span, 1)
+}
+
+/// Record piped argument placement without reordering evaluation or duplicating its value.
+fn pipe(left: Parsed, right: Parsed) -> ParseResult<Parsed> {
+    let span = Span {
+        start: left.node.span.start,
+        end: right.node.span.end,
+    };
+    let depth = left.depth.max(right.depth) + 1;
+    let (name, mut args) = match right.node.kind {
+        ExprKind::Call { name, args } => (name, args),
+        ExprKind::Name(name) => (name, Vec::new()),
+        _ => {
+            return Err(Diagnostic::new(
+                span,
+                "pipe target must be a function name or call",
+            ))
+        }
+    };
+    let positions: Vec<_> = args
+        .iter()
+        .enumerate()
+        .filter_map(|(i, arg)| matches!(&arg.kind, ExprKind::Name(n) if n == "_").then_some(i))
+        .collect();
+    if positions.len() > 1 {
+        return Err(Diagnostic::new(
+            span,
+            "pipe accepts at most one argument placeholder",
+        ));
+    }
+    let position = positions.first().copied().unwrap_or(0);
+    if !positions.is_empty() {
+        args.remove(position);
+    }
+    expression(
+        ExprKind::Pipe {
+            value: Box::new(left.node),
+            name,
+            args,
+            position,
+        },
+        span,
+        depth,
     )
 }

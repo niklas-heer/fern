@@ -32,6 +32,7 @@ fn function(id: usize, name: &str, body: Expr) -> Function {
 }
 fn program(body: Expr) -> Program {
     Program {
+        types: vec![],
         functions: vec![function(0, "main", body)],
     }
 }
@@ -73,6 +74,7 @@ fn typed_function_calls_use_pointer_returns_and_mangled_ids() {
         ),
     );
     let il = qbe::emit(&Program {
+        types: vec![],
         functions: vec![main, target],
     })
     .unwrap();
@@ -191,6 +193,7 @@ fn short_circuit_rhs_is_branched_and_merged() {
             Type::Int,
         );
         let p = Program {
+            types: vec![],
             functions: vec![
                 function(0, "main", body),
                 function(1, "effect", boolean(true)),
@@ -230,6 +233,7 @@ fn locals_parameters_and_final_block_value_are_preserved() {
     });
     helper.local_count = 2;
     let p = Program {
+        types: vec![],
         functions: vec![
             function(
                 0,
@@ -327,6 +331,7 @@ fn local_scope_cannot_escape_branch_or_be_defined_twice() {
 #[test]
 fn duplicate_function_id_invalid_main_and_wrong_returns_are_rejected() {
     let mut p = Program {
+        types: vec![],
         functions: vec![function(0, "main", int(0)), function(0, "other", int(0))],
     };
     assert!(qbe::emit(&p).is_err());
@@ -334,7 +339,11 @@ fn duplicate_function_id_invalid_main_and_wrong_returns_are_rejected() {
     p.functions[0].return_type = Type::String;
     assert!(qbe::emit(&p).is_err());
     assert!(qbe::emit(&program(string("no"))).is_err());
-    assert!(qbe::emit(&Program { functions: vec![] }).is_err());
+    assert!(qbe::emit(&Program {
+        types: vec![],
+        functions: vec![]
+    })
+    .is_err());
 }
 
 #[test]
@@ -364,6 +373,7 @@ fn only_unit_main_discards_a_nonunit_body() {
     let mut main = function(0, "main", int(99));
     main.return_type = Type::Unit;
     let il = qbe::emit(&Program {
+        types: vec![],
         functions: vec![main.clone()],
     })
     .unwrap();
@@ -375,6 +385,7 @@ fn only_unit_main_discards_a_nonunit_body() {
     let mut helper = function(1, "helper", int(99));
     helper.return_type = Type::Unit;
     assert!(qbe::emit(&Program {
+        types: vec![],
         functions: vec![main, helper]
     })
     .is_err());
@@ -406,6 +417,7 @@ fn unit_parameters_and_if_without_else_evaluate_effects() {
         Type::Unit,
     );
     let il = qbe::emit(&Program {
+        types: vec![],
         functions: vec![function(0, "main", body), helper],
     })
     .unwrap();
@@ -440,6 +452,7 @@ fn invalid_signatures_local_bounds_and_nesting_are_diagnostics() {
     });
     helper.local_count = 1;
     let mut p = Program {
+        types: vec![],
         functions: vec![
             function(
                 0,

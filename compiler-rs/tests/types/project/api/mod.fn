@@ -1,0 +1,6 @@
+module api
+pub import model.{Item, item}
+fn heading(name: String) -> String: String.concat(name, " inventory")
+pub fn describe(value: Item) -> Unit:
+    println(heading(value.name))
+    println(value.quantity)

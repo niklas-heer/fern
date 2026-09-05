@@ -1,0 +1,19 @@
+type Tree(a):
+    Leaf(value: a)
+    Branch(left: Tree(a), right: Tree(a))
+
+fn sum(tree: Tree(Int)) -> Int:
+    match tree:
+        Leaf(value) -> value
+        Branch(left, right) -> sum(left) + sum(right)
+
+fn first(tree: Tree(a)) -> a:
+    match tree:
+        Leaf(value) -> value
+        Branch(left, _) -> first(left)
+
+fn main():
+    let tree = Branch(Leaf(4294967296), Branch(Leaf(20), Leaf(22)))
+    println(sum(tree))
+    println(first(tree))
+    println(first(Branch(Leaf("retained 🌿"), Leaf("other"))))

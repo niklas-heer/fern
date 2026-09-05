@@ -18,6 +18,20 @@ This document tracks major architectural and technical decisions made during the
 * **Context**: The previous runtime reconstructed a shell command and underallocated its buffer when escaping single quotes. It contradicted the documented no-shell API and could corrupt memory.
 * **Consequences**: Empty or missing commands and signal termination produce exit code -1; normal exit statuses and both streams are retained. Argument bytes never become shell syntax. Temporary capture descriptors are normalized above standard streams and closed after waiting; the separate `System.exec` API retains explicit shell semantics.
 
+### 48 Preserve IEEE Float values across native and payload boundaries
+* **Date**: 2026-09-05
+* **Status**: Accepted
+* **Decision**: I will lower Float as QBE double values, bitcast their 64-bit representation at generic collection/sum/record boundaries, and keep integer and floating arithmetic explicitly separate.
+* **Context**: Fern specifies IEEE 754 doubles. Treating generic payload bits as numerical integers would corrupt values; raw-bit equality would mishandle signed zero and NaN.
+* **Consequences**: Decimal/exponent literals, arithmetic/comparisons and printing use double semantics. Numeric literals must remain finite; runtime operations may produce IEEE infinities/NaNs. Printing uses system printf with 17 significant digits. Float List.contains remains rejected until value-aware lowering exists. Integer-to-Float coercion is not implicit.
+
+### 47 Specialize generic code and preserve nominal type layouts
+* **Date**: 2026-09-05
+* **Status**: Accepted for Rust migration completion
+* **Decision**: I will represent user types nominally, retain generic parameters in source syntax, and specialize generic functions and layouts into concrete typed IR. Custom sum/record values use GC-allocated storage containing a full-width discriminant and full-width fields; nested patterns inspect tags before reading payloads.
+* **Context**: The user authorized completing the remaining migration milestones. Generic definitions and user types must scale beyond the initial built-in List/Option/Result cases while preserving the emitter's concrete-type boundary. The existing C runtime already exposes GC allocation.
+* **Consequences**: Specialization, type expansion, and recursive matching are bounded and produce diagnostics when limits are exceeded. Runtime representations remain independent of source names; records use one constructor with named fields. Subsequent module loading must qualify declarations before type resolution. C remains available until executable-feature and tooling parity is verified. The unavailable `/decision` skill is replaced by this established decision format.
+
 ### 46 Extend Rust through typed collections and built-in sum types
 * **Date**: 2026-09-05
 * **Status**: Accepted for the incremental Rust frontend

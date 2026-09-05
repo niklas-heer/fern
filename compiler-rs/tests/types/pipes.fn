@@ -1,0 +1,12 @@
+fn input() -> Int:
+    println("input")
+    7
+fn config() -> Int:
+    println("config")
+    20
+fn subtract(a: Int, b: Int) -> Int: a - b
+fn main():
+    let result = input()
+        |> subtract(config(), _)
+        |> subtract(3)
+    println(result)

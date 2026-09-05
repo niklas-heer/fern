@@ -445,6 +445,10 @@ rust-check: rust-build
     python3 scripts/test_evaluate_rust_frontend.py
     python3 scripts/test_rust_frontend.py
     python3 scripts/test_rust_collections.py
+    python3 scripts/test_rust_types.py
+    python3 scripts/test_rust_stdlib.py
+    python3 scripts/test_runtime_directory.py
+    python3 scripts/test_rust_fuzz.py
 
 # Build both frontends with release settings for the opt-in evaluation.
 rust-release: release

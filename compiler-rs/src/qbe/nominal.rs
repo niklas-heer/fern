@@ -1,0 +1,573 @@
+//! Concrete nominal layouts and guarded recursive matching at the backend boundary.
+use super::*;
+
+/// Index concrete named layouts, validating record metadata and referenced field types.
+pub(super) fn layouts(
+    types: &[ir::TypeLayout],
+) -> Result<HashMap<Type, &ir::TypeLayout>, Diagnostic> {
+    let mut layouts = HashMap::new();
+    for layout in types {
+        concrete(&layout.ty, Span::default(), 0)?;
+        if !matches!(layout.ty, Type::Named(_, _)) || layout.variants.is_empty() {
+            return Err(invalid(
+                Span::default(),
+                "nominal layout requires a named type and variants",
+            ));
+        }
+        if layouts.insert(layout.ty.clone(), layout).is_some() {
+            return Err(invalid(Span::default(), "duplicate nominal layout"));
+        }
+        if !layout.fields.is_empty()
+            && (layout.variants.len() != 1 || layout.fields.len() != layout.variants[0].len())
+        {
+            return Err(invalid(
+                Span::default(),
+                "record field metadata differs from layout",
+            ));
+        }
+        let unique: BTreeSet<_> = layout.fields.iter().collect();
+        if unique.len() != layout.fields.len() {
+            return Err(invalid(Span::default(), "duplicate record field names"));
+        }
+    }
+    for layout in types {
+        for fields in &layout.variants {
+            if fields.len() > MAX_NODES {
+                return Err(invalid(Span::default(), "nominal field limit exceeded"));
+            }
+            for field in fields {
+                resolved(field, &layouts, Span::default(), 0)?;
+            }
+        }
+        resolved(&layout.ty, &layouts, Span::default(), 0)?;
+    }
+    Ok(layouts)
+}
+
+/// Require every nominal reference to have an exact concrete layout without expanding cycles.
+pub(super) fn resolved(
+    ty: &Type,
+    layouts: &HashMap<Type, &ir::TypeLayout>,
+    span: Span,
+    depth: usize,
+) -> Result<(), Diagnostic> {
+    // Validate structural depth before hashing a recursively structured nominal key.
+    concrete(ty, span, depth)?;
+    match ty {
+        Type::Infer(_) | Type::Generic(_) => {
+            return Err(invalid(
+                span,
+                "unresolved inference variable or generic type",
+            ))
+        }
+        Type::Named(_, args) => {
+            if !layouts.contains_key(ty) {
+                return Err(invalid(span, "missing concrete nominal layout"));
+            }
+            for arg in args {
+                resolved(arg, layouts, span, depth + 1)?;
+            }
+        }
+        Type::Tuple(fields) => {
+            for field in fields {
+                resolved(field, layouts, span, depth + 1)?;
+            }
+        }
+        Type::List(item) | Type::Option(item) => resolved(item, layouts, span, depth + 1)?,
+        Type::Result(ok, err) => {
+            resolved(ok, layouts, span, depth + 1)?;
+            resolved(err, layouts, span, depth + 1)?;
+        }
+        Type::Native(_) | Type::Int | Type::Float | Type::Bool | Type::String | Type::Unit => {}
+    }
+    Ok(())
+}
+
+impl Emitter<'_> {
+    /// Validate and allocate one concrete variant, storing each checked field as 64 bits.
+    pub(super) fn custom_construct(
+        &mut self,
+        tag: usize,
+        fields: &[Expr],
+        ty: &Type,
+        span: Span,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Result<(Type, String), Diagnostic> {
+        let expected = self.variant_fields(ty, tag, span)?;
+        if !matches!(ty, Type::Named(_, _) | Type::Tuple(_)) || expected.len() != fields.len() {
+            return Err(invalid(
+                span,
+                "custom constructor field count or nominal type mismatch",
+            ));
+        }
+        let bytes = (fields.len() + 1)
+            .checked_mul(8)
+            .ok_or_else(|| invalid(span, "allocation size overflow"))?;
+        let value = self.assign(locals, ty.clone(), &format!("call $fern_alloc(l {bytes})"));
+        self.output
+            .push_str(&format!("    storel {tag}, {value}\n"));
+        for (index, (field, expected)) in fields.iter().zip(expected).enumerate() {
+            expect_type(field.ty.clone(), expected, field.span)?;
+            let payload = self.expr(field, locals, depth)?;
+            let payload = self.payload(locals, &field.ty, payload);
+            let address = self.assign(
+                locals,
+                Type::Int,
+                &format!("add {value}, {}", 8 * (index + 1)),
+            );
+            self.output
+                .push_str(&format!("    storel {payload}, {address}\n"));
+        }
+        Ok((ty.clone(), value))
+    }
+
+    /// Select an indexed field only from a validated record with a single layout.
+    pub(super) fn record_field(
+        &mut self,
+        value: &Expr,
+        index: usize,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Result<(Type, String), Diagnostic> {
+        if let Type::Tuple(fields) = &value.ty {
+            let ty = fields
+                .get(index)
+                .cloned()
+                .ok_or_else(|| invalid(value.span, "invalid tuple field index"))?;
+            let record = self.expr(value, locals, depth)?;
+            let payload = self.custom_field(&record, index, &ty, locals);
+            return Ok((ty, payload));
+        }
+        let layout = self
+            .layouts
+            .get(&value.ty)
+            .ok_or_else(|| invalid(value.span, "field access requires a nominal record"))?;
+        if layout.fields.is_empty() || layout.variants.len() != 1 || index >= layout.fields.len() {
+            return Err(invalid(value.span, "invalid record field index"));
+        }
+        let ty = layout.variants[0][index].clone();
+        let record = self.expr(value, locals, depth)?;
+        let payload = self.custom_field(&record, index, &ty, locals);
+        Ok((ty, payload))
+    }
+
+    /// Read a custom field after its owner/tag has been checked by the caller.
+    fn custom_field(
+        &mut self,
+        value: &str,
+        index: usize,
+        ty: &Type,
+        locals: &mut Locals,
+    ) -> String {
+        let address = self.assign(
+            locals,
+            Type::Int,
+            &format!("add {value}, {}", 8 * (index + 1)),
+        );
+        let raw = self.assign(locals, Type::Int, &format!("loadl {address}"));
+        self.unpack(locals, ty, raw)
+    }
+
+    /// Return a concrete variant's field types for builtin or nominal sums.
+    fn variant_fields(&self, ty: &Type, tag: usize, span: Span) -> Result<Vec<Type>, Diagnostic> {
+        match (ty, tag) {
+            (Type::Tuple(fields), 0) => Ok(fields.clone()),
+            (Type::Option(item), 0) => Ok(vec![*item.clone()]),
+            (Type::Option(_), 1) => Ok(vec![]),
+            (Type::Result(ok, _), 0) => Ok(vec![*ok.clone()]),
+            (Type::Result(_, err), 1) => Ok(vec![*err.clone()]),
+            (Type::Named(_, _), _) => self
+                .layouts
+                .get(ty)
+                .and_then(|layout| layout.variants.get(tag))
+                .cloned()
+                .ok_or_else(|| invalid(span, "unknown nominal type or variant tag")),
+            _ => Err(invalid(
+                span,
+                "variant tag does not belong to the checked type",
+            )),
+        }
+    }
+
+    /// Normalize Unit or a structural tuple while checking each nested field once.
+    fn checked_tuple_pattern(
+        &self,
+        fields: &[Pattern],
+        ty: &Type,
+        span: Span,
+        depth: usize,
+    ) -> Result<Pattern, Diagnostic> {
+        if fields.is_empty() {
+            expect_type(ty.clone(), Type::Unit, span)?;
+            return Ok(Pattern::Wildcard);
+        }
+        let Type::Tuple(types) = ty else {
+            return Err(invalid(span, "tuple pattern requires tuple subject"));
+        };
+        if fields.len() != types.len() {
+            return Err(invalid(span, "tuple pattern arity mismatch"));
+        }
+        let fields = fields
+            .iter()
+            .zip(types)
+            .map(|(pattern, ty)| self.checked_pattern(pattern, ty, span, depth + 1))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Pattern::Variant { tag: 0, fields })
+    }
+
+    /// Normalize legacy constructors and recursively validate pattern arity and scalar types.
+    fn checked_pattern(
+        &self,
+        pattern: &Pattern,
+        ty: &Type,
+        span: Span,
+        depth: usize,
+    ) -> Result<Pattern, Diagnostic> {
+        if depth > MAX_DEPTH {
+            return Err(invalid(span, "pattern nesting limit exceeded"));
+        }
+        match pattern {
+            Pattern::Tuple(fields) => self.checked_tuple_pattern(fields, ty, span, depth),
+            Pattern::Wildcard | Pattern::Bind(_) => Ok(pattern.clone()),
+            Pattern::Int(_) => {
+                expect_type(ty.clone(), Type::Int, span)?;
+                Ok(pattern.clone())
+            }
+            Pattern::Bool(_) => {
+                expect_type(ty.clone(), Type::Bool, span)?;
+                Ok(pattern.clone())
+            }
+            Pattern::String(value) => {
+                expect_type(ty.clone(), Type::String, span)?;
+                if value.as_bytes().contains(&0) {
+                    return Err(invalid(span, "NUL in string pattern"));
+                }
+                Ok(pattern.clone())
+            }
+            Pattern::Constructor {
+                constructor,
+                binding,
+            } => {
+                let payload = payload_type(*constructor, ty, span)?;
+                if payload.is_none() && binding.is_some() {
+                    return Err(invalid(span, "None pattern cannot bind a payload"));
+                }
+                let tag = usize::from(matches!(constructor, Constructor::None | Constructor::Err));
+                let fields = if payload.is_some() {
+                    vec![binding.map_or(Pattern::Wildcard, Pattern::Bind)]
+                } else {
+                    vec![]
+                };
+                Ok(Pattern::Variant { tag, fields })
+            }
+            Pattern::Variant { tag, fields } => {
+                let expected = self.variant_fields(ty, *tag, span)?;
+                if expected.len() != fields.len() {
+                    return Err(invalid(
+                        span,
+                        "pattern field count differs from variant layout",
+                    ));
+                }
+                let fields = fields
+                    .iter()
+                    .zip(expected)
+                    .map(|(field, ty)| self.checked_pattern(field, &ty, span, depth + 1))
+                    .collect::<Result<_, _>>()?;
+                Ok(Pattern::Variant { tag: *tag, fields })
+            }
+        }
+    }
+}
+
+/// Per-arm state tracks bindings that must disappear before any following arm.
+struct PatternState<'a> {
+    failure: &'a str,
+    bindings: Vec<usize>,
+    span: Span,
+    depth: usize,
+}
+
+impl Emitter<'_> {
+    /// Normalize match patterns and prove coverage using only unguarded arms.
+    fn checked_match(
+        &self,
+        value: &Expr,
+        arms: &[MatchArm],
+    ) -> Result<(Type, Vec<Pattern>), Diagnostic> {
+        let first = arms
+            .first()
+            .ok_or_else(|| invalid(value.span, "match requires arms"))?;
+        resolved(&first.body.ty, &self.layouts, first.span, 0)?;
+        let result = first.body.ty.clone();
+        let mut patterns = Vec::new();
+        let mut covering = Vec::new();
+        let mut budget = 8192;
+        for arm in arms {
+            resolved(&arm.body.ty, &self.layouts, arm.span, 0)?;
+            expect_type(arm.body.ty.clone(), result.clone(), arm.span)?;
+            if self.exhaustive(std::slice::from_ref(&value.ty), &covering, &mut budget, 0)? {
+                return Err(invalid(arm.span, "unreachable match arm"));
+            }
+            let pattern = self.checked_pattern(&arm.pattern, &value.ty, arm.span, 0)?;
+            if covering
+                .iter()
+                .any(|row: &Vec<Pattern>| subsumes(&row[0], &pattern))
+            {
+                return Err(invalid(arm.span, "unreachable duplicate match pattern"));
+            }
+            if let Some(guard) = &arm.guard {
+                expect_type(guard.ty.clone(), Type::Bool, guard.span)?;
+            } else {
+                covering.push(vec![pattern.clone()]);
+            }
+            patterns.push(pattern);
+        }
+        if !self.exhaustive(std::slice::from_ref(&value.ty), &covering, &mut budget, 0)? {
+            return Err(invalid(value.span, "nonexhaustive match"));
+        }
+        Ok((result, patterns))
+    }
+
+    /// Decide exhaustive coverage of a bounded pattern matrix, including nested products.
+    fn exhaustive(
+        &self,
+        types: &[Type],
+        rows: &[Vec<Pattern>],
+        budget: &mut usize,
+        depth: usize,
+    ) -> Result<bool, Diagnostic> {
+        if *budget == 0 || depth > MAX_DEPTH {
+            return Err(invalid(Span::default(), "match coverage limit exceeded"));
+        }
+        *budget -= 1;
+        if rows.is_empty() {
+            return Ok(false);
+        }
+        if types.is_empty() || rows.iter().any(|row| row.iter().all(catchall)) {
+            return Ok(true);
+        }
+        if let Some(variants) = self.coverage_variants(&types[0]) {
+            for (tag, fields) in variants.into_iter().enumerate() {
+                let mut specialized = Vec::new();
+                for row in rows {
+                    if let Some(mut head) = specialize(&row[0], tag, fields.len()) {
+                        head.extend_from_slice(&row[1..]);
+                        specialized.push(head);
+                    }
+                }
+                let mut expanded = fields;
+                expanded.extend_from_slice(&types[1..]);
+                if !self.exhaustive(&expanded, &specialized, budget, depth + 1)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        } else {
+            let default: Vec<_> = rows
+                .iter()
+                .filter(|row| catchall(&row[0]))
+                .map(|row| row[1..].to_vec())
+                .collect();
+            self.exhaustive(&types[1..], &default, budget, depth + 1)
+        }
+    }
+
+    /// Enumerate finite constructors; scalar/list domains require a catchall column.
+    fn coverage_variants(&self, ty: &Type) -> Option<Vec<Vec<Type>>> {
+        match ty {
+            Type::Bool => Some(vec![vec![], vec![]]),
+            Type::Unit => Some(vec![vec![]]),
+            Type::Option(item) => Some(vec![vec![*item.clone()], vec![]]),
+            Type::Result(ok, err) => Some(vec![vec![*ok.clone()], vec![*err.clone()]]),
+            Type::Tuple(fields) => Some(vec![fields.clone()]),
+            Type::Named(_, _) => self.layouts.get(ty).map(|layout| layout.variants.clone()),
+            _ => None,
+        }
+    }
+
+    /// Match once, enter guards only after bindings exist, and merge actual arm endpoints.
+    pub(super) fn matching(
+        &mut self,
+        value: &Expr,
+        arms: &[MatchArm],
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Result<(Type, String), Diagnostic> {
+        let (ty, patterns) = self.checked_match(value, arms)?;
+        let scrutinee = self.expr(value, locals, depth)?;
+        let merge = locals.label();
+        let mut incoming = Vec::new();
+        for (arm, pattern) in arms.iter().zip(patterns) {
+            let failure = locals.label();
+            let mut state = PatternState {
+                failure: &failure,
+                bindings: vec![],
+                span: arm.span,
+                depth,
+            };
+            self.pattern_branch(&pattern, &value.ty, &scrutinee, &mut state, locals)?;
+            if let Some(guard) = &arm.guard {
+                let test = self.expr(guard, locals, depth)?;
+                self.require_pattern(&test, &failure, locals);
+            }
+            let result = self.expr(&arm.body, locals, depth)?;
+            for id in state.bindings {
+                locals.values.remove(&id);
+            }
+            incoming.push(format!("{} {result}", locals.current));
+            self.output.push_str(&format!("    jmp {merge}\n"));
+            self.start_block(locals, &failure);
+        }
+        // The validated pattern matrix proves this last failure block unreachable.
+        self.output.push_str("    hlt\n");
+        self.start_block(locals, &merge);
+        let result = if ty == Type::Unit {
+            "0".into()
+        } else {
+            self.assign(locals, ty.clone(), &format!("phi {}", incoming.join(", ")))
+        };
+        Ok((ty, result))
+    }
+
+    /// Branch to the next arm on failure, preserving a fresh successful predecessor.
+    fn require_pattern(&mut self, test: &str, failure: &str, locals: &mut Locals) {
+        let success = locals.label();
+        self.output
+            .push_str(&format!("    jnz {test}, {success}, {failure}\n"));
+        self.start_block(locals, &success);
+    }
+
+    /// Check nested tags before payload reads, introducing scoped SSA bindings as found.
+    fn pattern_branch(
+        &mut self,
+        pattern: &Pattern,
+        ty: &Type,
+        value: &str,
+        state: &mut PatternState<'_>,
+        locals: &mut Locals,
+    ) -> Result<(), Diagnostic> {
+        self.nodes += 1;
+        if self.nodes > MAX_NODES || state.depth > MAX_DEPTH {
+            return Err(invalid(state.span, "pattern lowering limit exceeded"));
+        }
+        match pattern {
+            Pattern::Wildcard => {}
+            Pattern::Bind(id) => {
+                locals.define(id.0, ty.clone(), value.to_owned(), state.span)?;
+                state.bindings.push(id.0);
+            }
+            Pattern::Variant { tag, fields } => {
+                let test = self.variant_test(ty, *tag, value, locals);
+                self.require_pattern(&test, state.failure, locals);
+                let field_types = self.variant_fields(ty, *tag, state.span)?;
+                for (index, (pattern, ty_field)) in fields.iter().zip(field_types).enumerate() {
+                    if matches!(pattern, Pattern::Wildcard) {
+                        continue;
+                    }
+                    let field = self.variant_field(ty, &ty_field, value, index, locals);
+                    state.depth += 1;
+                    self.pattern_branch(pattern, &ty_field, &field, state, locals)?;
+                    state.depth -= 1;
+                }
+            }
+            _ => {
+                let test = self.scalar_test(pattern, value, state.span, locals)?;
+                self.require_pattern(&test, state.failure, locals);
+            }
+        }
+        Ok(())
+    }
+
+    /// Test a concrete custom discriminant or the shared heap Result tag convention.
+    fn variant_test(&mut self, ty: &Type, tag: usize, value: &str, locals: &mut Locals) -> String {
+        if matches!(ty, Type::Named(_, _) | Type::Tuple(_)) {
+            let actual = self.assign(locals, Type::Int, &format!("loadl {value}"));
+            self.assign(locals, Type::Bool, &format!("ceql {actual}, {tag}"))
+        } else {
+            let is_ok = self.assign(
+                locals,
+                Type::Bool,
+                &format!("call $fern_result_is_ok(l {value})"),
+            );
+            if tag == 0 {
+                is_ok
+            } else {
+                self.assign(locals, Type::Bool, &format!("ceqw {is_ok}, 0"))
+            }
+        }
+    }
+
+    /// Read a selected variant field only after its tag succeeded in the current block.
+    fn variant_field(
+        &mut self,
+        owner: &Type,
+        ty: &Type,
+        value: &str,
+        index: usize,
+        locals: &mut Locals,
+    ) -> String {
+        if matches!(owner, Type::Named(_, _) | Type::Tuple(_)) {
+            self.custom_field(value, index, ty, locals)
+        } else {
+            let raw = self.assign(
+                locals,
+                Type::Int,
+                &format!("call $fern_result_unwrap(l {value})"),
+            );
+            self.unpack(locals, ty, raw)
+        }
+    }
+
+    /// Compare validated scalar literals; other patterns must use dedicated lowering.
+    fn scalar_test(
+        &mut self,
+        pattern: &Pattern,
+        value: &str,
+        span: Span,
+        locals: &mut Locals,
+    ) -> Result<String, Diagnostic> {
+        let instruction = match pattern {
+            Pattern::Int(integer) => format!("ceql {value}, {integer}"),
+            Pattern::Bool(boolean) => format!("ceqw {value}, {}", u8::from(*boolean)),
+            Pattern::String(text) => {
+                let text = self.string(text, span)?;
+                format!("call $fern_str_eq(l {value}, l {text})")
+            }
+            _ => return Err(invalid(span, "unnormalized pattern in scalar lowering")),
+        };
+        Ok(self.assign(locals, Type::Bool, &instruction))
+    }
+}
+
+/// Recognize a pattern covering every value without inspecting its representation.
+fn catchall(pattern: &Pattern) -> bool {
+    matches!(pattern, Pattern::Wildcard | Pattern::Bind(_))
+}
+
+/// Expand one matrix row into a chosen finite constructor, or discard mismatched rows.
+fn specialize(pattern: &Pattern, tag: usize, fields: usize) -> Option<Vec<Pattern>> {
+    match pattern {
+        Pattern::Wildcard | Pattern::Bind(_) => Some(vec![Pattern::Wildcard; fields]),
+        Pattern::Bool(value) if usize::from(*value) == tag => Some(vec![]),
+        Pattern::Variant {
+            tag: actual,
+            fields,
+        } if *actual == tag => Some(fields.clone()),
+        _ => None,
+    }
+}
+
+/// Recognize direct structural subsumption without treating guarded rows as coverage.
+fn subsumes(prior: &Pattern, next: &Pattern) -> bool {
+    match (prior, next) {
+        (Pattern::Wildcard | Pattern::Bind(_), _) => true,
+        (Pattern::Int(a), Pattern::Int(b)) => a == b,
+        (Pattern::Bool(a), Pattern::Bool(b)) => a == b,
+        (Pattern::String(a), Pattern::String(b)) => a == b,
+        (Pattern::Variant { tag: a, fields: af }, Pattern::Variant { tag: b, fields: bf }) => {
+            a == b && af.len() == bf.len() && af.iter().zip(bf).all(|(a, b)| subsumes(a, b))
+        }
+        _ => false,
+    }
+}

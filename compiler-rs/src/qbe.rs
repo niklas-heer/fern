@@ -4,7 +4,11 @@ use crate::{
     ir::{self, Builtin, CallTarget, Expr, ExprKind, Function, MatchArm, Pattern, Stmt},
     Constructor, Diagnostic, Span, Type,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+#[path = "qbe/nominal.rs"]
+mod nominal;
+#[path = "qbe/runtime_calls.rs"]
+mod runtime_calls;
 
 const MAX_DEPTH: usize = 256;
 const MAX_NODES: usize = 200_000;
@@ -13,12 +17,13 @@ const STRING_RUN: usize = 512;
 /// Lower `program` to native-backend IL, rejecting inconsistent public IR.
 /// No source-name or AST type inference occurs here. Requires exactly one main.
 pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
+    let layouts = nominal::layouts(&program.types)?;
     let mut functions = BTreeMap::new();
     let mut main = None;
     for function in &program.functions {
-        concrete(&function.return_type, function.body.span, 0)?;
+        nominal::resolved(&function.return_type, &layouts, function.body.span, 0)?;
         for param in &function.params {
-            concrete(&param.ty, function.body.span, 0)?;
+            nominal::resolved(&param.ty, &layouts, function.body.span, 0)?;
         }
         if functions.insert(function.id.0, function).is_some() {
             return Err(invalid(function.body.span, "duplicate function identity"));
@@ -40,6 +45,7 @@ pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
     let main = main.ok_or_else(|| invalid(Span::default(), "missing main function"))?;
     let mut emitter = Emitter {
         functions,
+        layouts,
         output: String::new(),
         data: String::new(),
         strings: 0,
@@ -49,6 +55,7 @@ pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
         emitter.function(function)?;
     }
     emitter.main_wrapper(main);
+    emitter.float_print_helpers();
     emitter.data.push_str(&emitter.output);
     Ok(emitter.data)
 }
@@ -61,9 +68,19 @@ fn invalid(span: Span, message: &str) -> Diagnostic {
 /// Map semantic `ty` to QBE scalar width; pointers and integers remain distinct in IR.
 fn width(ty: Type) -> char {
     match ty {
-        Type::Int | Type::String | Type::List(_) | Type::Option(_) | Type::Result(_, _) => 'l',
+        Type::Int
+        | Type::String
+        | Type::List(_)
+        | Type::Option(_)
+        | Type::Result(_, _)
+        | Type::Tuple(_)
+        | Type::Native(_)
+        | Type::Named(_, _) => 'l',
         Type::Bool | Type::Unit => 'w',
-        Type::Infer(_) => unreachable!("concrete types validated at IR boundary"),
+        Type::Float => 'd',
+        Type::Infer(_) | Type::Generic(_) => {
+            unreachable!("concrete types validated at IR boundary")
+        }
     }
 }
 
@@ -80,6 +97,7 @@ fn expect_type(actual: Type, expected: Type, span: Span) -> Result<(), Diagnosti
 
 struct Emitter<'a> {
     functions: BTreeMap<usize, &'a Function>,
+    layouts: HashMap<Type, &'a ir::TypeLayout>,
     output: String,
     data: String,
     strings: usize,
@@ -194,14 +212,22 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Result<String, Diagnostic> {
-        concrete(&expr.ty, expr.span, 0)?;
+        nominal::resolved(&expr.ty, &self.layouts, expr.span, 0)?;
         self.nodes += 1;
         if depth > MAX_DEPTH || self.nodes > MAX_NODES {
             return Err(invalid(expr.span, "lowering complexity limit exceeded"));
         }
         let (actual, value) = match &expr.kind {
+            ExprKind::CustomConstruct { tag, fields } => {
+                self.custom_construct(*tag, fields, &expr.ty, expr.span, locals, depth + 1)?
+            }
+            ExprKind::Field { value, index } => {
+                self.record_field(value, *index, locals, depth + 1)?
+            }
             ExprKind::Try(value) => self.attempt(value, locals, depth + 1)?,
+            ExprKind::Interpolate(parts) => self.interpolate(parts, locals, depth + 1)?,
             ExprKind::Unit => (Type::Unit, "0".into()),
+            ExprKind::Tuple(items) => self.tuple(items, &expr.ty, expr.span, locals, depth + 1)?,
             ExprKind::List(items) => self.list(items, &expr.ty, expr.span, locals, depth + 1)?,
             ExprKind::Construct { constructor, value } => self.construct(
                 *constructor,
@@ -213,6 +239,7 @@ impl Emitter<'_> {
             )?,
             ExprKind::Match { value, arms } => self.matching(value, arms, locals, depth + 1)?,
             ExprKind::Int(value) => (Type::Int, value.to_string()),
+            ExprKind::Float(value) => self.float_literal(*value, locals),
             ExprKind::Bool(value) => (Type::Bool, u8::from(*value).to_string()),
             ExprKind::String(value) => (Type::String, self.string(value, expr.span)?),
             ExprKind::Local(id) => locals
@@ -242,6 +269,36 @@ impl Emitter<'_> {
         };
         expect_type(actual, expr.ty.clone(), expr.span)?;
         Ok(value)
+    }
+
+    /// Validate structural tuple shape before allocating its tag and typed fields.
+    fn tuple(
+        &mut self,
+        items: &[Expr],
+        ty: &Type,
+        span: Span,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Result<(Type, String), Diagnostic> {
+        if !matches!(ty, Type::Tuple(fields) if !fields.is_empty()) {
+            return Err(invalid(
+                span,
+                "tuple expression requires a nonempty structural tuple type",
+            ));
+        }
+        self.custom_construct(0, items, ty, span, locals, depth)
+    }
+
+    /// Preserve every literal Float bit without a locale-dependent decimal conversion.
+    fn float_literal(&mut self, value: f64, locals: &mut Locals) -> (Type, String) {
+        (
+            Type::Float,
+            self.assign(
+                locals,
+                Type::Float,
+                &format!("cast {}", value.to_bits() as i64),
+            ),
+        )
     }
 
     /// Emit UTF-8 `value` as bounded ASCII runs and exact numeric bytes.
@@ -287,12 +344,14 @@ impl Emitter<'_> {
         depth: usize,
     ) -> Result<(Type, String), Diagnostic> {
         let expected = match op {
+            UnaryOp::Negate if value.ty == Type::Float => Type::Float,
             UnaryOp::Negate => Type::Int,
             UnaryOp::Not => Type::Bool,
         };
         expect_type(value.ty.clone(), expected.clone(), value.span)?;
         let value = self.expr(value, locals, depth)?;
         let instruction = match op {
+            UnaryOp::Negate if expected == Type::Float => format!("neg {value}"),
             UnaryOp::Negate => format!("sub 0, {value}"),
             UnaryOp::Not => format!("ceqw {value}, 0"),
         };
@@ -351,6 +410,9 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Result<(Type, String), Diagnostic> {
+        if let CallTarget::Runtime(id) = target {
+            return self.runtime_call(id, args, span, locals, depth);
+        }
         if compound_builtin(target) {
             return self.compound_call(target, args, span, locals, depth);
         }
@@ -394,6 +456,9 @@ impl Emitter<'_> {
         span: Span,
     ) -> Result<(String, Vec<Type>, Type), Diagnostic> {
         let builtin = match target {
+            CallTarget::Runtime(_) => {
+                return Err(invalid(span, "runtime call requires registry lowering"))
+            }
             CallTarget::Function(id) => {
                 let function = self
                     .functions
@@ -425,6 +490,7 @@ impl Emitter<'_> {
                     .ok_or_else(|| invalid(span, "print requires one argument"))?;
                 let suffix = match arg.ty.clone() {
                     Type::Int => "int",
+                    Type::Float => "float",
                     Type::Bool => "bool",
                     Type::String => "str",
                     _ => return Err(invalid(arg.span, "cannot print compound or Unit value")),
@@ -465,15 +531,27 @@ impl Emitter<'_> {
             | BinaryOp::Multiply
             | BinaryOp::Divide
             | BinaryOp::Remainder => {
-                expect_type(left.ty.clone(), Type::Int, left.span)?;
-                Type::Int
+                if !matches!(left.ty, Type::Int | Type::Float)
+                    || (op == BinaryOp::Remainder && left.ty == Type::Float)
+                {
+                    return Err(invalid(
+                        left.span,
+                        "numeric operator requires matching numeric types",
+                    ));
+                }
+                left.ty.clone()
             }
             BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-                expect_type(left.ty.clone(), Type::Int, left.span)?;
+                if !matches!(left.ty, Type::Int | Type::Float) {
+                    return Err(invalid(
+                        left.span,
+                        "ordered comparison requires numeric types",
+                    ));
+                }
                 Type::Bool
             }
             BinaryOp::Eq | BinaryOp::Ne => {
-                if !matches!(left.ty, Type::Int | Type::Bool | Type::String) {
+                if !matches!(left.ty, Type::Int | Type::Float | Type::Bool | Type::String) {
                     return Err(invalid(
                         left.span,
                         "comparison requires Int, Bool, or String",
@@ -625,13 +703,18 @@ fn binary_instruction(op: BinaryOp, operand: Type) -> String {
         BinaryOp::Ge => "csge",
         BinaryOp::And | BinaryOp::Or => unreachable!("logical operators use branch lowering"),
     };
+    let base = if operand == Type::Float {
+        base.replace("cs", "c")
+    } else {
+        base.to_owned()
+    };
     if matches!(
         op,
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
     ) {
         format!("{base}{}", width(operand))
     } else {
-        base.into()
+        base
     }
 }
 
@@ -641,13 +724,24 @@ fn concrete(ty: &Type, span: Span, depth: usize) -> Result<(), Diagnostic> {
         return Err(invalid(span, "type nesting limit exceeded"));
     }
     match ty {
-        Type::Infer(_) => Err(invalid(span, "unresolved inference variable")),
+        Type::Infer(_) | Type::Generic(_) => Err(invalid(
+            span,
+            "unresolved inference variable or generic type",
+        )),
+        Type::Tuple(args) | Type::Named(_, args) => {
+            for arg in args {
+                concrete(arg, span, depth + 1)?;
+            }
+            Ok(())
+        }
         Type::List(item) | Type::Option(item) => concrete(item, span, depth + 1),
         Type::Result(ok, err) => {
             concrete(ok, span, depth + 1)?;
             concrete(err, span, depth + 1)
         }
-        Type::Int | Type::Bool | Type::String | Type::Unit => Ok(()),
+        Type::Native(_) | Type::Int | Type::Float | Type::Bool | Type::String | Type::Unit => {
+            Ok(())
+        }
     }
 }
 
@@ -782,6 +876,8 @@ impl Emitter<'_> {
     fn payload(&mut self, locals: &mut Locals, ty: &Type, value: String) -> String {
         if matches!(ty, Type::Bool | Type::Unit) {
             self.assign(locals, Type::Int, &format!("extuw {value}"))
+        } else if *ty == Type::Float {
+            self.assign(locals, Type::Int, &format!("cast {value}"))
         } else {
             value
         }
@@ -791,6 +887,8 @@ impl Emitter<'_> {
     fn unpack(&mut self, locals: &mut Locals, ty: &Type, value: String) -> String {
         if matches!(ty, Type::Bool | Type::Unit) {
             self.assign(locals, ty.clone(), &format!("copy {value}"))
+        } else if *ty == Type::Float {
+            self.assign(locals, Type::Float, &format!("cast {value}"))
         } else {
             value
         }
@@ -899,189 +997,6 @@ impl Emitter<'_> {
     }
 }
 
-/// Validate flat patterns and exhaustiveness before producing any match control flow.
-fn match_type(ty: &Type, arms: &[MatchArm], span: Span) -> Result<Type, Diagnostic> {
-    let result = arms
-        .first()
-        .ok_or_else(|| invalid(span, "match requires arms"))?
-        .body
-        .ty
-        .clone();
-    let mut covered = BTreeSet::new();
-    let mut complete = false;
-    for arm in arms {
-        if complete {
-            return Err(invalid(arm.span, "unreachable match arm"));
-        }
-        expect_type(arm.body.ty.clone(), result.clone(), arm.span)?;
-        match &arm.pattern {
-            Pattern::Wildcard | Pattern::Bind(_) => complete = true,
-            pattern => {
-                let key = pattern_key(pattern, ty, arm.span)?;
-                if !covered.insert(key) {
-                    return Err(invalid(arm.span, "duplicate match pattern"));
-                }
-                complete = match ty {
-                    Type::Bool => covered.contains("true") && covered.contains("false"),
-                    Type::Option(_) => covered.contains("Some") && covered.contains("None"),
-                    Type::Result(_, _) => covered.contains("Ok") && covered.contains("Err"),
-                    _ => false,
-                };
-            }
-        }
-    }
-    if !complete {
-        return Err(invalid(span, "nonexhaustive match"));
-    }
-    Ok(result)
-}
-
-/// Validate a literal or constructor pattern against its checked scrutinee type.
-fn pattern_key(pattern: &Pattern, ty: &Type, span: Span) -> Result<String, Diagnostic> {
-    match pattern {
-        Pattern::Int(value) => {
-            expect_type(ty.clone(), Type::Int, span)?;
-            Ok(value.to_string())
-        }
-        Pattern::Bool(value) => {
-            expect_type(ty.clone(), Type::Bool, span)?;
-            Ok(value.to_string())
-        }
-        Pattern::String(value) => {
-            expect_type(ty.clone(), Type::String, span)?;
-            if value.as_bytes().contains(&0) {
-                return Err(invalid(span, "NUL in string pattern"));
-            }
-            Ok(value.clone())
-        }
-        Pattern::Constructor {
-            constructor,
-            binding,
-        } => {
-            let payload = payload_type(*constructor, ty, span)?;
-            if payload.is_none() && binding.is_some() {
-                return Err(invalid(span, "None pattern cannot bind a payload"));
-            }
-            Ok(format!("{constructor:?}"))
-        }
-        Pattern::Wildcard | Pattern::Bind(_) => {
-            Err(invalid(span, "catchall has no literal identity"))
-        }
-    }
-}
-
-impl Emitter<'_> {
-    /// Match a single scrutinee, merging values from actual final arm blocks.
-    fn matching(
-        &mut self,
-        value: &Expr,
-        arms: &[MatchArm],
-        locals: &mut Locals,
-        depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
-        let ty = match_type(&value.ty, arms, value.span)?;
-        let scrutinee = self.expr(value, locals, depth)?;
-        let merge = locals.label();
-        let mut incoming = Vec::new();
-        for (index, arm) in arms.iter().enumerate() {
-            let body_label = locals.label();
-            let next = locals.label();
-            if index + 1 == arms.len() {
-                self.output.push_str(&format!("    jmp {body_label}\n"));
-            } else {
-                let test = self.pattern_test(&arm.pattern, &scrutinee, arm.span, locals)?;
-                self.output
-                    .push_str(&format!("    jnz {test}, {body_label}, {next}\n"));
-            }
-            self.start_block(locals, &body_label);
-            let binding =
-                self.pattern_bind(&arm.pattern, &value.ty, &scrutinee, arm.span, locals)?;
-            let result = self.expr(&arm.body, locals, depth)?;
-            if let Some(id) = binding {
-                locals.values.remove(&id);
-            }
-            incoming.push(format!("{} {result}", locals.current));
-            self.output.push_str(&format!("    jmp {merge}\n"));
-            if index + 1 < arms.len() {
-                self.start_block(locals, &next);
-            }
-        }
-        self.start_block(locals, &merge);
-        let result = if ty == Type::Unit {
-            "0".into()
-        } else {
-            self.assign(locals, ty.clone(), &format!("phi {}", incoming.join(", ")))
-        };
-        Ok((ty, result))
-    }
-
-    /// Test a validated flat pattern without reading a sum payload before its tag.
-    fn pattern_test(
-        &mut self,
-        pattern: &Pattern,
-        value: &str,
-        span: Span,
-        locals: &mut Locals,
-    ) -> Result<String, Diagnostic> {
-        let instruction = match pattern {
-            Pattern::Wildcard | Pattern::Bind(_) => return Ok("1".into()),
-            Pattern::Int(integer) => format!("ceql {value}, {integer}"),
-            Pattern::Bool(boolean) => format!("ceqw {value}, {}", u8::from(*boolean)),
-            Pattern::String(text) => {
-                let text = self.string(text, span)?;
-                format!("call $fern_str_eq(l {value}, l {text})")
-            }
-            Pattern::Constructor { constructor, .. } => {
-                let tag = self.assign(
-                    locals,
-                    Type::Int,
-                    &format!("call $fern_result_is_ok(l {value})"),
-                );
-                let tag = self.unpack(locals, &Type::Bool, tag);
-                return Ok(
-                    if matches!(constructor, Constructor::Some | Constructor::Ok) {
-                        tag
-                    } else {
-                        self.assign(locals, Type::Bool, &format!("ceqw {tag}, 0"))
-                    },
-                );
-            }
-        };
-        Ok(self.assign(locals, Type::Bool, &instruction))
-    }
-
-    /// Introduce a pattern binding only within the selected arm's lexical scope.
-    fn pattern_bind(
-        &mut self,
-        pattern: &Pattern,
-        ty: &Type,
-        value: &str,
-        span: Span,
-        locals: &mut Locals,
-    ) -> Result<Option<usize>, Diagnostic> {
-        let (id, ty, value) = match pattern {
-            Pattern::Bind(id) => (id.0, ty.clone(), value.to_owned()),
-            Pattern::Constructor {
-                constructor,
-                binding: Some(id),
-            } => {
-                let payload = payload_type(*constructor, ty, span)?
-                    .ok_or_else(|| invalid(span, "constructor has no payload"))?;
-                let raw = self.assign(
-                    locals,
-                    Type::Int,
-                    &format!("call $fern_result_unwrap(l {value})"),
-                );
-                let value = self.unpack(locals, payload, raw);
-                (id.0, payload.clone(), value)
-            }
-            _ => return Ok(None),
-        };
-        locals.define(id, ty, value, span)?;
-        Ok(Some(id))
-    }
-}
-
 impl Emitter<'_> {
     /// Propagate Err unchanged, then expose an Ok payload in the continuing block.
     fn attempt(
@@ -1120,5 +1035,83 @@ impl Emitter<'_> {
         );
         let value = self.unpack(locals, ok, payload);
         Ok((*ok.clone(), value))
+    }
+}
+
+impl Emitter<'_> {
+    /// Print doubles with round-trip precision through the system variadic C ABI.
+    fn float_print_helpers(&mut self) {
+        if !self.output.contains("call $fern_print_float")
+            && !self.output.contains("call $fern_println_float")
+        {
+            return;
+        }
+        self.data
+            .push_str("data $fern_rs_float_fmt = { b \"%.17g\", b 0 }\n");
+        self.data
+            .push_str("data $fern_rs_float_line_fmt = { b \"%.17g\", b 10, b 0 }\n");
+        for (name, format) in [
+            ("fern_print_float", "fern_rs_float_fmt"),
+            ("fern_println_float", "fern_rs_float_line_fmt"),
+        ] {
+            self.output.push_str(&format!("function ${name}(d %x) {{\n@start\n    call $printf(l ${format}, ..., d %x)\n    ret\n}}\n"));
+        }
+    }
+}
+
+impl Emitter<'_> {
+    /// Convert scalar parts once and concatenate in source order using the runtime ABI.
+    fn interpolate(
+        &mut self,
+        parts: &[Expr],
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Result<(Type, String), Diagnostic> {
+        let mut text = self.string("", Span::default())?;
+        for part in parts {
+            if !matches!(part.ty, Type::Int | Type::Float | Type::Bool | Type::String) {
+                return Err(invalid(part.span, "interpolation requires scalar values"));
+            }
+            let value = self.expr(part, locals, depth)?;
+            let value = match part.ty {
+                Type::String => value,
+                Type::Int => self.assign(
+                    locals,
+                    Type::String,
+                    &format!("call $fern_int_to_str(l {value})"),
+                ),
+                Type::Bool => {
+                    let value = self.assign(locals, Type::Int, &format!("extuw {value}"));
+                    self.assign(
+                        locals,
+                        Type::String,
+                        &format!("call $fern_bool_to_str(l {value})"),
+                    )
+                }
+                Type::Float => self.float_string(value, locals, part.span)?,
+                _ => return Err(invalid(part.span, "interpolation requires scalar values")),
+            };
+            text = self.assign(
+                locals,
+                Type::String,
+                &format!("call $fern_str_concat(l {text}, l {value})"),
+            );
+        }
+        Ok((Type::String, text))
+    }
+
+    /// Format an IEEE double into a bounded GC allocation with round-trip precision.
+    fn float_string(
+        &mut self,
+        value: String,
+        locals: &mut Locals,
+        span: Span,
+    ) -> Result<String, Diagnostic> {
+        let format = self.string("%.17g", span)?;
+        let buffer = self.assign(locals, Type::String, "call $fern_alloc(l 32)");
+        self.output.push_str(&format!(
+            "    call $snprintf(l {buffer}, l 32, l {format}, ..., d {value})\n"
+        ));
+        Ok(buffer)
     }
 }

@@ -2,9 +2,14 @@
 #![forbid(unsafe_code)]
 pub mod ast;
 pub mod check;
+pub mod format;
 pub mod ir;
+pub mod lsp;
+pub mod modules;
 pub mod parse;
 pub mod qbe;
+pub mod repl;
+pub mod runtime;
 
 /// Source byte range, with an exclusive end offset.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -31,16 +36,21 @@ impl Diagnostic {
 }
 
 /// Semantic types; inference variables are eliminated before QBE lowering.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Type {
     Int,
+    Float,
     Bool,
     String,
     Unit,
+    Native(crate::runtime::NativeType),
+    Tuple(Vec<Type>),
     List(Box<Type>),
     Option(Box<Type>),
     Result(Box<Type>, Box<Type>),
     Infer(u32),
+    Named(String, Vec<Type>),
+    Generic(String),
 }
 
 /// Built-in sum constructors, independent of runtime representation.

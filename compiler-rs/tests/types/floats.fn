@@ -1,0 +1,20 @@
+type Sample:
+    value: Float
+
+fn identity(value: a) -> a: value
+fn negate(value: Float) -> Float: -value
+
+fn main():
+    println(1.25 * 2.5)
+    println(negate(-3.5))
+    println(1e2 >= 99.0)
+    println(0.0 == -0.0)
+    let nan = 0.0 / 0.0
+    println(nan != nan)
+    println((1.0 / 0.0) > 1e300)
+    println(Sample(identity(1.5)).value)
+    println(List.head([2.25, -0.0]))
+    println(Option.unwrap_or(Some(4.5), 0.0))
+    match Some(-0.0):
+        Some(value) -> println((1.0 / value) < 0.0)
+        None -> println(false)

@@ -1,0 +1,17 @@
+type Box(a):
+    value: a
+
+type Pair(a, b):
+    left: a
+    right: b
+
+fn wrap(value: a) -> Box(a): Box(value)
+fn empty() -> Option(a): None
+
+fn main():
+    let pair = Pair(wrap(9223372036854775807), wrap("hello"))
+    println(pair.left.value)
+    println(pair.right.value)
+    println(wrap(true).value)
+    let absent: Option(String) = empty()
+    println(Option.unwrap_or(absent, "fallback"))

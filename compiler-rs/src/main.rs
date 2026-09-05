@@ -1,7 +1,7 @@
 //! Experimental CLI; parsing and type checking never call the C frontend.
 #![forbid(unsafe_code)]
 mod native;
-use fern_prototype::{check, parse, qbe, Diagnostic};
+use fern_prototype::{check, modules, qbe};
 use std::{
     env,
     ffi::OsString,
@@ -24,9 +24,12 @@ fn options(arguments: Vec<OsString>) -> Result<Option<Options>, String> {
     if arguments.is_empty() || arguments[0] == "--help" || arguments[0] == "-h" {
         println!(
             "fern-rs: experimental Rust frontend (C remains the default)\n\
-Usage: fern-rs <check|emit|build|run> <source.fn> [-o output]\n\
+Usage: fern-rs <check|emit|build|run|fmt> <source.fn> [-o output]\n\
 Run arguments: fern-rs run source.fn -- [arguments]\n\
-Subset: typed functions, Int/Bool/String, List/Option/Result, let, if, match, and Result ?.\n\
+Subset: generic functions, custom types, modules, Int/Bool/String, List/Option/Result, guarded match, and Result ?.\n\
+Formatting: fern-rs fmt source.fn updates the file after syntax validation.\n\
+Interactive evaluation: fern-rs repl retains successful bindings and typed functions.\n\
+Editor protocol: fern-rs lsp communicates over standard input/output.\n\
 Native builds: run just rust-build; FERN_QBE and FERN_RUNTIME_LIB override backend paths."
         );
         return Ok(None);
@@ -39,7 +42,7 @@ Native builds: run just rust-build; FERN_QBE and FERN_RUNTIME_LIB override backe
         .to_str()
         .ok_or("command must be UTF-8")?
         .to_owned();
-    if !["check", "emit", "build", "run"].contains(&command.as_str()) {
+    if !["check", "emit", "build", "run", "fmt"].contains(&command.as_str()) {
         return Err(format!("unknown command: {command}"));
     }
     let mut source = None;
@@ -76,39 +79,18 @@ Native builds: run just rust-build; FERN_QBE and FERN_RUNTIME_LIB override backe
     }))
 }
 
-/// Format a source diagnostic with Unicode-aware line/column and the offending line.
-fn diagnostic(path: &Path, source: &str, error: Diagnostic) -> String {
-    let mut offset = error.span.start.min(source.len());
-    while !source.is_char_boundary(offset) {
-        offset -= 1;
-    }
-    let before = &source[..offset];
-    let line = before.bytes().filter(|byte| *byte == b'\n').count() + 1;
-    let line_start = before.rfind('\n').map_or(0, |position| position + 1);
-    let column = source[line_start..offset].chars().count() + 1;
-    let text = source[line_start..].lines().next().unwrap_or("");
-    format!(
-        "{}:{line}:{column}: error: {}\n  {text}",
-        path.display(),
-        error.message
-    )
-}
-
 /// Parse and check source before producing any artifacts or running backend tools.
 fn run(options: Options) -> Result<u8, String> {
-    let file = fs::File::open(&options.source)
-        .map_err(|e| format!("{}: {e}", options.source.display()))?;
-    let mut source = String::new();
-    file.take(1024 * 1024 + 1)
-        .read_to_string(&mut source)
-        .map_err(|e| format!("{}: {e}", options.source.display()))?;
-    let parsed = parse::parse(&source).map_err(|e| diagnostic(&options.source, &source, e))?;
-    let typed = check::check(&parsed).map_err(|e| diagnostic(&options.source, &source, e))?;
+    if options.command == "fmt" {
+        return format_file(&options.source);
+    }
+    let loaded = modules::load(&options.source).map_err(|error| error.message)?;
+    let typed = check::check(&loaded.program).map_err(|error| loaded.render(error))?;
     if options.command == "check" {
         println!("No type errors (Rust prototype subset)");
         return Ok(0);
     }
-    let il = qbe::emit(&typed).map_err(|e| diagnostic(&options.source, &source, e))?;
+    let il = qbe::emit(&typed).map_err(|error| loaded.render(error))?;
     if options.command == "emit" {
         if let Some(output) = options.output {
             emit_file(&options.source, &output, &il)?;
@@ -135,6 +117,41 @@ fn run(options: Options) -> Result<u8, String> {
     }
     #[cfg(not(unix))]
     Ok(status.code().unwrap_or(1) as u8)
+}
+
+/// Validate formatting before atomically replacing the canonical source, preserving permissions.
+/// Reads are bounded; failed formatting and writes leave the original source intact.
+fn format_file(source: &Path) -> Result<u8, String> {
+    let path = source
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", source.display()))?;
+    let mut text = String::new();
+    fs::File::open(&path)
+        .map_err(|e| e.to_string())?
+        .take(1024 * 1024 + 1)
+        .read_to_string(&mut text)
+        .map_err(|e| e.to_string())?;
+    let formatted = fern_prototype::format::format(&text).map_err(|e| {
+        let prefix = &text[..e.span.start.min(text.len())];
+        let line = prefix.bytes().filter(|b| *b == b'\n').count() + 1;
+        format!("{}:{line}: error: {}", source.display(), e.message)
+    })?;
+    if text != formatted {
+        let parent = path.parent().ok_or("source has no parent directory")?;
+        let workspace = native::Workspace::new(parent).map_err(|e| e.to_string())?;
+        let staged = workspace.file("formatted.fn");
+        fs::write(&staged, formatted).map_err(|e| e.to_string())?;
+        fs::set_permissions(
+            &staged,
+            fs::metadata(&path)
+                .map_err(|e| e.to_string())?
+                .permissions(),
+        )
+        .map_err(|e| e.to_string())?;
+        fs::rename(staged, path).map_err(|e| e.to_string())?;
+    }
+    println!("Formatted {}", source.display());
+    Ok(0)
 }
 
 /// Resolve `output` beside its canonical parent and reject aliases of `source`.
@@ -208,8 +225,29 @@ fn build(source: &Path, output: Option<PathBuf>, il: &str) -> Result<u8, String>
 
 /// Convert expected diagnostics and I/O failures into stable nonzero process exits.
 fn main() -> ExitCode {
-    let result =
-        options(env::args_os().skip(1).collect()).and_then(|options| options.map_or(Ok(0), run));
+    let arguments: Vec<_> = env::args_os().skip(1).collect();
+    let result = if arguments.first().is_some_and(|arg| arg == "repl") {
+        if arguments.len() != 1 {
+            Err("repl accepts no additional arguments".into())
+        } else {
+            use std::io::IsTerminal;
+            fern_prototype::repl::serve(
+                std::io::stdin().lock(),
+                std::io::stdout().lock(),
+                std::io::stdin().is_terminal(),
+            )
+            .map(|()| 0)
+        }
+    } else if arguments.first().is_some_and(|arg| arg == "lsp") {
+        if arguments.len() != 1 {
+            Err("lsp accepts no additional arguments".into())
+        } else {
+            fern_prototype::lsp::serve(std::io::stdin().lock(), std::io::stdout().lock())
+                .map(|()| 0)
+        }
+    } else {
+        options(arguments).and_then(|options| options.map_or(Ok(0), run))
+    };
     match result {
         Ok(code) => ExitCode::from(code),
         Err(message) => {

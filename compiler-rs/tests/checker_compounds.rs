@@ -66,6 +66,7 @@ fn checked(ty: Type, body: Expr) -> Result<ir::Program, fern_prototype::Diagnost
             function("main", Type::Unit, unit()),
             function("test", ty, body),
         ],
+        ..Program::default()
     })
 }
 fn rejects(ty: Type, body: Expr, fragment: &str) {
@@ -78,6 +79,7 @@ fn rejects(ty: Type, body: Expr, fragment: &str) {
 }
 fn arm(pattern: PatternKind, body: Expr) -> MatchArm {
     MatchArm {
+        guard: None,
         pattern: Pattern {
             kind: pattern,
             span: Span::default(),
@@ -176,6 +178,7 @@ fn declared_function_arguments_constrain_compound_literals() {
             ),
             accept,
         ],
+        ..Program::default()
     })
     .unwrap();
     assert!(!format!("{:?}", p).contains("Infer("));
@@ -482,7 +485,8 @@ fn discarded_results_are_rejected_after_inference() {
         ]),
     );
     assert!(check::check(&Program {
-        functions: vec![main]
+        functions: vec![main],
+        ..Program::default()
     })
     .unwrap_err()
     .message
@@ -504,7 +508,7 @@ fn compound_equality_and_printing_are_not_pointer_operations() {
     rejects(
         Type::Unit,
         call("println", vec![value]),
-        "Int, Bool, or String",
+        "print argument must be",
     );
 }
 
@@ -613,6 +617,7 @@ fn unused_result_parameters_and_wrapped_result_bindings_are_errors() {
         });
         let program = Program {
             functions: vec![function("main", Type::Unit, unit()), ignore],
+            ..Program::default()
         };
         let error = check::check(&program).unwrap_err();
         assert!(error.message.contains("Result value must be handled"));
@@ -683,7 +688,8 @@ fn using_or_returning_result_parameters_and_pattern_payloads_is_allowed() {
         span: Span::default(),
     });
     assert!(check::check(&Program {
-        functions: vec![function("main", Type::Unit, unit()), passthrough]
+        functions: vec![function("main", Type::Unit, unit()), passthrough],
+        ..Program::default()
     })
     .is_ok());
     let body = block(vec![
