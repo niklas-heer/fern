@@ -32,7 +32,10 @@ impl Checker<'_> {
                 "a type alias does not introduce a value or constructor",
             ));
         }
-        if self.registry.constructor(name).is_some() {
+        if let Some((owner, _, _, _)) = self.registry.constructor(name) {
+            if self.registry.is_newtype(&Type::Named(owner, Vec::new())) {
+                return self.newtype_constructor_value(name, span);
+            }
             return self.custom_construct(name, &[], None, span, 0);
         }
         if name == "None" {

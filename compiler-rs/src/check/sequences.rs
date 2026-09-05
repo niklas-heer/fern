@@ -218,6 +218,9 @@ pub(super) fn reject_discards(
     registry: &nominal::Registry,
 ) -> Checked<()> {
     match pattern {
+        ir::Pattern::Newtype(inner) => {
+            control::pattern_discards(inner, &registry.newtype_inner(ty, span)?, span, registry)
+        }
         ir::Pattern::List { .. } | ir::Pattern::TupleRest { .. } => {
             control::pattern_discards(pattern, ty, span, registry)
         }

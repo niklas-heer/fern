@@ -1,0 +1,19 @@
+newtype Flag = Flag(Bool)
+newtype Items = Items(List(Int))
+newtype Inner = Inner(Float)
+newtype Outer = Outer(Inner)
+fn select(value: Flag) -> Int:
+    match value:
+        Flag(true) -> 1
+        Flag(false) -> 0
+fn first(value: Items) -> Int:
+    match value:
+        Items([head, .._]) -> head
+        Items([]) -> -1
+fn main():
+    println(select(Flag(true)))
+    println(select(Flag(false)))
+    println(first(Items([4294967296, 2])))
+    println(first(Items([])))
+    match Outer(Inner(1.5)):
+        Outer(Inner(value)) -> println(value)

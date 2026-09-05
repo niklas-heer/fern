@@ -739,3 +739,28 @@ and searching requirements filters to the correct module and declaration.
 
 Checked-documentation checkpoint gates pass: 840 Rust tests, 550 C tests and the
 complete native, sanitizer, fuzz and documentation suites on macOS arm64.
+
+
+## Distinct unboxed newtypes
+
+Generic newtypes preserve nominal identity throughout checking and use their exact
+payload representation in native code. Wrap/Unwrap add no allocation or tag access;
+Float payloads retain full 64-bit ABI through parameters, results, closures and
+collections. Scalar equality and supported Map keys use underlying semantics only
+after exact identity checking. Wrapped Result obligations remain visible.
+
+Forty-five new Rust regressions cover source checking, unboxed layout validation,
+Unicode names, formatter/docs/LSP ownership, incomplete member recovery, retained
+JSON wrappers and private IR rejection. Thirteen native programs cover primitive
+limits, constructor callbacks, recursive containers, String keys, cleanup and
+wrapped JSON; fourteen invalid programs preserve existing output. Native allocation
+oracles compare equivalent wrapped and unwrapped code.
+
+Unions and general traits remain separate. The current module loader still rejects
+independent type/value declarations sharing one spelling; namespace separation is
+in progress. See [newtype semantics](NEWTYPES.md) and Decision 79.
+
+Newtype checkpoint gates pass: 885 Rust tests, 550 C tests and the complete native,
+sanitizer, fuzz and documentation suites on macOS arm64. Editor support regeneration
+also passes; the existing manually maintained indentation grammar remains separate
+from the generated highlights and needs broader syntax parity.

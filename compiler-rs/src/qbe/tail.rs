@@ -202,7 +202,9 @@ fn children(expr: &Expr) -> Vec<&Expr> {
         | ExprKind::Defer(value)
         | ExprKind::Unary { value, .. }
         | ExprKind::Try(value)
-        | ExprKind::Field { value, .. } => vec![value],
+        | ExprKind::Field { value, .. }
+        | ExprKind::Wrap(value)
+        | ExprKind::Unwrap(value) => vec![value],
         ExprKind::Binary { left, right, .. }
         | ExprKind::Range {
             start: left,

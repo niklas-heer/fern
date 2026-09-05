@@ -1,0 +1,16 @@
+newtype Amount = Amount(Float)
+newtype Id = Id(Int)
+type Pair:
+    amount: Amount
+    id: Id
+fn pass(value: Amount) -> Result(Amount, Id): Ok(value)
+fn main():
+    let pair = Pair(Amount(1.25), Id(4294967296))
+    println(pair.amount.0)
+    println(pair.id.0)
+    let tuple = (pair.amount, pair.id)
+    println(tuple.0.0)
+    println(tuple.1.0)
+    match pass(pair.amount):
+        Ok(value) -> println(value.0)
+        Err(value) -> println(value.0)

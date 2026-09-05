@@ -8,6 +8,9 @@ mod sequences;
 /// Index concrete named layouts, validating record metadata and referenced field types.
 pub(super) fn layouts(types: &[ir::TypeLayout]) -> Lowering<HashMap<Type, &ir::TypeLayout>> {
     let mut layouts = HashMap::new();
+    if types.len() > MAX_NODES {
+        return Err(invalid(Span::default(), "nominal layout limit exceeded"));
+    }
     for layout in types {
         concrete(&layout.ty, Span::default(), 0)?;
         if !matches!(layout.ty, Type::Named(_, _)) || layout.variants.is_empty() {
@@ -15,6 +18,9 @@ pub(super) fn layouts(types: &[ir::TypeLayout]) -> Lowering<HashMap<Type, &ir::T
                 Span::default(),
                 "nominal layout requires a named type and variants",
             ));
+        }
+        if layout.storage == ir::LayoutStorage::Unboxed {
+            newtypes::payload(layout, Span::default())?;
         }
         if layouts.insert(layout.ty.clone(), layout).is_some() {
             return Err(invalid(Span::default(), "duplicate nominal layout"));
@@ -42,6 +48,7 @@ pub(super) fn layouts(types: &[ir::TypeLayout]) -> Lowering<HashMap<Type, &ir::T
             }
         }
         resolved(&layout.ty, &layouts, Span::default(), 0)?;
+        newtypes::representation(&layout.ty, &layouts, Span::default())?;
     }
     Ok(layouts)
 }
@@ -83,7 +90,7 @@ pub(super) fn resolved(
         }
         Type::List(item) | Type::Option(item) => resolved(item, layouts, span, depth + 1)?,
         Type::Map(key, value) => {
-            maps::types(ty, span)?;
+            maps::types(ty, layouts, span)?;
             resolved(key, layouts, span, depth + 1)?;
             resolved(value, layouts, span, depth + 1)?;
         }
@@ -199,6 +206,7 @@ impl Emitter<'_> {
             (Type::Named(_, _), _) => self
                 .layouts
                 .get(ty)
+                .filter(|layout| layout.storage == ir::LayoutStorage::Tagged)
                 .and_then(|layout| layout.variants.get(tag))
                 .cloned()
                 .ok_or_else(|| invalid(span, "unknown nominal type or variant tag")),
@@ -247,6 +255,15 @@ impl Emitter<'_> {
             return Err(invalid(span, "pattern nesting limit exceeded"));
         }
         match pattern {
+            Pattern::Newtype(inner) => {
+                let payload = self.newtype_payload(ty, span)?;
+                Ok(Pattern::Newtype(Box::new(self.checked_pattern(
+                    inner,
+                    &payload,
+                    span,
+                    depth + 1,
+                )?)))
+            }
             Pattern::Tuple(fields) => self.checked_tuple_pattern(fields, ty, span, depth),
             Pattern::List { prefix, rest } => {
                 self.checked_list_pattern(prefix, rest.as_deref(), ty, span, depth)
@@ -273,19 +290,7 @@ impl Emitter<'_> {
             Pattern::Constructor {
                 constructor,
                 binding,
-            } => {
-                let payload = payload_type(*constructor, ty, span)?;
-                if payload.is_none() && binding.is_some() {
-                    return Err(invalid(span, "None pattern cannot bind a payload"));
-                }
-                let tag = usize::from(matches!(constructor, Constructor::None | Constructor::Err));
-                let fields = if payload.is_some() {
-                    vec![binding.map_or(Pattern::Wildcard, Pattern::Bind)]
-                } else {
-                    vec![]
-                };
-                Ok(Pattern::Variant { tag, fields })
-            }
+            } => checked_constructor_pattern(*constructor, *binding, ty, span),
             Pattern::Variant { tag, fields } => {
                 let expected = self.variant_fields(ty, *tag, span)?;
                 if expected.len() != fields.len() {
@@ -303,6 +308,26 @@ impl Emitter<'_> {
             }
         }
     }
+}
+
+/// Normalize a legacy built-in constructor, rejecting bindings on payload-free None.
+fn checked_constructor_pattern(
+    constructor: Constructor,
+    binding: Option<ir::LocalId>,
+    ty: &Type,
+    span: Span,
+) -> Lowering<Pattern> {
+    let payload = payload_type(constructor, ty, span)?;
+    if payload.is_none() && binding.is_some() {
+        return Err(invalid(span, "None pattern cannot bind a payload"));
+    }
+    let tag = usize::from(matches!(constructor, Constructor::None | Constructor::Err));
+    let fields = if payload.is_some() {
+        vec![binding.map_or(Pattern::Wildcard, Pattern::Bind)]
+    } else {
+        vec![]
+    };
+    Ok(Pattern::Variant { tag, fields })
 }
 
 /// Per-arm state tracks bindings that must disappear before any following arm.
@@ -534,6 +559,12 @@ impl Emitter<'_> {
             Pattern::TupleRest { prefix, rest } => {
                 self.tuple_rest_pattern(prefix, rest, ty, value, state, locals)?
             }
+            Pattern::Newtype(inner) => {
+                let payload = self.newtype_payload(ty, state.span)?;
+                state.depth += 1;
+                self.pattern_branch(inner, &payload, value, state, locals)?;
+                state.depth -= 1;
+            }
             Pattern::Wildcard => {}
             Pattern::Bind(id) => {
                 locals.define(id.0, ty.clone(), value.to_owned(), state.span)?;
@@ -637,6 +668,7 @@ fn specialize(pattern: &Pattern, tag: usize, fields: usize) -> Option<Vec<Patter
             expanded.resize(fields, Pattern::Wildcard);
             Some(expanded)
         }
+        Pattern::Newtype(inner) if tag == 0 && fields == 1 => Some(vec![*inner.clone()]),
         Pattern::Wildcard | Pattern::Bind(_) => Some(vec![Pattern::Wildcard; fields]),
         Pattern::Bool(value) if usize::from(*value) == tag => Some(vec![]),
         Pattern::Variant {
@@ -664,6 +696,7 @@ fn subsumes(prior: &Pattern, next: &Pattern) -> bool {
                 && a.len() <= b.len()
                 && a.iter().zip(b).all(|(a, b)| subsumes(a, b))
         }
+        (Pattern::Newtype(a), Pattern::Newtype(b)) => subsumes(a, b),
         (Pattern::Wildcard | Pattern::Bind(_), _) => true,
         (Pattern::Int(a), Pattern::Int(b)) => a == b,
         (Pattern::Bool(a), Pattern::Bool(b)) => a == b,

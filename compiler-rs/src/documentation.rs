@@ -61,7 +61,12 @@ fn declarations<'a>(
     source: &str,
     program: &'a ast::Program,
 ) -> Result<Vec<Declaration<'a>>, Diagnostic> {
-    if program.functions.len() + program.types.len() + program.aliases.len() > MAX_DECLARATIONS {
+    if program.functions.len()
+        + program.types.len()
+        + program.aliases.len()
+        + program.newtypes.len()
+        > MAX_DECLARATIONS
+    {
         return Err(limit("documentation declaration limit exceeded"));
     }
     let mut declarations: Vec<Declaration<'a>> = Vec::new();
@@ -86,12 +91,7 @@ fn declarations<'a>(
             });
         }
     }
-    for (name, span) in program.types.iter().map(|ty| (&ty.name, ty.span)).chain(
-        program
-            .aliases
-            .iter()
-            .map(|alias| (&alias.name, alias.span)),
-    ) {
+    for (name, span) in type_declarations(program) {
         let header = source
             .get(span.start..span.end)
             .ok_or_else(|| limit("invalid type declaration span"))?
@@ -116,6 +116,16 @@ fn declarations<'a>(
         }
     }
     Ok(declarations)
+}
+
+/// Preserve source identities for all nominal, transparent and distinct type declarations.
+fn type_declarations(program: &ast::Program) -> impl Iterator<Item = (&String, Span)> {
+    program
+        .types
+        .iter()
+        .map(|decl| (&decl.name, decl.span))
+        .chain(program.aliases.iter().map(|decl| (&decl.name, decl.span)))
+        .chain(program.newtypes.iter().map(|decl| (&decl.name, decl.span)))
 }
 
 impl Writer {

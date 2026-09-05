@@ -1,0 +1,17 @@
+newtype Key = Key(String)
+newtype Flag = Flag(Bool)
+newtype Amount = Amount(Float)
+fn main():
+    let a = Key("ab")
+    let b = Key(String.concat("a", "b"))
+    let original = %{a: Amount(1.5)}
+    let changed = Map.put(original, b, Amount(2.5))
+    println(Map.len(changed))
+    println(Option.unwrap_or(Map.get(original, b), Amount(0.0)).0)
+    println(Option.unwrap_or(Map.get(changed, a), Amount(0.0)).0)
+    println(List.contains([a], b))
+    println(List.contains([Amount(0.0)], Amount(-0.0)))
+    println(List.contains([Amount((-1.0) ** 0.5)], Amount((-1.0) ** 0.5)))
+    println(Map.contains(%{Flag(true): 42}, Flag(true)))
+    let contains = List.contains
+    println(contains([Amount(1.5)], Amount(1.5)))

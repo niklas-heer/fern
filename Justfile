@@ -461,6 +461,7 @@ rust-check: rust-build
     python3 scripts/test_rust_generic_schemes.py
     python3 scripts/test_rust_whole_signatures.py
     python3 scripts/test_rust_inference_shapes.py
+    python3 scripts/test_rust_newtypes.py
     python3 scripts/test_rust_aliases.py
     python3 scripts/test_rust_global_identity.py
     python3 scripts/test_rust_stdlib.py

@@ -75,8 +75,8 @@ impl Emitter<'_> {
             "fern_str_slice" => return self.slice_string(args, span, locals, depth),
             _ => {}
         }
-        if signature.operation == Operation::ScalarContains && numeric::float_list(args) {
-            return self.float_contains(args, span, locals, depth);
+        if signature.operation == Operation::ScalarContains {
+            return self.scalar_contains(args, span, locals, depth);
         }
         let symbol = runtime_symbol(&signature, args, span)?;
         if signature.operation == Operation::JsonObject {

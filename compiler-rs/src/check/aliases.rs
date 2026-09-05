@@ -37,6 +37,9 @@ pub(super) fn expand(program: &ast::Program) -> Checked<Expanded<'_>> {
     for alias in &mut output.aliases {
         alias.target = expander.expand(&alias.target, alias.span)?;
     }
+    for declaration in &mut output.newtypes {
+        declaration.inner = expander.expand(&declaration.inner, declaration.inner_span)?;
+    }
     for declaration in &mut output.types {
         for field in declaration.variants.iter_mut().flat_map(|v| &mut v.fields) {
             field.ty = expander.expand(&field.ty, field.span)?;
@@ -76,6 +79,10 @@ fn declarations(program: &ast::Program) -> Checked<HashMap<&str, &ast::TypeAlias
     for ty in &program.types {
         occupied.insert(&ty.name);
         occupied.extend(ty.variants.iter().map(|v| v.name.as_str()));
+    }
+    for decl in &program.newtypes {
+        occupied.insert(&decl.name);
+        occupied.insert(&decl.constructor);
     }
     let mut aliases = HashMap::new();
     for alias in &program.aliases {

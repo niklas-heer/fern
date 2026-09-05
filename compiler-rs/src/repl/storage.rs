@@ -85,7 +85,9 @@ impl<'a> CodeBudget<'a> {
                 self.pending.push(Part::Expr(callee));
                 self.expressions(args);
             }
-            Return(value)
+            Wrap(value)
+            | Unwrap(value)
+            | Return(value)
             | Defer(value)
             | Try(value)
             | Field { value, .. }
@@ -104,14 +106,7 @@ impl<'a> CodeBudget<'a> {
                 self.pending
                     .extend(else_branch.iter().map(|v| Part::Expr(v)));
             }
-            Match { value, arms } => {
-                self.pending.push(Part::Expr(value));
-                for arm in arms {
-                    self.pending
-                        .extend([Part::Pattern(&arm.pattern), Part::Expr(&arm.body)]);
-                    self.pending.extend(arm.guard.iter().map(Part::Expr));
-                }
-            }
+            Match { value, arms } => self.match_values(value, arms),
             Block(statements) => self.statements(statements),
             Lambda { .. } | FunctionValue { .. } => {
                 return Err("unfinalized interactive closure".into())
@@ -120,6 +115,16 @@ impl<'a> CodeBudget<'a> {
         }
         Ok(())
     }
+    /// Retain match subjects, pattern payloads, guards and branch bodies in the code budget.
+    fn match_values(&mut self, value: &'a ir::Expr, arms: &'a [ir::MatchArm]) {
+        self.pending.push(Part::Expr(value));
+        for arm in arms {
+            self.pending
+                .extend([Part::Pattern(&arm.pattern), Part::Expr(&arm.body)]);
+            self.pending.extend(arm.guard.iter().map(Part::Expr));
+        }
+    }
+
     /// Visit every key and value retained by a map literal.
     fn map_pairs(&mut self, pairs: &'a [(ir::Expr, ir::Expr)]) {
         self.pending.extend(
@@ -193,6 +198,7 @@ impl<'a> CodeBudget<'a> {
     fn pattern(&mut self, pattern: &'a ir::Pattern) {
         self.bytes += std::mem::size_of::<ir::Pattern>();
         match pattern {
+            ir::Pattern::Newtype(inner) => self.pending.push(Part::Pattern(inner)),
             ir::Pattern::List { prefix, rest } => {
                 self.pending.extend(prefix.iter().map(Part::Pattern));
                 if let Some(rest) = rest {

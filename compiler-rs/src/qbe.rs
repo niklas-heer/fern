@@ -19,6 +19,8 @@ mod higher_order;
 mod iteration;
 #[path = "qbe/maps.rs"]
 mod maps;
+#[path = "qbe/newtypes.rs"]
+mod newtypes;
 #[path = "qbe/nominal.rs"]
 mod nominal;
 #[path = "qbe/numeric.rs"]
@@ -130,7 +132,7 @@ fn invalid(span: Span, message: &str) -> Exit {
 }
 
 /// Map semantic `ty` to QBE scalar width; pointers and integers remain distinct in IR.
-fn width(ty: Type) -> char {
+fn scalar_width(ty: Type) -> char {
     match ty {
         Type::Range
         | Type::Int
@@ -279,11 +281,11 @@ impl Emitter<'_> {
                 value.clone(),
                 function.body.span,
             )?;
-            params.push(format!("{} {value}", width(param.ty.clone())));
+            params.push(format!("{} {value}", self.width(param.ty.clone())));
         }
         self.output.push_str(&format!(
             "function {} $f{}({}) {{\n@start\n",
-            width(function.return_type.clone()),
+            self.width(function.return_type.clone()),
             function.id.0,
             params.join(", ")
         ));
@@ -316,7 +318,7 @@ impl Emitter<'_> {
             .push_str("export function w $fern_main() {\n@start\n    %fault =l alloc8 8\n    storel 0, %fault\n");
         self.output.push_str(&format!(
             "    %exit ={} call $f{}(l 0, l %fault)\n",
-            width(main.return_type.clone()),
+            self.width(main.return_type.clone()),
             main.id.0
         ));
         self.output.push_str("    %code =l loadl %fault\n    %failed =w cnel %code, 0\n    jnz %failed, @failed, @success\n@failed\n    call $fern_rs_report_fault(l %code)\n    ret 1\n@success\n");
@@ -362,6 +364,8 @@ impl Emitter<'_> {
             ExprKind::Invoke { callee, args } => {
                 self.invoke(callee, args, expr.span, locals, depth + 1)?
             }
+            ExprKind::Wrap(value) => self.newtype_expr(expr, value, true, locals, depth + 1)?,
+            ExprKind::Unwrap(value) => self.newtype_expr(expr, value, false, locals, depth + 1)?,
             ExprKind::CustomConstruct { tag, fields } => {
                 self.custom_construct(*tag, fields, &expr.ty, expr.span, locals, depth + 1)?
             }
@@ -376,14 +380,9 @@ impl Emitter<'_> {
                 self.map_literal(entries, &expr.ty, expr.span, locals, depth + 1)?
             }
             ExprKind::List(items) => self.list(items, &expr.ty, expr.span, locals, depth + 1)?,
-            ExprKind::Construct { constructor, value } => self.construct(
-                *constructor,
-                value.as_deref(),
-                &expr.ty,
-                expr.span,
-                locals,
-                depth + 1,
-            )?,
+            ExprKind::Construct { constructor, value } => {
+                self.construct_expr(expr, *constructor, value.as_deref(), locals, depth + 1)?
+            }
             ExprKind::Int(value) => (Type::Int, value.to_string()),
             ExprKind::Float(value) => self.float_literal(*value, locals),
             ExprKind::Bool(value) => (Type::Bool, u8::from(*value).to_string()),
@@ -400,6 +399,18 @@ impl Emitter<'_> {
         };
         expect_type(actual, expr.ty.clone(), expr.span)?;
         Ok(value)
+    }
+
+    /// Lower a built-in sum node using its annotated type and optional child payload.
+    fn construct_expr(
+        &mut self,
+        expr: &Expr,
+        constructor: Constructor,
+        value: Option<&Expr>,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Lowering<(Type, String)> {
+        self.construct(constructor, value, &expr.ty, expr.span, locals, depth)
     }
 
     /// Lower structured control independently from scalar and aggregate value dispatch.
@@ -572,7 +583,7 @@ impl Emitter<'_> {
     fn assign(&mut self, locals: &mut Locals, ty: Type, instruction: &str) -> String {
         let result = locals.temporary();
         self.output
-            .push_str(&format!("    {result} ={} {instruction}\n", width(ty)));
+            .push_str(&format!("    {result} ={} {instruction}\n", self.width(ty)));
         result
     }
 
@@ -659,7 +670,7 @@ impl Emitter<'_> {
         for (arg, expected) in args.iter().zip(params) {
             expect_type(arg.ty.clone(), expected.clone(), arg.span)?;
             let mut value = self.expr(arg, locals, depth)?;
-            let mut abi = width(expected.clone());
+            let mut abi = self.width(expected.clone());
             if matches!(
                 target,
                 CallTarget::Builtin(Builtin::Print | Builtin::Println)
@@ -702,8 +713,8 @@ impl Emitter<'_> {
                 locals,
                 depth,
             )),
-            CallTarget::Builtin(Builtin::ListContains) if numeric::float_list(args) => {
-                Some(self.float_contains(args, span, locals, depth))
+            CallTarget::Builtin(Builtin::ListContains) => {
+                Some(self.scalar_contains(args, span, locals, depth))
             }
             CallTarget::Builtin(Builtin::ListEnumerate) => {
                 Some(self.enumerate(args, span, locals, depth))
@@ -939,7 +950,7 @@ fn binary_instruction(op: BinaryOp, operand: Type) -> String {
         op,
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
     ) {
-        format!("{base}{}", width(operand))
+        format!("{base}{}", scalar_width(operand))
     } else {
         base
     }
@@ -1103,9 +1114,9 @@ fn sum_signature(
 impl Emitter<'_> {
     /// Widen Boolean/Unit values before storing them in runtime payload slots.
     fn payload(&mut self, locals: &mut Locals, ty: &Type, value: String) -> String {
-        if matches!(ty, Type::Bool | Type::Unit) {
+        if matches!(self.representation(ty), Type::Bool | Type::Unit) {
             self.assign(locals, Type::Int, &format!("extuw {value}"))
-        } else if *ty == Type::Float {
+        } else if *self.representation(ty) == Type::Float {
             self.assign(locals, Type::Int, &format!("cast {value}"))
         } else {
             value
@@ -1114,9 +1125,9 @@ impl Emitter<'_> {
 
     /// Narrow payload loads to the checked scalar width without changing pointer values.
     fn unpack(&mut self, locals: &mut Locals, ty: &Type, value: String) -> String {
-        if matches!(ty, Type::Bool | Type::Unit) {
+        if matches!(self.representation(ty), Type::Bool | Type::Unit) {
             self.assign(locals, ty.clone(), &format!("copy {value}"))
-        } else if *ty == Type::Float {
+        } else if *self.representation(ty) == Type::Float {
             self.assign(locals, Type::Float, &format!("cast {value}"))
         } else {
             value

@@ -1,0 +1,8 @@
+newtype Document = Document(json.Value)
+fn wrap(value: json.Value) -> Document: Document(value)
+fn raw(Document(value): Document) -> json.Value: value
+fn main():
+    let wrapped = wrap(json.null())
+    println(json.is_null(raw(wrapped)))
+    let items = [wrap(json.from_int(4294967296))]
+    println(Result.unwrap_or(json.as_int(List.head(items).0), 0))

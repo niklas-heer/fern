@@ -75,6 +75,7 @@ impl Inference {
     /// Discharge known requirements or retain a declared rigid variable without a witness.
     pub(super) fn require(&self, capability: Capability, ty: &Type, span: Span) -> Checked<()> {
         let ty = self.resolve(ty, span)?;
+        let ty = self.capability_type(capability, ty, span)?;
         returns::charge_output(self, &ty, span)?;
         if capability.accepts(&ty) {
             return Ok(());
@@ -95,6 +96,41 @@ impl Inference {
             return Ok(());
         }
         Err(Diagnostic::new(span, capability.message()))
+    }
+
+    /// Only value equality and key capabilities pass through distinct unboxed identities.
+    fn capability_type(&self, capability: Capability, mut ty: Type, span: Span) -> Checked<Type> {
+        if !matches!(
+            capability,
+            Capability::Equality | Capability::Contains | Capability::MapKey
+        ) {
+            return Ok(ty);
+        }
+        let mut seen = HashSet::new();
+        for _ in 0..MAX_TYPE_DEPTH {
+            returns::charge_output(self, &ty, span)?;
+            let Type::Named(name, args) = &ty else {
+                return Ok(ty);
+            };
+            let Some((params, inner)) = self.newtypes.get(name) else {
+                return Ok(ty);
+            };
+            nominal::charge_newtype_type(&self.newtype_work, &ty, span)?;
+            nominal::charge_newtype_type(&self.newtype_work, inner, span)?;
+            if params.len() != args.len() || !seen.insert(ty.clone()) {
+                return Err(Diagnostic::new(
+                    span,
+                    "invalid recursive newtype capability",
+                ));
+            }
+            returns::charge_output(self, inner, span)?;
+            let values = params.iter().cloned().zip(args.iter().cloned()).collect();
+            ty = nominal::substitute(inner, &values)?;
+        }
+        Err(Diagnostic::new(
+            span,
+            "newtype capability expansion limit exceeded",
+        ))
     }
 
     /// Map key restrictions apply even to unused parameters and first-class signatures.
@@ -265,7 +301,7 @@ pub(super) fn validate(
             .requirements = requirements;
         schemes.push(scheme);
     }
-    propagate(&schemes, signatures, work)
+    propagate(&schemes, signatures, registry, work)
 }
 
 /// Each body owns its rigid names; every callee's quantified variables are freshly instantiated.
@@ -277,6 +313,8 @@ fn check_scheme(
 ) -> Checked<(Scheme, Vec<Requirement>, usize)> {
     let signature = &signatures[&function.name];
     let inference = Inference {
+        newtypes: registry.newtype_definitions(),
+        newtype_work: registry.newtype_budget(),
         template: true,
         probing: true,
         template_names: signature.generics.iter().cloned().collect(),
@@ -315,9 +353,12 @@ fn check_scheme(
 fn propagate(
     schemes: &[Scheme],
     signatures: &mut HashMap<String, Signature>,
+    registry: &nominal::Registry,
     work: usize,
 ) -> Checked<()> {
     let inference = Inference {
+        newtypes: registry.newtype_definitions(),
+        newtype_work: registry.newtype_budget(),
         template: true,
         probing: true,
         probe_work: std::cell::Cell::new(work),

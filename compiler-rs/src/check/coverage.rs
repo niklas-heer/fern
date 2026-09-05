@@ -70,6 +70,9 @@ pub(super) fn validate(
 /// Convert resolved patterns into constructor matrices; binders behave as wildcards.
 fn lower(pattern: &ir::Pattern, ty: &Type, registry: &Registry, span: Span) -> Checked<Pattern> {
     Ok(match pattern {
+        ir::Pattern::Newtype(inner) => {
+            lower_variant(0, std::slice::from_ref(inner.as_ref()), ty, registry, span)?
+        }
         ir::Pattern::Wildcard | ir::Pattern::Bind(_) => Pattern::Any,
         ir::Pattern::Int(n) => Pattern::Specific(Head::Int(*n), vec![]),
         ir::Pattern::Bool(b) => Pattern::Specific(Head::Bool(*b), vec![]),
@@ -155,6 +158,7 @@ fn bound_expansion(pattern: &ir::Pattern, span: Span) -> Checked<()> {
             ));
         }
         match pattern {
+            ir::Pattern::Newtype(inner) => pending.push((inner, depth + 1)),
             ir::Pattern::List { prefix, .. } => {
                 if depth + prefix.len() > MAX_EXPR_DEPTH {
                     return Err(Diagnostic::new(

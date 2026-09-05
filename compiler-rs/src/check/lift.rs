@@ -162,7 +162,13 @@ pub(super) fn children_mut(expr: &mut ir::Expr) -> Vec<&mut ir::Expr> {
         Invoke { callee, args } => std::iter::once(callee.as_mut())
             .chain(args.iter_mut())
             .collect(),
-        Return(value) | Defer(value) | Unary { value, .. } | Try(value) | Field { value, .. } => {
+        Wrap(value)
+        | Unwrap(value)
+        | Return(value)
+        | Defer(value)
+        | Unary { value, .. }
+        | Try(value)
+        | Field { value, .. } => {
             vec![value]
         }
         Binary { left, right, .. } => vec![left, right],
@@ -191,15 +197,17 @@ pub(super) fn children_mut(expr: &mut ir::Expr) -> Vec<&mut ir::Expr> {
             }
             children
         }
-        Block(stmts) => stmts
-            .iter_mut()
-            .flat_map(|s| match s {
-                ir::Stmt::LetElse {
-                    value, else_branch, ..
-                } => vec![value, else_branch],
-                ir::Stmt::Let { value, .. } | ir::Stmt::Expr(value) => vec![value],
-            })
-            .collect(),
+        Block(stmts) => stmts.iter_mut().flat_map(statement_children).collect(),
         _ => Vec::new(),
+    }
+}
+
+/// Preserve both initializer and failure-branch traversal for finalized lexical blocks.
+fn statement_children(stmt: &mut ir::Stmt) -> Vec<&mut ir::Expr> {
+    match stmt {
+        ir::Stmt::LetElse {
+            value, else_branch, ..
+        } => vec![value, else_branch],
+        ir::Stmt::Let { value, .. } | ir::Stmt::Expr(value) => vec![value],
     }
 }

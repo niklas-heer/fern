@@ -234,7 +234,7 @@ impl Emitter<'_> {
             self.output.push_str(&format!(
                 "    {} ={} phi {} {}, {} {}\n",
                 flow.accumulator,
-                width(result.clone()),
+                self.width(result.clone()),
                 flow.entry,
                 values[1],
                 flow.step,
@@ -275,7 +275,7 @@ impl Emitter<'_> {
                 self.output.push_str(&format!(
                     "    {} ={} copy {mapped}\n    jmp {}\n",
                     flow.accumulated,
-                    width(callback_result.clone()),
+                    self.width(callback_result.clone()),
                     flow.step
                 ));
             }

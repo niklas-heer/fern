@@ -1,0 +1,12 @@
+newtype Amount = Amount(Float)
+newtype Id = Id(Int)
+fn capture(value: Amount) -> () -> Amount:
+    () -> value
+fn main():
+    let read = capture(Amount(1.25))
+    println(read().0)
+    let mapped = List.map([Amount(2.0), Amount(3.0)], (a) -> Amount(a.0 + read().0))
+    println(List.get(mapped, 1).0)
+    let total = List.fold(mapped, Amount(0.0), (a, b) -> Amount(a.0 + b.0))
+    println(total.0)
+    println(Option.unwrap_or(Option.map(Some(Id(4294967296)), (v) -> v), Id(0)).0)

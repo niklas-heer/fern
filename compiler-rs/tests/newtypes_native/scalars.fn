@@ -1,0 +1,13 @@
+newtype Id = Id(Int)
+newtype Amount = Amount(Float)
+newtype Flag = Flag(Bool)
+newtype Empty = Empty(())
+fn id(value: Id) -> Id: value
+fn amount(value: Amount) -> Amount: value
+fn flag(value: Flag) -> Flag: value
+fn empty(value: Empty) -> Empty: value
+fn main():
+    println(id(Id(-9223372036854775808)).0)
+    println(amount(Amount(1.25)).0)
+    println(flag(Flag(true)).0)
+    empty(Empty(())).0

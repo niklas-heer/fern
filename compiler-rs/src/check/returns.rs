@@ -42,7 +42,11 @@ pub(super) fn resolve<'a>(
     registry: &nominal::Registry,
     dispatch: &HashSet<String>,
 ) -> Checked<Prepared<'a>> {
-    let mut inference = Inference::default();
+    let mut inference = Inference {
+        newtypes: registry.newtype_definitions(),
+        newtype_work: registry.newtype_budget(),
+        ..Inference::default()
+    };
     let mut signatures = super::signatures(program, registry, &mut inference, dispatch)?;
     let missing: Vec<_> = program
         .functions

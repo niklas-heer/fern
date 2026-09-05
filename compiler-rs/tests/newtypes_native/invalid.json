@@ -1,0 +1,16 @@
+{
+  "mixed_identity": "newtype UserId = UserId(Int)\nnewtype ProductId = ProductId(Int)\nfn take(value: UserId) -> Int: value.0\nfn main(): println(take(ProductId(1)))\n",
+  "raw_coercion": "newtype UserId = UserId(Int)\nfn take(value: UserId) -> Int: value.0\nfn main(): println(take(1))\n",
+  "implicit_print": "newtype UserId = UserId(Int)\nfn main(): println(UserId(1))\n",
+  "implicit_numeric": "newtype UserId = UserId(Int)\nfn main(): println(UserId(1) + UserId(2))\n",
+  "implicit_condition": "newtype Flag = Flag(Bool)\nfn main(): if Flag(true): println(1)\n",
+  "invalid_projection": "newtype UserId = UserId(Int)\nfn main(): println(UserId(1).1)\n",
+  "float_key": "newtype Key = Key(Float)\nfn main():\n    let entries: Map(Key, Int) = %{}\n    ()\n",
+  "compound_eq": "newtype Items = Items(List(Int))\nfn main(): println(Items([1]) == Items([1]))\n",
+  "cycle": "newtype Loop = Loop(Loop)\nfn main(): ()\n",
+  "mutual_cycle": "newtype Left = Left(Right)\nnewtype Right = Right(Left)\nfn main(): ()\n",
+  "expanding_cycle": "newtype Grow(a) = Grow(Grow((a, a)))\nfn main(): ()\n",
+  "result_wildcard": "newtype Fallible = Fallible(Result(Int, String))\nfn main():\n    let Fallible(_) = Fallible(Ok(1))\n    ()\n",
+  "result_capture": "newtype Fallible = Fallible(Result(Int, String))\nfn main():\n    let value = Fallible(Ok(1))\n    let callback = () -> Result.unwrap_or(value.0, 0)\n    println(callback())\n",
+  "opaque_json_equality": "newtype Document = Document(json.Value)\nfn main(): println(Document(json.null()) == Document(json.null()))\n"
+}

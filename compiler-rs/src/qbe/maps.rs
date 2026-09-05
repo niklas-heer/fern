@@ -18,20 +18,33 @@ pub(super) fn is_map(builtin: Builtin) -> bool {
 }
 
 /// Require a concrete map and key types with defined semantic equality.
-pub(super) fn types(ty: &Type, span: Span) -> Lowering<(&Type, &Type)> {
+pub(super) fn types<'a>(
+    ty: &'a Type,
+    layouts: &HashMap<Type, &ir::TypeLayout>,
+    span: Span,
+) -> Lowering<(&'a Type, &'a Type)> {
     let Type::Map(key, value) = ty else {
         return Err(invalid(span, "Map operation requires Map type"));
     };
-    if !matches!(**key, Type::Int | Type::Bool | Type::String) {
+    if !matches!(
+        newtypes::representation(key, layouts, span)?,
+        Type::Int | Type::Bool | Type::String
+    ) {
         return Err(invalid(span, "Map keys require Int, Bool, or String"));
     }
     Ok((key, value))
 }
 
 /// Derive all source signatures independently from the public typed IR.
-fn signature(builtin: Builtin, args: &[Expr], result: &Type, span: Span) -> Lowering<Type> {
+fn signature(
+    builtin: Builtin,
+    args: &[Expr],
+    result: &Type,
+    layouts: &HashMap<Type, &ir::TypeLayout>,
+    span: Span,
+) -> Lowering<Type> {
     if builtin == Builtin::MapNew {
-        types(result, span)?;
+        types(result, layouts, span)?;
         if !args.is_empty() {
             return Err(invalid(span, "Map.new takes no arguments"));
         }
@@ -40,7 +53,7 @@ fn signature(builtin: Builtin, args: &[Expr], result: &Type, span: Span) -> Lowe
     let first = args
         .first()
         .ok_or_else(|| invalid(span, "Map operation requires argument"))?;
-    let (key, value) = types(&first.ty, span)?;
+    let (key, value) = types(&first.ty, layouts, span)?;
     let mut params = vec![first.ty.clone()];
     let output = match builtin {
         Builtin::MapGet => {
@@ -85,7 +98,7 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Lowering<(Type, String)> {
-        let (key_type, value_type) = types(ty, span)?;
+        let (key_type, value_type) = types(ty, &self.layouts, span)?;
         if entries.len() > MAX_NODES {
             return Err(invalid(span, "Map literal limit exceeded"));
         }
@@ -120,7 +133,7 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Lowering<(Type, String)> {
-        let output = signature(builtin, args, result, span)?;
+        let output = signature(builtin, args, result, &self.layouts, span)?;
         self.maps_used = true;
         if builtin == Builtin::MapNew {
             return Ok((
@@ -133,7 +146,7 @@ impl Emitter<'_> {
             let value = self.expr(arg, locals, depth)?;
             values.push(self.payload(locals, &arg.ty, value));
         }
-        let (key, _) = types(&args[0].ty, span)?;
+        let (key, _) = types(&args[0].ty, &self.layouts, span)?;
         let map = &values[0];
         let instruction = match builtin {
             Builtin::MapLen => format!("call $fern_list_len(l {map})"),
@@ -175,7 +188,7 @@ impl Emitter<'_> {
 
     /// Use full-word equality for Int/Bool and byte-content equality for String keys.
     fn map_index(&mut self, map: &str, key: &str, key_type: &Type, locals: &mut Locals) -> String {
-        let suffix = if *key_type == Type::String {
+        let suffix = if *self.representation(key_type) == Type::String {
             "string"
         } else {
             "word"

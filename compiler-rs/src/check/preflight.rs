@@ -403,7 +403,12 @@ impl Budget {
 /// Bound the entire source AST before registry copies and specialization work begin.
 pub(super) fn check(program: &ast::Program) -> Checked<()> {
     if program.functions.len() > MAX_FUNCTIONS
-        || program.types.len().saturating_add(program.aliases.len()) > MAX_FUNCTIONS
+        || program
+            .types
+            .len()
+            .saturating_add(program.aliases.len())
+            .saturating_add(program.newtypes.len())
+            > MAX_FUNCTIONS
     {
         return Err(Diagnostic::new(
             Span::default(),
@@ -431,6 +436,7 @@ pub(super) fn check(program: &ast::Program) -> Checked<()> {
         budget.expression(&function.body)?;
     }
     aliases(program, &mut budget)?;
+    newtypes(program, &mut budget)?;
     for decl in &program.types {
         budget.charge(decl.name.len(), decl.span)?;
         if decl.parameters.len() > MAX_PARAMETERS || decl.variants.len() > MAX_PARAMETERS {
@@ -513,4 +519,22 @@ fn queue_if<'a>(expr: &'a ast::Expr, pending: &mut Vec<(&'a ast::Expr, usize)>, 
         pending.push((then_branch, depth + 1));
         pending.extend(else_branch.as_deref().map(|n| (n, depth + 1)));
     }
+}
+
+/// Bound newtype declarations before copying or expanding any storage metadata.
+fn newtypes(program: &ast::Program, budget: &mut Budget) -> Checked<()> {
+    for decl in &program.newtypes {
+        budget.charge(decl.name.len() + decl.constructor.len(), decl.span)?;
+        if decl.parameters.len() > MAX_PARAMETERS {
+            return Err(Diagnostic::new(
+                decl.span,
+                "newtype parameter limit exceeded",
+            ));
+        }
+        for name in &decl.parameters {
+            budget.charge(name.len(), decl.span)?;
+        }
+        budget.ty(&decl.inner, decl.inner_span)?;
+    }
+    Ok(())
 }

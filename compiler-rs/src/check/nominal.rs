@@ -3,7 +3,13 @@ use super::{returns, validate_type, Checked, Inference, MAX_TYPE_DEPTH, MAX_TYPE
 use crate::{ast, ir, Diagnostic, Span, Type};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+mod newtypes;
+pub(super) use newtypes::charge_newtype_type;
+
 pub(super) struct Registry {
+    newtypes: HashSet<String>,
+    newtype_definitions: std::rc::Rc<HashMap<String, (Vec<String>, Type)>>,
+    newtype_work: std::rc::Rc<std::cell::Cell<usize>>,
     aliases: HashSet<String>,
     declarations: HashMap<String, ast::TypeDecl>,
     constructors: HashMap<String, (String, usize)>,
@@ -13,6 +19,19 @@ impl Registry {
     /// Validate all forward declarations before checking individual fields.
     pub(super) fn new(program: &ast::Program) -> Checked<Self> {
         let mut result = Self {
+            newtype_definitions: std::rc::Rc::new(
+                program
+                    .newtypes
+                    .iter()
+                    .map(|d| (d.name.clone(), (d.parameters.clone(), d.inner.clone())))
+                    .collect(),
+            ),
+            newtype_work: std::rc::Rc::new(std::cell::Cell::new(0)),
+            newtypes: program
+                .newtypes
+                .iter()
+                .map(|decl| decl.name.clone())
+                .collect(),
             aliases: program
                 .aliases
                 .iter()
@@ -21,7 +40,15 @@ impl Registry {
             declarations: HashMap::new(),
             constructors: HashMap::new(),
         };
-        for decl in &program.types {
+        let mut declarations = program.types.clone();
+        declarations.extend(
+            program
+                .newtypes
+                .iter()
+                .map(newtypes::declaration)
+                .collect::<Checked<Vec<_>>>()?,
+        );
+        for decl in &declarations {
             if super::reserved(&decl.name)
                 || result
                     .declarations
@@ -34,9 +61,10 @@ impl Registry {
                 ));
             }
         }
-        for decl in &program.types {
+        for decl in &declarations {
             result.declaration(decl)?;
         }
+        result.validate_newtypes(program)?;
         Ok(result)
     }
 
@@ -138,7 +166,11 @@ impl Registry {
                 }
                 Type::Tuple(args) => pending.extend(args),
                 Type::List(t) | Type::Option(t) => pending.push(t),
-                Type::Result(a, b) | Type::Map(a, b) => {
+                Type::Map(a, b) => {
+                    super::maps::validate_key(&self.representation(a, span)?, span, true)?;
+                    pending.extend([a.as_ref(), b.as_ref()]);
+                }
+                Type::Result(a, b) => {
                     pending.push(a);
                     pending.push(b);
                 }
@@ -206,6 +238,11 @@ impl Registry {
             Vec::new()
         };
         Ok(ir::TypeLayout {
+            storage: if self.is_newtype(ty) {
+                ir::LayoutStorage::Unboxed
+            } else {
+                ir::LayoutStorage::Tagged
+            },
             ty: ty.clone(),
             variants,
             fields,
@@ -272,6 +309,14 @@ impl Registry {
         inference: &Inference,
         span: Span,
     ) -> Checked<(usize, Type)> {
+        if self.is_newtype(ty) {
+            if name != "0" {
+                return Err(Diagnostic::new(span, "newtype field must be .0"));
+            }
+            let inner = self.newtype_inner(ty, span)?;
+            returns::charge_output(inference, &inner, span)?;
+            return Ok((0, inner));
+        }
         self.record_shape(ty, span)?;
         let Type::Named(owner, args) = ty else {
             unreachable!("validated record shape")

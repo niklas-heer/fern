@@ -46,6 +46,8 @@ struct Signature {
 }
 #[derive(Default)]
 struct Inference {
+    newtypes: std::rc::Rc<HashMap<String, (Vec<String>, Type)>>,
+    newtype_work: std::rc::Rc<std::cell::Cell<usize>>,
     bindings: Vec<Option<Type>>,
     ranks: Vec<u32>,
     probing: bool,
@@ -274,7 +276,7 @@ fn validate_type(ty: &Type, span: Span) -> Checked<()> {
 }
 
 /// Bound source types before expansion; only named map-key capabilities wait for resolution.
-fn validate_type_structure(ty: &Type, span: Span, aliases: bool) -> Checked<()> {
+fn validate_type_structure(ty: &Type, span: Span, _aliases: bool) -> Checked<()> {
     let mut pending = vec![(ty, 0)];
     let mut count = 0;
     while let Some((ty, depth)) = pending.pop() {
@@ -294,7 +296,7 @@ fn validate_type_structure(ty: &Type, span: Span, aliases: bool) -> Checked<()> 
             Type::Never => return Err(Diagnostic::new(span, "Never is an internal control-flow type")),
             Type::Infer(_) => return Err(Diagnostic::new(span, "explicit types cannot contain inference variables; generic definitions are unsupported")),
             Type::List(inner) | Type::Option(inner) => pending.push((inner, depth + 1)),
-            Type::Map(key, value) => { if !aliases || !matches!(key.as_ref(), Type::Named(_, _)) { maps::validate_key(key, span, true)?; } pending.push((key, depth + 1)); pending.push((value, depth + 1)); }
+            Type::Map(key, value) => { if !matches!(key.as_ref(), Type::Named(_, _)) { maps::validate_key(key, span, true)?; } pending.push((key, depth + 1)); pending.push((value, depth + 1)); }
             Type::Result(ok, err) => { pending.push((ok, depth + 1)); pending.push((err, depth + 1)); }
             Type::Tuple(args) | Type::Named(_, args) => pending.extend(args.iter().map(|a|(a, depth + 1))),
             Type::Range | Type::Native(_) | Type::Generic(_) | Type::Float | Type::Int | Type::Bool | Type::String | Type::Unit => {}
@@ -514,6 +516,8 @@ impl Inference {
 impl Checker<'_> {
     /// Check a `function`, unify its return and eliminate all inference variables.
     fn function(&mut self, function: &ast::Function) -> Checked<ir::Function> {
+        self.inference.newtypes = self.registry.newtype_definitions();
+        self.inference.newtype_work = self.registry.newtype_budget();
         let signature = &self.signatures[&function.name];
         let id = signature.id;
         let return_type = function_result(function)?;
@@ -927,6 +931,16 @@ impl Checker<'_> {
             ));
         }
         match pattern {
+            ir::Pattern::Newtype(inner) => {
+                let ty = registry.newtype_inner(&value.ty, value.span)?;
+                let span = value.span;
+                let value = ir::Expr {
+                    kind: ir::ExprKind::Unwrap(Box::new(value)),
+                    ty,
+                    span,
+                };
+                Self::destructure_fields(inner, value, statements, registry, depth + 1)?;
+            }
             ir::Pattern::List { .. } | ir::Pattern::TupleRest { .. } => {
                 sequences::destructure(pattern, value, statements, registry, depth)?;
             }
@@ -1429,6 +1443,11 @@ impl Checker<'_> {
             .zip(payload)
             .map(|(p, t)| self.pattern(p, &t, names, depth))
             .collect::<Checked<Vec<_>>>()?;
+        if self.registry.is_newtype(&expected) {
+            return Ok(ir::Pattern::Newtype(Box::new(
+                fields.into_iter().next().expect("one newtype payload"),
+            )));
+        }
         Ok(ir::Pattern::Variant { tag, fields })
     }
 
@@ -1484,13 +1503,15 @@ impl Checker<'_> {
                 .unify(&arg.ty, &field, arg.span, "constructor argument")?;
             checked.push(arg);
         }
-        Ok((
+        let kind = if self.registry.is_newtype(&ty) {
+            ir::ExprKind::Wrap(Box::new(checked.remove(0)))
+        } else {
             ir::ExprKind::CustomConstruct {
                 tag,
                 fields: checked,
-            },
-            ty,
-        ))
+            }
+        };
+        Ok((kind, ty))
     }
 
     /// Evaluate a source field receiver once before resolving its semantic layout.
@@ -1519,6 +1540,13 @@ impl Checker<'_> {
             return Ok((value.kind, Type::Never));
         }
         let ty = self.inference.resolve(&value.ty, span)?;
+        if self.registry.is_newtype(&ty) {
+            if name != "0" {
+                return Err(Diagnostic::new(span, "newtype field must be .0"));
+            }
+            let inner = self.registry.newtype_inner(&ty, span)?;
+            return Ok((ir::ExprKind::Unwrap(Box::new(value)), inner));
+        }
         if let Type::Tuple(fields) = &ty {
             let index = name
                 .parse::<usize>()
@@ -1611,14 +1639,12 @@ impl Checker<'_> {
             ir::ExprKind::FunctionValue { target } => {
                 self.validate_function_value(*target, &expr.ty, expr.span)?
             }
-            ir::ExprKind::Invoke { callee, args } => {
-                self.finalize(callee)?;
-                for arg in args {
-                    self.finalize(arg)?;
-                }
-            }
+            ir::ExprKind::Invoke { callee, args } => self.finalize_invoke(callee, args)?,
             ir::ExprKind::Unary { op, value } => self.finalize_unary(*op, value)?,
-            ir::ExprKind::Try(value) | ir::ExprKind::Field { value, .. } => self.finalize(value)?,
+            ir::ExprKind::Wrap(value)
+            | ir::ExprKind::Unwrap(value)
+            | ir::ExprKind::Try(value)
+            | ir::ExprKind::Field { value, .. } => self.finalize(value)?,
             ir::ExprKind::Binary { op, left, right } => {
                 self.finalize_binary(*op, left, right, &expr.ty, expr.span)?
             }
@@ -1630,9 +1656,7 @@ impl Checker<'_> {
             ir::ExprKind::Tuple(values)
             | ir::ExprKind::List(values)
             | ir::ExprKind::CustomConstruct { fields: values, .. } => {
-                for value in values {
-                    self.finalize(value)?;
-                }
+                self.finalize_values(values)?
             }
             ir::ExprKind::Construct {
                 value: Some(value), ..
@@ -1645,6 +1669,20 @@ impl Checker<'_> {
             ir::ExprKind::Match { value, arms } => self.finalize_match(value, arms, expr.span)?,
             ir::ExprKind::Block(stmts) => self.finalize_block(stmts)?,
             _ => {}
+        }
+        Ok(())
+    }
+
+    /// Normalize a computed callable before its ordered argument expressions.
+    fn finalize_invoke(&self, callee: &mut ir::Expr, args: &mut [ir::Expr]) -> Checked<()> {
+        self.finalize(callee)?;
+        self.finalize_values(args)
+    }
+
+    /// Resolve ordered collection and constructor children under the same inference state.
+    fn finalize_values(&self, values: &mut [ir::Expr]) -> Checked<()> {
+        for value in values {
+            self.finalize(value)?;
         }
         Ok(())
     }
@@ -1700,6 +1738,10 @@ impl Checker<'_> {
         }
         if let Some(capability) = schemes::binary_capability(op) {
             self.inference.require(capability, &left.ty, span)?;
+            if matches!(op, ast::BinaryOp::Eq | ast::BinaryOp::Ne) {
+                self.unwrap_equality(left)?;
+                self.unwrap_equality(right)?;
+            }
             if self.inference.template && matches!(left.ty, Type::Generic(_)) {
                 return Ok(());
             }
@@ -1937,6 +1979,15 @@ fn fallible_bindings(
     bindings: &mut Vec<(usize, Span)>,
 ) -> Checked<()> {
     match pattern {
+        ir::Pattern::Newtype(inner) => {
+            fallible_bindings(
+                inner,
+                &registry.newtype_inner(ty, span)?,
+                span,
+                registry,
+                bindings,
+            )?;
+        }
         ir::Pattern::List { .. } | ir::Pattern::TupleRest { .. } => {
             for (p, t) in sequences::parts(pattern, ty, span)? {
                 fallible_bindings(p, &t, span, registry, bindings)?;

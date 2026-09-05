@@ -22,7 +22,7 @@ pub(super) fn hover(
         return Json::Null;
     };
     let Some((mut text, doc_target)) =
-        description(program, query.binding, index.symbol_name(), name, facts)
+        description(program, index.target, index.symbol_name(), name, facts)
     else {
         return Json::Null;
     };
@@ -78,6 +78,9 @@ fn description(
         requirements(&mut text, info)?;
         return Some((text, Some(function.span)));
     }
+    if let Some(description) = newtype_declaration(program, binding, symbol, name) {
+        return Some(description);
+    }
     if let Some(ty) = &facts.value {
         let text = if *ty == Type::Never {
             "does not return".into()
@@ -87,6 +90,35 @@ fn description(
         return Some((format!("{name}: {text}"), None));
     }
     declaration(program, binding, symbol, name)
+}
+
+/// Newtype type names and constructor values have separate signatures but share declaration docs.
+fn newtype_declaration(
+    program: &ast::Program,
+    target: Option<Span>,
+    symbol: Option<&str>,
+    name: &str,
+) -> Option<(String, Option<Span>)> {
+    for decl in &program.newtypes {
+        let arguments = decl.parameters.iter().cloned().map(Type::Generic).collect();
+        let owner = Type::Named(decl.name.clone(), arguments);
+        if target == Some(decl.constructor_span) && symbol == Some(decl.constructor.as_str()) {
+            let ty = Type::Function(vec![decl.inner.clone()], Box::new(owner));
+            return Some((
+                format!("{name}: {}", presentation::render_type(&ty, limits()).ok()?),
+                Some(decl.span),
+            ));
+        }
+        if symbol == Some(decl.name.as_str()) {
+            let owner = presentation::render_type(&owner, limits()).ok()?;
+            let inner = presentation::render_type(&decl.inner, limits()).ok()?;
+            return Some((
+                format!("newtype {owner} = {}({inner})", decl.constructor),
+                Some(decl.span),
+            ));
+        }
+    }
+    None
 }
 
 /// Declaration-only facts use source types whose validity the ordinary checker already proved.
@@ -241,6 +273,7 @@ fn owned_documentation(program: &ast::Program, owner: Span) -> Option<&ast::DocC
         .map(|f| f.span.start)
         .chain(program.types.iter().map(|d| d.span.start))
         .chain(program.aliases.iter().map(|d| d.span.start))
+        .chain(program.newtypes.iter().map(|d| d.span.start))
         .filter(|start| *start < owner.start)
         .max();
     program.docs.iter().find(|doc| {

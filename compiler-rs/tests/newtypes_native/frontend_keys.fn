@@ -1,0 +1,9 @@
+newtype Key = Key(String)
+fn main():
+    let original = %{Key("abc"): 1}
+    let changed = Map.put(original, Key(String.concat("a", "bc")), 2)
+    println(Map.len(changed))
+    println(Option.unwrap_or(Map.get(original, Key("abc")), 0))
+    println(Option.unwrap_or(Map.get(changed, Key("abc")), 0))
+    println(List.contains(Map.keys(changed), Key(String.concat("ab", "c"))))
+    println(Map.len(Map.delete(changed, Key("abc"))))

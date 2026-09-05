@@ -71,7 +71,7 @@ impl Emitter<'_> {
     }
 
     /// Share one value-aware contains path between intrinsic and registry call identities.
-    pub(super) fn float_contains(
+    pub(super) fn scalar_contains(
         &mut self,
         args: &[Expr],
         span: Span,
@@ -81,25 +81,41 @@ impl Emitter<'_> {
         let [list, value] = args else {
             return Err(invalid(span, "List.contains requires two arguments"));
         };
-        expect_type(
-            list.ty.clone(),
-            Type::List(Box::new(Type::Float)),
-            list.span,
-        )?;
-        expect_type(value.ty.clone(), Type::Float, value.span)?;
+        let Type::List(item) = &list.ty else {
+            return Err(invalid(span, "List.contains requires List"));
+        };
+        expect_type(value.ty.clone(), *item.clone(), value.span)?;
+        nominal::resolved(item, &self.layouts, span, 0)?;
+        let primitive = self.representation(item).clone();
+        if !matches!(
+            primitive,
+            Type::Int | Type::Bool | Type::String | Type::Float
+        ) {
+            return Err(invalid(span, "List.contains requires scalar equality"));
+        }
         let list = self.expr(list, locals, depth)?;
-        let value = self.expr(value, locals, depth)?;
-        self.float_contains_used = true;
-        let found = self.assign(
-            locals,
-            Type::Bool,
-            &format!("call $fern_rs_list_contains_float(l {list}, d {value})"),
-        );
+        let raw = self.expr(value, locals, depth)?;
+        let found = if primitive == Type::Float {
+            self.float_contains_used = true;
+            self.assign(
+                locals,
+                Type::Bool,
+                &format!("call $fern_rs_list_contains_float(l {list}, d {raw})"),
+            )
+        } else {
+            let payload = self.payload(locals, item, raw);
+            let symbol = if primitive == Type::String {
+                "fern_list_contains_str"
+            } else {
+                "fern_list_contains"
+            };
+            let raw = self.assign(
+                locals,
+                Type::Int,
+                &format!("call ${symbol}(l {list}, l {payload})"),
+            );
+            self.unpack(locals, &Type::Bool, raw)
+        };
         Ok((Type::Bool, found))
     }
-}
-
-/// Detect a Float list only for selecting its otherwise fully checked special ABI.
-pub(super) fn float_list(args: &[Expr]) -> bool {
-    matches!(args.first().map(|arg| &arg.ty), Some(Type::List(item)) if **item == Type::Float)
 }

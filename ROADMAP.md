@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (840 Rust tests, 4 measurement-harness tests, 194 core native programs, 21 entry/access programs, 9 controlled-fault cases, 184 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (885 Rust tests, 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 21 entry/access programs, 9 controlled-fault cases, 198 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -102,6 +102,7 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Incomplete member completion from independent concrete receiver evidence in current source, with exact edits and no executable hole IR (21 new Rust regressions including library source identity).
 - [x] Preserve global module reference identity when an unrelated local shadows its canonical module name (eight Rust regressions, four native programs and four invalid inputs).
 - [x] Transparent scalar/generic type aliases with bounded capture-free expansion, module privacy, original source tooling and native execution (26 new Rust regressions, seven native programs and 12 invalid inputs).
+- [x] Distinct generic newtypes with unboxed full-width native representation, explicit projection/patterns, scalar capabilities, Result obligations and source tooling (45 Rust regressions, 13 native programs and 14 invalid cases).
 - [ ] Remaining function/type syntax and complete native-language audit.
 - [ ] Track semantic Result handling beyond local references (for example, inspecting a List(Result) length currently counts as handling its elements).
 

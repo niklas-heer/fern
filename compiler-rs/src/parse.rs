@@ -1186,6 +1186,8 @@ impl Parser {
                 self.add_clause(&mut program, &mut groups, function, documented)?;
             } else if self.word("type") {
                 self.type_declaration(&mut program, public)?;
+            } else if self.word("newtype") {
+                self.newtype_declaration(&mut program, public)?;
             } else if self.word("import") {
                 program.imports.push(self.import(public)?);
             } else if self.word("module") && !public {
@@ -1287,19 +1289,7 @@ impl Parser {
     fn type_declaration(&mut self, program: &mut Program, public: bool) -> ParseResult<()> {
         let start = self.take().span.start;
         let (name, _) = self.name()?;
-        let mut parameters = Vec::new();
-        if self.eat(&Kind::Left) {
-            for _ in 0..self.tokens.len() {
-                if self.eat(&Kind::Right) {
-                    break;
-                }
-                parameters.push(self.name()?.0);
-                if !self.eat(&Kind::Comma) {
-                    self.expect(Kind::Right, "expected ',' or ')' after type parameter")?;
-                    break;
-                }
-            }
-        }
+        let parameters = self.type_parameters()?;
         if public {
             program.exports.push(name.clone());
         }
@@ -1318,6 +1308,62 @@ impl Parser {
                 .types
                 .push(self.nominal_body(start, name, parameters)?);
         }
+        Ok(())
+    }
+
+    /// Read bounded generic declaration parameters with ordinary source identifier rules.
+    fn type_parameters(&mut self) -> ParseResult<Vec<String>> {
+        let mut parameters = Vec::new();
+        if self.eat(&Kind::Left) {
+            for _ in 0..self.tokens.len() {
+                if self.eat(&Kind::Right) {
+                    break;
+                }
+                parameters.push(self.name()?.0);
+                if !self.eat(&Kind::Comma) {
+                    self.expect(Kind::Right, "expected ',' or ')' after type parameter")?;
+                    break;
+                }
+            }
+        }
+        Ok(parameters)
+    }
+
+    /// Preserve newtype identity, constructor spelling and payload source annotation separately.
+    fn newtype_declaration(&mut self, program: &mut Program, public: bool) -> ParseResult<()> {
+        let start = self.take().span.start;
+        let (name, _) = self.name()?;
+        let parameters = self.type_parameters()?;
+        self.expect(Kind::Assign, "expected '=' before newtype constructor")?;
+        let (constructor, constructor_span) = self.name()?;
+        self.expect(
+            Kind::Left,
+            "newtype constructor requires exactly one payload type",
+        )?;
+        let inner_start = self.current().span.start;
+        let inner = self.ty()?;
+        let inner_span = Span {
+            start: inner_start,
+            end: self.tokens[self.position - 1].span.end,
+        };
+        let end = self.current().span.end;
+        self.expect(
+            Kind::Right,
+            "newtype constructor requires exactly one payload type",
+        )?;
+        self.line_end()?;
+        if public {
+            program.exports.push(name.clone());
+        }
+        program.newtypes.push(crate::ast::NewtypeDecl {
+            name,
+            parameters,
+            constructor,
+            inner,
+            span: Span { start, end },
+            constructor_span,
+            inner_span,
+        });
         Ok(())
     }
 
@@ -1424,7 +1470,7 @@ impl Parser {
         let Some((text, span)) = pending else {
             return Ok(false);
         };
-        if !self.word("fn") && !self.word("type") {
+        if !self.word("fn") && !self.word("type") && !self.word("newtype") {
             return Err(self.error("@doc must precede a function or type declaration"));
         }
         let target = match self.tokens.get(self.position + 1).map(|t| &t.kind) {

@@ -7,6 +7,7 @@ pub struct Program {
     pub functions: Vec<Function>,
     pub types: Vec<TypeDecl>,
     pub aliases: Vec<TypeAlias>,
+    pub newtypes: Vec<NewtypeDecl>,
     pub module: Option<String>,
     pub imports: Vec<Import>,
     pub exports: Vec<String>,
@@ -36,6 +37,18 @@ pub struct TypeAlias {
     pub parameters: Vec<String>,
     pub target: Type,
     pub span: Span,
+}
+
+/// A distinct one-payload nominal type whose constructor adds no runtime allocation.
+#[derive(Clone, Debug)]
+pub struct NewtypeDecl {
+    pub name: String,
+    pub parameters: Vec<String>,
+    pub constructor: String,
+    pub inner: Type,
+    pub span: Span,
+    pub constructor_span: Span,
+    pub inner_span: Span,
 }
 
 #[derive(Clone, Debug)]

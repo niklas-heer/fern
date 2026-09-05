@@ -13,8 +13,16 @@ pub struct Program {
     pub types: Vec<TypeLayout>,
 }
 
+/// Physical storage is explicit; an unboxed nominal layout contains exactly one payload.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LayoutStorage {
+    Tagged,
+    Unboxed,
+}
+
 #[derive(Clone, Debug)]
 pub struct TypeLayout {
+    pub storage: LayoutStorage,
     pub ty: Type,
     pub variants: Vec<Vec<Type>>,
     pub fields: Vec<String>,
@@ -78,6 +86,8 @@ impl EditorHoleToken {
 
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    Wrap(Box<Expr>),
+    Unwrap(Box<Expr>),
     /// Incomplete member result used only in isolated editor proof; never executable.
     EditorHole {
         token: EditorHoleToken,
@@ -197,6 +207,7 @@ pub struct MatchArm {
 
 #[derive(Clone, Debug)]
 pub enum Pattern {
+    Newtype(Box<Pattern>),
     Tuple(Vec<Pattern>),
     List {
         prefix: Vec<Pattern>,
@@ -310,7 +321,9 @@ pub(crate) fn children(expr: &Expr) -> Vec<&Expr> {
         ExprKind::Invoke { callee, args } => std::iter::once(callee.as_ref())
             .chain(args.iter())
             .collect(),
-        ExprKind::Return(value)
+        ExprKind::Wrap(value)
+        | ExprKind::Unwrap(value)
+        | ExprKind::Return(value)
         | ExprKind::Defer(value)
         | ExprKind::Unary { value, .. }
         | ExprKind::Try(value)
@@ -341,15 +354,7 @@ pub(crate) fn children(expr: &Expr) -> Vec<&Expr> {
             }
             values
         }
-        ExprKind::Block(stmts) => stmts
-            .iter()
-            .flat_map(|s| match s {
-                Stmt::LetElse {
-                    value, else_branch, ..
-                } => vec![value, else_branch],
-                Stmt::Let { value, .. } | Stmt::Expr(value) => vec![value],
-            })
-            .collect(),
+        ExprKind::Block(stmts) => stmts.iter().flat_map(statement_children).collect(),
         _ => Vec::new(),
     }
 }
@@ -388,3 +393,13 @@ pub(crate) fn reject_probes(program: &Program) -> Result<(), crate::Diagnostic> 
 
 #[cfg(test)]
 mod tests;
+
+/// Keep let-else failure branches visible in shared bounded expression traversal.
+fn statement_children(stmt: &Stmt) -> Vec<&Expr> {
+    match stmt {
+        Stmt::LetElse {
+            value, else_branch, ..
+        } => vec![value, else_branch],
+        Stmt::Let { value, .. } | Stmt::Expr(value) => vec![value],
+    }
+}

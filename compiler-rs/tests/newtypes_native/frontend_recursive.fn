@@ -1,0 +1,10 @@
+newtype Chain = Chain(List(Chain))
+newtype Items(a) = Items(List(a))
+fn size(value: Chain) -> Int:
+    List.len(value.0)
+fn main():
+    let value = Chain([Chain([]), Chain([])])
+    println(size(value))
+    let Items([first, ..rest]) = Items([1, 2, 3]) else: return ()
+    println(first)
+    println(List.len(rest))

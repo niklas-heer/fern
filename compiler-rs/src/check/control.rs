@@ -247,6 +247,8 @@ pub(super) fn strict_divergence(kind: ir::ExprKind, ty: Type) -> TypedKind {
         For {
             iterable: value, ..
         }
+        | Wrap(value)
+        | Unwrap(value)
         | Return(value)
         | Try(value)
         | Unary { value, .. }
@@ -296,6 +298,9 @@ pub(super) fn pattern_discards(
     registry: &nominal::Registry,
 ) -> Checked<()> {
     match pattern {
+        ir::Pattern::Newtype(inner) => {
+            pattern_discards(inner, &registry.newtype_inner(ty, span)?, span, registry)?;
+        }
         ir::Pattern::List { .. } | ir::Pattern::TupleRest { .. } => {
             for (p, t) in sequences::parts(pattern, ty, span)? {
                 pattern_discards(p, &t, span, registry)?;

@@ -259,11 +259,28 @@ fn signature_info(
 /// Resolve members using the same nominal substitution as field access, retaining source origins.
 fn members(
     source: &ast::Program,
-    _registry: &nominal::Registry,
+    registry: &nominal::Registry,
     ty: &Type,
-    _span: Span,
+    span: Span,
     budget: &mut Budget,
 ) -> Checked<Vec<Member>> {
+    if registry.is_newtype(ty) {
+        let inner = registry.newtype_inner(ty, span)?;
+        budget.ty(&inner)?;
+        let origin = match ty {
+            Type::Named(name, _) => source
+                .newtypes
+                .iter()
+                .find(|d| d.name == *name)
+                .map(|d| d.inner_span),
+            _ => None,
+        };
+        return Ok(vec![Member {
+            name: "0".into(),
+            ty: inner,
+            origin,
+        }]);
+    }
     match ty {
         Type::Tuple(fields) => fields
             .iter()
@@ -435,7 +452,9 @@ impl Recorder {
                 }
             }
             ir::ExprKind::Invoke { callee, .. } => self.budget.ty(&callee.ty)?,
-            ir::ExprKind::Field { value, .. } => self.budget.ty(&value.ty)?,
+            ir::ExprKind::Field { value, .. } | ir::ExprKind::Unwrap(value) => {
+                self.budget.ty(&value.ty)?
+            }
             _ => {}
         }
         Ok(())
@@ -631,7 +650,7 @@ fn named_value(
     let mut kind = kind;
     let mut ty = ty;
     for _ in selected_part + 1..parts.len() {
-        if let ir::ExprKind::Field { value, .. } = kind {
+        if let ir::ExprKind::Field { value, .. } | ir::ExprKind::Unwrap(value) = kind {
             kind = &value.kind;
             ty = &value.ty;
         } else {
@@ -644,7 +663,7 @@ fn named_value(
 /// The checked field receiver supplies layout evidence independently of its selected value.
 fn field_value(kind: &ir::ExprKind, ty: &Type) -> (Type, Option<Type>) {
     let receiver = match kind {
-        ir::ExprKind::Field { value, .. } => Some(value.ty.clone()),
+        ir::ExprKind::Field { value, .. } | ir::ExprKind::Unwrap(value) => Some(value.ty.clone()),
         _ => None,
     };
     (ty.clone(), receiver)

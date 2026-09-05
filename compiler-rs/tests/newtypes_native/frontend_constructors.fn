@@ -1,0 +1,8 @@
+newtype Wrap(a) = Packed(a)
+fn main():
+    let make: (Int) -> Wrap(Int) = Packed
+    println(make(4294967296).0)
+    let floats = List.map([1.25, 2.5], Packed)
+    println(List.fold(floats, 0.0, (total, value) -> total + value.0))
+    let strings = List.map(["x", "y"], Packed)
+    println(List.head(strings).0)

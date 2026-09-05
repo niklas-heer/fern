@@ -23,6 +23,8 @@ impl Emitter<'_> {
             ExprKind::Construct { value, .. } => value.iter().map(|v| v.as_ref()).collect(),
             ExprKind::Field { value, .. }
             | ExprKind::Try(value)
+            | ExprKind::Wrap(value)
+            | ExprKind::Unwrap(value)
             | ExprKind::Unary { value, .. } => vec![value],
             ExprKind::Call { args, .. } => args.iter().collect(),
             ExprKind::Invoke { callee, args } => {

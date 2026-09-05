@@ -66,6 +66,14 @@ impl<'a> Index<'a> {
         for alias in &program.aliases {
             visible.insert(alias.name.clone(), alias.name.clone());
         }
+        for decl in &program.newtypes {
+            visible.insert(decl.name.clone(), decl.name.clone());
+            visible.insert(decl.constructor.clone(), decl.constructor.clone());
+            visible.insert(
+                format!("{}.{}", decl.name, decl.constructor),
+                decl.constructor.clone(),
+            );
+        }
         for ty in &program.types {
             visible.insert(ty.name.clone(), ty.name.clone());
             for variant in &ty.variants {
@@ -187,12 +195,14 @@ impl<'a> Index<'a> {
             .map(|d| d.span.start)
             .chain(program.imports.iter().map(|d| d.span.start))
             .chain(program.aliases.iter().map(|d| d.span.start))
+            .chain(program.newtypes.iter().map(|d| d.span.start))
             .any(|start| start > function.span.start && start <= self.cursor);
         (!separated).then_some(function.span.start)
     }
 
     /// Source declarations retain their first clause and exact selected identifier range.
     fn declarations(&mut self, program: &ast::Program) {
+        self.newtype_declarations(program);
         for function in program
             .functions
             .iter()
@@ -246,6 +256,25 @@ impl<'a> Index<'a> {
             }
         }
     }
+    /// A newtype's type spelling and value constructor retain distinct exact declaration spans.
+    fn newtype_declarations(&mut self, program: &ast::Program) {
+        for decl in &program.newtypes {
+            if let Some(span) = self.identifier(decl.span, 1) {
+                self.types
+                    .insert(decl.name.clone(), Symbol { span, kind: 7 });
+                if self.contains(span) {
+                    self.target = Some(span);
+                }
+            }
+            let span = decl.constructor_span;
+            self.globals
+                .insert(decl.constructor.clone(), Symbol { span, kind: 4 });
+            if self.contains(span) {
+                self.target = Some(span);
+            }
+        }
+    }
+
     /// Complete unresolved global occurrences, including annotations and import selectors.
     fn global_reference(&mut self) {
         if self.target.is_some() || self.blocked {

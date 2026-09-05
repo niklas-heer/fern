@@ -52,9 +52,7 @@ pub struct Session {
 impl Session {
     /// Check an entry before evaluating it; failed entries never replace prior bindings.
     pub fn evaluate(&mut self, source: &str) -> Result<String, String> {
-        let declaration = ["fn ", "type ", "pub fn ", "pub type ", "@doc "]
-            .iter()
-            .any(|prefix| source.trim_start().starts_with(prefix));
+        let declaration = declaration_source(source);
         let binding = source.trim_start().starts_with("let ");
         let definitions = if declaration {
             format!("{}\n{source}\n", self.definitions)
@@ -101,7 +99,8 @@ impl Session {
             self.bindings.push(source.into());
             self.values = machine.locals;
             self.statements = statements.len();
-        } else if value != Value::Unit {
+        } else if !matches!(statements.last(), Some(ir::Stmt::Expr(expr)) if expr.ty == Type::Unit)
+        {
             let ty = match statements.last() {
                 Some(ir::Stmt::Expr(expr)) => &expr.ty,
                 _ => &Type::Unit,
@@ -157,6 +156,7 @@ impl Machine {
         match &expr.kind {
             EditorHole { .. } => Err(fault("editor hole cannot enter executable IR")),
             Probe { .. } => Err(fault("inference probe cannot enter executable IR")),
+            Wrap(value) | Unwrap(value) => self.expression(value),
             Return(value) => Err(Failure::Return(self.expression(value)?)),
             Break => Err(Failure::Break),
             Continue => Err(Failure::Continue),
@@ -211,12 +211,7 @@ impl Machine {
                 else_branch,
             } => self.conditional(condition, then_branch, else_branch.as_deref()),
             Match { value, arms } => self.match_expression(value, arms),
-            Block(statements) => {
-                let previous = self.locals.clone();
-                let result = self.statements(statements);
-                self.locals = previous;
-                result
-            }
+            Block(statements) => self.lexical_block(statements),
         }
     }
     /// Read the current lexical slot without exposing absent evaluator state.
@@ -633,6 +628,22 @@ fn display_typed(
         return "…".into();
     }
     *budget -= 1;
+    if let Some(layout) = layouts
+        .iter()
+        .find(|layout| layout.ty == *ty && layout.storage == ir::LayoutStorage::Unboxed)
+    {
+        if let Type::Named(name, _) = ty {
+            let constructor = syntax
+                .newtypes
+                .iter()
+                .find(|d| d.name == *name)
+                .map_or(name.as_str(), |d| d.constructor.as_str());
+            return format!(
+                "{constructor}({})",
+                display_typed(value, &layout.variants[0][0], syntax, layouts, budget)
+            );
+        }
+    }
     match (value, ty) {
         (Value::Map(entries), Type::Map(key, value)) => {
             display_map(entries, key, value, syntax, layouts, budget)
@@ -861,4 +872,29 @@ fn repl_prompt(output: &mut impl std::io::Write, ready: bool) -> Result<(), Stri
     write!(output, "{prompt}")
         .and_then(|()| output.flush())
         .map_err(|e| e.to_string())
+}
+
+/// Classify retained declarations using the same explicit source keywords as the parser.
+fn declaration_source(source: &str) -> bool {
+    [
+        "fn ",
+        "type ",
+        "newtype ",
+        "pub fn ",
+        "pub type ",
+        "pub newtype ",
+        "@doc ",
+    ]
+    .iter()
+    .any(|prefix| source.trim_start().starts_with(prefix))
+}
+
+impl Machine {
+    /// Restore lexical bindings after either a block value or an abrupt control-flow exit.
+    fn lexical_block(&mut self, statements: &[ir::Stmt]) -> Eval<Value> {
+        let previous = self.locals.clone();
+        let result = self.statements(statements);
+        self.locals = previous;
+        result
+    }
 }

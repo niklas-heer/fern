@@ -1,0 +1,13 @@
+newtype Id = Id(Int)
+newtype Flag = Flag(Bool)
+newtype Token = Token(Unit)
+fn identity(value: Id) -> Id: value
+fn flag(value: Flag) -> Flag: value
+fn token(value: Token) -> Token: value
+fn main():
+    println(identity(Id(-9223372036854775808)).0)
+    println(identity(Id(4294967296)).0)
+    println(identity(Id(9223372036854775807)).0)
+    println(flag(Flag(true)).0)
+    let Token(()) = token(Token(()))
+    println("unit")

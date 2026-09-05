@@ -1,0 +1,13 @@
+newtype Amount = Amount(Float)
+newtype Total = Total(Amount)
+fn keep(value: Total) -> () -> Total: () -> value
+fn mixed(first: Int, value: Amount, last: Float) -> Amount: Amount(value.0 + last)
+fn values() -> Result(List(Total), String): Ok([Total(Amount(1.25)), Total(Amount(2.5))])
+fn compute() -> Result(Float, String):
+    let items = values()?
+    let callback = keep(List.head(items))
+    Ok(mixed(7, callback().0, List.head(List.tail(items)).0.0).0)
+fn main():
+    println(Result.unwrap_or(compute(), 0.0))
+    println(Amount(-0.0) == Amount(0.0))
+    println(List.contains([Amount(0.0 / 0.0)], Amount(0.0 / 0.0)))

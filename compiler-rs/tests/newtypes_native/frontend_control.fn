@@ -1,0 +1,13 @@
+newtype Flag = Flag(Bool)
+newtype Fallible = Fallible(Result(Int, String))
+fn choose(Flag(true): Flag) -> Int: 7
+fn choose(Flag(false): Flag) -> Int: 9
+fn cleanup(value: Fallible) -> Unit:
+    defer println(Result.unwrap_or(value.0, 0))
+    return ()
+fn main():
+    println(choose(Flag(true)))
+    cleanup(Fallible(Ok(11)))
+    let values = [Flag(true), Flag(false)]
+    for Flag(value) in values:
+        println(value)

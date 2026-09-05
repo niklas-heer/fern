@@ -50,6 +50,11 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
   `type Maybe(a) = Option(a)`. Aliases preserve their target equality/layout and
   add no constructors; cycles, invalid arities and excessive expansion are errors.
   Formatting, docs and navigation retain the declared alias spelling.
+- Distinct newtypes, including generic payloads: `newtype UserId = UserId(Int)` and
+  `newtype Wrapper(a) = Packed(a)`. Construction, `.0` and constructor patterns
+  preserve nominal identity and add no native wrapper allocation. Full-width Float
+  payloads work through functions, collections and captures; recursive payloads
+  behind existing heap containers are supported. See [newtype semantics](../docs/NEWTYPES.md).
 - Module declarations, public functions/types, qualified/aliased/selected imports,
   and public reexports from `module.fn` or `module/mod.fn`.
 - Immutable `let` with inferred or annotated type, lexical scopes, and shadowing.

@@ -58,6 +58,7 @@ impl Machine {
             return Err(fault("interactive pattern depth limit exceeded"));
         }
         Ok(match (pattern, value) {
+            (Newtype(inner), value) => self.collect_pattern(inner, value, bindings, depth + 1)?,
             (Wildcard, _) => true,
             (Bind(id), value) => {
                 bindings.push(Binding::Value(*id, value));

@@ -22,6 +22,8 @@ pub(super) fn resolve(
     let mut inference = Inference {
         probing: true,
         whole_signature: true,
+        newtypes: registry.newtype_definitions(),
+        newtype_work: registry.newtype_budget(),
         probe_work: std::cell::Cell::new(graph.work),
         ..Inference::default()
     };

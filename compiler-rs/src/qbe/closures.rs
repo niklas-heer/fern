@@ -106,7 +106,7 @@ impl Emitter<'_> {
         let mut arguments = vec![format!("l {closure}"), "l %fault".into()];
         arguments.extend(
             args.iter()
-                .map(|(ty, value)| format!("{} {value}", width(ty.clone()))),
+                .map(|(ty, value)| format!("{} {value}", self.width(ty.clone()))),
         );
         let instruction = format!("call {code}({})", arguments.join(", "));
         let value = if *result == Type::Unit {

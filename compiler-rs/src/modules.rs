@@ -531,18 +531,7 @@ impl Loader<'_> {
                     qualify_function(function, &visible, &imported_prefixes, module.source.start)?;
                     shift(&mut function.span, module.source.start);
                 }
-                qualify_aliases(
-                    &mut module.syntax.aliases,
-                    &own,
-                    &visible,
-                    module.source.start,
-                )?;
-                qualify_declarations(
-                    &mut module.syntax.types,
-                    &own,
-                    &visible,
-                    module.source.start,
-                )?;
+                qualify_source_types(&mut module.syntax, &own, &visible, module.source.start)?;
                 Ok(public)
             })()
             .map_err(|e| at_source(e, &module.source))?;
@@ -550,6 +539,7 @@ impl Loader<'_> {
             program.functions.extend(module.syntax.functions);
             program.types.extend(module.syntax.types);
             program.aliases.extend(module.syntax.aliases);
+            program.newtypes.extend(module.syntax.newtypes);
             exports.push(public);
             sources.push(module.source);
         }
@@ -598,6 +588,13 @@ fn exported_names(module: &Module, own: &Names) -> Result<Names, Error> {
             .get(name)
             .ok_or_else(|| failure(format!("unknown export {name}")))?;
         public.insert(name.clone(), qualified.clone());
+        if let Some(decl) = module.syntax.newtypes.iter().find(|t| &t.name == name) {
+            public.insert(decl.constructor.clone(), own[&decl.constructor].clone());
+            public.insert(
+                format!("{}.{}", decl.name, decl.constructor),
+                own[&decl.constructor].clone(),
+            );
+        }
         if let Some(decl) = module.syntax.types.iter().find(|t| &t.name == name) {
             for variant in &decl.variants {
                 public.insert(variant.name.clone(), own[&variant.name].clone());
@@ -609,6 +606,26 @@ fn exported_names(module: &Module, own: &Names) -> Result<Names, Error> {
         }
     }
     Ok(public)
+}
+
+/// Qualify source type declarations while keeping distinct owner and constructor identities.
+fn qualify_source_types(
+    program: &mut ast::Program,
+    own: &Names,
+    visible: &Names,
+    offset: usize,
+) -> Result<(), Error> {
+    qualify_aliases(&mut program.aliases, own, visible, offset)?;
+    qualify_declarations(&mut program.types, own, visible, offset)?;
+    for decl in &mut program.newtypes {
+        decl.name = own[&decl.name].clone();
+        decl.constructor = own[&decl.constructor].clone();
+        qualify_type(&mut decl.inner, visible).map_err(|e| at_span(e, decl.inner_span))?;
+        shift(&mut decl.span, offset);
+        shift(&mut decl.constructor_span, offset);
+        shift(&mut decl.inner_span, offset);
+    }
+    Ok(())
 }
 
 /// Alias targets resolve in their defining module, including private transparent dependencies.
@@ -734,6 +751,7 @@ fn own_names(module: &Module, entry: bool) -> Result<Names, Error> {
         )
         .map_err(|e| at_span(e, alias.span))?;
     }
+    newtype_names(module, &mut names)?;
     let aliases: Vec<_> = names
         .iter()
         .map(|(name, value)| (format!("{}.{name}", module.name), value.clone()))
@@ -742,6 +760,29 @@ fn own_names(module: &Module, entry: bool) -> Result<Names, Error> {
         insert(&mut names, name, value)?;
     }
     Ok(names)
+}
+
+/// Register each newtype's type and value names, permitting its conventional shared spelling.
+fn newtype_names(module: &Module, names: &mut Names) -> Result<(), Error> {
+    for decl in &module.syntax.newtypes {
+        for name in std::iter::once(&decl.name)
+            .chain((decl.constructor != decl.name).then_some(&decl.constructor))
+        {
+            if reserved_declaration(name) {
+                return Err(at_span(
+                    failure(format!("newtype name {name} is reserved")),
+                    decl.span,
+                ));
+            }
+            insert(names, name.clone(), format!("{}.{name}", module.name))
+                .map_err(|e| at_span(e, decl.span))?;
+        }
+        names.insert(
+            format!("{}.{}", decl.name, decl.constructor),
+            format!("{}.{}", module.name, decl.constructor),
+        );
+    }
+    Ok(())
 }
 
 fn reserved_declaration(name: &str) -> bool {

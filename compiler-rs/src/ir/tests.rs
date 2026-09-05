@@ -83,3 +83,58 @@ fn executable_boundaries_reject_editor_holes_even_when_unreachable() {
         .message
         .contains("editor hole"));
 }
+
+#[test]
+fn unboxed_layers_cannot_hide_private_editor_or_inference_nodes() {
+    for editor in [true, false] {
+        let mut program = crate::check::check(
+            &crate::parse::parse("newtype Id=Id(Int)\nfn main()->Int:Id(0).0\n").unwrap(),
+        )
+        .unwrap();
+        let leaf = Expr {
+            kind: ExprKind::Int(0),
+            ty: Type::Int,
+            span: Span::default(),
+        };
+        let kind = if editor {
+            ExprKind::EditorHole {
+                token: EditorHoleToken::new(),
+                receiver: Box::new(leaf),
+            }
+        } else {
+            ExprKind::Probe {
+                token: ProbeToken::new(0),
+                children: vec![leaf],
+                bindings: vec![],
+            }
+        };
+        let hidden = Expr {
+            kind,
+            ty: Type::Int,
+            span: Span::default(),
+        };
+        let wrapped = Expr {
+            kind: ExprKind::Wrap(Box::new(hidden)),
+            ty: Type::Named("Id".into(), vec![]),
+            span: Span::default(),
+        };
+        program.functions[0].body = Expr {
+            kind: ExprKind::Unwrap(Box::new(wrapped)),
+            ty: Type::Int,
+            span: Span::default(),
+        };
+        let message = if editor {
+            "editor hole"
+        } else {
+            "inference probe"
+        };
+        assert!(reject_probes(&program)
+            .unwrap_err()
+            .message
+            .contains(message));
+        assert!(crate::qbe::emit(&program)
+            .unwrap_err()
+            .message
+            .contains(message));
+    }
+}

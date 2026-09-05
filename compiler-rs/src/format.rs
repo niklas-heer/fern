@@ -87,22 +87,16 @@ impl Renderer<'_> {
             declarations.push((import.span.start, vec![line(0, text, import.span.start)]));
         }
         for alias in &program.aliases {
-            let parameters = if alias.parameters.is_empty() {
-                String::new()
-            } else {
-                format!("({})", alias.parameters.join(", "))
-            };
-            let prefix = if program.exports.contains(&alias.name) {
-                "pub "
-            } else {
-                ""
-            };
-            let text = format!(
-                "{prefix}type {}{parameters} = {}",
-                alias.name,
-                type_text(&alias.target)?
-            );
-            declarations.push((alias.span.start, vec![line(0, text, alias.span.start)]));
+            declarations.push((
+                alias.span.start,
+                vec![self.alias(alias, program.exports.contains(&alias.name))?],
+            ));
+        }
+        for decl in &program.newtypes {
+            declarations.push((
+                decl.span.start,
+                vec![self.newtype(decl, program.exports.contains(&decl.name))?],
+            ));
         }
         for declaration in &program.types {
             declarations.push((
@@ -133,20 +127,10 @@ impl Renderer<'_> {
         let targets: std::collections::BTreeMap<_, _> = program
             .functions
             .iter()
-            .rev()
-            .map(|function| (&function.name, function.span.start))
-            .chain(
-                program
-                    .types
-                    .iter()
-                    .map(|declaration| (&declaration.name, declaration.span.start)),
-            )
-            .chain(
-                program
-                    .aliases
-                    .iter()
-                    .map(|alias| (&alias.name, alias.span.start)),
-            )
+            .map(|f| (f.span.start, &f.name))
+            .chain(program.types.iter().map(|d| (d.span.start, &d.name)))
+            .chain(program.aliases.iter().map(|d| (d.span.start, &d.name)))
+            .chain(program.newtypes.iter().map(|d| (d.span.start, &d.name)))
             .collect();
         let indices: std::collections::BTreeMap<_, _> = declarations
             .iter()
@@ -155,8 +139,10 @@ impl Renderer<'_> {
             .collect();
         for doc in &program.docs {
             if let Some(index) = targets
-                .get(&doc.target)
-                .and_then(|anchor| indices.get(anchor))
+                .range(doc.span.end..)
+                .next()
+                .filter(|(_, name)| **name == &doc.target)
+                .and_then(|(anchor, _)| indices.get(anchor))
             {
                 let (anchor, lines) = &mut declarations[*index];
                 *anchor = doc.span.start;
@@ -170,6 +156,46 @@ impl Renderer<'_> {
                 );
             }
         }
+    }
+
+    /// Canonicalize transparent aliases without changing their source parameters.
+    fn alias(&self, alias: &ast::TypeAlias, public: bool) -> Result<Line> {
+        let owner = type_text(&Type::Named(
+            alias.name.clone(),
+            alias
+                .parameters
+                .iter()
+                .cloned()
+                .map(Type::Generic)
+                .collect(),
+        ))?;
+        Ok(line(
+            0,
+            format!(
+                "{}type {owner} = {}",
+                if public { "pub " } else { "" },
+                type_text(&alias.target)?
+            ),
+            alias.span.start,
+        ))
+    }
+
+    /// Preserve distinct newtype and constructor names and the exact payload type.
+    fn newtype(&self, decl: &ast::NewtypeDecl, public: bool) -> Result<Line> {
+        let owner = type_text(&Type::Named(
+            decl.name.clone(),
+            decl.parameters.iter().cloned().map(Type::Generic).collect(),
+        ))?;
+        Ok(line(
+            0,
+            format!(
+                "{}newtype {owner} = {}({})",
+                if public { "pub " } else { "" },
+                decl.constructor,
+                type_text(&decl.inner)?
+            ),
+            decl.span.start,
+        ))
     }
 
     /// Render a record's named fields or a sum's variant payload declarations.
@@ -1334,6 +1360,11 @@ fn structural(mut program: ast::Program) -> String {
     }
     for alias in &mut program.aliases {
         alias.span = Span::default();
+    }
+    for decl in &mut program.newtypes {
+        decl.span = Span::default();
+        decl.constructor_span = Span::default();
+        decl.inner_span = Span::default();
     }
     for declaration in &mut program.types {
         declaration.span = Span::default();

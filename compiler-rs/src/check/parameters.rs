@@ -26,7 +26,11 @@ pub(super) fn resolve<'a>(
         scopes: Vec::new(),
         local_count: 0,
         expr_count: 0,
-        inference: Inference::default(),
+        inference: Inference {
+            newtypes: registry.newtype_definitions(),
+            newtype_work: registry.newtype_budget(),
+            ..Inference::default()
+        },
         function_return: Type::Unit,
         deferred: false,
         loop_depth: 0,
