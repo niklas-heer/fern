@@ -492,3 +492,27 @@ an open checkpoint; unknown record shapes and tuple arities are never guessed.
 Core signature checkpoint gates pass: 670 Rust tests, 550 C tests, 166 core native
 programs, 21 entry/access programs, 148 invalid inputs and the complete fault,
 fuzz and documentation suites on macOS arm64.
+
+## Delayed private-signature shapes
+
+Field access, record updates, tuple-rest bindings and iteration now gather later
+body evidence through bounded structural obligations. Evidence can come from
+either branch, a callback context or another use of the same value. Exact tuple
+suffix evidence works in both directions, and receiver enumeration remains
+distinct from a record callback named enumerate. Unknown shapes remain errors.
+
+Inference uses explicitly tagged, non-executable probes with crate-private
+construction. After settling obligations, the original source is rechecked with
+its generalized signature. Final IR publication, QBE and REPL storage/execution
+reject surviving probes, including unreachable children. Constraint storage,
+field lookup, substitution and repeated settling share the inference work budget.
+
+Fourteen checker regressions, six internal boundary/budget checks and a
+compile-fail construction test cover the implementation. Seven native programs
+and eight invalid programs verify output order, callbacks, guards, cleanup and
+Result handling. Two interactive regressions cover retained generic closures,
+iteration effects and rollback after rejected entries.
+
+Delayed-shape checkpoint gates pass: 693 Rust tests, 550 C tests, 173 core native
+programs, 156 invalid inputs and the complete entry/access, controlled-fault, fuzz
+and documentation suites on macOS arm64.

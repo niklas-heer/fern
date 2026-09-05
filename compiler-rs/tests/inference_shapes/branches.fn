@@ -1,0 +1,20 @@
+type Box:
+    value: Int
+fn consume(x: Box) -> Unit: println("consume")
+fn read(x, flag):
+    if flag:
+        x.value
+    else:
+        consume(x)
+        0
+fn reverse(x, flag):
+    if flag:
+        consume(x)
+        0
+    else:
+        x.value
+fn main():
+    println(read(Box(42), true))
+    println(read(Box(42), false))
+    println(reverse(Box(7), false))
+    println(reverse(Box(7), true))

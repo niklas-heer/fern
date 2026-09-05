@@ -45,8 +45,32 @@ pub struct Expr {
     pub ty: Type,
     pub span: Span,
 }
+/// Opaque identity for a compiler-only inference obligation; never executable IR.
+/// External callers cannot construct provisional computation tokens.
+/// ```compile_fail
+/// let token = fern_prototype::ir::ProbeToken::new(0);
+/// ```
+#[derive(Clone, Debug)]
+pub struct ProbeToken(usize);
+impl ProbeToken {
+    /// Only compiler passes can mint provisional expression identities.
+    pub(crate) fn new(id: usize) -> Self {
+        Self(id)
+    }
+    /// Internal validators can associate a probe with its bounded obligation slot.
+    pub(crate) fn id(&self) -> usize {
+        self.0
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    /// Inference-only computation; finalization and executable boundaries must reject it.
+    Probe {
+        token: ProbeToken,
+        children: Vec<Expr>,
+        bindings: Vec<Param>,
+    },
     Break,
     Continue,
     Range {
@@ -240,3 +264,102 @@ pub enum Builtin {
     ResultIsErr,
     ResultUnwrapOr,
 }
+
+/// List child expressions, including guards, without traversing type layouts.
+pub(crate) fn children(expr: &Expr) -> Vec<&Expr> {
+    match &expr.kind {
+        ExprKind::Probe { children, .. } => children.iter().collect(),
+        ExprKind::Range { start, end, .. } => vec![start, end],
+        ExprKind::For { iterable, body, .. } => vec![iterable, body],
+        ExprKind::With {
+            steps,
+            body,
+            handlers,
+        } => steps
+            .iter()
+            .map(|s| &s.value)
+            .chain(std::iter::once(body.as_ref()))
+            .chain(handlers.iter().map(|h| &h.body))
+            .collect(),
+        ExprKind::Lambda { captures, body, .. } => captures
+            .iter()
+            .map(|c| &c.value)
+            .chain(std::iter::once(body.as_ref()))
+            .collect(),
+        ExprKind::Map(entries) => entries.iter().flat_map(|(k, v)| [k, v]).collect(),
+        ExprKind::Closure { captures, .. } => captures.iter().collect(),
+        ExprKind::Invoke { callee, args } => std::iter::once(callee.as_ref())
+            .chain(args.iter())
+            .collect(),
+        ExprKind::Return(value)
+        | ExprKind::Defer(value)
+        | ExprKind::Unary { value, .. }
+        | ExprKind::Try(value)
+        | ExprKind::Field { value, .. } => vec![value],
+        ExprKind::Binary { left, right, .. } => vec![left, right],
+        ExprKind::Call { args, .. }
+        | ExprKind::Interpolate(args)
+        | ExprKind::Tuple(args)
+        | ExprKind::List(args)
+        | ExprKind::CustomConstruct { fields: args, .. } => args.iter().collect(),
+        ExprKind::Construct {
+            value: Some(value), ..
+        } => vec![value],
+        ExprKind::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            let mut values = vec![condition.as_ref(), then_branch.as_ref()];
+            values.extend(else_branch.as_deref());
+            values
+        }
+        ExprKind::Match { value, arms } => {
+            let mut values = vec![value.as_ref()];
+            for arm in arms {
+                values.extend(arm.guard.as_ref());
+                values.push(&arm.body);
+            }
+            values
+        }
+        ExprKind::Block(stmts) => stmts
+            .iter()
+            .flat_map(|s| match s {
+                Stmt::LetElse {
+                    value, else_branch, ..
+                } => vec![value, else_branch],
+                Stmt::Let { value, .. } | Stmt::Expr(value) => vec![value],
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Reject non-executable probes anywhere, including syntactically unreachable expressions.
+pub(crate) fn reject_probes(program: &Program) -> Result<(), crate::Diagnostic> {
+    let mut count = 0;
+    for function in &program.functions {
+        let mut pending = vec![(&function.body, 0)];
+        while let Some((expr, depth)) = pending.pop() {
+            count += 1;
+            if count > 100_000 || depth >= 128 {
+                return Err(crate::Diagnostic::new(
+                    expr.span,
+                    "typed IR publication complexity limit exceeded",
+                ));
+            }
+            if let ExprKind::Probe { token, .. } = &expr.kind {
+                let _identity = token.id();
+                return Err(crate::Diagnostic::new(
+                    expr.span,
+                    "inference probe cannot enter executable IR",
+                ));
+            }
+            pending.extend(children(expr).into_iter().map(|child| (child, depth + 1)));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

@@ -263,7 +263,8 @@ pub(super) fn strict_divergence(kind: ir::ExprKind, ty: Type) -> TypedKind {
             ..
         }
         | Binary { left, right, .. } => vec![left, right],
-        Call { args, .. }
+        Probe { children: args, .. }
+        | Call { args, .. }
         | List(args)
         | Tuple(args)
         | Interpolate(args)

@@ -214,10 +214,12 @@ remain monomorphic. Explicit type variables stay rigid, public signatures remain
 annotated, and unanchored recursive returns require annotations. Inferred
 polymorphic recursion also requires a complete signature.
 
-Delayed shape evidence remains a separate checkpoint: a projection such as
-`let y = value.field` before a later call establishes the record type still needs
-an annotation. Tuple-rest requires independently known arity; the compiler does
-not choose a record type or tuple size from callers.
+Later body evidence can resolve record fields and updates, exact tuple suffixes,
+and List/Map/Range iteration. A projection such as `let y = value.field` can
+precede the call or annotation that establishes the record type. Branch order
+does not affect these constraints, and runtime evaluation order stays unchanged.
+Unknown record types, iterable kinds and tuple arities still require an annotation;
+the compiler does not choose them from callers.
 
 ## Function clauses and native recursion
 

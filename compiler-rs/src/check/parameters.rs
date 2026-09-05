@@ -165,6 +165,9 @@ fn constrain(checker: &mut Checker<'_>, mut pending: Vec<Constraint<'_>>) -> Che
         if deferred.is_empty() {
             return Ok(());
         }
+        if !progressed && checker.inference.whole_signature {
+            return Ok(());
+        }
         if !progressed {
             return Err(Diagnostic::new(
                 deferred[0].0.span,

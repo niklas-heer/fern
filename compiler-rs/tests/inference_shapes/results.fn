@@ -1,0 +1,18 @@
+type Box:
+    value: Result(Int, String)
+fn consume(x: Box) -> Unit:
+    match x.value:
+        Ok(_) -> println("consume")
+        Err(_) -> println("consume-error")
+fn read(x) -> Result(Int, String):
+    defer println("cleanup")
+    let answer = x.value?
+    consume(x)
+    Ok(answer)
+fn main():
+    match read(Box(Ok(42))):
+        Ok(value) -> println(value)
+        Err(error) -> println(error)
+    match read(Box(Err("failed"))):
+        Ok(value) -> println(value)
+        Err(error) -> println(error)

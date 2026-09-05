@@ -36,6 +36,7 @@ def main():
     corpus += sorted((ROOT / "compiler-rs/tests/parameters").glob("*.fn"))
     corpus += sorted((ROOT / "compiler-rs/tests/generic_schemes").glob("*.fn"))
     corpus += sorted((ROOT / "compiler-rs/tests/whole_signatures").glob("*.fn"))
+    corpus += sorted((ROOT / "compiler-rs/tests/inference_shapes").glob("*.fn"))
     sources = [path.read_text() for path in corpus]
     sources.extend(case[0] for case in BOUNDARY_CASES.values())
     tokens = ["(", ")", "[", "]", ":", "\n", "    ", '"', "🌿", "\\", "?", "None", "if", "#"]

@@ -1,0 +1,11 @@
+type Box:
+    value: Int
+fn consume(x: Box) -> Unit: println("consume")
+fn read(x) if x.value > 0:
+    defer println("cleanup")
+    consume(x)
+    x.value
+fn read(_) -> 0
+fn main():
+    println(read(Box(42)))
+    println(read(Box(-1)))

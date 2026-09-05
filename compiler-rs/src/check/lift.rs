@@ -139,6 +139,7 @@ impl Lifter {
 pub(super) fn children_mut(expr: &mut ir::Expr) -> Vec<&mut ir::Expr> {
     use ir::ExprKind::*;
     match &mut expr.kind {
+        Probe { children, .. } => children.iter_mut().collect(),
         Range { start, end, .. } => vec![start, end],
         For { iterable, body, .. } => vec![iterable, body],
         With {

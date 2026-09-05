@@ -56,6 +56,7 @@ impl<'a> CodeBudget<'a> {
         self.bytes += std::mem::size_of::<ir::Expr>();
         self.pending.push(Part::Type(&expr.ty));
         match &expr.kind {
+            Probe { .. } => return Err("inference probe cannot enter executable IR".into()),
             String(text) => self.bytes += text.len(),
             Range { start, end, .. } => self.pending.extend([Part::Expr(start), Part::Expr(end)]),
             For {
@@ -237,6 +238,18 @@ mod tests {
                 },
             }],
         })
+    }
+    #[test]
+    fn retained_programs_reject_inference_probes() {
+        let mut source = (*program()).clone();
+        source.functions[0].body.kind = ir::ExprKind::Probe {
+            token: ir::ProbeToken::new(0),
+            children: vec![],
+            bindings: vec![],
+        };
+        assert!(program_size(&source)
+            .unwrap_err()
+            .contains("inference probe"));
     }
     #[test]
     fn unique_programs_count_toward_storage_but_shared_programs_count_once() {

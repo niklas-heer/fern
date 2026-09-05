@@ -149,6 +149,7 @@ impl Machine {
     fn node(&mut self, expr: &ir::Expr) -> Eval<Value> {
         use ir::ExprKind::*;
         match &expr.kind {
+            Probe { .. } => Err(fault("inference probe cannot enter executable IR")),
             Return(value) => Err(Failure::Return(self.expression(value)?)),
             Break => Err(Failure::Break),
             Continue => Err(Failure::Continue),

@@ -460,6 +460,7 @@ rust-check: rust-build
     python3 scripts/test_rust_parameters.py
     python3 scripts/test_rust_generic_schemes.py
     python3 scripts/test_rust_whole_signatures.py
+    python3 scripts/test_rust_inference_shapes.py
     python3 scripts/test_rust_stdlib.py
     python3 scripts/test_runtime_directory.py
     python3 scripts/test_rust_fuzz.py

@@ -35,6 +35,7 @@ pub(super) fn resolve(
             &mut signatures,
             &mut inference,
         )?;
+        shapes::finish(&mut inference, registry)?;
         for &index in component {
             publish(
                 &mut program.functions[index],

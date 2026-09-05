@@ -188,7 +188,7 @@ pub(super) fn call_result(
 }
 
 /// Publish newly anchored schemes into independent call variables within the aggregate budget.
-fn settle_calls(inference: &mut Inference) -> Checked<bool> {
+pub(super) fn settle_calls(inference: &mut Inference) -> Checked<bool> {
     let previous = std::mem::replace(&mut inference.settling, true);
     let result = settle_inner(inference);
     inference.settling = previous;

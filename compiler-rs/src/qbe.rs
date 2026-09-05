@@ -37,6 +37,7 @@ const STRING_RUN: usize = 512;
 /// Lower `program` to native-backend IL, rejecting inconsistent public IR.
 /// No source-name or AST type inference occurs here. Requires exactly one main.
 pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
+    ir::reject_probes(program)?;
     emit_inner(program).map_err(|exit| match exit {
         Exit::Diagnostic(error) => error,
         Exit::Terminated => Diagnostic::new(
@@ -340,6 +341,12 @@ impl Emitter<'_> {
             | ExprKind::Defer(_)
             | ExprKind::Match { .. }
             | ExprKind::If { .. } => self.flow_expr(expr, locals, depth + 1)?,
+            ExprKind::Probe { .. } => {
+                return Err(invalid(
+                    expr.span,
+                    "inference probe cannot enter executable IR",
+                ))
+            }
             ExprKind::Lambda { .. } | ExprKind::FunctionValue { .. } => {
                 return Err(invalid(expr.span, "unlifted callable expression"));
             }

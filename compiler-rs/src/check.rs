@@ -17,6 +17,7 @@ mod preflight;
 mod returns;
 mod schemes;
 mod sequences;
+mod shapes;
 mod specialize;
 mod whole;
 mod with_flow;
@@ -45,6 +46,8 @@ struct Inference {
     ranks: Vec<u32>,
     probing: bool,
     whole_signature: bool,
+    shapes: Vec<shapes::Obligation>,
+    next_shape: usize,
     revision: usize,
     template: bool,
     template_names: HashSet<String>,
@@ -76,7 +79,9 @@ pub fn check(program: &ast::Program) -> Checked<ir::Program> {
     let graph = dependencies::analyze(program)?;
     let (program, mut signatures, work) = whole::resolve(program, &registry, &graph)?;
     schemes::validate(&program, &registry, &mut signatures, work)?;
-    specialize::run(&program, &registry, &signatures)
+    let program = specialize::run(&program, &registry, &signatures)?;
+    ir::reject_probes(&program)?;
+    Ok(program)
 }
 
 /// Collect validated concrete signatures from `program` before checking bodies.
@@ -727,6 +732,12 @@ impl Checker<'_> {
         }
         if let Some((root, rest)) = name.split_once('.') {
             if let Some((id, ty)) = self.local(root) {
+                if rest.split('.').take(MAX_EXPR_DEPTH).count() >= MAX_EXPR_DEPTH {
+                    return Err(Diagnostic::new(
+                        span,
+                        "field path nesting limit exceeded (128)",
+                    ));
+                }
                 let mut value = ir::Expr {
                     kind: ir::ExprKind::Local(id),
                     ty,
@@ -841,7 +852,16 @@ impl Checker<'_> {
             statements.push(ir::Stmt::Expr(value));
             return Ok(Type::Never);
         }
+        let first_id = self.local_count;
         let checked = self.pattern(pattern, &value.ty, &mut HashSet::new(), 0)?;
+        if self.inference.whole_signature
+            && returns::has_infer(&self.inference.resolve(&value.ty, span)?)
+        {
+            statements.push(ir::Stmt::Expr(
+                self.defer_binding(value, checked, first_id, span)?,
+            ));
+            return Ok(Type::Unit);
+        }
         let ty = self.inference.resolve(&value.ty, span)?;
         iteration::irrefutable(&checked, &ty, span, self.registry)?;
         let id = self.bind("_", ty.clone());
@@ -1442,6 +1462,9 @@ impl Checker<'_> {
 
     /// Resolve a record field once, retaining its index and instantiated semantic type.
     fn field(&mut self, value: ir::Expr, name: &str, span: Span) -> Checked<TypedKind> {
+        if self.unknown_shape(&value.ty, span)? {
+            return self.defer_field(value, name, span);
+        }
         returns::shape_ready(&self.inference, &value.ty, span)?;
         if value.ty == Type::Never {
             return Ok((value.kind, Type::Never));
@@ -1507,6 +1530,7 @@ impl Checker<'_> {
 
     /// Normalize all expression types after constraints from the whole function are known.
     fn finalize(&self, expr: &mut ir::Expr) -> Checked<()> {
+        shapes::reject(expr)?;
         expr.ty = self.inference.concrete(&expr.ty, expr.span)?;
         self.nominal_requirements(&expr.ty, expr.span)?;
         match &mut expr.kind {

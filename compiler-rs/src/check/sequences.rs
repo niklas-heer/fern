@@ -40,21 +40,28 @@ impl Checker<'_> {
                 Ok(ir::Pattern::Tuple(fields))
             }
             ast::PatternKind::TupleRest { prefix, rest } => {
-                returns::shape_ready(&self.inference, ty, pattern.span)?;
-                let ty = self.inference.resolve(ty, pattern.span)?;
-                let types = tuple_fields(&ty, pattern.span)?;
-                if prefix.len() > types.len() {
-                    return Err(Diagnostic::new(
-                        pattern.span,
-                        "tuple pattern prefix exceeds tuple arity",
-                    ));
-                }
+                let (types, tail) = if self.unknown_shape(ty, pattern.span)? {
+                    self.defer_tuple(ty, prefix.len(), pattern.span)?
+                } else {
+                    returns::shape_ready(&self.inference, ty, pattern.span)?;
+                    let ty = self.inference.resolve(ty, pattern.span)?;
+                    let fields = tuple_fields(&ty, pattern.span)?;
+                    if prefix.len() > fields.len() {
+                        return Err(Diagnostic::new(
+                            pattern.span,
+                            "tuple pattern prefix exceeds tuple arity",
+                        ));
+                    }
+                    (
+                        fields[..prefix.len()].to_vec(),
+                        tuple_type(fields[prefix.len()..].to_vec()),
+                    )
+                };
                 let fields = prefix
                     .iter()
-                    .zip(types)
+                    .zip(&types)
                     .map(|(p, t)| self.pattern(p, t, names, depth + 1))
                     .collect::<Checked<Vec<_>>>()?;
-                let tail = tuple_type(types[prefix.len()..].to_vec());
                 let rest = self.sequence_rest(rest, &tail, names, depth + 1)?;
                 Ok(ir::Pattern::TupleRest {
                     prefix: fields,

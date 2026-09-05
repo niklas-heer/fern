@@ -1,5 +1,5 @@
 //! Nominal declarations, concrete layouts and bounded type substitution.
-use super::{validate_type, Checked, MAX_TYPE_DEPTH, MAX_TYPE_NODES};
+use super::{returns, validate_type, Checked, Inference, MAX_TYPE_DEPTH, MAX_TYPE_NODES};
 use crate::{ast, ir, Diagnostic, Span, Type};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -238,6 +238,61 @@ impl Registry {
         Ok(fields)
     }
 
+    /// Require an identified nominal record before any field-level update constraints.
+    pub(super) fn record_shape(&self, ty: &Type, span: Span) -> Checked<()> {
+        let Type::Named(name, args) = ty else {
+            return Err(Diagnostic::new(span, "field access requires a record type"));
+        };
+        let decl = self
+            .declarations
+            .get(name)
+            .ok_or_else(|| Diagnostic::new(span, "unknown record type"))?;
+        if !decl.record || decl.parameters.len() != args.len() {
+            return Err(Diagnostic::new(span, "field access requires a record type"));
+        }
+        Ok(())
+    }
+
+    /// Resolve only the requested field while charging names and generic substitutions.
+    pub(super) fn project_field(
+        &self,
+        ty: &Type,
+        name: &str,
+        inference: &Inference,
+        span: Span,
+    ) -> Checked<(usize, Type)> {
+        self.record_shape(ty, span)?;
+        let Type::Named(owner, args) = ty else {
+            unreachable!("validated record shape")
+        };
+        let decl = &self.declarations[owner];
+        for arg in args {
+            returns::charge_output(inference, arg, span)?;
+        }
+        let substitutions = decl
+            .parameters
+            .iter()
+            .cloned()
+            .zip(args.iter().cloned())
+            .collect();
+        for (index, field) in decl.variants[0].fields.iter().enumerate() {
+            for _ in 0..field.name.as_ref().map_or(0, String::len) + 1 {
+                returns::charge(inference, span)?;
+            }
+            if field.name.as_deref() != Some(name) {
+                continue;
+            }
+            returns::charge_output(inference, &field.ty, span)?;
+            let result = substitute(&field.ty, &substitutions)?;
+            returns::charge_output(inference, &result, span)?;
+            return Ok((index, result));
+        }
+        Err(Diagnostic::new(
+            span,
+            format!("unknown record field '{name}'"),
+        ))
+    }
+
     /// Resolve constructor payload types for builtin and nominal sums.
     pub(super) fn variants(&self, ty: &Type, span: Span) -> Checked<Vec<Vec<Type>>> {
         match ty {
@@ -334,73 +389,9 @@ impl Registry {
     }
 }
 
-/// List child expressions, including guards, without traversing type layouts.
+/// Share complete typed-IR traversal with publication and executable boundary validation.
 pub(super) fn children(expr: &ir::Expr) -> Vec<&ir::Expr> {
-    match &expr.kind {
-        ir::ExprKind::Range { start, end, .. } => vec![start, end],
-        ir::ExprKind::For { iterable, body, .. } => vec![iterable, body],
-        ir::ExprKind::With {
-            steps,
-            body,
-            handlers,
-        } => steps
-            .iter()
-            .map(|s| &s.value)
-            .chain(std::iter::once(body.as_ref()))
-            .chain(handlers.iter().map(|h| &h.body))
-            .collect(),
-        ir::ExprKind::Lambda { captures, body, .. } => captures
-            .iter()
-            .map(|c| &c.value)
-            .chain(std::iter::once(body.as_ref()))
-            .collect(),
-        ir::ExprKind::Map(entries) => entries.iter().flat_map(|(k, v)| [k, v]).collect(),
-        ir::ExprKind::Closure { captures, .. } => captures.iter().collect(),
-        ir::ExprKind::Invoke { callee, args } => std::iter::once(callee.as_ref())
-            .chain(args.iter())
-            .collect(),
-        ir::ExprKind::Return(value)
-        | ir::ExprKind::Defer(value)
-        | ir::ExprKind::Unary { value, .. }
-        | ir::ExprKind::Try(value)
-        | ir::ExprKind::Field { value, .. } => vec![value],
-        ir::ExprKind::Binary { left, right, .. } => vec![left, right],
-        ir::ExprKind::Call { args, .. }
-        | ir::ExprKind::Interpolate(args)
-        | ir::ExprKind::Tuple(args)
-        | ir::ExprKind::List(args)
-        | ir::ExprKind::CustomConstruct { fields: args, .. } => args.iter().collect(),
-        ir::ExprKind::Construct {
-            value: Some(value), ..
-        } => vec![value],
-        ir::ExprKind::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => {
-            let mut values = vec![condition.as_ref(), then_branch.as_ref()];
-            values.extend(else_branch.as_deref());
-            values
-        }
-        ir::ExprKind::Match { value, arms } => {
-            let mut values = vec![value.as_ref()];
-            for arm in arms {
-                values.extend(arm.guard.as_ref());
-                values.push(&arm.body);
-            }
-            values
-        }
-        ir::ExprKind::Block(stmts) => stmts
-            .iter()
-            .flat_map(|s| match s {
-                ir::Stmt::LetElse {
-                    value, else_branch, ..
-                } => vec![value, else_branch],
-                ir::Stmt::Let { value, .. } | ir::Stmt::Expr(value) => vec![value],
-            })
-            .collect(),
-        _ => Vec::new(),
-    }
+    ir::children(expr)
 }
 
 /// Collect generic parameter names in deterministic order from bounded annotations.

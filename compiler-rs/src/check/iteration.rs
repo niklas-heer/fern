@@ -55,8 +55,12 @@ impl Checker<'_> {
         if iterable.ty == Type::Never {
             return Ok((iterable.kind, Type::Never));
         }
-        returns::shape_ready(&self.inference, &iterable.ty, span)?;
-        let item = item_type(&self.inference.resolve(&iterable.ty, span)?, span)?;
+        let item = if self.unknown_shape(&iterable.ty, span)? {
+            self.defer_item(&iterable.ty, span)?
+        } else {
+            returns::shape_ready(&self.inference, &iterable.ty, span)?;
+            item_type(&self.inference.resolve(&iterable.ty, span)?, span)?
+        };
         self.scopes.push(HashMap::new());
         let pattern = self.pattern(pattern, &item, &mut HashSet::new(), 0)?;
         self.loop_depth += 1;
