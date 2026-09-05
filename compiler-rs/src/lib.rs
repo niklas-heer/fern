@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 pub mod ast;
 pub mod check;
+pub mod documentation;
 pub mod format;
 pub mod ir;
 pub mod lsp;

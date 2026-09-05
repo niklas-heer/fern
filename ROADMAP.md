@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (603 Rust tests, 4 measurement-harness tests, 158 core native programs, 21 entry/access programs, 9 controlled-fault cases, 136 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (618 Rust tests, 4 measurement-harness tests, 158 core native programs, 21 entry/access programs, 9 controlled-fault cases, 136 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -91,6 +91,8 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Private parameter inference from all clause patterns and supplied annotations, including delayed tuple-rest arity and nominal payload evidence; public boundaries and ambiguity diagnostics retained (seven native programs, nine invalid inputs and interactive regressions).
 - [x] Validate every generic body before specialization using rigid type equality and intrinsic capability requirements; propagate requirements through callbacks/recursive helpers and nominal Map fields (four native programs, 16 invalid programs and interactive regressions).
 - [x] Source-based LSP go-to-definition and scoped completion over current overlays, with module visibility, shadowing, UTF-16 edits and bounded output (21 navigation and three source-index regressions; executable protocol smoke).
+- [x] Parser-based documentation for individual source files: clause groups, original signatures, types and literal @doc metadata; bounded Markdown/HTML output and atomic CLI writes (15 documentation/CLI regressions).
+- [ ] Directory documentation, navigation/search and Rust executable doc tests.
 - [ ] Whole private-signature inference and SCC generalization, including delayed shape constraints.
 - [ ] Typed editor hover/member completion and incomplete-code recovery.
 - [ ] Remaining function/type syntax and complete native-language audit.

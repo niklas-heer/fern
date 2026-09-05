@@ -273,8 +273,8 @@ successful bindings. Runtime faults are distinct from explicitly handled Results
 Triple-quoted strings preserve newline and indentation bytes exactly and support
 ordinary escapes and interpolation. Nested `/* ... */` comments are bounded and
 must close. `@doc """..."""` attaches literal documentation to the immediately
-following function or type. Formatting preserves that metadata; Rust document
-and doc-test commands remain part of the tooling work. Non-ASCII identifier
+following function or type. Formatting and documentation preserve that metadata;
+Rust doc-test execution remains part of the tooling work. Non-ASCII identifier
 spelling is retained exactly, without Unicode normalization.
 
 ## Iteration and grouped error handling
@@ -391,6 +391,24 @@ It requires a parsable source graph but can work before type errors are fixed.
 Completion returns at most 256 items and 1 MiB of output; retained editor symbol
 names are capped at 8 MiB. Hover, typed record
 members, rename and code actions remain subsequent tooling checkpoints.
+
+## Source documentation
+
+`fern-rs doc library.fn` writes Markdown to stdout. Use `--html -o docs.html`
+for a standalone HTML page, or `-o docs.md` to save Markdown. Output replacement
+is atomic; source files and their symlink/hardlink aliases cannot be overwritten.
+`fern-rs doc --help` describes the options.
+
+Documentation uses the parser to retain function clause groups, guards, nested
+signatures, type declarations and Unicode names. All declarations are included,
+with their original visibility and annotations. Each literal @doc belongs to its
+own declaration. Generation requires valid syntax, but no main, backend or code
+execution. It does not infer missing signatures. HTML displays documentation as
+escaped literal text; Markdown retains authored documentation markup.
+
+The command currently accepts one file, bounded to 1 MiB and 4,096 declarations;
+output is limited to 8 MiB. Directory documentation, search and executable doc
+tests remain separate tooling checkpoints.
 
 ## Architecture
 

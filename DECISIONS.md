@@ -4,6 +4,13 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 69 Generate source documentation with the Rust parser
+* **Date**: 2026-09-05
+* **Status**: Accepted for Rust migration completion
+* **Decision**: I will generate Rust frontend documentation from parsed source declarations and literal @doc metadata, grouping function clauses and retaining their original source signatures. Documentation generation does not require an executable main or run examples implicitly.
+* **Context**: The current Python generator recognizes signatures with a regular expression, which cannot cover nested function types, clause patterns or Unicode identifiers reliably. The Rust parser already establishes declaration boundaries and documentation ownership.
+* **Consequences**: The first checkpoint accepts one source file, writes Markdown by default or standalone escaped HTML, and supports atomic output files without overwriting source aliases. Parsing and output are bounded. All declarations are included and public visibility is shown; inferred signatures are not invented from omitted annotations. Directory navigation/search and explicit executable doc tests follow as separate checkpoints. Documentation text is literal data in HTML; no scripts or remote assets are required. The unavailable `/decision` skill is replaced by the established decision format.
+
 ### 66 Validate generic bodies with rigid equality and capability requirements
 * **Date**: 2026-09-05
 * **Status**: Accepted for Rust migration completion

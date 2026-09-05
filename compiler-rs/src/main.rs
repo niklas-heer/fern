@@ -1,5 +1,6 @@
 //! Experimental CLI; parsing and type checking never call the C frontend.
 #![forbid(unsafe_code)]
+mod documentation_cli;
 mod native;
 use fern_prototype::{check, modules, qbe};
 use std::{
@@ -24,9 +25,10 @@ fn options(arguments: Vec<OsString>) -> Result<Option<Options>, String> {
     if arguments.is_empty() || arguments[0] == "--help" || arguments[0] == "-h" {
         println!(
             "fern-rs: experimental Rust frontend (C remains the default)\n\
-Usage: fern-rs <check|emit|build|run|fmt> <source.fn> [-o output]\n\
+Usage: fern-rs <check|emit|build|run|fmt|doc> <source.fn> [-o output]\n\
 Run arguments: fern-rs run source.fn -- [arguments]\n\
 Subset: generic functions, custom types, modules, Int/Bool/String, List/Option/Result, guarded match, and Result ?.\n\
+Documentation: fern-rs doc source.fn [--html] [-o output] generates source documentation.\n\
 Formatting: fern-rs fmt source.fn updates the file after syntax validation.\n\
 Interactive evaluation: fern-rs repl retains successful bindings and typed functions.\n\
 Editor protocol: fern-rs lsp communicates over standard input/output.\n\
@@ -226,7 +228,9 @@ fn build(source: &Path, output: Option<PathBuf>, il: &str) -> Result<u8, String>
 /// Convert expected diagnostics and I/O failures into stable nonzero process exits.
 fn main() -> ExitCode {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
-    let result = if arguments.first().is_some_and(|arg| arg == "repl") {
+    let result = if arguments.first().is_some_and(|arg| arg == "doc") {
+        documentation_cli::run(arguments)
+    } else if arguments.first().is_some_and(|arg| arg == "repl") {
         if arguments.len() != 1 {
             Err("repl accepts no additional arguments".into())
         } else {

@@ -432,3 +432,25 @@ completion, shutdown and clean protocol output.
 
 Reviewed navigation checkpoint gates pass: 603 Rust tests, 550 C tests, complete
 native/fuzz gates and documentation checks on macOS arm64.
+
+## Parser-based source documentation
+
+`fern-rs doc source.fn` now generates Markdown from the Rust parser. `--html`
+produces a standalone page, and `-o` installs either format atomically. Invalid
+syntax leaves existing output intact; source aliases cannot be overwritten.
+Generation needs neither main nor the native backend and executes no user code.
+
+Functions retain original headers, including pattern clauses, guards, nested
+function types and omitted annotations. Clauses share one documentation entry;
+types retain their fields and variants. Literal @doc metadata is attached by
+source position to its owning declaration. HTML escapes source, titles and doc
+text; Markdown uses source-safe code fences and retains authored doc markup.
+
+The initial command accepts one file and includes private/public declarations.
+Input is limited to 1 MiB and 4,096 declarations; output is limited to 8 MiB.
+This does not yet provide directory navigation/search, inferred documentation
+signatures or executable Rust doc tests. Fifteen new library/CLI regressions
+cover source syntax, ownership, escaping, resource limits and output preservation.
+
+Source-documentation checkpoint gates pass: 618 Rust tests, 550 C tests, the full
+native/fuzz suite and documentation checks on macOS arm64.
