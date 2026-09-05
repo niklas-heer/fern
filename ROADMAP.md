@@ -45,6 +45,8 @@ Status: Complete for the bounded prototype; `just check`, `just rust-check`, and
 
 ## Active Priorities
 
+- [x] Parse multiline match arms and mixed conditional layouts without losing outer scope; terminate on syntax errors (seven parser regressions and native bootstrap parity).
+
 - [x] Execute `System.exec_args` with literal argv and independent capture streams (nine native regression cases).
 
 ### Rust Migration: Collections and Error Values

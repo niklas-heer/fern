@@ -292,6 +292,171 @@ void test_parse_match_with_default(void) {
     arena_destroy(arena);
 }
 
+/* Test: Multiline arms retain statements and stop at the next commented function. */
+void test_parse_match_multiline_arms(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena,
+        "match result:\n"
+        "    Ok(entries) -> entries\n"
+        "    Err(code) ->\n"
+        "        println(code)\n"
+        "        (0, 1)\n"
+        "\n# Following declaration\n"
+        "fn following() -> Int: 7\n");
+    Expr* expr = parse_expr(parser);
+    ASSERT_FALSE(parser_had_error(parser));
+    ASSERT_EQ(expr->type, EXPR_MATCH);
+    ASSERT_EQ(expr->data.match_expr.arms->len, 2);
+    Expr* body = MatchArmVec_get(expr->data.match_expr.arms, 1).body;
+    ASSERT_EQ(body->type, EXPR_BLOCK);
+    ASSERT_EQ(body->data.block.stmts->len, 1);
+    ASSERT_EQ(body->data.block.final_expr->type, EXPR_TUPLE);
+    ASSERT_EQ(parser->current.type, TOKEN_FN);
+    Stmt* following = parse_stmt(parser);
+    ASSERT_FALSE(parser_had_error(parser));
+    ASSERT_EQ(following->type, STMT_FN);
+    ASSERT_STR_EQ(string_cstr(following->data.fn.name), "following");
+    arena_destroy(arena);
+}
+
+/* Test: Nested matches consume their own dedents, preserving the outer arm. */
+void test_parse_match_nested_multiline_arms(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena,
+        "match outer:\n"
+        "    Some(value) ->\n"
+        "        match value:\n"
+        "            true ->\n"
+        "                println(1)\n"
+        "                2\n"
+        "            false -> 3\n"
+        "    # Next outer arm\n"
+        "    None -> 4\n");
+    Expr* expr = parse_expr(parser);
+    ASSERT_FALSE(parser_had_error(parser));
+    ASSERT_EQ(expr->data.match_expr.arms->len, 2);
+    Expr* inner = MatchArmVec_get(expr->data.match_expr.arms, 0).body;
+    ASSERT_EQ(inner->type, EXPR_MATCH);
+    ASSERT_EQ(inner->data.match_expr.arms->len, 2);
+    ASSERT_EQ(MatchArmVec_get(inner->data.match_expr.arms, 0).body->type, EXPR_BLOCK);
+    ASSERT_EQ(MatchArmVec_get(expr->data.match_expr.arms, 1).body->type, EXPR_INT_LIT);
+    arena_destroy(arena);
+}
+
+/* Test: Condition matches accept statement blocks and a following expression. */
+void test_parse_match_condition_multiline_arms(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena,
+        "fn choose() -> Int:\n"
+        "    match:\n"
+        "        true ->\n"
+        "            let result = 2\n"
+        "            result\n"
+        "        _ -> 3\n"
+        "    9\n"
+        "# Following function\n"
+        "fn next() -> Int: 7\n");
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_FALSE(parser_had_error(parser));
+    ASSERT_EQ(stmts->len, 2);
+    Expr* body = StmtVec_get(stmts, 0)->data.fn.body;
+    ASSERT_EQ(body->type, EXPR_BLOCK);
+    ASSERT_EQ(body->data.block.stmts->len, 1);
+    ASSERT_EQ(body->data.block.final_expr->data.int_lit.value, 9);
+    arena_destroy(arena);
+}
+
+/* Test: Inline matches preserve the dedent that terminates an enclosing if. */
+void test_parse_inline_match_preserves_outer_dedent(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena,
+        "fn choose(value: Int) -> Int:\n"
+        "    if true:\n"
+        "        match value: 0 -> 1, _ -> 2\n"
+        "    9\n"
+        "fn next() -> Int: 7\n");
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_FALSE(parser_had_error(parser));
+    ASSERT_EQ(stmts->len, 2);
+    Expr* body = StmtVec_get(stmts, 0)->data.fn.body;
+    ASSERT_EQ(body->type, EXPR_BLOCK);
+    ASSERT_EQ(body->data.block.stmts->len, 1);
+    ASSERT_EQ(body->data.block.final_expr->data.int_lit.value, 9);
+    Expr* branch = StmtVec_get(body->data.block.stmts, 0)->data.expr.expr;
+    ASSERT_EQ(branch->type, EXPR_IF);
+    ASSERT_EQ(branch->data.if_expr.then_branch->type, EXPR_MATCH);
+    arena_destroy(arena);
+}
+
+/* Test: An inline else after a nested match must not consume its outer arm. */
+void test_parse_nested_match_with_inline_else(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena,
+        "match value:\n"
+        "    Ok(status) ->\n"
+        "        if status == 0:\n"
+        "            match next:\n"
+        "                Ok(message) -> if message: 0 else: 2\n"
+        "                Err(_) -> 3\n"
+        "        else: 4\n"
+        "    Err(_) -> 5\n");
+    Expr* outer = parse_expr(parser);
+    ASSERT_FALSE(parser_had_error(parser));
+    ASSERT_EQ(outer->type, EXPR_MATCH);
+    ASSERT_EQ(outer->data.match_expr.arms->len, 2);
+    Expr* branch = MatchArmVec_get(outer->data.match_expr.arms, 0).body;
+    ASSERT_EQ(branch->type, EXPR_IF);
+    ASSERT_EQ(branch->data.if_expr.else_branch->type, EXPR_INT_LIT);
+    ASSERT_EQ(branch->data.if_expr.else_branch->data.int_lit.value, 4);
+    Expr* nested = branch->data.if_expr.then_branch;
+    ASSERT_EQ(nested->type, EXPR_MATCH);
+    ASSERT_EQ(nested->data.match_expr.arms->len, 2);
+    Expr* final = MatchArmVec_get(outer->data.match_expr.arms, 1).body;
+    ASSERT_EQ(final->type, EXPR_INT_LIT);
+    ASSERT_EQ(final->data.int_lit.value, 5);
+    arena_destroy(arena);
+}
+
+/* Test: An inline then branch can have a multiline else inside a match arm. */
+void test_parse_match_inline_then_multiline_else(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena,
+        "match value:\n"
+        "    Ok(flag) -> if flag: 1 else:\n"
+        "        println(2)\n"
+        "        3\n"
+        "    Err(_) -> 4\n");
+    Expr* outer = parse_expr(parser);
+    ASSERT_FALSE(parser_had_error(parser));
+    ASSERT_EQ(outer->type, EXPR_MATCH);
+    ASSERT_EQ(outer->data.match_expr.arms->len, 2);
+    Expr* branch = MatchArmVec_get(outer->data.match_expr.arms, 0).body;
+    ASSERT_EQ(branch->type, EXPR_IF);
+    ASSERT_EQ(branch->data.if_expr.then_branch->type, EXPR_INT_LIT);
+    Expr* fallback = branch->data.if_expr.else_branch;
+    ASSERT_EQ(fallback->type, EXPR_BLOCK);
+    ASSERT_EQ(fallback->data.block.stmts->len, 1);
+    ASSERT_EQ(fallback->data.block.final_expr->data.int_lit.value, 3);
+    ASSERT_EQ(MatchArmVec_get(outer->data.match_expr.arms, 1).body->data.int_lit.value, 4);
+    arena_destroy(arena);
+}
+
+/* Test: A malformed arm terminates program parsing instead of retrying forever. */
+void test_parse_match_malformed_arm_terminates(void) {
+    Arena* arena = arena_create(4096);
+    Parser* parser = parser_new(arena,
+        "fn bad() -> Int:\n"
+        "    match value:\n"
+        "        Some(x) ->\n"
+        "            x\n"
+        "        None 2\n"
+        "fn next() -> Int: 7\n");
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_NOT_NULL(stmts);
+    ASSERT_TRUE(parser_had_error(parser));
+    arena_destroy(arena);
+}
+
 /* Test: Parse simple block expression */
 void test_parse_block_simple(void) {
     Arena* arena = arena_create(4096);
@@ -2855,6 +3020,13 @@ void run_parser_tests(void) {
     TEST_RUN(test_parse_if_else);
     TEST_RUN(test_parse_match_simple);
     TEST_RUN(test_parse_match_with_default);
+    TEST_RUN(test_parse_match_multiline_arms);
+    TEST_RUN(test_parse_match_nested_multiline_arms);
+    TEST_RUN(test_parse_match_condition_multiline_arms);
+    TEST_RUN(test_parse_match_malformed_arm_terminates);
+    TEST_RUN(test_parse_inline_match_preserves_outer_dedent);
+    TEST_RUN(test_parse_nested_match_with_inline_else);
+    TEST_RUN(test_parse_match_inline_then_multiline_else);
     TEST_RUN(test_parse_block_simple);
     TEST_RUN(test_parse_block_multiple_statements);
     TEST_RUN(test_parse_list_empty);

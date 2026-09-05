@@ -322,7 +322,8 @@ static Expr* parse_indented_block_with_indent(Parser* parser, bool track_dedent)
     
     /* Parse statements: let, return, defer, or expression statements */
     /* Stop when we see something that can't be part of this block */
-    while (!check(parser, TOKEN_EOF) && can_start_block_expr(parser) && !at_block_end(parser)) {
+    while (!parser->had_error && !check(parser, TOKEN_EOF) &&
+           can_start_block_expr(parser) && !at_block_end(parser)) {
         /* Check if a DEDENT was seen since we started this block */
         if (track_dedent && g_dedent_seen > starting_dedent_count) {
             /* Consume exactly ONE dedent for this block's termination.
@@ -1071,9 +1072,8 @@ static Expr* parse_primary_internal(Parser* parser) {
             consume(parser, TOKEN_COLON, "Expected ':' after match value");
         }
         
-        /* Track dedent count before parsing arms.
-         * Multi-line match arms are indented, and when we return to the match's
-         * indentation level, we don't want that dedent to propagate to outer blocks. */
+        /* Only the match's own indentation belongs to this expression. */
+        bool arms_are_indented = g_newline_seen;
         int starting_dedent_count = g_dedent_seen;
         
         // Parse match arms
@@ -1092,7 +1092,9 @@ static Expr* parse_primary_internal(Parser* parser) {
                 }
                 
                 consume(parser, TOKEN_ARROW, "Expected '->' after condition");
-                Expr* body = parse_expression(parser);
+                Expr* body = g_newline_seen
+                    ? parse_indented_block_with_indent(parser, true)
+                    : parse_expression(parser);
                 
                 MatchArm arm;
                 arm.pattern = pattern;
@@ -1109,7 +1111,9 @@ static Expr* parse_primary_internal(Parser* parser) {
                 }
 
                 consume(parser, TOKEN_ARROW, "Expected '->' after match pattern");
-                Expr* body = parse_expression(parser);
+                Expr* body = g_newline_seen
+                    ? parse_indented_block_with_indent(parser, true)
+                    : parse_expression(parser);
                 
                 MatchArm arm;
                 arm.pattern = pattern;
@@ -1117,18 +1121,19 @@ static Expr* parse_primary_internal(Parser* parser) {
                 arm.body = body;
                 MatchArmVec_push(parser->arena, arms, arm);
             }
-        } while (match(parser, TOKEN_COMMA) || 
-                 (!g_newline_seen && can_start_pattern(parser)) ||
-                 (g_newline_seen && g_dedent_seen == starting_dedent_count && can_start_pattern(parser)));
+        } while (!parser->had_error &&
+                 (match(parser, TOKEN_COMMA) ||
+                  (!g_newline_seen && can_start_pattern(parser)) ||
+                  (g_newline_seen && g_dedent_seen == starting_dedent_count &&
+                   can_start_pattern(parser))));
         /* Match arms continue with:
          * - comma (explicit separator), OR
          * - same-line pattern (no newline), OR
          * - newline + pattern at same indentation (no dedent since match started) */
         
-        /* Consume any dedent caused by the match expression's indented arms.
-         * This prevents the dedent from propagating to outer blocks (e.g., for loop body). */
-        if (g_dedent_seen > starting_dedent_count) {
-            g_dedent_seen = starting_dedent_count;
+        /* Consume one arm-list dedent, preserving enclosing block dedents. */
+        if (arms_are_indented && g_dedent_seen > starting_dedent_count) {
+            g_dedent_seen--;
         }
         
         return expr_match(parser->arena, value, arms, loc);
@@ -1153,8 +1158,8 @@ static Expr* parse_primary_internal(Parser* parser) {
         Expr* else_branch = NULL;
         if (match(parser, TOKEN_ELSE)) {
             consume(parser, TOKEN_COLON, "Expected ':' after else");
-            /* For inline if, else is also inline; for block if, else is block */
-            if (is_inline) {
+            /* Each branch owns indentation only when its own body is multiline. */
+            if (!g_newline_seen) {
                 else_branch = parse_expression(parser);
             } else {
                 else_branch = parse_indented_block_with_indent(parser, true);
@@ -1901,7 +1906,7 @@ Stmt* parse_stmt(Parser* parser) {
 StmtVec* parse_stmts(Parser* parser) {
     StmtVec* stmts = StmtVec_new(parser->arena);
 
-    while (!check(parser, TOKEN_EOF)) {
+    while (!parser->had_error && !check(parser, TOKEN_EOF)) {
         Stmt* stmt = parse_stmt(parser);
 
         // If this is a multi-clause fn (has clauses), try to merge with adjacent same-name fn
