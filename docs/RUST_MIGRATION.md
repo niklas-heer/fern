@@ -534,3 +534,23 @@ The new native gate runs with the full Rust suite.
 
 The integrated native JSON checkpoint passes all C/Rust/native/fuzz/documentation
 gates on macOS arm64; existing source-language behavior remains compatible.
+
+## Directory documentation
+
+Parser-based documentation now accepts directories and produces one deterministic
+Markdown or standalone HTML artifact. HTML provides module navigation and local
+search over module names, original signatures and literal documentation. Numeric
+anchors separate duplicate declaration names, and all untrusted markup remains
+escaped data. Search only reads text and changes visibility; no external assets
+or service are needed, and all documentation remains visible without scripting.
+
+Discovery excludes hidden/build/dependency entries and never follows child
+symlinks. Files, directory entries/depth, paths, source bytes, declarations and
+rendered output have explicit limits. Every input is checked before atomic output
+publication, including hardlink aliases of any source. Seven new regressions
+cover rendering, discovery, errors, limits and literal Unix backslash paths.
+Browser checks verify declaration filtering, empty results and navigation after
+a filter. Executable doc tests and inferred documentation remain open.
+
+Directory-documentation gates pass: 700 Rust tests, 550 C tests and the full
+native, JSON, fuzz and documentation suites on macOS arm64.

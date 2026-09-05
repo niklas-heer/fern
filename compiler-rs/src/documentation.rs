@@ -1,5 +1,7 @@
 //! Bounded documentation from parsed source declarations, without executing user code.
 use crate::{ast, parse, Diagnostic, Span};
+mod project;
+pub use project::{render_project, SourceDocument};
 const MAX_OUTPUT: usize = 8 * 1024 * 1024;
 const MAX_DECLARATIONS: usize = 4096;
 
@@ -17,6 +19,8 @@ struct Declaration<'a> {
 }
 struct Writer {
     text: String,
+    maximum: usize,
+    declaration_level: u8,
 }
 
 /// Parse one bounded source and render declarations in source order.
@@ -29,6 +33,8 @@ pub fn render(source: &str, title: &str, output: Output) -> Result<String, Diagn
     let declarations = declarations(source, &program)?;
     let mut writer = Writer {
         text: String::new(),
+        maximum: MAX_OUTPUT,
+        declaration_level: 2,
     };
     writer.start(title, output)?;
     for (index, declaration) in declarations.iter().enumerate() {
@@ -98,8 +104,8 @@ fn declarations<'a>(
 impl Writer {
     /// Append only after checking aggregate UTF-8 output size; never return partial output.
     fn push(&mut self, text: &str) -> Result<(), Diagnostic> {
-        if text.len() > MAX_OUTPUT.saturating_sub(self.text.len()) {
-            return Err(limit("documentation output exceeds 8 MiB"));
+        if text.len() > self.maximum.saturating_sub(self.text.len()) {
+            return Err(limit("documentation output exceeds its byte limit"));
         }
         self.text.push_str(text);
         Ok(())
@@ -154,9 +160,10 @@ impl Writer {
         output: Output,
     ) -> Result<(), Diagnostic> {
         if output == Output::Html {
-            self.push(&format!("<section id=\"declaration-{index}\"><h2>"))?;
+            let level = self.declaration_level;
+            self.push(&format!("<section id=\"declaration-{index}\"><h{level}>"))?;
             self.html(item.name)?;
-            self.push("</h2>\n")?;
+            self.push(&format!("</h{level}>\n"))?;
             for header in &item.headers {
                 self.push("<pre><code>")?;
                 self.html(header)?;
@@ -169,7 +176,7 @@ impl Writer {
             }
             return self.push("</section>\n");
         }
-        self.push("## ")?;
+        self.push(&format!("{} ", "#".repeat(self.declaration_level.into())))?;
         self.heading(item.name)?;
         self.push("\n\n")?;
         for header in &item.headers {

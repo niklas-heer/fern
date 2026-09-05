@@ -1,6 +1,7 @@
 //! Literal-path documentation command; generation is independent of runtime/backend availability.
 use fern_prototype::documentation::{self, Output};
 use std::{ffi::OsString, fs, io::Read, path::PathBuf};
+mod directory;
 struct Options {
     source: PathBuf,
     output: Option<PathBuf>,
@@ -11,11 +12,14 @@ struct Options {
 pub(super) fn run(arguments: Vec<OsString>) -> Result<u8, String> {
     if arguments.len() == 2 && (arguments[1] == "--help" || arguments[1] == "-h") {
         use std::io::Write;
-        std::io::stdout().lock().write_all(b"Usage: fern-rs doc <source.fn> [--html] [-o output]\nGenerate source documentation without executing code. Markdown is written to stdout by default.\n")
+        std::io::stdout().lock().write_all(b"Usage: fern-rs doc <source.fn|directory> [--html] [-o output]\nGenerate source documentation without executing code. Markdown is written to stdout by default. Directory HTML includes module navigation and local search.\n")
             .map_err(|error| error.to_string())?;
         return Ok(0);
     }
     let options = options(arguments)?;
+    if options.source.is_dir() {
+        return directory::run(&options.source, options.output.as_deref(), options.format);
+    }
     let mut source = String::new();
     fs::File::open(&options.source)
         .map_err(|error| format!("{}: {error}", options.source.display()))?
@@ -72,11 +76,11 @@ fn options(arguments: Vec<OsString>) -> Result<Options, String> {
                 argument.to_string_lossy()
             ));
         } else if source.replace(PathBuf::from(argument)).is_some() {
-            return Err("doc accepts one source file".into());
+            return Err("doc accepts one source file or directory".into());
         }
     }
     Ok(Options {
-        source: source.ok_or("doc requires a source file")?,
+        source: source.ok_or("doc requires a source file or directory")?,
         output,
         format: if html { Output::Html } else { Output::Markdown },
     })

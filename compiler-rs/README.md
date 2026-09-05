@@ -432,9 +432,21 @@ own declaration. Generation requires valid syntax, but no main, backend or code
 execution. It does not infer missing signatures. HTML displays documentation as
 escaped literal text; Markdown retains authored documentation markup.
 
-The command currently accepts one file, bounded to 1 MiB and 4,096 declarations;
-output is limited to 8 MiB. Directory documentation, search and executable doc
-tests remain separate tooling checkpoints.
+Single files are bounded to 1 MiB and 4,096 declarations; single-file output is
+limited to 8 MiB. Executable doc tests remain a separate tooling checkpoint.
+
+Directory documentation accepts `fern-rs doc src --html -o docs.html` and produces
+one standalone searchable page. Module paths stay distinct, even when files or
+declarations have the same name. Search matches paths, signatures and doc text;
+module links restore the full view before navigating. Markdown also accepts
+directories. Generation parses source without executing code or requiring main.
+
+Discovery includes `.fn` files recursively, excluding hidden entries and the
+`target`, `build`, `bin`, `deps` and `node_modules` directories. Child symbolic
+links are not followed. Limits are 256 files, 8,192 visited entries, directory
+depth 32, 8 MiB combined source, 4,096 declarations and 16 MiB project output;
+each source retains the parser's 1 MiB limit. Errors preserve the previous output,
+and output aliases of any discovered source are rejected.
 
 ## Architecture
 

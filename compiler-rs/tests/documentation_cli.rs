@@ -103,3 +103,66 @@ fn doc_help_describes_formats_and_source_only_generation() {
     assert!(text.contains("-o"));
     assert!(text.contains("source"));
 }
+
+#[test]
+fn doc_directory_orders_modules_and_excludes_hidden_build_and_symlink_entries() {
+    let dir = Directory::new();
+    fs::create_dir(dir.0.join("nested")).unwrap();
+    fs::write(dir.0.join("nested/second.fn"), "fn second(): ()\n").unwrap();
+    for name in [".hidden", "target", "build", "deps", "node_modules"] {
+        fs::create_dir(dir.0.join(name)).unwrap();
+        fs::write(dir.0.join(name).join("bad.fn"), "fn broken(:").unwrap();
+    }
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(".", dir.0.join("cycle")).unwrap();
+    let result = dir.run(&["doc", ".", "--html", "-o", "docs.html"]);
+    assert!(result.status.success(), "{:?}", result);
+    let html = fs::read_to_string(dir.0.join("docs.html")).unwrap();
+    assert!(html.contains("nested/second.fn"));
+    assert!(html.contains("Find a module or declaration"));
+    assert!(html.find("library.fn").unwrap() < html.find("nested/second.fn").unwrap());
+}
+
+#[test]
+fn doc_directory_error_preserves_output_and_all_source_aliases() {
+    let dir = Directory::new();
+    fs::write(dir.0.join("output.html"), "preserved").unwrap();
+    fs::write(dir.0.join("bad.fn"), "fn bad(:").unwrap();
+    let result = dir.run(&["doc", ".", "--html", "-o", "output.html"]);
+    assert_eq!(result.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("bad.fn:1:"));
+    assert_eq!(
+        fs::read_to_string(dir.0.join("output.html")).unwrap(),
+        "preserved"
+    );
+    fs::remove_file(dir.0.join("bad.fn")).unwrap();
+    fs::hard_link(dir.0.join("library.fn"), dir.0.join("alias.html")).unwrap();
+    let original = fs::read(dir.0.join("library.fn")).unwrap();
+    for output in ["library.fn", "alias.html"] {
+        assert_eq!(dir.run(&["doc", ".", "-o", output]).status.code(), Some(1));
+        assert_eq!(fs::read(dir.0.join("library.fn")).unwrap(), original);
+    }
+}
+
+#[test]
+fn doc_directory_rejects_empty_and_excessive_sources_without_partial_output() {
+    let dir = Directory::new();
+    fs::create_dir(dir.0.join("empty")).unwrap();
+    assert_eq!(dir.run(&["doc", "empty"]).status.code(), Some(1));
+    for i in 0..256 {
+        fs::write(dir.0.join(format!("file{i}.fn")), "fn helper(): ()\n").unwrap();
+    }
+    let result = dir.run(&["doc", ".", "-o", "output.html"]);
+    assert_eq!(result.status.code(), Some(1));
+    assert!(!dir.0.join("output.html").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_paths_preserve_literal_backslashes_in_unix_filenames() {
+    let dir = Directory::new();
+    fs::write(dir.0.join(r"literal\name.fn"), "fn helper(): ()\n").unwrap();
+    let result = dir.run(&["doc", ".", "--html"]);
+    assert!(result.status.success(), "{:?}", result);
+    assert!(String::from_utf8_lossy(&result.stdout).contains(r"literal\name.fn"));
+}
