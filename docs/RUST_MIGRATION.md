@@ -690,3 +690,21 @@ remain under the existing 16 MiB/200,000 limits with unique Rc identity counting
 
 Interactive JSON checkpoint gates pass: 809 Rust tests, 550 C tests and the
 complete native, sanitizer, fuzz and documentation suites on macOS arm64.
+
+
+## Incomplete member completion
+
+The editor now recovers one current lexer/parser member selector without changing
+source bytes. Independently concrete receivers in fixed concrete function groups
+provide record fields, tuple slots and supported List methods. Missing results
+stay local to an explicit non-executable editor proof; they cannot infer receiver
+types or enter reusable schemes, specialization, QBE or retained REPL programs.
+
+Twenty-one new Rust regressions cover current overlays, Unicode/CRLF/interpolation,
+original edits, scopes/aliases/global identities, unrelated errors, source limits
+and unreachable/public IR boundaries. The review also removed synthetic library
+main declarations, so invalid free main references cannot acquire typed facts.
+The loader retains exactly the bytes from which its entry AST was parsed.
+
+Incomplete-completion checkpoint gates pass: 830 Rust tests, 550 C tests and the
+complete native, sanitizer, fuzz and documentation suites on macOS arm64.

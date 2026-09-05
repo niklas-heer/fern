@@ -344,6 +344,9 @@ impl Emitter<'_> {
             | ExprKind::Defer(_)
             | ExprKind::Match { .. }
             | ExprKind::If { .. } => self.flow_expr(expr, locals, depth + 1)?,
+            ExprKind::EditorHole { .. } => {
+                return Err(invalid(expr.span, "editor hole cannot enter executable IR"))
+            }
             ExprKind::Probe { .. } => {
                 return Err(invalid(
                     expr.span,

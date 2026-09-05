@@ -128,6 +128,7 @@ pub(super) fn probe(
     let signature = &signatures[&function.name];
     let mut checker = Checker {
         editor: None,
+        recovery: None,
         signatures,
         registry,
         scopes: vec![HashMap::new()],

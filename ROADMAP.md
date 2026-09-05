@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (809 Rust tests, 4 measurement-harness tests, 194 core native programs, 21 entry/access programs, 9 controlled-fault cases, 184 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (830 Rust tests, 4 measurement-harness tests, 194 core native programs, 21 entry/access programs, 9 controlled-fault cases, 184 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -99,7 +99,7 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Core private-signature generalization from patterns and bodies, with callee-first recursive components, rigid annotations and intrinsic requirements (eight native programs, 14 invalid programs and three interactive regressions).
 - [x] Delayed shape obligations using later body evidence for fields, updates, tuple-rest and iteration; non-executable probes rejected at publication boundaries (seven native programs, eight invalid programs and two interactive regressions).
 - [x] Typed hover and valid-source record/tuple/member completion from final checked source facts, with instantiated uses, inferred requirements, exact doc ownership and separate type/value namespaces (26 new metadata/editor regressions).
-- [ ] Incomplete-code recovery for typed editor member completion.
+- [x] Incomplete member completion from independent concrete receiver evidence in current source, with exact edits and no executable hole IR (21 new Rust regressions including library source identity).
 - [x] Preserve global module reference identity when an unrelated local shadows its canonical module name (eight Rust regressions, four native programs and four invalid inputs).
 - [x] Transparent scalar/generic type aliases with bounded capture-free expansion, module privacy, original source tooling and native execution (26 new Rust regressions, seven native programs and 12 invalid inputs).
 - [ ] Remaining function/type syntax and complete native-language audit.

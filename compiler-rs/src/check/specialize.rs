@@ -45,6 +45,7 @@ pub(super) fn run(
         let function = source_instance(original, &substitutions)?;
         let mut checked = Checker {
             editor: None,
+            recovery: None,
             signatures,
             registry,
             scopes: vec![HashMap::new()],

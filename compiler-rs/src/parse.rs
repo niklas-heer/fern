@@ -1,9 +1,11 @@
 //! Independent, bounded lexer and recursive-descent parser for the prototype.
+mod recovery;
 use crate::ast::{
     BinaryOp, Expr, ExprKind, Field, Function, FunctionSyntax, Import, MatchArm, Param, Pattern,
     PatternKind, Program, Stmt, TypeDecl, UnaryOp, Variant,
 };
 use crate::{Constructor, Diagnostic, Span, Type};
+pub(crate) use recovery::{recover_member, HoleSite};
 
 const MAX_SOURCE: usize = 1024 * 1024;
 const MAX_TOKENS: usize = 65_536;
@@ -13,6 +15,7 @@ type ParseResult<T> = Result<T, Diagnostic>;
 
 #[derive(Clone, Debug, PartialEq)]
 enum Kind {
+    MemberHole,
     Name(String),
     Number(String),
     Text(String),
@@ -101,6 +104,7 @@ fn source_parser(source: &str, record: bool) -> ParseResult<Parser> {
         depth: 0,
         guard_arrow: None,
         type_spans: record.then(Vec::new),
+        member_hole: None,
     })
 }
 
@@ -1099,6 +1103,7 @@ struct Parser {
     depth: usize,
     guard_arrow: Option<usize>,
     type_spans: Option<Vec<Span>>,
+    member_hole: Option<HoleSite>,
 }
 
 impl Parser {
@@ -1947,35 +1952,54 @@ impl Parser {
                     value.depth.max(depth) + 1,
                 )?;
             } else if self.eat(&Kind::Dot) {
-                let (name, end) = if let Kind::Number(number) = self.current().kind.clone() {
-                    let token = self.take();
-                    if !number.bytes().all(|b| b.is_ascii_digit()) {
-                        return Err(Diagnostic::new(
-                            token.span,
-                            "tuple index must be a nonnegative integer",
-                        ));
-                    }
-                    (number, token.span)
-                } else {
-                    self.name()?
-                };
-                let span = Span {
-                    start: value.node.span.start,
-                    end: end.end,
-                };
-                value = expression(
-                    ExprKind::Field {
-                        value: Box::new(value.node),
-                        name,
-                    },
-                    span,
-                    value.depth + 1,
-                )?;
+                value = self.field_postfix(value)?;
             } else {
                 break;
             }
         }
         Ok(value)
+    }
+
+    /// Parse one member selector, retaining opaque recovery identity only for the private token.
+    fn field_postfix(&mut self, value: Parsed) -> ParseResult<Parsed> {
+        let (name, end) = if self.current().kind == Kind::MemberHole {
+            let selector = self.take().span;
+            let site = self
+                .member_hole
+                .as_mut()
+                .ok_or_else(|| Diagnostic::new(selector, "invalid editor hole"))?;
+            site.attach(
+                value.node.span,
+                Span {
+                    start: value.node.span.start,
+                    end: selector.end,
+                },
+            )?;
+            (String::new(), selector)
+        } else if let Kind::Number(number) = self.current().kind.clone() {
+            let token = self.take();
+            if !number.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(Diagnostic::new(
+                    token.span,
+                    "tuple index must be a nonnegative integer",
+                ));
+            }
+            (number, token.span)
+        } else {
+            self.name()?
+        };
+        let span = Span {
+            start: value.node.span.start,
+            end: end.end,
+        };
+        expression(
+            ExprKind::Field {
+                value: Box::new(value.node),
+                name,
+            },
+            span,
+            value.depth + 1,
+        )
     }
 
     /// Parse unary operators, literals, calls, grouping, and conditionals.

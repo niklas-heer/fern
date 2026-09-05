@@ -68,6 +68,7 @@ fn prepare(
         let signatures = HashMap::new();
         let mut checker = Checker {
             editor: None,
+            recovery: None,
             signatures: &signatures,
             registry,
             scopes: Vec::new(),

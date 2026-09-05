@@ -56,6 +56,7 @@ impl<'a> CodeBudget<'a> {
         self.bytes += std::mem::size_of::<ir::Expr>();
         self.pending.push(Part::Type(&expr.ty));
         match &expr.kind {
+            EditorHole { .. } => return Err("editor hole cannot enter executable IR".into()),
             Probe { .. } => return Err("inference probe cannot enter executable IR".into()),
             String(text) => self.bytes += text.len(),
             Range { start, end, .. } => self.pending.extend([Part::Expr(start), Part::Expr(end)]),
@@ -238,6 +239,24 @@ mod tests {
                 },
             }],
         })
+    }
+    #[test]
+    fn retained_programs_reject_editor_holes() {
+        let mut source = (*program()).clone();
+        let receiver = source.functions[0].body.clone();
+        let mut hole = receiver.clone();
+        hole.kind = ir::ExprKind::EditorHole {
+            token: ir::EditorHoleToken::new(),
+            receiver: Box::new(receiver.clone()),
+        };
+        let returning = ir::Expr {
+            kind: ir::ExprKind::Return(Box::new(receiver)),
+            ty: Type::Never,
+            span: crate::Span::default(),
+        };
+        source.functions[0].body.kind =
+            ir::ExprKind::Block(vec![ir::Stmt::Expr(returning), ir::Stmt::Expr(hole)]);
+        assert!(program_size(&source).unwrap_err().contains("editor hole"));
     }
     #[test]
     fn retained_programs_reject_inference_probes() {

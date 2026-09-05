@@ -54,3 +54,32 @@ fn shared_child_traversal_retains_probe_operands_in_source_order() {
     assert!(matches!(values[0].kind, ExprKind::Int(1)));
     assert!(matches!(values[1].kind, ExprKind::Int(2)));
 }
+
+#[test]
+fn executable_boundaries_reject_editor_holes_even_when_unreachable() {
+    let mut program =
+        crate::check::check(&crate::parse::parse("fn main() -> Int: 0\n").unwrap()).unwrap();
+    let value = program.functions[0].body.clone();
+    let hole = Expr {
+        kind: ExprKind::EditorHole {
+            token: EditorHoleToken::new(),
+            receiver: Box::new(value.clone()),
+        },
+        ty: Type::Int,
+        span: Span::default(),
+    };
+    let returning = Expr {
+        kind: ExprKind::Return(Box::new(value)),
+        ty: Type::Never,
+        span: Span::default(),
+    };
+    program.functions[0].body.kind = ExprKind::Block(vec![Stmt::Expr(returning), Stmt::Expr(hole)]);
+    assert!(reject_probes(&program)
+        .unwrap_err()
+        .message
+        .contains("editor hole"));
+    assert!(crate::qbe::emit(&program)
+        .unwrap_err()
+        .message
+        .contains("editor hole"));
+}

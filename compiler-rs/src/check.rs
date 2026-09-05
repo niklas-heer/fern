@@ -17,6 +17,7 @@ mod nominal;
 mod parameters;
 mod pipes;
 mod preflight;
+pub(crate) mod recovery;
 mod returns;
 mod schemes;
 mod sequences;
@@ -64,6 +65,7 @@ struct Inference {
 }
 struct Checker<'a> {
     editor: Option<editor::Recorder>,
+    recovery: Option<recovery::State>,
     signatures: &'a HashMap<String, Signature>,
     registry: &'a nominal::Registry,
     scopes: Vec<HashMap<String, (ir::LocalId, Type)>>,
@@ -544,6 +546,7 @@ impl Checker<'_> {
         for param in &params {
             self.nominal_requirements(&param.ty, function.span)?;
         }
+        self.seal_member_hole()?;
         self.finalize(&mut body)?;
         if signature.dispatch {
             clauses::validate_dispatch(&body, self.registry)?;
@@ -1492,6 +1495,13 @@ impl Checker<'_> {
 
     /// Evaluate a source field receiver once before resolving its semantic layout.
     fn source_field(&mut self, expr: &ast::Expr, depth: usize) -> Checked<TypedKind> {
+        if self
+            .recovery
+            .as_ref()
+            .is_some_and(|state| state.site.matches(expr))
+        {
+            return self.editor_member_hole(expr, depth);
+        }
         let ast::ExprKind::Field { value, name } = &expr.kind else {
             return Err(Diagnostic::new(expr.span, "invalid field expression"));
         };
@@ -1573,6 +1583,9 @@ impl Checker<'_> {
         expr.ty = self.inference.concrete(&expr.ty, expr.span)?;
         self.nominal_requirements(&expr.ty, expr.span)?;
         match &mut expr.kind {
+            ir::ExprKind::EditorHole { receiver, .. } => {
+                self.finalize_member_hole(receiver, expr.span)?;
+            }
             ir::ExprKind::Range { start, end, .. } => {
                 self.finalize(start)?;
                 self.finalize(end)?;

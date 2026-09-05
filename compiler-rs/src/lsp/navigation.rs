@@ -15,10 +15,7 @@ impl Server {
         let path = file_path(uri)?;
         if let Some(path) = path {
             let identity = modules::source_identity(&path).map_err(|e| e.message)?;
-            let mut loaded = modules::load_editor_sources(&path, &sources).ok();
-            if let Some(loaded) = &mut loaded {
-                library_main(&mut loaded.program);
-            }
+            let loaded = modules::load_editor_sources(&path, &sources).ok();
             let index = loaded
                 .as_ref()
                 .and_then(|l| Index::loaded(l, &identity, cursor));
@@ -32,10 +29,7 @@ impl Server {
             )
         } else {
             let path = PathBuf::from(uri);
-            let mut program = parse::parse(&document.source).ok();
-            if let Some(program) = &mut program {
-                library_main(program);
-            }
+            let program = parse::parse(&document.source).ok();
             let index = program
                 .as_ref()
                 .and_then(|p| Index::single(p, &document.source, &path, cursor));
@@ -50,7 +44,7 @@ impl Server {
         }
     }
     /// Current accepted overlays always win over disk, including new unsaved dependency files.
-    fn overlays(&self) -> HashMap<PathBuf, String> {
+    pub(super) fn overlays(&self) -> HashMap<PathBuf, String> {
         self.documents
             .iter()
             .filter_map(|(uri, doc)| {
@@ -99,6 +93,14 @@ impl Server {
                 ("uri", string(uri)),
                 ("range", source_range(text, span)),
             ]));
+        }
+        if facts
+            .as_ref()
+            .map_or(true, |facts| facts.receiver.is_none())
+        {
+            if let Some(result) = self.member_completion(uri, source, cursor) {
+                return Ok(result);
+            }
         }
         Ok(completion(source, cursor, index, facts.as_ref()))
     }
@@ -215,7 +217,7 @@ fn typed_completion(
 }
 
 /// Cap both item count and encoded text size, computing the shared UTF-16 range only once.
-fn completion_items(
+pub(super) fn completion_items(
     candidates: BTreeMap<String, i64>,
     range: Json,
     facts: Option<&check::editor::Facts>,

@@ -155,6 +155,7 @@ impl Machine {
     fn node(&mut self, expr: &ir::Expr) -> Eval<Value> {
         use ir::ExprKind::*;
         match &expr.kind {
+            EditorHole { .. } => Err(fault("editor hole cannot enter executable IR")),
             Probe { .. } => Err(fault("inference probe cannot enter executable IR")),
             Return(value) => Err(Failure::Return(self.expression(value)?)),
             Break => Err(Failure::Break),
@@ -184,11 +185,7 @@ impl Machine {
             Bool(v) => Ok(Value::Bool(*v)),
             String(s) => Ok(Value::String(Rc::new(s.clone()))),
             Unit => Ok(Value::Unit),
-            Local(id) => self
-                .locals
-                .get(&id.0)
-                .cloned()
-                .ok_or_else(|| fault("missing interactive local")),
+            Local(id) => self.local(*id),
             List(values) => Ok(Value::List(Rc::new(self.arguments(values)?))),
             Map(entries) => self.map_literal(entries),
             Tuple(values) => Ok(Value::Sum(0, Rc::new(self.arguments(values)?))),
@@ -221,6 +218,13 @@ impl Machine {
                 result
             }
         }
+    }
+    /// Read the current lexical slot without exposing absent evaluator state.
+    fn local(&self, id: ir::LocalId) -> Eval<Value> {
+        self.locals
+            .get(&id.0)
+            .cloned()
+            .ok_or_else(|| fault("missing interactive local"))
     }
     /// Evaluate a callable before its arguments, preserving abrupt exits from either.
     fn apply_expression(&mut self, callee: &ir::Expr, args: &[ir::Expr]) -> Eval<Value> {

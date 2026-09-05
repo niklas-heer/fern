@@ -63,8 +63,26 @@ impl ProbeToken {
     }
 }
 
+/// An opaque editor-only computation identity; safe external code cannot construct it.
+/// ```compile_fail
+/// let token = fern_prototype::ir::EditorHoleToken::new();
+/// ```
+#[derive(Clone, Debug)]
+pub struct EditorHoleToken(());
+impl EditorHoleToken {
+    /// Only editor proof checking can mint an incomplete, non-executable operation.
+    pub(crate) fn new() -> Self {
+        Self(())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    /// Incomplete member result used only in isolated editor proof; never executable.
+    EditorHole {
+        token: EditorHoleToken,
+        receiver: Box<Expr>,
+    },
     /// Inference-only computation; finalization and executable boundaries must reject it.
     Probe {
         token: ProbeToken,
@@ -269,6 +287,7 @@ pub enum Builtin {
 pub(crate) fn children(expr: &Expr) -> Vec<&Expr> {
     match &expr.kind {
         ExprKind::Probe { children, .. } => children.iter().collect(),
+        ExprKind::EditorHole { receiver, .. } => vec![receiver],
         ExprKind::Range { start, end, .. } => vec![start, end],
         ExprKind::For { iterable, body, .. } => vec![iterable, body],
         ExprKind::With {
@@ -335,7 +354,7 @@ pub(crate) fn children(expr: &Expr) -> Vec<&Expr> {
     }
 }
 
-/// Reject non-executable probes anywhere, including syntactically unreachable expressions.
+/// Reject inference probes and editor holes, including syntactically unreachable expressions.
 pub(crate) fn reject_probes(program: &Program) -> Result<(), crate::Diagnostic> {
     let mut count = 0;
     for function in &program.functions {
@@ -346,6 +365,12 @@ pub(crate) fn reject_probes(program: &Program) -> Result<(), crate::Diagnostic> 
                 return Err(crate::Diagnostic::new(
                     expr.span,
                     "typed IR publication complexity limit exceeded",
+                ));
+            }
+            if matches!(expr.kind, ExprKind::EditorHole { .. }) {
+                return Err(crate::Diagnostic::new(
+                    expr.span,
+                    "editor hole cannot enter executable IR",
                 ));
             }
             if let ExprKind::Probe { token, .. } = &expr.kind {

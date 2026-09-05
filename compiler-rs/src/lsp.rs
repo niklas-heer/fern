@@ -7,6 +7,7 @@ mod hover;
 mod index;
 #[path = "lsp/navigation.rs"]
 mod navigation;
+mod recovery;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
@@ -889,7 +890,7 @@ fn module_diagnostic(
     sources: &HashMap<PathBuf, String>,
     source: &str,
 ) -> Option<modules::SourceDiagnostic> {
-    let mut loaded = match modules::load_with_sources(path, sources) {
+    let loaded = match modules::load_with_sources(path, sources) {
         Ok(loaded) => loaded,
         Err(error) => {
             return Some(error.location.map(|location| *location).unwrap_or_else(|| {
@@ -901,8 +902,7 @@ fn module_diagnostic(
             }))
         }
     };
-    library_main(&mut loaded.program);
-    check::check(&loaded.program)
+    check::check_library(&loaded.program)
         .err()
         .and_then(|error| loaded.locate(error))
 }
@@ -994,39 +994,15 @@ fn position(source: &str, offset: usize) -> Json {
         ("character", number(tail.encode_utf16().count())),
     ])
 }
-/// Type-check editor libraries using a synthetic Unit main without shifting source offsets.
+/// Validate complete editor libraries without introducing source-visible names.
 fn diagnostic(source: &str) -> Option<crate::Diagnostic> {
-    let mut program = match parse::parse(source) {
+    let program = match parse::parse(source) {
         Ok(program) => program,
         Err(error) => return Some(error),
     };
-    library_main(&mut program);
-    check::check(&program).err()
+    check::check_library(&program).err()
 }
 
-/// Supply an entry only in syntax, preserving every real source byte and span.
-fn library_main(program: &mut ast::Program) {
-    if !program
-        .functions
-        .iter()
-        .any(|function| function.name == "main")
-    {
-        program.functions.push(ast::Function {
-            name: "main".into(),
-            public: false,
-            guard: None,
-            group_start: 0,
-            syntax: ast::FunctionSyntax::Colon,
-            params: Vec::new(),
-            return_type: Some(Type::Unit),
-            body: ast::Expr {
-                kind: ast::ExprKind::Unit,
-                span: Span::default(),
-            },
-            span: Span::default(),
-        });
-    }
-}
 /// Publish one first-error diagnostic or an empty list to clear stale editor squiggles.
 fn publish(
     uri: &str,

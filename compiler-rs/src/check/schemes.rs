@@ -285,6 +285,7 @@ fn check_scheme(
     };
     let mut checker = Checker {
         editor: None,
+        recovery: None,
         signatures,
         registry,
         scopes: vec![HashMap::new()],

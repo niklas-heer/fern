@@ -425,8 +425,13 @@ Valid-source member completion shows record fields, tuple slots and supported
 receiver methods with concrete types. Type annotations and value expressions use
 separate namespaces even when a type and function share a name. These semantic
 facts require the entire current program to check successfully; invalid edits do
-not reuse old types. Incomplete member recovery, rename and code actions remain
-subsequent tooling checkpoints.
+not reuse old types. Completion also handles one unfinished record/tuple/member
+selector inside a function with concrete parameter and return annotations; main
+may omit its Unit return annotation. The receiver must have a concrete type before
+the unfinished operation is checked. Unannotated/generic enclosing signatures or
+unrelated errors retain lexical fallback. No partial proof becomes executable IR.
+See [the recovery contract](../docs/EDITOR_RECOVERY.md). Rename and code actions
+remain subsequent tooling checkpoints.
 
 ## Source documentation
 

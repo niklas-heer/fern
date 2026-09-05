@@ -29,6 +29,7 @@ pub struct Loaded {
     pub program: ast::Program,
     sources: Vec<Source>,
     pub symbols: Vec<ModuleSymbols>,
+    pub(crate) recovery: Option<parse::HoleSite>,
 }
 /// Visible spellings retained before import aliases are flattened for compilation.
 #[derive(Debug)]
@@ -64,6 +65,8 @@ struct Loader {
     visiting: BTreeSet<PathBuf>,
     bytes: usize,
     editor: bool,
+    entry_syntax: Option<(PathBuf, ast::Program)>,
+    recovery: Option<parse::HoleSite>,
 }
 type Names = BTreeMap<String, String>;
 
@@ -77,7 +80,7 @@ pub fn load_with_sources(
     entry: &Path,
     sources: &HashMap<PathBuf, String>,
 ) -> Result<Loaded, Error> {
-    load_sources(entry, sources, false)
+    load_sources(entry, sources, false, None)
 }
 
 /// Load a navigation snapshot with bounded per-file visible names; compiler loading omits these tables.
@@ -85,7 +88,16 @@ pub fn load_editor_sources(
     entry: &Path,
     sources: &HashMap<PathBuf, String>,
 ) -> Result<Loaded, Error> {
-    load_sources(entry, sources, true)
+    load_sources(entry, sources, true, None)
+}
+
+/// Load one private token-level hole in the entry; every dependency uses ordinary current parsing.
+pub(crate) fn load_member_sources(
+    entry: &Path,
+    sources: &HashMap<PathBuf, String>,
+    cursor: usize,
+) -> Result<Loaded, Error> {
+    load_sources(entry, sources, false, Some(cursor))
 }
 
 /// Share identical import resolution while making editor-only metadata an explicit bounded opt-in.
@@ -93,11 +105,18 @@ fn load_sources(
     entry: &Path,
     sources: &HashMap<PathBuf, String>,
     editor: bool,
+    cursor: Option<usize>,
 ) -> Result<Loaded, Error> {
-    let snapshots = snapshots(sources)?;
+    let mut snapshots = snapshots(sources)?;
     let entry = source_identity(entry)?;
     let text = read_source(&entry, &snapshots)?;
-    let syntax = parse::parse(&text).map_err(|e| located(&entry, &text, e))?;
+    let (syntax, recovery) = match cursor {
+        Some(cursor) => {
+            parse::recover_member(&text, cursor).map(|(program, site)| (program, Some(site)))
+        }
+        None => parse::parse(&text).map(|program| (program, None)),
+    }
+    .map_err(|e| located(&entry, &text, e))?;
     let name = syntax.module.clone().unwrap_or_else(|| {
         let candidate = entry
             .file_stem()
@@ -128,6 +147,8 @@ fn load_sources(
             )));
         }
     }
+    // The cached entry syntax and its later source view must describe identical bytes.
+    snapshots.insert(entry.clone(), text);
     let mut loader = Loader {
         snapshots,
         root,
@@ -136,6 +157,8 @@ fn load_sources(
         visiting: BTreeSet::new(),
         bytes: 0,
         editor,
+        entry_syntax: Some((entry.clone(), syntax)),
+        recovery,
     };
     let entry_id = loader.visit(&entry, Some(&name), 0)?;
     loader.resolve(entry_id)
@@ -350,7 +373,7 @@ impl Loader {
         if self.bytes > MAX_BYTES {
             return Err(failure("module sources exceed 8 MiB limit"));
         }
-        let syntax = parse::parse(&text).map_err(|e| located(&path, &text, e))?;
+        let syntax = self.source_syntax(&path, &text)?;
         let name = syntax
             .module
             .clone()
@@ -399,6 +422,18 @@ impl Loader {
         Ok(id)
     }
 
+    /// Reuse the entry's proven syntax once; dependencies always parse their current snapshots.
+    fn source_syntax(&mut self, path: &Path, text: &str) -> Result<ast::Program, Error> {
+        if self
+            .entry_syntax
+            .as_ref()
+            .is_some_and(|(entry, _)| entry == path)
+        {
+            return Ok(self.entry_syntax.take().expect("matching entry syntax").1);
+        }
+        parse::parse(text).map_err(|e| located(path, text, e))
+    }
+
     /// Resolve module.fn or module/mod.fn within the project, rejecting ambiguity.
     fn import_path(&self, name: &str) -> Result<PathBuf, Error> {
         valid_module(name)?;
@@ -424,14 +459,21 @@ impl Loader {
         Ok(path)
     }
 
+    /// Keep the private member operation aligned with ordinary flattened source spans.
+    fn relocate_recovery(&mut self, entry: usize) {
+        if let Some(site) = &mut self.recovery {
+            site.shift(self.modules[entry].source.start);
+        }
+    }
+
     /// Qualify declarations in dependency order, then merge their concrete namespaces.
-    fn resolve(self, entry: usize) -> Result<Loaded, Error> {
+    fn resolve(mut self, entry: usize) -> Result<Loaded, Error> {
+        self.relocate_recovery(entry);
         let mut exports: Vec<Names> = Vec::new();
         let mut program = ast::Program::default();
         let mut sources = Vec::new();
         let mut symbols = Vec::new();
-        let mut symbol_count = 0;
-        let mut symbol_bytes = 0;
+        let (mut symbol_count, mut symbol_bytes) = (0, 0);
         for (id, mut module) in self.modules.into_iter().enumerate() {
             let public = (|| {
                 let mut visible = own_names(&module, id == entry)?;
@@ -489,6 +531,7 @@ impl Loader {
             sources.push(module.source);
         }
         Ok(Loaded {
+            recovery: self.recovery,
             program,
             sources,
             symbols,

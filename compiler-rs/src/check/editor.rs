@@ -123,6 +123,7 @@ fn final_checker<'a>(
         function_return: signature.result.clone(),
         deferred: false,
         loop_depth: 0,
+        recovery: None,
         editor: Some(Recorder {
             query,
             binding: None,
@@ -591,4 +592,21 @@ fn limit() -> Diagnostic {
 /// Source graphs fit below sixteen MiB including per-file offset separators.
 fn valid_span(span: Span) -> bool {
     span.start <= span.end && span.end <= 16 * 1024 * 1024
+}
+
+/// Publish only independently concrete receiver members from the editor proof checker.
+pub(super) fn receiver_facts(
+    source: &ast::Program,
+    registry: &nominal::Registry,
+    ty: Type,
+    span: Span,
+) -> Checked<Facts> {
+    let mut budget = Budget::default();
+    budget.ty(&ty)?;
+    let members = members(source, registry, &ty, span, &mut budget)?;
+    Ok(Facts {
+        receiver: Some(ty),
+        members,
+        ..Facts::default()
+    })
 }
