@@ -36,7 +36,7 @@ fn clause_signatures_require_consistent_annotations_and_visibility() {
     ] {
         assert!(rejected(&format!("{clauses}\nfn main(): 0\n")).contains("clause"));
     }
-    assert!(rejected("fn f(x): x\nfn main(): 0\n").contains("parameter"));
+    checked("fn f(x): x\nfn main(): println(f(1))\n");
 }
 #[test]
 fn a_shared_return_annotation_satisfies_the_public_group_boundary() {

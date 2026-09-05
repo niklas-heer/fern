@@ -1,0 +1,5 @@
+fn main():
+    println(identity("first"))
+    println(identity(42))
+    println(identity(false))
+fn identity(value) -> value

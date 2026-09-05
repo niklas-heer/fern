@@ -2,7 +2,7 @@
 use super::*;
 use std::borrow::Cow;
 
-const WAITING: &str = "return inference is waiting for a dependency";
+pub(super) const WAITING: &str = "return inference is waiting for a dependency";
 /// A call-site result stays independent until its callee's generic scheme is known.
 pub(super) struct DeferredCall {
     target: Type,
@@ -83,7 +83,7 @@ pub(super) fn resolve<'a>(
 }
 
 /// Retry only shape-dependent inference, stopping after each definition can succeed once.
-fn solve(
+pub(super) fn solve(
     program: &ast::Program,
     registry: &nominal::Registry,
     signatures: &mut HashMap<String, Signature>,
@@ -146,7 +146,14 @@ pub(super) fn probe(
             clauses::parameter_type(param).clone(),
         );
     }
-    let result = checker.expression_expected(&function.body, Some(&signature.result), 0);
+    let expected = if function.name == "main" && signature.result == Type::Unit {
+        None
+    } else {
+        Some(&signature.result)
+    };
+    let result = checker
+        .expression_expected(&function.body, expected, 0)
+        .map_err(|error| closures::context(error, "function return"));
     *inference = checker.inference;
     inference.probing = false;
     inference.template = false;
@@ -269,7 +276,7 @@ impl Checker<'_> {
 
 /// Bound total work and fresh-variable storage across all dependency retries.
 pub(super) fn charge(inference: &Inference, span: Span) -> Checked<()> {
-    if inference.probing || inference.settling {
+    if inference.probing || inference.settling || inference.whole_signature {
         charge_work(inference, span)?;
     }
     Ok(())
@@ -288,7 +295,7 @@ fn charge_work(inference: &Inference, span: Span) -> Checked<()> {
 
 /// Charge expanded expression types, including nominal field projections, before retaining IR.
 pub(super) fn charge_output(inference: &Inference, ty: &Type, span: Span) -> Checked<()> {
-    if !inference.probing {
+    if !inference.probing && !inference.whole_signature {
         return Ok(());
     }
     let mut pending = vec![ty];

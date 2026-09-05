@@ -8,6 +8,7 @@ pub mod ir;
 pub mod lsp;
 pub mod modules;
 pub mod parse;
+pub mod presentation;
 pub mod qbe;
 pub mod repl;
 pub mod runtime;

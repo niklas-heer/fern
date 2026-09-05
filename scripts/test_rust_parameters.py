@@ -13,8 +13,6 @@ INVALID = {
     "mixed_payloads": 'fn f(Some(0)) -> 0\nfn f(Some(true)) -> 1\nfn f(None) -> 2\nfn main(): ()\n',
     "annotation_conflict": 'fn f(0) -> 0\nfn f(n: Bool) -> 1\nfn main(): ()\n',
     "tuple_conflict": 'fn f((0, true)) -> 0\nfn f((n, flag, x)) -> 1\nfn main(): ()\n',
-    "unanchored_list": 'fn size([]) -> 0\nfn size([_, ..tail]) -> 1 + size(tail)\nfn main(): println(size([1]))\n',
-    "unanchored_identity": 'fn id(x) -> x\nfn main(): println(id(1))\n',
     "unanchored_rest": 'fn f((head, ..tail)) -> head\nfn main(): println(f((1, true)))\n',
     "discard_result": 'fn f(Ok(0)) -> 0\nfn f(Err("missing")) -> 1\nfn f(_) -> 2\nfn main(): ()\n',
 }

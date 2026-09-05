@@ -454,3 +454,41 @@ cover source syntax, ownership, escaping, resource limits and output preservatio
 
 Source-documentation checkpoint gates pass: 618 Rust tests, 550 C tests, the full
 native/fuzz suite and documentation checks on macOS arm64.
+
+## Core whole-private-signature inference
+
+The Rust checker now infers omitted private parameters and returns from all
+clause patterns and function bodies before consulting callers. It analyzes
+lexical dependencies with an iterative graph traversal and solves recursive
+components callee first. Unfinished recursive members share type constraints;
+completed named functions instantiate independent schemes at each reference.
+Identity, generic list recursion, apply/compose, returned closures and nominal
+constructor helpers work without explicit private parameter annotations.
+
+Intrinsic requirements remain attached to generalized definitions: an inferred
+addition helper supports Int, Float and String, while inferred multiplication
+retains its numeric restriction. Literal evidence can establish a concrete type.
+Return-only None/empty-list schemes receive independent contextual payload types.
+Local aliases remain monomorphic; explicit universal annotations remain rigid.
+Public boundaries, unanchored recursive returns, occurs checks, Result obligations
+and concrete backend validation remain enforced. Fully annotated parameter
+components preserve the existing generic return-inference behavior.
+
+One 400,000-unit inference budget spans dependency traversal, pattern/body
+constraints, recursive solving, generalization and final generic requirements.
+The former repeatedly retried forward chain now resolves in dependency order.
+Declared source/type/depth limits still apply before internal inference slots.
+Diagnostic type descriptions use a bounded source renderer, stripping ownership
+only from semantic compiler-owned rigid variables and retaining the distinction
+between separate type parameters with the same original spelling.
+
+Core acceptance adds eight native programs and 14 invalid programs, including
+both caller orders, mixed annotated/inferred recursion and imported helpers.
+Three REPL regressions cover retained generic definitions, callbacks and rollback.
+The earlier identity/list-length rejection fixtures become positive coverage.
+Delayed field/update/iteration/tuple-rest evidence from later expressions remains
+an open checkpoint; unknown record shapes and tuple arities are never guessed.
+
+Core signature checkpoint gates pass: 670 Rust tests, 550 C tests, 166 core native
+programs, 21 entry/access programs, 148 invalid inputs and the complete fault,
+fuzz and documentation suites on macOS arm64.

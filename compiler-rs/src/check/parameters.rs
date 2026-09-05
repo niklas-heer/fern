@@ -76,7 +76,10 @@ fn prepare_groups(
 }
 
 /// Constrain all annotations before patterns so rigid generics never depend on clause order.
-fn infer_group(group: &[ast::Function], checker: &mut Checker<'_>) -> Checked<Vec<Type>> {
+pub(super) fn infer_group(
+    group: &[ast::Function],
+    checker: &mut Checker<'_>,
+) -> Checked<Vec<Type>> {
     let first = &group[0];
     let slots: Vec<_> = first
         .params
@@ -115,7 +118,7 @@ fn infer_group(group: &[ast::Function], checker: &mut Checker<'_>) -> Checked<Ve
         .enumerate()
         .map(|(index, slot)| {
             let ty = checker.inference.resolve(slot, first.params[index].span)?;
-            if returns::has_infer(&ty) {
+            if returns::has_infer(&ty) && !checker.inference.whole_signature {
                 return Err(Diagnostic::new(
                     first.params[index].span,
                     format!(
@@ -125,7 +128,9 @@ fn infer_group(group: &[ast::Function], checker: &mut Checker<'_>) -> Checked<Ve
                     ),
                 ));
             }
-            validate_type(&ty, first.params[index].span)?;
+            if !checker.inference.whole_signature {
+                validate_type(&ty, first.params[index].span)?;
+            }
             Ok(ty)
         })
         .collect()

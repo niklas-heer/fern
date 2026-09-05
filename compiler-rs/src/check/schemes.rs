@@ -79,7 +79,9 @@ impl Inference {
         if capability.accepts(&ty) {
             return Ok(());
         }
-        if self.template && matches!(&ty, Type::Generic(name) if self.template_names.contains(name))
+        if (self.whole_signature && matches!(ty, Type::Infer(_)))
+            || self.template
+                && matches!(&ty, Type::Generic(name) if self.template_names.contains(name))
         {
             retain_requirement(
                 &mut self.requirements.borrow_mut(),
@@ -418,6 +420,7 @@ mod tests {
             generics: vec!["a".into()],
             dispatch: false,
             requirements: vec![],
+            monotype: false,
         };
         let call = Call {
             target: signature.id,

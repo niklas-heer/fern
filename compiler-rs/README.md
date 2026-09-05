@@ -38,7 +38,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
 
 ## Supported language
 
-- Top-level functions with typed parameters, private return inference, and forward/recursive calls.
+- Top-level functions with optional private annotations, generic signature inference and forward/recursive calls.
   Public function signatures require return annotations. Parameterless `main` returns
   `Int`, `Unit`, or `Result((), E)` with a concrete error type; omitted `main`
   return type means `Unit`. Unresolved recursive return types require an annotation.
@@ -175,7 +175,7 @@ remains future work. Conditional restrictions on generic Result-bearing values
 are still verified when concretely instantiated, and the broader reference-based
 Result handling limitation described below remains.
 
-## Pattern-based parameter inference
+## Private signature inference
 
 Private clauses can infer a shared input type from literals and constructors:
 
@@ -190,10 +190,34 @@ An annotation in a later clause can anchor an earlier omission, including a
 shared declared generic type. Tuple-rest patterns wait until another pattern or
 annotation determines the complete tuple arity.
 
-Unconstrained `fn id(x) -> x` and generic `length([])` / `length([_, ..tail])`
-still require annotations in this stage. Full body-based signature inference and
-generalization are separate work. Public function parameter annotations remain
-mandatory even when a literal would make the type apparent.
+Private function bodies also contribute constraints, and completed functions are
+generalized independently of callers:
+
+```fern
+fn identity(value) -> value
+fn apply(action, value) -> action(value)
+fn add(left, right) -> left + right
+fn length([]) -> 0
+fn length([_, ..tail]) -> 1 + length(tail)
+```
+
+`identity` and `length` can be used at different element types. `apply` infers the
+relationship between a callback, its argument and its return. `add` retains an
+addition requirement, so Int, Float and String calls work while Bool/List calls
+are rejected. A literal can establish a concrete type: `fn double(x) -> x * 2`
+accepts Int. Return-only collection shapes such as `fn empty() -> []` and
+`fn missing() -> None` receive a fresh payload type at each use.
+
+Recursive groups share constraints before publishing their signatures; completed
+named functions instantiate freshly at each reference. Local function bindings
+remain monomorphic. Explicit type variables stay rigid, public signatures remain
+annotated, and unanchored recursive returns require annotations. Inferred
+polymorphic recursion also requires a complete signature.
+
+Delayed shape evidence remains a separate checkpoint: a projection such as
+`let y = value.field` before a later call establishes the record type still needs
+an annotation. Tuple-rest requires independently known arity; the compiler does
+not choose a record type or tuple size from callers.
 
 ## Function clauses and native recursion
 
@@ -207,8 +231,8 @@ fn total([head, ..tail]: List(Int), acc: Int) -> total(tail, acc + head)
 Clauses share parameter types and visibility, and any supplied return annotations
 must agree. Public groups need a return annotation. Guards run in source order;
 missing cases and unreachable clauses are errors. Patterns use the same rules as
-`match`, including Result discard checks. Private parameter annotations can be omitted when patterns or other clauses
-determine their complete types. Public parameters remain annotated. Put
+`match`, including Result discard checks. Private parameter annotations can be
+omitted when patterns and bodies establish a generalizable signature. Public parameters remain annotated. Put
 whole-function `@doc` text before the first clause.
 
 Native direct self calls in return position reuse the current stack frame when the

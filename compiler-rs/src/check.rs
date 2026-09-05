@@ -5,6 +5,8 @@ mod clauses;
 mod closures;
 mod control;
 mod coverage;
+mod dependencies;
+mod diagnostics;
 mod iteration;
 mod lift;
 mod maps;
@@ -16,6 +18,7 @@ mod returns;
 mod schemes;
 mod sequences;
 mod specialize;
+mod whole;
 mod with_flow;
 
 const MAX_EXPR_DEPTH: usize = 128;
@@ -34,12 +37,15 @@ struct Signature {
     generics: Vec<String>,
     dispatch: bool,
     requirements: Vec<schemes::Requirement>,
+    monotype: bool,
 }
 #[derive(Default)]
 struct Inference {
     bindings: Vec<Option<Type>>,
     ranks: Vec<u32>,
     probing: bool,
+    whole_signature: bool,
+    revision: usize,
     template: bool,
     template_names: HashSet<String>,
     probe_work: std::cell::Cell<usize>,
@@ -67,13 +73,8 @@ struct Checker<'a> {
 pub fn check(program: &ast::Program) -> Checked<ir::Program> {
     preflight::check(program)?;
     let registry = nominal::Registry::new(program)?;
-    let parameters = parameters::resolve(program, &registry)?;
-    let normalized = clauses::normalize(&parameters)?;
-    if !normalized.dispatch.is_empty() {
-        preflight::check(&normalized.program)?;
-    }
-    let (program, mut signatures, work) =
-        returns::resolve(&normalized.program, &registry, &normalized.dispatch)?;
+    let graph = dependencies::analyze(program)?;
+    let (program, mut signatures, work) = whole::resolve(program, &registry, &graph)?;
     schemes::validate(&program, &registry, &mut signatures, work)?;
     specialize::run(&program, &registry, &signatures)
 }
@@ -137,6 +138,7 @@ fn signatures(
                 generics,
                 dispatch: dispatch.contains(&function.name),
                 requirements: Vec::new(),
+                monotype: false,
             },
         );
     }
@@ -207,6 +209,11 @@ fn function_result(function: &ast::Function) -> Checked<Type> {
 
 /// Validate `function` parameter names, count and recursive annotations.
 fn validate_parameters(function: &ast::Function) -> Checked<()> {
+    validate_parameter_names(function, false)
+}
+
+/// Check normalized binder uniqueness; trusted internal signatures may retain inference slots.
+fn validate_parameter_names(function: &ast::Function, internal: bool) -> Checked<()> {
     if function.params.len() > MAX_PARAMETERS {
         return Err(Diagnostic::new(
             function.span,
@@ -215,7 +222,9 @@ fn validate_parameters(function: &ast::Function) -> Checked<()> {
     }
     let mut names = HashSet::new();
     for param in &function.params {
-        validate_type(clauses::parameter_type(param), param.span)?;
+        if !internal {
+            validate_type(clauses::parameter_type(param), param.span)?;
+        }
         let name = clauses::parameter_name(param);
         if name != "_" && !names.insert(name) {
             return Err(Diagnostic::new(
@@ -371,7 +380,7 @@ impl Inference {
             }
             _ => Err(Diagnostic::new(
                 span,
-                format!("{context}: expected {expected:?}, found {actual:?}"),
+                format!("{context}: {}", diagnostics::mismatch(&expected, &actual)),
             )),
         }
     }
@@ -384,6 +393,7 @@ impl Inference {
         }
         let mut pending = vec![ty];
         while let Some(ty) = pending.pop() {
+            returns::charge(self, span)?;
             match ty {
                 Type::Infer(other) if *other == id => {
                     return Err(Diagnostic::new(
@@ -404,12 +414,14 @@ impl Inference {
                 _ => {}
             }
         }
+        self.revision += 1;
         self.bindings[id as usize] = Some(ty.clone());
         Ok(())
     }
 
     /// Join two unresolved roots by rank, keeping long flat inference chains shallow.
     fn union(&mut self, left: u32, right: u32) {
+        self.revision += 1;
         let left_rank = self.ranks[left as usize];
         let right_rank = self.ranks[right as usize];
         if left_rank < right_rank {
@@ -1056,6 +1068,16 @@ impl Checker<'_> {
         } else if runtime::lookup(name).is_some() {
             self.runtime_signature(name, span)
         } else if let Some(signature) = self.signatures.get(name) {
+            for ty in signature.params.iter().chain([&signature.result]) {
+                returns::charge_output(&self.inference, ty, span)?;
+            }
+            if signature.monotype {
+                return Ok((
+                    ir::CallTarget::Function(signature.id),
+                    signature.params.clone(),
+                    signature.result.clone(),
+                ));
+            }
             let values = signature
                 .generics
                 .iter()

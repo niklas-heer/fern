@@ -69,18 +69,15 @@ fn tuple_rest_constraints_wait_for_fixed_arity_in_either_clause_order() {
 }
 
 #[test]
-fn unresolved_shapes_require_annotations_independently_of_callers() {
-    for declaration in [
-        "fn f(x) -> x",
-        "fn f(_) -> 0",
-        "fn f([]) -> 0",
-        "fn f(None) -> 0",
-        "fn f((0, ..tail)) -> tail",
-    ] {
-        assert!(rejected(&format!("{declaration}\nfn main(): 0\n")).contains("parameter"));
+fn generic_patterns_generalize_but_coverage_and_tuple_arity_still_require_evidence() {
+    checked("fn f(x) -> x\nfn main(): println(f(1))\n");
+    checked("fn f(_) -> 0\nfn main(): println(f(1))\n");
+    for declaration in ["fn f([]) -> 0", "fn f(None) -> 0"] {
+        assert!(rejected(&format!("{declaration}\nfn main(): 0\n")).contains("exhaustive"));
     }
-    assert!(rejected("fn length([]) -> 0\nfn length([_, ..tail]) -> 1 + length(tail)\nfn main(): println(length([1]))\n").contains("parameter"));
-    assert!(rejected("type Box(a):\n    Empty\n    Full(a)\nfn f(Empty) -> 0\nfn f(Full(x)) -> 1\nfn main(): println(f(Full(1)))\n").contains("parameter"));
+    assert!(rejected("fn f((0, ..tail)) -> tail\nfn main(): 0\n").contains("parameter"));
+    checked("fn length([]) -> 0\nfn length([_, ..tail]) -> 1 + length(tail)\nfn main(): println(length([1]))\n");
+    checked("type Box(a):\n    Empty\n    Full(a)\nfn f(Empty) -> 0\nfn f(Full(x)) -> 1\nfn main(): println(f(Full(1)))\n");
 }
 
 #[test]
@@ -121,7 +118,7 @@ fn nominal_payload_expansion_spends_one_budget_across_private_groups() {
         source.push_str(&format!("fn f{index}(WideValue(_)) -> 0\n"));
     }
     source.push_str("fn main(): 0\n");
-    assert!(rejected(&source).contains("parameter inference work limit"));
+    assert!(rejected(&source).contains("inference work limit"));
 }
 
 #[test]

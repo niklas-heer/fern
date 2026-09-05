@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (618 Rust tests, 4 measurement-harness tests, 158 core native programs, 21 entry/access programs, 9 controlled-fault cases, 136 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (670 Rust tests, 4 measurement-harness tests, 166 core native programs, 21 entry/access programs, 9 controlled-fault cases, 148 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -94,7 +94,10 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Parser-based documentation for individual source files: clause groups, original signatures, types and literal @doc metadata; bounded Markdown/HTML output and atomic CLI writes (15 documentation/CLI regressions).
 - [ ] Directory documentation, navigation/search and Rust executable doc tests.
 - [ ] Whole private-signature inference and SCC generalization, including delayed shape constraints.
+- [x] Core private-signature generalization from patterns and bodies, with callee-first recursive components, rigid annotations and intrinsic requirements (eight native programs, 14 invalid programs and three interactive regressions).
+- [ ] Delayed shape obligations using later body evidence for fields, updates, tuple-rest and iteration.
 - [ ] Typed editor hover/member completion and incomplete-code recovery.
+- [ ] Preserve global module reference identity when an unrelated local shadows its canonical module name.
 - [ ] Remaining function/type syntax and complete native-language audit.
 - [ ] Track semantic Result handling beyond local references (for example, inspecting a List(Result) length currently counts as handling its elements).
 

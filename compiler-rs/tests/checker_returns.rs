@@ -32,7 +32,6 @@ fn recursive_returns_without_type_evidence_require_annotations() {
     for source in [
         "fn cycle(): cycle()\nfn main(): 0\n",
         "fn a(): b()\nfn b(): a()\nfn main(): 0\n",
-        "fn ambiguous(): None\nfn main(): 0\n",
     ] {
         assert!(rejected(source).contains("return type"));
     }
@@ -103,13 +102,13 @@ fn unknown_or_unhandled_inferred_functions_are_checked_when_unused() {
 }
 
 #[test]
-fn inference_retries_have_an_aggregate_work_budget() {
+fn callee_first_components_avoid_quadratic_forward_retries() {
     let mut source = String::new();
     for index in 0..1000 {
         source.push_str(&format!("fn f{index}(x: a): f{}(x)\n", index + 1));
     }
     source.push_str("fn f1000(x: a): x\nfn main(): 0\n");
-    assert!(rejected(&source).contains("inference work limit"));
+    checked(&source);
 }
 
 #[test]

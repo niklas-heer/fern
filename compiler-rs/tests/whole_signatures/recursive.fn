@@ -1,0 +1,11 @@
+fn length([]) -> 0
+fn length([_, ..tail]) -> 1 + length(tail)
+fn even([]) -> true
+fn even([_, ..tail]) -> odd(tail)
+fn odd([]) -> false
+fn odd([_, ..tail]) -> even(tail)
+fn main():
+    println(length([1, 2, 3]))
+    println(length(["a", "b"]))
+    println(even([true, false]))
+    println(odd([1, 2, 3]))
