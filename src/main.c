@@ -438,6 +438,7 @@ static Codegen* compile_to_qbe(Arena* arena, const char* source, const char* fil
     // Type check
     log_verbose("verbose: type checking %s\n", filename);
     Checker* checker = checker_new(arena);
+    checker_require_executable(checker);
     bool check_ok = checker_check_stmts(checker, stmts);
     
     if (!check_ok || checker_has_errors(checker)) {

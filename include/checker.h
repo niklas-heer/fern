@@ -51,6 +51,14 @@ typedef struct Checker Checker;
  */
 Checker* checker_new(Arena* arena);
 
+/**
+ * Reject language forms whose runtime execution is not implemented yet.
+ * Enable this before checking a program intended for native code generation.
+ * Parse/type-check tooling may keep the default specification-checking mode.
+ * @param checker Checker instance with an initialized type environment.
+ */
+void checker_require_executable(Checker* checker);
+
 /* ========== Type Inference ========== */
 
 /**

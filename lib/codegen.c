@@ -3404,13 +3404,11 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             SendExpr* send = &expr->data.send_expr;
             String* pid = codegen_expr(cg, send->pid);
             String* msg = codegen_expr(cg, send->message);
-            String* status = fresh_temp(cg);
             String* result = fresh_temp(cg);
 
-            emit(cg, "    %s =w call $fern_actor_send(w %s, l %s)\n",
-                string_cstr(status), string_cstr(pid), string_cstr(msg));
-            emit(cg, "    %s =l call $fern_result_ok(w %s)\n",
-                string_cstr(result), string_cstr(status));
+            /* The runtime already returns a Result pointer, including send errors. */
+            emit(cg, "    %s =l call $fern_actor_send(w %s, l %s)\n",
+                string_cstr(result), string_cstr(pid), string_cstr(msg));
             register_wide_var(cg, result);
             return result;
         }

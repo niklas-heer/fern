@@ -875,7 +875,8 @@ int64_t fern_sql_open(const char* path);
 int64_t fern_sql_execute(int64_t handle, const char* query);
 
 /**
- * Spawn an actor and return its id.
+ * Allocate an actor mailbox record and return its id.
+ * This API does not execute a function or start an autonomous process.
  * @param name Actor name.
  * @return Actor id (positive integer), or 0 on allocation failure.
  */
@@ -945,6 +946,7 @@ int64_t fern_actor_demonitor(int64_t supervisor_id, int64_t worker_id);
 
 /**
  * Register a supervised child spec with restart-intensity policy.
+ * Each worker has one supervisor; self-supervision and cycles are rejected.
  * @param supervisor_id Supervisor actor id.
  * @param worker_id Worker actor id.
  * @param max_restarts Maximum restart attempts allowed in period_sec window.
@@ -990,17 +992,20 @@ int64_t fern_actor_send(int64_t actor_id, const char* msg);
 int64_t fern_actor_receive(int64_t actor_id);
 
 /**
- * Mark an actor as exited and notify its linked supervisor.
+ * Mark an actor dead, notify links/monitors, and apply its supervision policy.
+ * Normal/shutdown exits do not restart; abnormal exits may replace the actor.
  * @param actor_id Exiting actor id.
  * @param reason Exit reason string.
- * @return Result: Ok(0) when actor transitions to exited, Err(error code) otherwise.
+ * @return Result: Ok(replacement id) after automatic restart, Ok(0) after an
+ * ordinary exit, or Err(error code) on failure/restart budget exhaustion.
  */
 int64_t fern_actor_exit(int64_t actor_id, const char* reason);
 
 /**
  * Restart an actor and return the new actor id.
  * Restart preserves actor name and linked parent baseline.
- * Actor must already be exited/dead.
+ * Actor must already be dead and must not have received a replacement.
+ * A dead PID can be replaced only once, even after its replacement exits.
  * @param actor_id Actor id to restart.
  * @return Result: Ok(new actor id) or Err(error code).
  */

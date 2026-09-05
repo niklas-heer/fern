@@ -2460,6 +2460,7 @@ int64_t fern_sql_execute(int64_t handle, const char* query) {
 typedef struct {
     int64_t actor_id;
     int64_t alive;
+    int64_t replacement_id;
     int64_t linked_parent_id;
     int64_t supervisor_id;
     int64_t supervision_strategy;
@@ -2724,7 +2725,7 @@ static int fern_actor_supervision_child_reserve(FernActorRecord* supervisor, int
  */
 static FernActorRecord* fern_actor_lookup(FernActorRuntimeState* state, int64_t actor_id) {
     assert(state != NULL);
-    assert(actor_id < INT64_MAX);
+    assert(state->actor_len >= 0);
     if (actor_id <= 0 || actor_id > state->actor_len) {
         return NULL;
     }
@@ -3049,6 +3050,39 @@ static void fern_actor_supervision_replace_child_id(FernActorRecord* supervisor,
 }
 
 /**
+ * Check whether adding a supervision edge preserves a tree with a single owner.
+ * @param state Actor registry containing the existing supervision forest.
+ * @param supervisor Proposed parent actor.
+ * @param worker Proposed child actor.
+ * @return 1 for a valid edge, 0 for conflicting ownership or a cycle.
+ */
+static int fern_actor_supervision_edge_valid(
+    FernActorRuntimeState* state,
+    const FernActorRecord* supervisor,
+    const FernActorRecord* worker) {
+    assert(state != NULL);
+    assert(supervisor != NULL);
+    assert(worker != NULL);
+    if (worker->supervisor_id != 0 && worker->supervisor_id != supervisor->actor_id) {
+        return 0;
+    }
+    const FernActorRecord* ancestor = supervisor;
+    for (int64_t depth = 0; depth < state->actor_len; depth++) {
+        if (ancestor->actor_id == worker->actor_id) {
+            return 0;
+        }
+        if (ancestor->supervisor_id == 0) {
+            return 1;
+        }
+        ancestor = fern_actor_lookup(state, ancestor->supervisor_id);
+        if (ancestor == NULL) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+/**
  * Register supervision policy for a worker with explicit strategy.
  * @param supervisor_id Supervisor actor id.
  * @param worker_id Worker actor id.
@@ -3078,16 +3112,19 @@ static int64_t fern_actor_supervise_with_strategy(
         return fern_result_err(FERN_ERR_IO);
     }
 
+    if (!fern_actor_supervision_edge_valid(state, supervisor, worker)) {
+        return fern_result_err(FERN_ERR_IO);
+    }
+    /* Reserve before changing ownership so registration failures are atomic. */
+    if (!fern_actor_monitor_reserve(worker, worker->monitor_len + 1) ||
+        !fern_actor_supervision_register_child(supervisor, worker, strategy)) {
+        return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+    }
     worker->supervisor_id = supervisor_id;
     worker->supervision_max_restarts = max_restarts;
     worker->supervision_period_sec = period_sec;
-    worker->supervision_window_start_sec = 0;
+    worker->supervision_window_start_sec = -1;
     worker->supervision_restart_count = 0;
-
-    if (!fern_actor_supervision_register_child(supervisor, worker, strategy)) {
-        return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
-    }
-
     return fern_actor_monitor(supervisor_id, worker_id);
 }
 
@@ -3217,7 +3254,7 @@ static int fern_actor_supervision_consume_budget(FernActorRuntimeState* state, F
 
     int64_t now_sec = fern_actor_clock_now_state(state);
 
-    if (worker->supervision_window_start_sec == 0 ||
+    if (worker->supervision_window_start_sec < 0 ||
         (now_sec - worker->supervision_window_start_sec) >= worker->supervision_period_sec) {
         worker->supervision_window_start_sec = now_sec;
         worker->supervision_restart_count = 0;
@@ -3394,6 +3431,7 @@ static int fern_actor_target_list_contains(const int64_t* ids, int64_t len, int6
 
 /**
  * Collect restart targets from supervisor child table for crashed actor strategy.
+ * @param state Actor registry for checking child liveness.
  * @param supervisor Supervisor actor record.
  * @param crashed Crashed child actor record.
  * @param out_ids Output actor id buffer.
@@ -3401,6 +3439,7 @@ static int fern_actor_target_list_contains(const int64_t* ids, int64_t len, int6
  * @return Number of collected targets (>=1), or 0 on invalid input.
  */
 static int64_t fern_actor_collect_restart_targets(
+    FernActorRuntimeState* state,
     const FernActorRecord* supervisor,
     const FernActorRecord* crashed,
     int64_t* out_ids,
@@ -3423,6 +3462,11 @@ static int64_t fern_actor_collect_restart_targets(
         int64_t child_strategy = supervisor->supervision_child_strategies[i];
         int64_t child_order = supervisor->supervision_child_orders[i];
         if (child_id <= 0 || child_strategy != strategy) {
+            continue;
+        }
+        /* A sibling that already terminated normally must remain stopped. */
+        FernActorRecord* child = fern_actor_lookup(state, child_id);
+        if (child == NULL || (child_id != crashed->actor_id && !fern_actor_is_alive(child))) {
             continue;
         }
 
@@ -3539,7 +3583,7 @@ int64_t fern_actor_exit(int64_t actor_id, const char* reason) {
                 return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
             }
 
-            int64_t target_len = fern_actor_collect_restart_targets(supervisor, actor, target_ids, target_cap);
+            int64_t target_len = fern_actor_collect_restart_targets(state, supervisor, actor, target_ids, target_cap);
             if (target_len <= 0) {
                 return fern_result_err(FERN_ERR_IO);
             }
@@ -3606,7 +3650,7 @@ int64_t fern_actor_restart(int64_t actor_id) {
 
     FernActorRuntimeState* state = fern_actor_runtime_state();
     FernActorRecord* actor = fern_actor_lookup(state, actor_id);
-    if (actor == NULL || fern_actor_is_alive(actor)) {
+    if (actor == NULL || fern_actor_is_alive(actor) || actor->replacement_id != 0) {
         return fern_result_err(FERN_ERR_IO);
     }
 
@@ -3616,7 +3660,10 @@ int64_t fern_actor_restart(int64_t actor_id) {
         return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
     }
 
+    /* Spawning may move the registry; never retain a record pointer across it. */
+    actor = fern_actor_lookup(state, actor_id);
     FernActorRecord* next = fern_actor_lookup(state, next_id);
+    assert(actor != NULL);
     assert(next != NULL);
 
     if (actor->monitor_len > 0) {
@@ -3642,6 +3689,7 @@ int64_t fern_actor_restart(int64_t actor_id) {
         }
     }
 
+    actor->replacement_id = next_id;
     return fern_result_ok(next_id);
 }
 

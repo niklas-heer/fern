@@ -1143,6 +1143,113 @@ void test_runtime_rc_header_and_core_type_ops(void) {
     free_build_run_result(&result);
 }
 
+void test_runtime_rejects_unimplemented_actor_execution(void) {
+    const char* sources[] = {
+        "fn worker() -> Int: 0\nfn main() -> Int: spawn(worker)\n",
+        "fn worker() -> Int: 0\nfn main() -> Int: spawn_link(worker)\n",
+        "fn main() -> Int:\n    receive:\n        _ -> 0\n"
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        BuildRunResult result = build_and_run_source(sources[i]);
+        ASSERT_NE(result.build.exit_code, 0);
+        ASSERT_NOT_NULL(result.build.output);
+        ASSERT_TRUE(strstr(result.build.output, "actor execution is not implemented") != NULL);
+        ASSERT_TRUE(strstr(result.build.output, "actors.start/post/next") != NULL);
+        free_build_run_result(&result);
+        char* source_path = write_tmp_source(sources[i]);
+        ASSERT_NOT_NULL(source_path);
+        const char* commands[] = {"check", "run", "emit"};
+        int failures = 0;
+        for (size_t j = 0; j < sizeof(commands) / sizeof(commands[0]); j++) {
+            char cmd[1024];
+            snprintf(cmd, sizeof(cmd), "./bin/fern %s %s 2>&1", commands[j], source_path);
+            CmdResult command = run_cmd(cmd);
+            if (j == 0) {
+                if (command.exit_code != 0) failures++;
+            } else if (command.exit_code == 0 || command.output == NULL ||
+                strstr(command.output, "actor execution is not implemented") == NULL) {
+                failures++;
+            }
+            free_cmd_result(&command);
+        }
+        unlink(source_path);
+        free(source_path);
+        ASSERT_EQ(failures, 0);
+    }
+}
+
+void test_runtime_send_primitive_preserves_error_result(void) {
+    BuildRunResult result = build_and_run_source(
+        "fn main() -> Int:\n"
+        "    match send(2147483647, \"hello\"):\n"
+        "        Ok(_) -> 1\n"
+        "        Err(_) -> 0\n");
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+    free_build_run_result(&result);
+}
+
+void test_runtime_send_primitive_preserves_success_result(void) {
+    BuildRunResult result = build_and_run_source(
+        "fn main() -> Int:\n"
+        "    let pid = actors.start(\"worker\")\n"
+        "    match send(pid, \"hello\"):\n"
+        "        Ok(status) ->\n"
+        "            if status == 0:\n"
+        "                match actors.next(pid):\n"
+        "                    Ok(message) -> if String.eq(message, \"hello\"): 0 else: 2\n"
+        "                    Err(_) -> 3\n"
+        "            else: 4\n"
+        "        Err(_) -> 5\n");
+    ASSERT_EQ(result.build.exit_code, 0);
+    ASSERT_EQ(result.run.exit_code, 0);
+    free_build_run_result(&result);
+}
+
+/* Replay fresh-process lifecycle cases and seeded failures against the runtime archive. */
+void test_runtime_actor_seeded_lifecycle_invariants(void) {
+    char* output_path = make_tmp_output_path();
+    ASSERT_NOT_NULL(output_path);
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd),
+        "cc -std=c11 -Wall -Wextra -Werror -Iruntime -Iinclude "
+        "tests/fixtures/runtime_actor_scenarios.c lib/fernsim.c lib/arena.c "
+        "bin/libfern_runtime.a "
+        "$(pkg-config --libs bdw-gc 2>/dev/null || echo -lgc) "
+        "$(pkg-config --libs sqlite3 2>/dev/null || echo -lsqlite3) "
+        "$(pkg-config --libs openssl 2>/dev/null || echo -lssl -lcrypto) "
+        "-pthread -o %s 2>&1", output_path);
+    CmdResult build = run_cmd(cmd);
+    if (build.exit_code != 0 && build.output != NULL) {
+        fprintf(stderr, "%s", build.output);
+    }
+    int build_status = build.exit_code;
+    free_cmd_result(&build);
+    if (build_status != 0) {
+        unlink(output_path);
+        free(output_path);
+        ASSERT_EQ(build_status, 0);
+    }
+    const char* scenarios[] = {
+        "time-zero", "single-replacement", "forest", "invalid-pid",
+        "terminated-sibling", "simulation"
+    };
+    int failures = 0;
+    for (size_t i = 0; i < sizeof(scenarios) / sizeof(scenarios[0]); i++) {
+        snprintf(cmd, sizeof(cmd), "FERN_ACTOR_SCENARIO=%s %s 2>&1", scenarios[i], output_path);
+        CmdResult run = run_cmd(cmd);
+        if (run.exit_code != 0) {
+            fprintf(stderr, "actor scenario %s failed: %s\n", scenarios[i],
+                run.output != NULL ? run.output : "no output");
+            failures++;
+        }
+        free_cmd_result(&run);
+    }
+    unlink(output_path);
+    free(output_path);
+    ASSERT_EQ(failures, 0);
+}
+
 void run_runtime_surface_tests(void) {
     printf("\n=== Runtime Surface Tests ===\n");
     TEST_RUN(test_runtime_json_parse_empty_returns_err_code);
@@ -1169,6 +1276,10 @@ void run_runtime_surface_tests(void) {
     TEST_RUN(test_runtime_actor_supervise_one_for_all_restarts_all_children_contract);
     TEST_RUN(test_runtime_actor_supervise_rest_for_one_restarts_suffix_contract);
     TEST_RUN(test_runtime_actor_exit_marks_actor_dead_contract);
+    TEST_RUN(test_runtime_actor_seeded_lifecycle_invariants);
+    TEST_RUN(test_runtime_rejects_unimplemented_actor_execution);
+    TEST_RUN(test_runtime_send_primitive_preserves_error_result);
+    TEST_RUN(test_runtime_send_primitive_preserves_success_result);
     TEST_RUN(test_runtime_memory_alloc_dup_drop_contract);
     TEST_RUN(test_runtime_rc_header_and_core_type_ops);
 }

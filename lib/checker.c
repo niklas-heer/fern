@@ -25,6 +25,7 @@ struct Checker {
     ErrorNode* errors_tail;
     Type* current_return_type;
     SourceLoc current_expr_loc;
+    bool require_executable;
 };
 
 /* ========== Forward Declarations ========== */
@@ -1646,6 +1647,7 @@ Checker* checker_new(Arena* arena) {
     checker->errors_tail = NULL;
     checker->current_return_type = NULL;
     checker->current_expr_loc = (SourceLoc){0};
+    checker->require_executable = false;
 
     /* Register built-in functions from the runtime library */
     register_io_builtins(checker);
@@ -1655,6 +1657,16 @@ Checker* checker_new(Arena* arena) {
     register_result_constructors(checker);
 
     return checker;
+}
+
+/**
+ * Restrict a checker to language forms with implemented runtime execution.
+ * @param checker Checker instance whose environment has been initialized.
+ */
+void checker_require_executable(Checker* checker) {
+    assert(checker != NULL);
+    assert(checker->env != NULL);
+    checker->require_executable = true;
 }
 
 /* ========== Binary Operator Type Checking ========== */
@@ -2704,6 +2716,12 @@ static Type* check_spawn_expr(Checker* checker, SpawnExpr* expr, SourceLoc loc) 
     assert(checker != NULL);
     assert(expr != NULL);
 
+    if (checker->require_executable) {
+        return error_type_at(checker, loc,
+            "actor execution is not implemented: spawn/spawn_link cannot run workers; "
+            "actors.start/post/next provide explicit mailbox operations only");
+    }
+
     Type* func_type = checker_infer_expr(checker, expr->func);
     if (func_type->kind == TYPE_ERROR) return func_type;
 
@@ -3368,6 +3386,11 @@ static Type* checker_infer_expr_impl(Checker* checker, Expr* expr) {
             return check_send_expr(checker, &expr->data.send_expr, expr->loc);
 
         case EXPR_RECEIVE:
+            if (checker->require_executable) {
+                return error_type_at(checker, expr->loc,
+                    "actor execution is not implemented: receive cannot wait for messages; "
+                    "actors.start/post/next provide explicit mailbox operations only");
+            }
             return check_receive_expr(checker, &expr->data.receive_expr, expr->loc);
     }
     
