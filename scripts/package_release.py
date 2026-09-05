@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import platform
+import re
 import shutil
 import tarfile
 from dataclasses import dataclass
@@ -23,6 +24,15 @@ class BundleSpec:
     version: str
     os_name: str
     arch: str
+
+    def __post_init__(self) -> None:
+        """Keep artifact metadata inside a single, well-formed filename."""
+        if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?",
+                            self.version):
+            raise ValueError("invalid version: expected a semantic version such as 0.1.0")
+        for label, value in (("OS", self.os_name), ("architecture", self.arch)):
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", value):
+                raise ValueError(f"invalid {label}: expected a filename-safe platform name")
 
     @property
     def stem(self) -> str:
@@ -172,10 +182,10 @@ def main() -> int:
         return 0
 
     if args.command == "package":
-        spec = BundleSpec(version=args.version, os_name=args.os_name, arch=args.arch)
         staging = Path(args.staging)
         out_dir = Path(args.out_dir)
         try:
+            spec = BundleSpec(version=args.version, os_name=args.os_name, arch=args.arch)
             archive_path, checksum_path = make_bundle(staging, out_dir, spec)
             verify_archive(archive_path, checksum_path)
         except (FileNotFoundError, ValueError, OSError, tarfile.TarError) as exc:

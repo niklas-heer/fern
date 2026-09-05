@@ -198,6 +198,7 @@ test: debug
     python3 scripts/test_tui.py
     python3 scripts/test_string_codegen.py
     python3 tests/integration/test_print_types.py
+    python3 scripts/test_release_workflow.py
 
 # Build fuzz runner
 fuzz-bin: debug
@@ -349,7 +350,7 @@ release-package: release
     #!/usr/bin/env bash
     set -euo pipefail
 
-    version="$(awk -F'"' '/FERN_VERSION_STRING/ {print $2}' include/version.h)"
+    version="$(awk -F'"' '/^#define FERN_VERSION_STRING / {print $2; exit}' include/version.h)"
 
     rm -rf dist/staging
     mkdir -p dist/staging/docs
