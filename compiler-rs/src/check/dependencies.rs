@@ -169,6 +169,15 @@ impl<'a> Walker<'a, '_> {
         Ok(())
     }
 
+    /// A resolved declaration edge is unaffected by canonical-prefix local bindings.
+    fn global_reference(&mut self, name: &str, span: Span) -> Checked<()> {
+        self.budget.charge(name.len() + 1, span)?;
+        if let Some(index) = self.names.get(name) {
+            self.edges.insert(*index);
+        }
+        Ok(())
+    }
+
     /// Store borrowed names with shadow counts; wildcard bindings never become accessible.
     fn bind(&mut self, name: &'a str, span: Span) -> Checked<()> {
         self.budget.charge(name.len() + 1, span)?;
@@ -348,9 +357,44 @@ impl<'a> Walker<'a, '_> {
         self.pending.push(Task::Enter);
     }
 
+    /// Queue map key/value expressions in source order without changing dependency scopes.
+    fn map_entries(&mut self, entries: &'a [(ast::Expr, ast::Expr)]) {
+        for (key, value) in entries.iter().rev() {
+            self.pending.push(Task::Expression(value));
+            self.pending.push(Task::Expression(key));
+        }
+    }
+
+    /// Queue explicit global edges independently of canonical-prefix local bindings.
+    fn global(&mut self, expr: &'a ast::Expr) -> Checked<bool> {
+        use ast::ExprKind::*;
+        match &expr.kind {
+            GlobalName { resolved, .. } => self.global_reference(resolved, expr.span)?,
+            GlobalCall { resolved, args, .. } => {
+                self.global_reference(resolved, expr.span)?;
+                self.pending.extend(args.iter().rev().map(Task::Expression));
+            }
+            GlobalPipe {
+                value,
+                resolved,
+                args,
+                ..
+            } => {
+                self.global_reference(resolved, expr.span)?;
+                self.pending.extend(args.iter().rev().map(Task::Expression));
+                self.pending.push(Task::Expression(value));
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
     /// Queue value children exhaustively so new syntax cannot silently lose dependencies.
     fn plain(&mut self, expr: &'a ast::Expr) -> Checked<()> {
         use ast::ExprKind::*;
+        if self.global(expr)? {
+            return Ok(());
+        }
         match &expr.kind {
             Name(name) => self.reference(name, expr.span)?,
             Call { name, args } => {
@@ -371,12 +415,7 @@ impl<'a> Walker<'a, '_> {
             Tuple(values) | List(values) => self
                 .pending
                 .extend(values.iter().rev().map(Task::Expression)),
-            Map(entries) => {
-                for (key, value) in entries.iter().rev() {
-                    self.pending.push(Task::Expression(value));
-                    self.pending.push(Task::Expression(key));
-                }
-            }
+            Map(entries) => self.map_entries(entries),
             RecordUpdate { value, fields } => {
                 self.pending
                     .extend(fields.iter().rev().map(|f| Task::Expression(&f.value)));
@@ -404,6 +443,9 @@ impl<'a> Walker<'a, '_> {
             } => {
                 self.pending.push(Task::Expression(right));
                 self.pending.push(Task::Expression(left));
+            }
+            GlobalName { .. } | GlobalCall { .. } | GlobalPipe { .. } => {
+                unreachable!("global handled above")
             }
             Int(_) | Float(_) | Bool(_) | String(_) | Unit | Break | Continue => {}
             Block(_)

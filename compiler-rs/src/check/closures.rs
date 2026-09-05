@@ -211,6 +211,24 @@ impl Checker<'_> {
             return self.invoke(ir::Expr { kind, ty, span }, args, expected, span, depth);
         }
         self.callable_name(name, span)?;
+        self.global_call(name, args, expected, span, depth)
+    }
+
+    /// Resolve a loader-proven global callee while checking arguments in the original scope.
+    pub(super) fn global_call(
+        &mut self,
+        name: &str,
+        args: &[ast::Expr],
+        expected: Option<&Type>,
+        span: Span,
+        depth: usize,
+    ) -> Checked<TypedKind> {
+        if self.registry.is_alias(name) {
+            return Err(Diagnostic::new(
+                span,
+                "a type alias does not introduce a value or constructor",
+            ));
+        }
         if self.registry.constructor(name).is_some() {
             return self.custom_construct(name, args, expected, span, depth);
         }
@@ -423,9 +441,10 @@ fn contains_lambda(expr: &ast::Expr) -> bool {
             contains_lambda(callee) || args.iter().any(contains_lambda)
         }
         ast::ExprKind::Call { args, .. }
+        | ast::ExprKind::GlobalCall { args, .. }
         | ast::ExprKind::Tuple(args)
         | ast::ExprKind::List(args) => args.iter().any(contains_lambda),
-        ast::ExprKind::Pipe { value, args, .. } => {
+        ast::ExprKind::Pipe { value, args, .. } | ast::ExprKind::GlobalPipe { value, args, .. } => {
             contains_lambda(value) || args.iter().any(contains_lambda)
         }
         ast::ExprKind::Return(value)

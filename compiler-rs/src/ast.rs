@@ -106,6 +106,23 @@ pub enum ExprKind {
     Interpolate(Vec<StringPart>),
     MultilineString(Vec<StringPart>),
     Name(String),
+    /// Source spelling plus a loader-resolved declaration identity, independent of local roots.
+    GlobalName {
+        name: String,
+        resolved: String,
+    },
+    GlobalCall {
+        name: String,
+        resolved: String,
+        args: Vec<Expr>,
+    },
+    GlobalPipe {
+        value: Box<Expr>,
+        name: String,
+        resolved: String,
+        args: Vec<Expr>,
+        position: usize,
+    },
     Unit,
     List(Vec<Expr>),
     Map(Vec<(Expr, Expr)>),

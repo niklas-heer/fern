@@ -588,6 +588,11 @@ impl<'a> Index<'a> {
         use ast::ExprKind as E;
         match &expression.kind {
             E::Name(name) => self.reference(name, expression.span, locals),
+            E::GlobalName { resolved, .. } => self.reference(resolved, expression.span, locals),
+            E::GlobalCall { resolved, args, .. } => {
+                self.reference(resolved, expression.span, locals);
+                self.values(args, locals, depth)?;
+            }
             E::Call { name, args } => {
                 self.reference(name, expression.span, locals);
                 self.values(args, locals, depth)?;
@@ -724,6 +729,30 @@ impl<'a> Index<'a> {
         }
         Some(())
     }
+    /// Resolve a pipe target from its actual source head after the input expression.
+    fn pipe_reference(&mut self, expression: &ast::Expr, locals: &Bindings) {
+        let ast::ExprKind::GlobalPipe {
+            value, resolved, ..
+        } = &expression.kind
+        else {
+            return;
+        };
+        let span = Span {
+            start: value.span.end,
+            end: expression.span.end,
+        };
+        if let Some(start) = self.identifier(span, 0) {
+            self.reference(
+                resolved,
+                Span {
+                    start: start.start,
+                    end: span.end,
+                },
+                locals,
+            );
+        }
+    }
+
     /// Visit embedded expressions without interpreting literal string text as code.
     fn interpolation(
         &mut self,
@@ -789,7 +818,8 @@ impl<'a> Index<'a> {
                     self.expression(&field.value, locals, depth)?;
                 }
             }
-            E::Pipe { value, args, .. } => {
+            E::Pipe { value, args, .. } | E::GlobalPipe { value, args, .. } => {
+                self.pipe_reference(expression, locals);
                 self.expression(value, locals, depth)?;
                 self.values(args, locals, depth)?;
             }

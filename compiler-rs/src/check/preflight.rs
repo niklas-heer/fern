@@ -222,6 +222,55 @@ impl Budget {
         Ok(())
     }
 
+    /// Charge source/resolved names and all named-reference children before checker cloning.
+    fn reference_expression<'a>(
+        &mut self,
+        expr: &'a ast::Expr,
+        pending: &mut Vec<(&'a ast::Expr, usize)>,
+        depth: usize,
+    ) -> Checked<bool> {
+        match &expr.kind {
+            ast::ExprKind::GlobalName { name, resolved } => {
+                self.charge(name.len(), expr.span)?;
+                self.charge(resolved.len(), expr.span)?;
+            }
+            ast::ExprKind::GlobalCall {
+                name,
+                resolved,
+                args,
+            } => {
+                self.charge(name.len(), expr.span)?;
+                self.charge(resolved.len(), expr.span)?;
+                pending.extend(args.iter().map(|e| (e, depth + 1)));
+            }
+            ast::ExprKind::GlobalPipe {
+                name,
+                resolved,
+                value,
+                args,
+                ..
+            } => {
+                self.charge(name.len(), expr.span)?;
+                self.charge(resolved.len(), expr.span)?;
+                pending.push((value, depth + 1));
+                pending.extend(args.iter().map(|e| (e, depth + 1)));
+            }
+            ast::ExprKind::Pipe {
+                value, name, args, ..
+            } => {
+                self.charge(name.len(), expr.span)?;
+                pending.push((value, depth + 1));
+                pending.extend(args.iter().map(|e| (e, depth + 1)));
+            }
+            ast::ExprKind::Call { name, args } => {
+                self.charge(name.len(), expr.span)?;
+                pending.extend(args.iter().map(|e| (e, depth + 1)));
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
     /// Charge expression nodes only after checking their current traversal depth.
     fn expression_node(&mut self, span: Span, depth: usize) -> Checked<()> {
         if depth >= MAX_EXPR_DEPTH {
@@ -295,6 +344,9 @@ impl Budget {
             if self.iteration(expr, &mut pending, depth)? {
                 continue;
             }
+            if self.reference_expression(expr, &mut pending, depth)? {
+                continue;
+            }
             match &expr.kind {
                 ast::ExprKind::ConditionMatch(arms) => queue_conditions(arms, &mut pending, depth),
                 ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {
@@ -331,17 +383,6 @@ impl Budget {
                 | ast::ExprKind::Binary { left, right, .. } => {
                     pending.push((left, depth + 1));
                     pending.push((right, depth + 1));
-                }
-                ast::ExprKind::Pipe {
-                    value, name, args, ..
-                } => {
-                    self.charge(name.len(), expr.span)?;
-                    pending.push((value, depth + 1));
-                    pending.extend(args.iter().map(|e| (e, depth + 1)));
-                }
-                ast::ExprKind::Call { name, args } => {
-                    self.charge(name.len(), expr.span)?;
-                    pending.extend(args.iter().map(|e| (e, depth + 1)));
                 }
                 ast::ExprKind::Tuple(args) | ast::ExprKind::List(args) => {
                     pending.extend(args.iter().map(|e| (e, depth + 1)))

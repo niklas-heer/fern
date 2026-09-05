@@ -379,7 +379,7 @@ impl Renderer<'_> {
             ExprKind::String(value) => quote(value),
             ExprKind::Interpolate(parts) => self.interpolation(parts, indent, false)?,
             ExprKind::MultilineString(parts) => self.interpolation(parts, indent, true)?,
-            ExprKind::Name(name) => name.clone(),
+            ExprKind::Name(name) | ExprKind::GlobalName { name, .. } => name.clone(),
             ExprKind::Unit => "()".into(),
             ExprKind::Tuple(items) => {
                 return self.delimited_values("(", ")", items, indent, expression.span, true)
@@ -391,19 +391,18 @@ impl Renderer<'_> {
             ExprKind::RecordUpdate { value, fields } => {
                 return self.record_update(value, fields, indent, expression.span)
             }
-            ExprKind::Call { name, args } => return self.call(name, args, indent, expression.span),
+            ExprKind::Call { name, args } | ExprKind::GlobalCall { name, args, .. } => {
+                return self.call(name, args, indent, expression.span)
+            }
             ExprKind::Apply { callee, args } => {
                 return self.apply(callee, args, indent, expression.span)
             }
             ExprKind::Lambda { params, body } => {
                 return self.lambda(params, body, indent, expression.span)
             }
-            ExprKind::Pipe {
-                value,
-                name,
-                args,
-                position,
-            } => return self.pipe(value, name, args, *position, indent, expression.span),
+            ExprKind::Pipe { .. } | ExprKind::GlobalPipe { .. } => {
+                return self.pipe_expression(expression, indent);
+            }
             ExprKind::Unary { op, value } => {
                 return self.unary(*op, value, indent, expression.span)
             }
@@ -777,6 +776,26 @@ impl Renderer<'_> {
             last.text.push(')');
         }
         Ok(lines)
+    }
+
+    /// Format either source or resolved pipes through the preserved source spelling.
+    fn pipe_expression(&self, expression: &Expr, indent: usize) -> Result<Vec<Line>> {
+        match &expression.kind {
+            ExprKind::Pipe {
+                value,
+                name,
+                args,
+                position,
+            }
+            | ExprKind::GlobalPipe {
+                value,
+                name,
+                args,
+                position,
+                ..
+            } => self.pipe(value, name, args, *position, indent, expression.span),
+            _ => unreachable!("pipe formatter receives a pipe expression"),
+        }
     }
 
     /// Keep compact calls inline and give embedded suites their own argument layout.
@@ -1354,7 +1373,7 @@ fn clear_expression(expression: &mut Expr) {
         | ExprKind::For { .. }
         | ExprKind::With { .. }
         | ExprKind::If { .. }) => clear_control(kind),
-        ExprKind::Pipe { value, args, .. } => {
+        ExprKind::Pipe { value, args, .. } | ExprKind::GlobalPipe { value, args, .. } => {
             clear_expression(value);
             for arg in args {
                 clear_expression(arg);
@@ -1379,7 +1398,10 @@ fn clear_expression(expression: &mut Expr) {
                 }
             }
         }
-        ExprKind::Call { args, .. } | ExprKind::Tuple(args) | ExprKind::List(args) => {
+        ExprKind::Call { args, .. }
+        | ExprKind::GlobalCall { args, .. }
+        | ExprKind::Tuple(args)
+        | ExprKind::List(args) => {
             for argument in args {
                 clear_expression(argument);
             }
@@ -1395,6 +1417,7 @@ fn clear_expression(expression: &mut Expr) {
         | ExprKind::Bool(_)
         | ExprKind::String(_)
         | ExprKind::Name(_)
+        | ExprKind::GlobalName { .. }
         | ExprKind::Unit => {}
     }
 }

@@ -5,7 +5,7 @@ impl Checker<'_> {
     pub(super) fn pipe(
         &mut self,
         value: &ast::Expr,
-        name: &str,
+        target: (&str, bool),
         args: &[ast::Expr],
         position: usize,
         span: Span,
@@ -30,7 +30,11 @@ impl Checker<'_> {
                 span,
             },
         );
-        let result = self.call(name, &arguments, span, depth);
+        let result = if target.1 {
+            self.global_call(target.0, &arguments, None, span, depth)
+        } else {
+            self.call(target.0, &arguments, span, depth)
+        };
         self.scopes.pop();
         let (kind, ty) = result?;
         let (kind, ty) = control::strict_divergence(kind, ty);

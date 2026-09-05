@@ -36,7 +36,7 @@ pub(super) fn expression(expr: &mut ast::Expr, expander: &mut Expander<'_>) -> C
             expression(left, expander)?;
             expression(right, expander)?;
         }
-        ast::ExprKind::Pipe { value, args, .. } => {
+        ast::ExprKind::Pipe { value, args, .. } | ast::ExprKind::GlobalPipe { value, args, .. } => {
             expression(value, expander)?;
             for arg in args {
                 expression(arg, expander)?;
@@ -46,6 +46,7 @@ pub(super) fn expression(expr: &mut ast::Expr, expander: &mut Expander<'_>) -> C
             interpolate(parts, expander)?
         }
         ast::ExprKind::Call { args, .. }
+        | ast::ExprKind::GlobalCall { args, .. }
         | ast::ExprKind::Tuple(args)
         | ast::ExprKind::List(args) => {
             for arg in args {

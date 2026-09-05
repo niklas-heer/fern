@@ -205,20 +205,17 @@ pub(super) fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Typ
             substitute_expr(left, values)?;
             substitute_expr(right, values)?;
         }
-        ast::ExprKind::Pipe { value, args, .. } => {
+        ast::ExprKind::Pipe { value, args, .. } | ast::ExprKind::GlobalPipe { value, args, .. } => {
             substitute_expr(value, values)?;
             for arg in args {
                 substitute_expr(arg, values)?;
             }
         }
         ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {
-            for part in parts {
-                if let ast::StringPart::Value(value) = part {
-                    substitute_expr(value, values)?;
-                }
-            }
+            substitute_string(parts, values)?;
         }
         ast::ExprKind::Call { args, .. }
+        | ast::ExprKind::GlobalCall { args, .. }
         | ast::ExprKind::Tuple(args)
         | ast::ExprKind::List(args) => {
             for arg in args {
@@ -358,6 +355,16 @@ fn substitute_iteration(expr: &mut ast::Expr, values: &HashMap<String, Type>) ->
             }
         }
         _ => {}
+    }
+    Ok(())
+}
+
+/// Substitute embedded string expressions without modifying their literal text segments.
+fn substitute_string(parts: &mut [ast::StringPart], values: &HashMap<String, Type>) -> Checked<()> {
+    for part in parts {
+        if let ast::StringPart::Value(value) = part {
+            substitute_expr(value, values)?;
+        }
     }
     Ok(())
 }

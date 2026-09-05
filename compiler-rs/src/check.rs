@@ -9,6 +9,7 @@ mod coverage;
 mod dependencies;
 mod diagnostics;
 pub mod editor;
+mod globals;
 mod iteration;
 mod lift;
 mod maps;
@@ -653,12 +654,17 @@ impl Checker<'_> {
             }
             ast::ExprKind::Unit => (ir::ExprKind::Unit, Type::Unit),
             ast::ExprKind::Try(value) => self.propagate(value, expr.span, depth + 1)?,
+            kind @ (ast::ExprKind::GlobalName { .. }
+            | ast::ExprKind::GlobalCall { .. }
+            | ast::ExprKind::GlobalPipe { .. }) => {
+                self.resolved_global(kind, expected, expr.span, depth + 1)?
+            }
             ast::ExprKind::Pipe {
                 value,
                 name,
                 args,
                 position,
-            } => self.pipe(value, name, args, *position, expr.span, depth + 1)?,
+            } => self.pipe(value, (name, false), args, *position, expr.span, depth + 1)?,
             ast::ExprKind::Field { .. } => self.source_field(expr, depth + 1)?,
             ast::ExprKind::Name(name) => self.name(name, expr.span)?,
             ast::ExprKind::Tuple(values) => self.tuple(values, expected, expr.span, depth + 1)?,
@@ -677,19 +683,33 @@ impl Checker<'_> {
             ast::ExprKind::Call { name, args } => {
                 self.call_expected(name, args, expected, expr.span, depth + 1)?
             }
-            ast::ExprKind::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => self.conditional(
-                condition,
-                then_branch,
-                else_branch.as_deref(),
-                expected,
-                depth + 1,
-            )?,
+            ast::ExprKind::If { .. } => self.source_conditional(expr, expected, depth + 1)?,
             ast::ExprKind::Block(stmts) => self.block(stmts, expected, depth + 1)?,
         })
+    }
+
+    /// Forward original conditional branches and their source range to contextual checking.
+    fn source_conditional(
+        &mut self,
+        expr: &ast::Expr,
+        expected: Option<&Type>,
+        depth: usize,
+    ) -> Checked<TypedKind> {
+        let ast::ExprKind::If {
+            condition,
+            then_branch,
+            else_branch,
+        } = &expr.kind
+        else {
+            unreachable!("conditional source dispatcher receives only if expressions")
+        };
+        self.conditional(
+            condition,
+            then_branch,
+            else_branch.as_deref(),
+            expected,
+            depth,
+        )
     }
 
     /// Lower text and embedded values in their original evaluation order.
@@ -772,35 +792,7 @@ impl Checker<'_> {
                 return Ok((value.kind, value.ty));
             }
         }
-        if self.registry.is_alias(name) {
-            return Err(Diagnostic::new(
-                span,
-                "a type alias does not introduce a value or constructor",
-            ));
-        }
-        if self.registry.constructor(name).is_some() {
-            return self.custom_construct(name, &[], None, span, 0);
-        }
-        if name == "None" {
-            return Ok((
-                ir::ExprKind::Construct {
-                    constructor: Constructor::None,
-                    value: None,
-                },
-                Type::Option(Box::new(self.inference.fresh())),
-            ));
-        }
-        if builtin(name).is_some()
-            || self.signatures.contains_key(name)
-            || runtime::lookup(name).is_some()
-        {
-            let (target, params, result) = self.resolve_callable(name, span)?;
-            return Ok((
-                ir::ExprKind::FunctionValue { target },
-                Type::Function(params, Box::new(result)),
-            ));
-        }
-        Err(Diagnostic::new(span, format!("unknown name '{name}'")))
+        self.global_name(name, span)
     }
 
     /// Check homogeneous `values` at `depth`, leaving an empty list contextually inferable.

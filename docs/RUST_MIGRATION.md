@@ -602,3 +602,21 @@ programs with output preservation, plus alias inputs in bounded mutation testing
 Alias checkpoint gates pass: 752 Rust tests, 550 C tests, 180 core native
 programs, 168 invalid inputs and the full entry/access, controlled-fault, JSON,
 fuzz and documentation suites on macOS arm64.
+
+
+## Module reference identity
+
+Resolved imports now carry explicit global identities through function values,
+direct calls, pipes, captures and dependency discovery. An unrelated local named
+`model` no longer captures `m.value` after `import model as m`. A local named `m`
+still shadows that source alias, and arguments retain ordinary lexical checking.
+Original spelling stays available to source tools; both names and nested
+arguments are bounded by the frontend preflight checks. Alias expansion visits
+annotations inside resolved call and pipe arguments.
+
+Eight Rust regressions and four native output cases cover identity, source
+spelling, inferred callers, alias annotations and real record-field shadowing.
+Four native rejection cases preserve existing output and local type diagnostics.
+
+Module-identity checkpoint gates pass: 760 Rust tests, 550 C tests, 184 core
+native programs, 172 invalid inputs and the complete remaining gate suite.

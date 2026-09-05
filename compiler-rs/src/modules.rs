@@ -857,15 +857,11 @@ fn rewrite(
 ) -> Result<(), Error> {
     let original = expr.span;
     shift(&mut expr.span, offset);
+    mark_global(&mut expr.kind, names, prefixes, scopes).map_err(|e| at_span(e, original))?;
     match &mut expr.kind {
-        ast::ExprKind::Name(name) => {
-            resolve_name(name, names, prefixes, scopes).map_err(|e| at_span(e, original))?
-        }
-        ast::ExprKind::Pipe {
-            value, name, args, ..
-        } => {
+        ast::ExprKind::Name(_) | ast::ExprKind::GlobalName { .. } => {}
+        ast::ExprKind::Pipe { value, args, .. } | ast::ExprKind::GlobalPipe { value, args, .. } => {
             rewrite(value, names, prefixes, scopes, offset)?;
-            resolve_name(name, names, prefixes, scopes).map_err(|e| at_span(e, original))?;
             rewrite_values(args, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Lambda { params, body } => {
@@ -878,8 +874,7 @@ fn rewrite(
         ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {
             rewrite_string(parts, names, prefixes, scopes, offset)?
         }
-        ast::ExprKind::Call { name, args } => {
-            resolve_name(name, names, prefixes, scopes).map_err(|e| at_span(e, original))?;
+        ast::ExprKind::Call { args, .. } | ast::ExprKind::GlobalCall { args, .. } => {
             rewrite_values(args, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Tuple(values) | ast::ExprKind::List(values) => {
@@ -1280,4 +1275,49 @@ fn pattern_binding(
     offset: usize,
 ) -> Result<(), Error> {
     pattern(value, names, bound, offset)
+}
+
+/// Mark a proven global before canonical qualification can collide with a lexical root.
+fn mark_global(
+    kind: &mut ast::ExprKind,
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &[BTreeSet<String>],
+) -> Result<(), Error> {
+    let name = match kind {
+        ast::ExprKind::Name(name)
+        | ast::ExprKind::Call { name, .. }
+        | ast::ExprKind::Pipe { name, .. } => name,
+        _ => return Ok(()),
+    };
+    if local(scopes, name) {
+        return Ok(());
+    }
+    let mut resolved = name.clone();
+    resolve_name(&mut resolved, names, prefixes, scopes)?;
+    if !names.contains_key(name) {
+        return Ok(());
+    }
+    *kind = match std::mem::replace(kind, ast::ExprKind::Unit) {
+        ast::ExprKind::Name(name) => ast::ExprKind::GlobalName { name, resolved },
+        ast::ExprKind::Call { name, args } => ast::ExprKind::GlobalCall {
+            name,
+            resolved,
+            args,
+        },
+        ast::ExprKind::Pipe {
+            value,
+            name,
+            args,
+            position,
+        } => ast::ExprKind::GlobalPipe {
+            value,
+            name,
+            resolved,
+            args,
+            position,
+        },
+        _ => unreachable!("only named references reach global marking"),
+    };
+    Ok(())
 }

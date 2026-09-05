@@ -430,6 +430,10 @@ impl Checker<'_> {
         };
         let selected = editor.query.occurrence;
         let global = match &source.kind {
+            ast::ExprKind::GlobalName { resolved, .. }
+            | ast::ExprKind::GlobalCall { resolved, .. } => {
+                editor.query.function.as_deref() == Some(resolved.as_str())
+            }
             ast::ExprKind::Name(name) | ast::ExprKind::Call { name, .. } => {
                 editor.query.function.as_deref() == Some(name.as_str())
             }
@@ -474,7 +478,10 @@ impl Checker<'_> {
             _ => false,
         };
         if global {
-            let value = if matches!(source.kind, ast::ExprKind::Call { .. }) {
+            let value = if matches!(
+                source.kind,
+                ast::ExprKind::Call { .. } | ast::ExprKind::GlobalCall { .. }
+            ) {
                 callable(kind, ty).1
             } else {
                 ty.clone()
@@ -495,11 +502,13 @@ impl Checker<'_> {
             }
         } else {
             match &source.kind {
-                ast::ExprKind::Name(name) => named_value(name, source.span, selected, kind, ty),
+                ast::ExprKind::Name(name) | ast::ExprKind::GlobalName { name, .. } => {
+                    named_value(name, source.span, selected, kind, ty)
+                }
                 ast::ExprKind::Int(_) | ast::ExprKind::Float(_) | ast::ExprKind::Bool(_) => {
                     Some((ty.clone(), None))
                 }
-                ast::ExprKind::Call { name, .. } => {
+                ast::ExprKind::Call { name, .. } | ast::ExprKind::GlobalCall { name, .. } => {
                     if selected.start - source.span.start >= name.len() {
                         return None;
                     }
