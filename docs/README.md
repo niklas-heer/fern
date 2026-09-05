@@ -7,6 +7,7 @@ This folder contains project-level reference documents. Use this file as the can
 - [Language guide](LANGUAGE_GUIDE.md): runnable first programs and everyday workflow.
 - [Release readiness](RELEASE_READINESS.md): implemented features, remaining gaps, and release gates.
 - [Actor runtime](ACTOR_RUNTIME.md): exact mailbox/supervision commitments and execution limits.
+- [Rust frontend evaluation](RUST_FRONTEND_EVALUATION.md): prototype scope, native correctness, measured costs, and migration criteria.
 
 ## Core References
 

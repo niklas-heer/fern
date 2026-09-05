@@ -1,0 +1,12 @@
+fn pick(value: Int) -> String:
+    if value > 0:
+        if value > 1:
+            "two"
+        else:
+            "one"
+    else:
+        "zero"
+fn main():
+    println(pick(2))
+    println(pick(1))
+    println(pick(0))

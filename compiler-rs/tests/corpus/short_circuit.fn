@@ -1,0 +1,6 @@
+fn noisy() -> Bool:
+    println("called")
+    true
+fn main():
+    println(false and noisy())
+    println(true or noisy())

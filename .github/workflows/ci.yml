@@ -57,6 +57,14 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: just perf-budget
 
+      - name: Install Rust prototype toolchain
+        run: |
+          rustup toolchain install 1.75.0 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.75.0
+
+      - name: Validate experimental Rust frontend
+        run: just rust-check
+
       - name: Build (Release)
         if: matrix.os == 'macos-latest'
         run: just clean && just release

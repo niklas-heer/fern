@@ -1,0 +1,4 @@
+fn choose(n: Int) -> String:
+    if n > 0: "positive" else: "other"
+fn main():
+    println(choose(2))

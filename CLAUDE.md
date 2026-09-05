@@ -326,6 +326,12 @@ fern/
 
 ## Language: C with Safety Libraries
 
+Decision 45 permits the experimental `compiler-rs/` frontend to use safe Rust
+and standard owned types, enums, `Vec`, and `Result`. C-specific library and
+assertion rules below apply to C; Rust uses type-enforced invariants, explicit
+input limits, rustfmt, and clippy. Run `just rust-check` in addition to
+`just check` for prototype changes. The shipping compiler remains C.
+
 The Fern compiler is written in **C11** with modern safety libraries. This provides:
 - Excellent AI code generation (C is well-represented in training data)
 - Fast compilation and iteration

@@ -50,3 +50,6 @@ test_simple_str
 
 # Generated documentation site
 docs/generated/
+
+# Rust frontend experiment build artifacts
+compiler-rs/target/

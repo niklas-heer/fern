@@ -1,0 +1,4 @@
+fn main():
+    println(String.concat("a", "b"))
+    println(String.len("abc"))
+    if String.eq("a", "a"): println("same") else: println("different")

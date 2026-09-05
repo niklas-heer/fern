@@ -1,0 +1,2 @@
+fn main():
+    println("quote: \" slash: \\ Unicode: Grüße 🌿")

@@ -38,6 +38,21 @@ just clean
 
 ## Build Targets
 
+### Experimental Rust frontend
+
+With Rust 1.75 or newer, Cargo, rustfmt, and clippy installed:
+
+```sh
+just rust-build
+./bin/fern-rs run compiler-rs/tests/corpus/hello.fn
+just rust-check
+```
+
+This builds a separate `fern-rs` compiler and `fern-qbe` backend helper, reusing
+`libfern_runtime.a`. Normal build, install, and release commands still use C.
+See the [prototype guide](compiler-rs/README.md) for its supported subset and
+the [evaluation](docs/RUST_FRONTEND_EVALUATION.md) for measurements and migration criteria.
+
 ### Development
 
 - `just debug` - Build debug version with symbols and assertions

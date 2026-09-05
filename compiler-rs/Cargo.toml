@@ -1,0 +1,17 @@
+[package]
+name = "fern-prototype"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+publish = false
+
+[lib]
+name = "fern_prototype"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fern-rs"
+path = "src/main.rs"
+
+[profile.release]
+strip = true

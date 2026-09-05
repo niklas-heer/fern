@@ -13,6 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
+- Rust experiment: `just rust-check` passing (51 Rust tests, 4 measurement-harness tests, 32 native programs, 5 invalid inputs); measured prototype remains opt-in
 
 ## Canonical Documents
 
@@ -30,6 +31,17 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Gate B: Reliability and regression resistance
 - Gate C: Product surface and stdlib quality baseline
 - Gate D: Ecosystem and adoption hardening
+
+## Rust Frontend Evaluation (2026-09-05)
+
+Status: Complete for the bounded prototype; `just check`, `just rust-check`, and `just docs-check` pass on macOS arm64. CI includes Linux/macOS Rust checks. C remains the shipping default (decision 45).
+
+- [x] Build an independent lexer/parser for a clearly bounded Fern subset (11 parser tests).
+- [x] Resolve names and types once into a typed intermediate representation (10 checker tests).
+- [x] Generate QBE exclusively from typed IR and reuse the C runtime/backend (17 emitter tests and native execution).
+- [x] Add check/emit/build/run commands and specification-grounded differential tests (51 Rust tests, 32 native programs, 5 invalid inputs, literal paths).
+- [x] Measure clean/incremental frontend builds, check/emit latency, binary sizes, and native execution.
+- [x] Record evidence, gaps, and a migration recommendation before expanding scope ([evaluation](docs/RUST_FRONTEND_EVALUATION.md)): continue Rust incrementally; require parity before switching defaults.
 
 ## Active Priorities
 

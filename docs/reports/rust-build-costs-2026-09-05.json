@@ -1,0 +1,15 @@
+{
+  "method": "Single local wall-clock sample per phase. Isolated copy of final crate source; empty target directory at start; one appended comment for source edit. No native backend/runtime rebuild. Warm host caches, no CPU isolation.",
+  "command": "cargo build --locked --offline [--release] --manifest-path <temporary-crate>/Cargo.toml",
+  "debug_clean_seconds": 1.4482196250464767,
+  "debug_no_change_seconds": 0.021165958023630083,
+  "debug_one_comment_edit_seconds": 0.47290291695389897,
+  "release_clean_seconds": 1.303036208031699,
+  "release_no_change_seconds": 0.019871958065778017,
+  "release_one_comment_edit_seconds": 1.2823607500176877,
+  "c_release_full_compiler_seconds": [
+    3.97,
+    3.91
+  ],
+  "c_method": "Two /usr/bin/time -p just _build-fern release runs; recipe recompiles all C frontend, support libraries, linenoise and QBE objects every run, excludes runtime. C scope substantially larger than prototype; not a language performance comparison."
+}

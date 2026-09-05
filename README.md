@@ -7,6 +7,10 @@ editor tooling, and deterministic actor mailbox primitives are implemented.
 The full language design is not finished. See [release readiness](docs/RELEASE_READINESS.md)
 for the executable feature boundary and [ROADMAP.md](ROADMAP.md) for remaining work.
 
+An independent [Rust frontend prototype](compiler-rs/README.md) evaluates a typed
+compiler pipeline with the existing QBE backend and C runtime. See the
+[evaluation results](docs/RUST_FRONTEND_EVALUATION.md); C remains the default.
+
 ```fern
 fn greet(name: String) -> String:
     String.concat("Hello, ", name)

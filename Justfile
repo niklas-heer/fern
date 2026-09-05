@@ -423,3 +423,32 @@ editor-support-compile: editor-support
 # Help
 help:
     @just --list
+
+# Rust frontend experiment (the default fern compiler remains C)
+[private]
+_build-rust-backend:
+    {{cc}} {{base_cflags}} compiler-rs/backend/qbe_driver.c build/qbe_*.o -lm -o bin/fern-qbe
+
+# Build the independent Rust frontend and reusable QBE process adapter
+rust-build: debug
+    just _build-rust-backend
+    cargo build --locked --manifest-path compiler-rs/Cargo.toml
+    cp compiler-rs/target/debug/fern-rs bin/fern-rs
+
+# Rust safety/style/unit gates and native specification/differential checks
+rust-check: rust-build
+    cargo fmt --manifest-path compiler-rs/Cargo.toml -- --check
+    cargo clippy --locked --manifest-path compiler-rs/Cargo.toml --all-targets -- -D warnings
+    cargo test --locked --manifest-path compiler-rs/Cargo.toml
+    python3 scripts/test_evaluate_rust_frontend.py
+    python3 scripts/test_rust_frontend.py
+
+# Build both frontends with release settings for the opt-in evaluation.
+rust-release: release
+    just _build-rust-backend
+    cargo build --locked --release --manifest-path compiler-rs/Cargo.toml
+    cp compiler-rs/target/release/fern-rs bin/fern-rs
+
+# Record local measurements only after native output verification succeeds.
+rust-evaluate: rust-release
+    python3 scripts/evaluate_rust_frontend.py --output build/rust-frontend-evaluation.json
