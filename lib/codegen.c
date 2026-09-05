@@ -168,7 +168,8 @@ static const char* canonical_builtin_module_name(const char* name) {
         strcmp(name, "Tui.Table") == 0 || strcmp(name, "Tui.Style") == 0 ||
         strcmp(name, "Tui.Status") == 0 || strcmp(name, "Tui.Live") == 0 ||
         strcmp(name, "Tui.Progress") == 0 || strcmp(name, "Tui.Spinner") == 0 ||
-        strcmp(name, "Tui.Prompt") == 0) {
+        strcmp(name, "Tui.Prompt") == 0 || strcmp(name, "Tui.Tree") == 0 ||
+        strcmp(name, "Tui.Log") == 0) {
         return name;
     }
     if (strcmp(name, "File") == 0 || strcmp(name, "fs") == 0) return "File";
@@ -467,6 +468,10 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
                             return PRINT_STRING;
                         }
                     }
+                    if (strcmp(module, "Tui.Log") == 0 ||
+                        (strcmp(module, "Tui.Tree") == 0 && strcmp(func, "render") == 0)) {
+                        return PRINT_STRING;
+                    }
                     /* Tui.Style module functions all return String */
                     if (strcmp(module, "Tui.Style") == 0) {
                         return PRINT_STRING;
@@ -686,6 +691,9 @@ static char qbe_type_for_expr(Codegen* cg, Expr* expr) {
                             return 'l';
                         }
                     }
+                    if (strcmp(module, "Tui.Tree") == 0 || strcmp(module, "Tui.Log") == 0) {
+                        return 'l';
+                    }
                     /* Tui.Style module functions all return String (pointer) */
                     if (strcmp(module, "Tui.Style") == 0) {
                         return 'l';
@@ -754,6 +762,9 @@ static char qbe_type_for_expr(Codegen* cg, Expr* expr) {
                         String* module_path = try_build_module_path(cg->arena, dot->object);
                         if (module_path != NULL) {
                             const char* module = string_cstr(module_path);
+                            if (strcmp(module, "Tui.Tree") == 0 || strcmp(module, "Tui.Log") == 0) {
+                                return 'l';
+                            }
                             /* Tui.Panel functions return Panel (pointer) */
                             if (strcmp(module, "Tui.Panel") == 0) {
                                 return 'l';
@@ -2175,8 +2186,52 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         }
                     }
 
+                    /* Tree values and log records use pointer-sized runtime results. */
+                    if ((strcmp(module, "Tui.Tree") == 0 || strcmp(module, "Tui.Log") == 0) &&
+                        call->args->len >= 1 && call->args->len <= 2) {
+                        String* first = codegen_expr(cg, call->args->data[0].value);
+                        const char* prefix = strcmp(module, "Tui.Tree") == 0 ? "tree" : "log";
+                        if (call->args->len == 2) {
+                            String* second = codegen_expr(cg, call->args->data[1].value);
+                            emit(cg, "    %s =l call $fern_%s_%s(l %s, l %s)\n",
+                                string_cstr(result), prefix, func, string_cstr(first),
+                                string_cstr(second));
+                        } else {
+                            emit(cg, "    %s =l call $fern_%s_%s(l %s)\n",
+                                string_cstr(result), prefix, func, string_cstr(first));
+                        }
+                        return result;
+                    }
+
                     /* ===== Tui.Term module ===== */
                     if (strcmp(module, "Tui.Term") == 0) {
+                        if (strcmp(func, "move_to") == 0 || strcmp(func, "up") == 0 ||
+                            strcmp(func, "down") == 0 || strcmp(func, "left") == 0 ||
+                            strcmp(func, "right") == 0) {
+                            String* first_value = codegen_expr(cg, call->args->data[0].value);
+                            String* first = fresh_temp(cg);
+                            emit(cg, "    %s =l extsw %s\n", string_cstr(first),
+                                string_cstr(first_value));
+                            if (call->args->len == 2) {
+                                String* second_value = codegen_expr(cg, call->args->data[1].value);
+                                String* second = fresh_temp(cg);
+                                emit(cg, "    %s =l extsw %s\n", string_cstr(second),
+                                    string_cstr(second_value));
+                                emit(cg, "    call $fern_term_%s(l %s, l %s)\n", func,
+                                    string_cstr(first), string_cstr(second));
+                            } else {
+                                emit(cg, "    call $fern_term_%s(l %s)\n", func, string_cstr(first));
+                            }
+                            emit(cg, "    %s =w copy 0\n", string_cstr(result));
+                            return result;
+                        }
+                        if (strcmp(func, "clear") == 0 || strcmp(func, "hide_cursor") == 0 ||
+                            strcmp(func, "show_cursor") == 0 || strcmp(func, "save_cursor") == 0 ||
+                            strcmp(func, "restore_cursor") == 0) {
+                            emit(cg, "    call $fern_term_%s()\n", func);
+                            emit(cg, "    %s =w copy 0\n", string_cstr(result));
+                            return result;
+                        }
                         /* Tui.Term.size() -> (cols, rows) as struct pointer */
                         if (strcmp(func, "size") == 0 && call->args->len == 0) {
                             emit(cg, "    %s =l call $fern_term_size()\n", string_cstr(result));

@@ -12,6 +12,7 @@
 #include "fern_runtime.h"
 #include "fern_gc.h"
 #include "civetweb.h"
+#include "linenoise.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -5635,6 +5636,13 @@ void fern_spinner_FERN_FREE(FernSpinner* s) {
 /* ========== Prompt Module ========== */
 
 char* fern_prompt_input(const char* prompt) {
+    /* Transfer linenoise-owned input into runtime-managed memory. */
+    if (isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)) {
+        char *edited = linenoise(prompt ? prompt : "");
+        char *result = FERN_STRDUP(edited ? edited : "");
+        linenoiseFree(edited);
+        return result;
+    }
     if (prompt) {
         printf("%s", prompt);
         fflush(stdout);
@@ -5645,7 +5653,7 @@ char* fern_prompt_input(const char* prompt) {
     ssize_t read = getline(&line, &len, stdin);
     
     if (read <= 0) {
-        FERN_FREE(line);
+        linenoiseFree(line);
         return FERN_STRDUP("");
     }
     
@@ -5654,7 +5662,9 @@ char* fern_prompt_input(const char* prompt) {
         line[read - 1] = '\0';
     }
     
-    return line;
+    char *result = FERN_STRDUP(line);
+    linenoiseFree(line);
+    return result;
 }
 
 int fern_prompt_confirm(const char* prompt) {
@@ -5714,38 +5724,26 @@ int fern_prompt_select(const char* prompt, FernStringList* choices) {
     return (int)(selection - 1);
 }
 
+/**
+ * Read a password, masking interactive input and preserving pipe behavior.
+ * @param prompt Prompt text, or NULL for no prompt.
+ * @return Runtime-managed input; empty on EOF or cancellation.
+ */
 char* fern_prompt_password(const char* prompt) {
-    if (prompt) {
-        printf("%s", prompt);
-        fflush(stdout);
+    struct termios original;
+    int terminal = isatty(STDIN_FILENO);
+    if (terminal) {
+        /* Suppress echo even when linenoise falls back for TERM=dumb or pipes. */
+        if (tcgetattr(STDIN_FILENO, &original) != 0) return FERN_STRDUP("");
+        struct termios hidden = original;
+        hidden.c_lflag &= ~(ECHO | ECHONL);
+        if (tcsetattr(STDIN_FILENO, TCSANOW, &hidden) != 0) return FERN_STRDUP("");
     }
-    
-    /* Disable echo for password input */
-    struct termios old_term, new_term;
-    tcgetattr(STDIN_FILENO, &old_term);
-    new_term = old_term;
-    new_term.c_lflag &= ~ECHO;
-    tcsetattr(STDIN_FILENO, TCSANOW, &new_term);
-    
-    char* line = NULL;
-    size_t len = 0;
-    ssize_t read = getline(&line, &len, stdin);
-    
-    /* Restore echo */
-    tcsetattr(STDIN_FILENO, TCSANOW, &old_term);
-    printf("\n");  /* Print newline since user's enter was hidden */
-    
-    if (read <= 0) {
-        FERN_FREE(line);
-        return FERN_STRDUP("");
-    }
-    
-    /* Remove trailing newline */
-    if (read > 0 && line[read - 1] == '\n') {
-        line[read - 1] = '\0';
-    }
-    
-    return line;
+    linenoiseMaskModeEnable();
+    char *result = fern_prompt_input(prompt);
+    linenoiseMaskModeDisable();
+    if (terminal) tcsetattr(STDIN_FILENO, TCSANOW, &original);
+    return result;
 }
 
 int64_t fern_prompt_int(const char* prompt, int64_t min, int64_t max) {

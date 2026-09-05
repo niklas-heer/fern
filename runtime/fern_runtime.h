@@ -1632,6 +1632,45 @@ char* fern_spinner_render(FernSpinner* spinner);
  */
 void fern_spinner_free(FernSpinner* spinner);
 
+/* ========== Trees, Logs, and Cursor Controls ========== */
+
+/** Opaque immutable terminal tree. */
+typedef struct FernTree FernTree;
+/** Create a root. @param label Root text. @return New immutable tree. */
+FernTree *fern_tree_new(const char *label);
+/** Append a subtree. @param tree Parent. @param child Child. @return New immutable tree. */
+FernTree *fern_tree_add(FernTree *tree, FernTree *child);
+/** Render plain text. @param tree Tree to render. @return Text without trailing newline. */
+char *fern_tree_render(FernTree *tree);
+/** Format debug text. @param message Text. @return Escaped, single-line record. */
+char *fern_log_debug(const char *message);
+/** Format info text. @param message Text. @return Escaped, single-line record. */
+char *fern_log_info(const char *message);
+/** Format warning text. @param message Text. @return Escaped, single-line record. */
+char *fern_log_warn(const char *message);
+/** Format error text. @param message Text. @return Escaped, single-line record. */
+char *fern_log_error(const char *message);
+/** Position cursor in TTY. @param row One-based row. @param column One-based column. */
+void fern_term_move_to(int64_t row, int64_t column);
+/** Move up in TTY. @param count Positive cells, otherwise no-op. */
+void fern_term_up(int64_t count);
+/** Move down in TTY. @param count Positive cells, otherwise no-op. */
+void fern_term_down(int64_t count);
+/** Move left in TTY. @param count Positive cells, otherwise no-op. */
+void fern_term_left(int64_t count);
+/** Move right in TTY. @param count Positive cells, otherwise no-op. */
+void fern_term_right(int64_t count);
+/** Clear screen and home cursor; no-op in pipes. */
+void fern_term_clear(void);
+/** Hide cursor; no-op in pipes. */
+void fern_term_hide_cursor(void);
+/** Show cursor; no-op in pipes. */
+void fern_term_show_cursor(void);
+/** Save cursor position; no-op in pipes. */
+void fern_term_save_cursor(void);
+/** Restore cursor position; no-op in pipes. */
+void fern_term_restore_cursor(void);
+
 /* ========== Prompt Module ========== */
 
 /**

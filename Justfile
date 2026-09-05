@@ -108,6 +108,9 @@ _build-runtime mode:
     "$cc" "${civetweb[@]}" "${mode_flags[@]}" "${openssl_cflags[@]}" -c deps/civetweb/src/civetweb.c -o build/runtime_civetweb.o
     runtime_objs+=("build/runtime_civetweb.o")
 
+    "$cc" {{linenoise_cflags}} "${mode_flags[@]}" -c deps/linenoise/linenoise.c -o build/runtime_linenoise.o
+    runtime_objs+=("build/runtime_linenoise.o")
+
     ar rcs bin/libfern_runtime.a "${runtime_objs[@]}"
     echo "✓ Built runtime library: bin/libfern_runtime.a"
 

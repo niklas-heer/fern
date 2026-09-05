@@ -242,7 +242,8 @@ static const char* canonical_builtin_module_name(const char* name) {
         strcmp(name, "Tui.Table") == 0 || strcmp(name, "Tui.Style") == 0 ||
         strcmp(name, "Tui.Status") == 0 || strcmp(name, "Tui.Live") == 0 ||
         strcmp(name, "Tui.Progress") == 0 || strcmp(name, "Tui.Spinner") == 0 ||
-        strcmp(name, "Tui.Prompt") == 0) {
+        strcmp(name, "Tui.Prompt") == 0 || strcmp(name, "Tui.Tree") == 0 ||
+        strcmp(name, "Tui.Log") == 0) {
         return name;
     }
     if (strcmp(name, "File") == 0 || strcmp(name, "fs") == 0) return "File";
@@ -783,8 +784,43 @@ static Type* lookup_module_function(Checker* checker, const char* module, const 
         }
     }
 
+    /* Immutable tree construction and plain structured log records. */
+    if (strcmp(module, "Tui.Tree") == 0) {
+        Type* tree_type = type_con(arena, string_new(arena, "Tree"), NULL);
+        if (strcmp(func, "new") == 0 || strcmp(func, "render") == 0 ||
+            strcmp(func, "add") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, strcmp(func, "new") == 0 ?
+                type_string(arena) : tree_type);
+            if (strcmp(func, "add") == 0) TypeVec_push(arena, params, tree_type);
+            return type_fn(arena, params, strcmp(func, "render") == 0 ?
+                type_string(arena) : tree_type);
+        }
+    }
+    if (strcmp(module, "Tui.Log") == 0 &&
+        (strcmp(func, "debug") == 0 || strcmp(func, "info") == 0 ||
+         strcmp(func, "warn") == 0 || strcmp(func, "error") == 0)) {
+        params = TypeVec_new(arena);
+        TypeVec_push(arena, params, type_string(arena));
+        return type_fn(arena, params, type_string(arena));
+    }
+
     /* ===== Tui.Term module ===== */
     if (strcmp(module, "Tui.Term") == 0) {
+        if (strcmp(func, "move_to") == 0 || strcmp(func, "up") == 0 ||
+            strcmp(func, "down") == 0 || strcmp(func, "left") == 0 ||
+            strcmp(func, "right") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_int(arena));
+            if (strcmp(func, "move_to") == 0) TypeVec_push(arena, params, type_int(arena));
+            return type_fn(arena, params, type_unit(arena));
+        }
+        if (strcmp(func, "clear") == 0 || strcmp(func, "hide_cursor") == 0 ||
+            strcmp(func, "show_cursor") == 0 || strcmp(func, "save_cursor") == 0 ||
+            strcmp(func, "restore_cursor") == 0) {
+            params = TypeVec_new(arena);
+            return type_fn(arena, params, type_unit(arena));
+        }
         /* Tui.Term.size() -> (Int, Int) */
         if (strcmp(func, "size") == 0) {
             params = TypeVec_new(arena);

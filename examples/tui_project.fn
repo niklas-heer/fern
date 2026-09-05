@@ -1,0 +1,20 @@
+# A deterministic CLI report. Pipe it into a file without cursor escape codes.
+fn main() -> Int:
+    let root = Tui.Tree.new("fern-app")
+    let source = Tui.Tree.add(Tui.Tree.new("src"), Tui.Tree.new("main.fn"))
+    let project = Tui.Tree.add(Tui.Tree.add(root, source), Tui.Tree.new("README.md"))
+    println(Tui.Log.info("Project ready"))
+    println(Tui.Tree.render(project))
+    println(Tui.Log.debug("2 source entries"))
+    println(Tui.Log.warn("Remember to add tests"))
+    println(Tui.Log.error("Example error message"))
+    Tui.Term.save_cursor()
+    Tui.Term.move_to(1, 1)
+    Tui.Term.up(1)
+    Tui.Term.down(1)
+    Tui.Term.left(1)
+    Tui.Term.right(1)
+    Tui.Term.hide_cursor()
+    Tui.Term.show_cursor()
+    Tui.Term.restore_cursor()
+    0
