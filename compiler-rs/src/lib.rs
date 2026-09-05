@@ -68,3 +68,5 @@ pub enum Constructor {
     Ok,
     Err,
 }
+
+pub mod doctest;

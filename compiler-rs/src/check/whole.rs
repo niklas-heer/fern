@@ -171,12 +171,6 @@ fn signatures(
             },
         );
     }
-    if !signatures.contains_key("main") {
-        return Err(Diagnostic::new(
-            Span::default(),
-            "program requires a main function",
-        ));
-    }
     Ok(signatures)
 }
 

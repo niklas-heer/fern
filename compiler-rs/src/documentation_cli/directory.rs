@@ -60,7 +60,7 @@ pub(super) fn run(root: &Path, output: Option<&Path>, format: Output) -> Result<
 }
 
 /// Traverse without following child links; bound depth, entries, path bytes and source count.
-fn discover(root: &Path) -> Result<Vec<PathBuf>, String> {
+pub(super) fn discover(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut pending = vec![(root.to_path_buf(), 0)];
     let mut files = Vec::new();
     let mut count = 0;

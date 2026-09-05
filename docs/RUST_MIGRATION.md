@@ -643,3 +643,31 @@ actual exact16 MiB output and shared-DAG/depth rejection.
 Integrated JSON source gates pass: 768 Rust tests, 550 C tests, 194 core native
 programs, 184 invalid inputs and the full JSON sanitizer, fuzz and documentation
 suites on macOS arm64.
+
+
+## Executable documentation tests
+
+`fern-rs test --doc` now extracts closed Fern fences from parser-owned literal
+documentation and executes checked native examples. Trailing expectations are
+ordinary patterns, including Option/Result wildcards, with exactly-once subject
+evaluation. Source module imports/private helpers and original entry function IDs
+are preserved. Each example owns an independent local scope and native process.
+
+The checker now distinguishes fully validated library graphs from executable
+entry requirements. Libraries can have no main; missing names still fail, and
+existing main signatures retain their contract. Documentation tests select the
+checked Int harness only after module resolution and ordinary body validation.
+No source-visible placeholder can capture a local or selected imported main.
+
+Extraction bounds count/source bytes and remaps generated diagnostics to owning
+documentation. The CLI bounds runtime and captured streams, closes stdin and
+cleans up private Unix process groups, including descendants inheriting output.
+Nine native scenarios plus independent/imported examples cover exact patterns,
+once-only effects, failures, timeouts, output limits and original Int/Unit/Result
+entry behavior. Twenty Rust tests cover preparation, lexical markers, Unicode,
+source identity, library validation, offline CLI behavior and process capture.
+
+Documentation-test checkpoint gates pass: 788 Rust tests, 550 C tests, the
+complete native/JSON/fuzz suites and documentation checks on macOS arm64.
+Frontend-only Cargo tests require no C/QBE backend; native example execution
+is verified separately by the explicit rust-check gate.

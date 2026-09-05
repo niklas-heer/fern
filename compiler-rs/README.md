@@ -443,7 +443,7 @@ execution. It does not infer missing signatures. HTML displays documentation as
 escaped literal text; Markdown retains authored documentation markup.
 
 Single files are bounded to 1 MiB and 4,096 declarations; single-file output is
-limited to 8 MiB. Executable doc tests remain a separate tooling checkpoint.
+limited to 8 MiB. Use the separate test command below to execute examples.
 
 Directory documentation accepts `fern-rs doc src --html -o docs.html` and produces
 one standalone searchable page. Module paths stay distinct, even when files or
@@ -457,6 +457,31 @@ links are not followed. Limits are 256 files, 8,192 visited entries, directory
 depth 32, 8 MiB combined source, 4,096 declarations and 16 MiB project output;
 each source retains the parser's 1 MiB limit. Errors preserve the previous output,
 and output aliases of any discovered source are rejected.
+
+## Executable documentation examples
+
+`fern-rs test --doc library.fn` executes each fenced `fern` block in literal @doc
+metadata as a separate native test. A directory uses the same source discovery
+rules as documentation generation; omitting the path selects the current directory.
+The command executes user code and requires the native build dependencies.
+
+Examples share their owning module's imports and private helpers, with independent
+local bindings. A trailing `# =>` checks an ordinary Fern pattern against a complete
+expression statement, evaluated once. For example, `add(2, 3) # => 5` checks a value
+and `parse(text) # => Ok(_)` checks a successful Result. Multiline setup is allowed;
+markers inside strings or block comments are ordinary text. Malformed expectations,
+type errors, pattern mismatches and runtime failures produce a nonzero exit.
+
+Original `main` functions remain callable, but only the example runs as the test
+entry. Library checking validates all bodies without inventing an entry point.
+Executable `check`, `build` and `run` still require main. No source files are changed.
+
+Each example has a default 10-second runtime limit, configurable with
+`--timeout 1` through `--timeout 60`, and 256 KiB limits for stdout and stderr.
+Standard input is closed. On Unix, the test owns a private process group that is
+terminated on completion, failure or timeout so descendants cannot hold output open.
+There are at most 256 examples, 64 KiB per example and 1 MiB per source overlay.
+General unit-test syntax, coverage and watch mode remain subsequent CLI work.
 
 ## Architecture
 

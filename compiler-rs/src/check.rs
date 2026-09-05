@@ -78,6 +78,24 @@ struct Checker<'a> {
 /// Resolve `program` into fully concrete IR or its first source diagnostic.
 /// No preconditions: caller-created syntax and recursive types are validated too.
 pub fn check(program: &ast::Program) -> Checked<ir::Program> {
+    let checked = check_library(program)?;
+    if !checked
+        .functions
+        .iter()
+        .any(|function| function.name == "main")
+    {
+        return Err(Diagnostic::new(
+            Span::default(),
+            "program requires a main function",
+        ));
+    }
+    Ok(checked)
+}
+
+/// Validate a complete module-resolved library graph without requiring an executable entry.
+/// Existing main declarations retain ordinary entry signatures; no synthetic names are introduced.
+/// All bodies, generic schemes, resource limits and concrete IR checks remain mandatory.
+pub fn check_library(program: &ast::Program) -> Checked<ir::Program> {
     pipeline(program, |_, _, _| Ok(())).map(|(ir, _)| ir)
 }
 
@@ -162,12 +180,6 @@ fn signatures(
                 monotype: false,
             },
         );
-    }
-    if !signatures.contains_key("main") {
-        return Err(Diagnostic::new(
-            Span::default(),
-            "program requires a main function",
-        ));
     }
     Ok(signatures)
 }

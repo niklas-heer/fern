@@ -85,3 +85,12 @@ fn options(arguments: Vec<OsString>) -> Result<Options, String> {
         format: if html { Output::Html } else { Output::Markdown },
     })
 }
+
+/// Share bounded directory discovery with the explicit executable documentation-test command.
+pub(super) fn sources(path: &std::path::Path) -> Result<Vec<PathBuf>, String> {
+    if path.is_dir() {
+        directory::discover(path)
+    } else {
+        Ok(vec![path.to_path_buf()])
+    }
+}

@@ -970,6 +970,8 @@ pub struct IdentifierIndex {
     /// Numeric tokens permit precise tuple-slot and scalar hover without rescanning text.
     pub numbers: Vec<Span>,
     pub excluded: Vec<Span>,
+    /// Actual line comments, excluding marker-like text inside strings and block comments.
+    pub comments: Vec<Span>,
 }
 
 /// Index exact UTF-8 identifier boundaries without requiring complete delimiter layout.
@@ -990,8 +992,13 @@ pub fn identifier_index(source: &str) -> Result<IdentifierIndex, Diagnostic> {
         match token.kind {
             Kind::Name(_) => index.identifiers.push(token.span),
             Kind::Number(_) => index.numbers.push(token.span),
+            Kind::Comment => {
+                if source[token.span.start..token.span.end].starts_with('#') {
+                    index.comments.push(token.span);
+                }
+                index.excluded.push(token.span);
+            }
             Kind::Text(_)
-            | Kind::Comment
             | Kind::Doc(_)
             | Kind::StringOpen
             | Kind::StringClose
