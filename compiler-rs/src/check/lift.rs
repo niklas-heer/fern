@@ -139,6 +139,18 @@ impl Lifter {
 pub(super) fn children_mut(expr: &mut ir::Expr) -> Vec<&mut ir::Expr> {
     use ir::ExprKind::*;
     match &mut expr.kind {
+        Range { start, end, .. } => vec![start, end],
+        For { iterable, body, .. } => vec![iterable, body],
+        With {
+            steps,
+            body,
+            handlers,
+        } => steps
+            .iter_mut()
+            .map(|s| &mut s.value)
+            .chain(std::iter::once(body.as_mut()))
+            .chain(handlers.iter_mut().map(|h| &mut h.body))
+            .collect(),
         Lambda { captures, body, .. } => captures
             .iter_mut()
             .map(|c| &mut c.value)

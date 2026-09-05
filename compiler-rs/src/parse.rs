@@ -29,6 +29,9 @@ enum Kind {
     Comma,
     Dot,
     Arrow,
+    Bind,
+    Range,
+    RangeInclusive,
     Pipe,
     Bar,
     Assign,
@@ -597,15 +600,18 @@ pub(crate) fn line_continues(source: &str) -> bool {
         }
         offset += line.len();
     }
-    !delimiters.is_empty()
-        || tokens
-            .last()
-            .is_some_and(|token| matches!(token.kind, Kind::Colon | Kind::Arrow))
+    !delimiters.is_empty() || tokens.last().is_some_and(|token| {
+        matches!(token.kind, Kind::Colon | Kind::Arrow)
+            || matches!(&token.kind,Kind::Name(name) if matches!(name.as_str(),"with"|"do"|"else"))
+    })
 }
 
 /// Recognize punctuation or report unsupported characters at a UTF-8 boundary.
 fn punctuation(rest: &str, start: usize) -> ParseResult<(Kind, usize)> {
     let pairs = [
+        ("..=", Kind::RangeInclusive),
+        ("..", Kind::Range),
+        ("<-", Kind::Bind),
         ("->", Kind::Arrow),
         ("|>", Kind::Pipe),
         ("==", Kind::Eq),
@@ -615,7 +621,7 @@ fn punctuation(rest: &str, start: usize) -> ParseResult<(Kind, usize)> {
     ];
     for (text, kind) in pairs {
         if rest.starts_with(text) {
-            return Ok((kind, 2));
+            return Ok((kind, text.len()));
         }
     }
     let c = rest.chars().next().unwrap_or('\0');
@@ -1046,7 +1052,7 @@ impl Parser {
         let arity = match name.as_str() {
             "List" | "Option" => Some(1),
             "Result" | "Map" => Some(2),
-            "Int" | "Float" | "Bool" | "String" | "Unit" => Some(0),
+            "Int" | "Float" | "Bool" | "String" | "Unit" | "Range" => Some(0),
             _ => None,
         };
         if arity.is_some_and(|arity| arguments.len() != arity) {
@@ -1057,6 +1063,7 @@ impl Parser {
         }
         Ok(match name.as_str() {
             "Int" => Type::Int,
+            "Range" => Type::Range,
             "Float" => Type::Float,
             "Unit" => Type::Unit,
             "Bool" => Type::Bool,
@@ -1309,9 +1316,16 @@ impl Parser {
     fn binary(&mut self, minimum: u8) -> ParseResult<Parsed> {
         let mut left = self.postfix()?;
         for _ in 0..self.tokens.len() {
+            if self.current().kind == Kind::Bind {
+                return Err(self.error("'<-' bindings are only allowed inside with"));
+            }
             if minimum == 0 && self.eat(&Kind::Pipe) {
                 let right = self.expr(1)?;
                 left = pipe(left, right)?;
+                continue;
+            }
+            if minimum <= 2 && matches!(self.current().kind, Kind::Range | Kind::RangeInclusive) {
+                left = self.range(left)?;
                 continue;
             }
             let Some((op, precedence)) = operator(&self.current().kind) else {
@@ -1344,6 +1358,9 @@ impl Parser {
     fn postfix(&mut self) -> ParseResult<Parsed> {
         let mut value = self.prefix()?;
         for _ in 0..self.tokens.len() {
+            if self.previous_dedent() && self.current().kind == Kind::Left {
+                break;
+            }
             if self.current().kind == Kind::Question {
                 let span = Span {
                     start: value.node.span.start,
@@ -1398,6 +1415,12 @@ impl Parser {
 
     /// Parse unary operators, literals, calls, grouping, and conditionals.
     fn prefix(&mut self) -> ParseResult<Parsed> {
+        if self.word("with") {
+            return self.with_expression();
+        }
+        if self.word("for") {
+            return self.for_expression();
+        }
         if self.word("return") {
             let start = self.take().span.start;
             let value = self.expr(0)?;
@@ -1425,6 +1448,8 @@ impl Parser {
         }
         let token = self.take();
         match token.kind {
+            Kind::Name(name) if name == "break" => expression(ExprKind::Break, token.span, 1),
+            Kind::Name(name) if name == "continue" => expression(ExprKind::Continue, token.span, 1),
             Kind::Number(text) => number(&text, token.span),
             Kind::Text(text) => expression(ExprKind::String(text), token.span, 1),
             Kind::StringOpen => self.interpolation(token.span),
@@ -1440,6 +1465,144 @@ impl Parser {
                 "expected expression; this syntax is unsupported in the Rust prototype",
             )),
         }
+    }
+
+    /// Ranges bind below arithmetic and reject chained endpoints without materializing values.
+    fn range(&mut self, left: Parsed) -> ParseResult<Parsed> {
+        if matches!(left.node.kind, ExprKind::Range { .. }) {
+            return Err(self.error("range operators cannot be chained"));
+        }
+        let inclusive = self.take().kind == Kind::RangeInclusive;
+        let right = self.expr(3)?;
+        let span = Span {
+            start: left.node.span.start,
+            end: right.node.span.end,
+        };
+        let depth = left.depth.max(right.depth) + 1;
+        expression(
+            ExprKind::Range {
+                start: Box::new(left.node),
+                end: Box::new(right.node),
+                inclusive,
+            },
+            span,
+            depth,
+        )
+    }
+
+    /// Parse an immutable collection loop with one pattern and a scoped suite.
+    fn for_expression(&mut self) -> ParseResult<Parsed> {
+        let start = self.take().span.start;
+        let pattern = self.pattern()?;
+        if !self.word("in") {
+            return Err(self.error("expected 'in' after for pattern"));
+        }
+        self.take();
+        let iterable = self.expr(0)?;
+        self.expect(Kind::Colon, "expected ':' after for iterable")?;
+        let body = self.suite()?;
+        let span = Span {
+            start,
+            end: body.node.span.end,
+        };
+        let depth = iterable.depth.max(body.depth) + 1;
+        expression(
+            ExprKind::For {
+                pattern,
+                iterable: Box::new(iterable.node),
+                body: Box::new(body.node),
+            },
+            span,
+            depth,
+        )
+    }
+
+    /// Parse sequential Result bindings before success and optional error suites.
+    fn with_expression(&mut self) -> ParseResult<Parsed> {
+        let start = self.take().span.start;
+        let (bindings, mut depth) = self.with_bindings()?;
+        if !self.word("do") {
+            return Err(self.error("expected 'do' after with bindings"));
+        }
+        self.take();
+        let body = self.suite()?;
+        depth = depth.max(body.depth + 1);
+        let mut end = body.node.span.end;
+        if self.current().kind == Kind::Newline
+            && self
+                .tokens
+                .get(self.position + 1)
+                .is_some_and(|token| matches!(&token.kind,Kind::Name(name) if name=="else"))
+        {
+            self.take();
+        }
+        let arms = if self.word("else") {
+            self.take();
+            let (arms, arm_depth, arm_end) = self.match_arms(false)?;
+            depth = depth.max(arm_depth);
+            end = arm_end;
+            Some(arms)
+        } else {
+            None
+        };
+        expression(
+            ExprKind::With {
+                bindings,
+                body: Box::new(body.node),
+                arms,
+            },
+            Span { start, end },
+            depth,
+        )
+    }
+
+    /// Bind lists own one indentation level; nested initializer suites consume only theirs.
+    fn with_bindings(&mut self) -> ParseResult<(Vec<crate::ast::WithBinding>, usize)> {
+        let block = self.eat(&Kind::Newline);
+        if block {
+            self.expect(Kind::Indent, "expected indented with bindings")?;
+        }
+        let mut bindings = Vec::new();
+        let mut depth = 1;
+        for _ in 0..self.tokens.len() {
+            let pattern = self.pattern()?;
+            self.expect(Kind::Bind, "expected '<-' in with binding")?;
+            let value = self.expr(0)?;
+            depth = depth.max(value.depth + 1);
+            let span = Span {
+                start: pattern.span.start,
+                end: value.node.span.end,
+            };
+            bindings.push(crate::ast::WithBinding {
+                pattern,
+                value: value.node,
+                span,
+            });
+            if block
+                && self.current().kind == Kind::Newline
+                && self
+                    .tokens
+                    .get(self.position + 1)
+                    .is_some_and(|token| token.kind == Kind::Comma)
+            {
+                self.take();
+            }
+            let comma = self.eat(&Kind::Comma);
+            if block {
+                if !self.eat(&Kind::Newline) && !self.previous_dedent() {
+                    return Err(self.error("expected newline after with binding"));
+                }
+                if self.eat(&Kind::Dedent) {
+                    break;
+                }
+                if !comma {
+                    return Err(self.error("expected ',' between with bindings"));
+                }
+            } else if !comma {
+                break;
+            }
+        }
+        Ok((bindings, depth))
     }
 
     /// Recognize a lambda only when the matching parameter delimiter is followed by an arrow.
@@ -1711,13 +1874,31 @@ impl Parser {
         }
         let value = self.expr(0)?;
         self.expect(Kind::Colon, "expected ':' after match value")?;
-        self.expect(Kind::Newline, "match requires an indented arm block")?;
-        self.expect(Kind::Indent, "match requires an indented arm block")?;
+        let (arms, depth, end) = self.match_arms(true)?;
+        expression(
+            ExprKind::Match {
+                value: Box::new(value.node),
+                arms,
+            },
+            Span { start, end },
+            depth.max(value.depth + 1),
+        )
+    }
+
+    /// Share pattern arms between value matches and explicit with error handlers.
+    fn match_arms(&mut self, require_block: bool) -> ParseResult<(Vec<MatchArm>, usize, usize)> {
+        let block = self.eat(&Kind::Newline);
+        if require_block && !block {
+            return Err(self.error("match requires an indented arm block"));
+        }
+        if block {
+            self.expect(Kind::Indent, "match requires an indented arm block")?;
+        }
         let mut arms = Vec::new();
-        let mut depth = value.depth + 1;
-        let mut end = value.node.span.end;
+        let mut depth = 1;
+        let mut end = self.current().span.start;
         for _ in 0..self.tokens.len() {
-            if self.eat(&Kind::Dedent) {
+            if block && self.eat(&Kind::Dedent) {
                 break;
             }
             let pattern = self.pattern()?;
@@ -1744,6 +1925,9 @@ impl Parser {
                 body: body.node,
                 span,
             });
+            if !block {
+                break;
+            }
             if !self.eat(&Kind::Newline)
                 && self.current().kind != Kind::Dedent
                 && !self.previous_dedent()
@@ -1754,14 +1938,7 @@ impl Parser {
         if arms.is_empty() {
             return Err(self.error("match requires at least one arm"));
         }
-        expression(
-            ExprKind::Match {
-                value: Box::new(value.node),
-                arms,
-            },
-            Span { start, end },
-            depth,
-        )
+        Ok((arms, depth, end))
     }
 
     /// Parse condition branches separately from pattern matches, retaining wildcard syntax.
@@ -2184,7 +2361,7 @@ fn number_end(line: &str, start: usize, offset: usize) -> ParseResult<usize> {
     while at < bytes.len() && bytes[at].is_ascii_digit() {
         at += 1;
     }
-    if bytes.get(at) == Some(&b'.') {
+    if bytes.get(at) == Some(&b'.') && bytes.get(at + 1) != Some(&b'.') {
         at += 1;
         let fraction = at;
         while at < bytes.len() && bytes[at].is_ascii_digit() {
@@ -2219,10 +2396,9 @@ fn number_end(line: &str, start: usize, offset: usize) -> ParseResult<usize> {
             ));
         }
     }
-    if bytes
-        .get(at)
-        .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'_' | b'.'))
-    {
+    if bytes.get(at).is_some_and(|b| {
+        b.is_ascii_alphabetic() || *b == b'_' || (*b == b'.' && bytes.get(at + 1) != Some(&b'.'))
+    }) {
         return Err(Diagnostic::new(
             Span {
                 start: offset + start,
@@ -2297,6 +2473,10 @@ mod continuation_tests {
     #[test]
     fn continuation_uses_tokens_and_rejects_mismatched_delimiters() {
         for source in [
+            "with # sequence",
+            "let result = with",
+            "with value <- load() do",
+            "else # with handler",
             "fn main(): # block",
             "(x) -> # callback",
             "println(",

@@ -47,6 +47,23 @@ pub struct Expr {
 }
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    Break,
+    Continue,
+    Range {
+        start: Box<Expr>,
+        end: Box<Expr>,
+        inclusive: bool,
+    },
+    For {
+        pattern: Pattern,
+        iterable: Box<Expr>,
+        body: Box<Expr>,
+    },
+    With {
+        steps: Vec<WithStep>,
+        body: Box<Expr>,
+        handlers: Vec<WithHandler>,
+    },
     Return(Box<Expr>),
     Defer(Box<Expr>),
     /// Temporary checked lambda; eliminated by specialization/lifting before lowering.
@@ -117,6 +134,18 @@ pub enum ExprKind {
 }
 
 #[derive(Clone, Debug)]
+pub struct WithStep {
+    pub pattern: Pattern,
+    pub value: Expr,
+    pub error_handler: Option<usize>,
+}
+#[derive(Clone, Debug)]
+pub struct WithHandler {
+    pub error: Param,
+    pub body: Expr,
+}
+
+#[derive(Clone, Debug)]
 pub struct MatchArm {
     pub pattern: Pattern,
     pub guard: Option<Expr>,
@@ -162,6 +191,7 @@ pub enum CallTarget {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Builtin {
+    ListEnumerate,
     MapNew,
     MapGet,
     MapPut,

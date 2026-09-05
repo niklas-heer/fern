@@ -4,12 +4,14 @@ use std::collections::{HashMap, HashSet};
 mod closures;
 mod control;
 mod coverage;
+mod iteration;
 mod lift;
 mod maps;
 mod nominal;
 mod pipes;
 mod preflight;
 mod specialize;
+mod with_flow;
 
 const MAX_EXPR_DEPTH: usize = 128;
 const MAX_EXPR_COUNT: usize = 100_000;
@@ -40,6 +42,7 @@ struct Checker<'a> {
     inference: Inference,
     function_return: Type,
     deferred: bool,
+    loop_depth: usize,
 }
 
 /// Resolve `program` into fully concrete IR or its first source diagnostic.
@@ -133,7 +136,16 @@ fn reserved(name: &str) -> bool {
         })
         || matches!(
             name,
-            "String" | "List" | "Map" | "Option" | "Result" | "Some" | "None" | "Ok" | "Err"
+            "Range"
+                | "String"
+                | "List"
+                | "Map"
+                | "Option"
+                | "Result"
+                | "Some"
+                | "None"
+                | "Ok"
+                | "Err"
         )
 }
 
@@ -208,7 +220,7 @@ fn validate_type(ty: &Type, span: Span) -> Checked<()> {
             Type::Map(key, value) => { maps::validate_key(key, span, true)?; pending.push((key, depth + 1)); pending.push((value, depth + 1)); }
             Type::Result(ok, err) => { pending.push((ok, depth + 1)); pending.push((err, depth + 1)); }
             Type::Tuple(args) | Type::Named(_, args) => pending.extend(args.iter().map(|a|(a, depth + 1))),
-            Type::Native(_) | Type::Generic(_) | Type::Float | Type::Int | Type::Bool | Type::String | Type::Unit => {}
+            Type::Range | Type::Native(_) | Type::Generic(_) | Type::Float | Type::Int | Type::Bool | Type::String | Type::Unit => {}
         }
     }
     Ok(())
@@ -533,14 +545,15 @@ impl Checker<'_> {
         depth: usize,
     ) -> Checked<TypedKind> {
         Ok(match &expr.kind {
-            ast::ExprKind::Return(value) => self.returning(value, expr.span, depth + 1)?,
-            ast::ExprKind::Defer(value) => self.defer(value, expr.span, depth + 1)?,
-            ast::ExprKind::PostfixIf { value, condition } => {
-                self.conditional(condition, value, None, expected, depth + 1)?
-            }
-            ast::ExprKind::ConditionMatch(arms) => {
-                self.condition_match(arms, expected, expr.span, depth + 1)?
-            }
+            ast::ExprKind::Break
+            | ast::ExprKind::Continue
+            | ast::ExprKind::Range { .. }
+            | ast::ExprKind::For { .. }
+            | ast::ExprKind::With { .. }
+            | ast::ExprKind::Return(_)
+            | ast::ExprKind::Defer(_)
+            | ast::ExprKind::PostfixIf { .. }
+            | ast::ExprKind::ConditionMatch(_) => self.iteration_kind(expr, expected, depth + 1)?,
             ast::ExprKind::Lambda { params, body } => {
                 self.lambda(params, body, expected, expr.span, depth + 1)?
             }
@@ -1120,6 +1133,10 @@ impl Checker<'_> {
             StringConcat => (vec![Type::String, Type::String], Type::String),
             StringEq => (vec![Type::String, Type::String], Type::Bool),
             StringLen => (vec![Type::String], Type::Int),
+            ListEnumerate => (
+                vec![list],
+                Type::List(Box::new(Type::Tuple(vec![Type::Int, item]))),
+            ),
             ListLen => (vec![list], Type::Int),
             ListGet => (vec![list, Type::Int], item),
             ListHead => (vec![list], item),
@@ -1423,6 +1440,20 @@ impl Checker<'_> {
     fn finalize(&self, expr: &mut ir::Expr) -> Checked<()> {
         expr.ty = self.inference.concrete(&expr.ty, expr.span)?;
         match &mut expr.kind {
+            ir::ExprKind::Range { start, end, .. } => {
+                self.finalize(start)?;
+                self.finalize(end)?;
+            }
+            ir::ExprKind::For {
+                pattern,
+                iterable,
+                body,
+            } => self.finalize_for(pattern, iterable, body)?,
+            ir::ExprKind::With {
+                steps,
+                body,
+                handlers,
+            } => self.finalize_with(steps, body, handlers)?,
             ir::ExprKind::Return(value) => self.finalize(value)?,
             ir::ExprKind::Defer(value) => self.finalize_defer(value)?,
             ir::ExprKind::Lambda {
@@ -1469,20 +1500,28 @@ impl Checker<'_> {
                 then_branch,
                 else_branch,
             } => self.finalize_if(condition, then_branch, else_branch)?,
-            ir::ExprKind::Match { value, arms } => {
-                self.finalize(value)?;
-                for arm in arms.iter_mut() {
-                    if let Some(guard) = &mut arm.guard {
-                        self.finalize(guard)?;
-                    }
-                    self.finalize(&mut arm.body)?;
-                }
-                coverage::validate(&value.ty, arms, self.registry, expr.span)?;
-            }
+            ir::ExprKind::Match { value, arms } => self.finalize_match(value, arms, expr.span)?,
             ir::ExprKind::Block(stmts) => self.finalize_block(stmts)?,
             _ => {}
         }
         Ok(())
+    }
+
+    /// Normalize match operands before bounded usefulness and exhaustiveness validation.
+    fn finalize_match(
+        &self,
+        value: &mut ir::Expr,
+        arms: &mut [ir::MatchArm],
+        span: Span,
+    ) -> Checked<()> {
+        self.finalize(value)?;
+        for arm in arms.iter_mut() {
+            if let Some(guard) = &mut arm.guard {
+                self.finalize(guard)?;
+            }
+            self.finalize(&mut arm.body)?;
+        }
+        coverage::validate(&value.ty, arms, self.registry, span)
     }
 
     /// Finalize lazy branches and enforce discarded Result obligations on no-else paths.
@@ -1647,6 +1686,7 @@ pub(crate) fn builtin(name: &str) -> Option<ir::Builtin> {
         "String.concat" => StringConcat,
         "String.eq" => StringEq,
         "String.len" => StringLen,
+        "List.enumerate" => ListEnumerate,
         "List.map" => ListMap,
         "List.fold" => ListFold,
         "List.filter" => ListFilter,
@@ -1723,6 +1763,7 @@ fn reject_unused_results(
                 }
             }
         }
+        iteration::collect_bindings(expr, registry, &mut fallible)?;
         if let ir::ExprKind::Match { value, arms } = &expr.kind {
             for arm in arms {
                 fallible_bindings(&arm.pattern, &value.ty, arm.span, registry, &mut fallible)?;

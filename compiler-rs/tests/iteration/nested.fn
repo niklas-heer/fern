@@ -1,0 +1,9 @@
+fn main():
+    for i in 0..2:
+        for j in 0..3:
+            break if j == 1
+            println(i * 10 + j)
+        println("outer")
+    for i in 0..3:
+        continue if i == 1
+        println(i)

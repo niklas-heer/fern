@@ -52,6 +52,7 @@ pub(super) fn run(
             inference: Inference::default(),
             function_return: Type::Unit,
             deferred: false,
+            loop_depth: 0,
         }
         .function(&function)?;
         checked.id = ir::FunctionId(index);
@@ -170,6 +171,9 @@ fn source_instance(
 /// Substitute the bounded expression tree's explicit local annotations and guards.
 fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Type>) -> Checked<()> {
     match &mut expr.kind {
+        ast::ExprKind::Range { .. } | ast::ExprKind::For { .. } | ast::ExprKind::With { .. } => {
+            substitute_iteration(expr, values)?
+        }
         ast::ExprKind::Map(entries) => {
             for (key, value) in entries {
                 substitute_expr(key, values)?;
@@ -318,6 +322,38 @@ fn substitute_conditions(
             substitute_expr(condition, values)?;
         }
         substitute_expr(&mut arm.body, values)?;
+    }
+    Ok(())
+}
+
+/// Substitute annotations nested inside flat loop and with control flow.
+fn substitute_iteration(expr: &mut ast::Expr, values: &HashMap<String, Type>) -> Checked<()> {
+    match &mut expr.kind {
+        ast::ExprKind::Range { start, end, .. } => {
+            substitute_expr(start, values)?;
+            substitute_expr(end, values)?;
+        }
+        ast::ExprKind::For { iterable, body, .. } => {
+            substitute_expr(iterable, values)?;
+            substitute_expr(body, values)?;
+        }
+        ast::ExprKind::With {
+            bindings,
+            body,
+            arms,
+        } => {
+            for binding in bindings {
+                substitute_expr(&mut binding.value, values)?;
+            }
+            substitute_expr(body, values)?;
+            for arm in arms.iter_mut().flatten() {
+                if let Some(guard) = &mut arm.guard {
+                    substitute_expr(guard, values)?;
+                }
+                substitute_expr(&mut arm.body, values)?;
+            }
+        }
+        _ => {}
     }
     Ok(())
 }

@@ -1,0 +1,18 @@
+fn values() -> List(Float):
+    println("values")
+    [1.25, 2.5]
+fn main():
+    for (index, value) in values().enumerate():
+        println(value)
+    let names = ["x", "y"]
+    for (index, name) in names.enumerate():
+        println("{index}={name}")
+    for (index, value) in List.enumerate([1.25, 2.5]):
+        println(index)
+        println(value)
+    for (key, value) in %{ "first": 4294967296, "second": -4294967296 }:
+        println(key)
+        println(value)
+    for (key, value) in %{true: 1.25, false: 2.5}:
+        println(key)
+        println(value)

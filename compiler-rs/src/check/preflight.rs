@@ -202,11 +202,54 @@ impl Budget {
         Ok(())
     }
 
+    /// Queue flat control flow and charge each newly introduced binding pattern.
+    fn iteration<'a>(
+        &mut self,
+        expr: &'a ast::Expr,
+        pending: &mut Vec<(&'a ast::Expr, usize)>,
+        depth: usize,
+    ) -> Checked<bool> {
+        match &expr.kind {
+            ast::ExprKind::Range { start, end, .. } => {
+                pending.push((start, depth + 1));
+                pending.push((end, depth + 1));
+            }
+            ast::ExprKind::For {
+                pattern,
+                iterable,
+                body,
+            } => {
+                self.pattern(pattern)?;
+                pending.push((iterable, depth + 1));
+                pending.push((body, depth + 1));
+            }
+            ast::ExprKind::With {
+                bindings,
+                body,
+                arms,
+            } => {
+                for binding in bindings {
+                    self.pattern(&binding.pattern)?;
+                    pending.push((&binding.value, depth + 1));
+                }
+                pending.push((body, depth + 1));
+                if let Some(arms) = arms {
+                    self.match_arms(arms, pending, depth)?;
+                }
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
     /// Validate expression depth and annotations before source-instance cloning.
     fn expression(&mut self, expr: &ast::Expr) -> Checked<()> {
         let mut pending = vec![(expr, 0)];
         while let Some((expr, depth)) = pending.pop() {
             self.expression_node(expr.span, depth)?;
+            if self.iteration(expr, &mut pending, depth)? {
+                continue;
+            }
             match &expr.kind {
                 ast::ExprKind::ConditionMatch(arms) => queue_conditions(arms, &mut pending, depth),
                 ast::ExprKind::Interpolate(parts) => {

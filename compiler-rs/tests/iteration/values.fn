@@ -1,0 +1,13 @@
+type Interval:
+    bounds: Range
+fn bounds() -> Range: 2..=3
+fn main():
+    let intervals = [Interval(0..2), Interval(bounds())]
+    for interval in intervals:
+        for value in interval.bounds:
+            println(value)
+    let captured = bounds()
+    let show = () ->
+        for value in captured:
+            println(value)
+    show()

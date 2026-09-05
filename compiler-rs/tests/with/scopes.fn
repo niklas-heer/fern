@@ -1,0 +1,11 @@
+fn execute() -> Int:
+    let code = 99
+    with
+        code <- Ok(7),
+        value <- fail()
+    do
+        code + value
+    else
+        Err(error) -> code + error
+fn fail() -> Result(Int, Int): Err(5)
+fn main(): println(execute())

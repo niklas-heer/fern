@@ -268,18 +268,25 @@ impl Renderer<'_> {
     /// Render expressions with explicit grouping where it does not interfere with layout.
     fn expression(&self, expression: &Expr, indent: usize) -> Result<Vec<Line>> {
         let text = match &expression.kind {
-            ExprKind::Return(value) => {
-                return self.control_prefix("return", value, indent, expression.span)
-            }
-            ExprKind::Defer(value) => {
-                return self.control_prefix("defer", value, indent, expression.span)
-            }
-            ExprKind::PostfixIf { value, condition } => {
-                return self.postfix_if(value, condition, indent, expression.span)
-            }
-            ExprKind::ConditionMatch(arms) => {
-                return self.condition_match(arms, indent, expression.span)
-            }
+            ExprKind::Break => "break".into(),
+            ExprKind::Continue => "continue".into(),
+            ExprKind::Range {
+                start,
+                end,
+                inclusive,
+            } => format!(
+                "({}..{}{})",
+                self.inline(start, indent)?,
+                if *inclusive { "=" } else { "" },
+                self.inline(end, indent)?
+            ),
+            ExprKind::For { .. }
+            | ExprKind::With { .. }
+            | ExprKind::Return(_)
+            | ExprKind::Defer(_)
+            | ExprKind::PostfixIf { .. }
+            | ExprKind::ConditionMatch(_)
+            | ExprKind::If { .. } => return self.control_expression(expression, indent),
             ExprKind::Int(value) => value.to_string(),
             ExprKind::Float(value) => format!("{value:?}"),
             ExprKind::Bool(value) => value.to_string(),
@@ -316,25 +323,51 @@ impl Renderer<'_> {
             ExprKind::Field { value, name } => {
                 return self.postfix(value, &format!(".{name}"), indent, expression.span)
             }
-            ExprKind::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
-                return self.conditional(
-                    condition,
-                    then_branch,
-                    else_branch.as_deref(),
-                    indent,
-                    expression.span,
-                )
-            }
             ExprKind::Match { value, arms } => {
                 return self.matching(value, arms, indent, expression.span)
             }
             ExprKind::Block(statements) => return self.statements(statements, indent),
         };
         Ok(vec![line(indent, text, expression.span.start)])
+    }
+
+    /// Dispatch scoped and terminating expressions separately from ordinary values.
+    fn control_expression(&self, expression: &Expr, indent: usize) -> Result<Vec<Line>> {
+        match &expression.kind {
+            ExprKind::For {
+                pattern,
+                iterable,
+                body,
+            } => self.for_loop(pattern, iterable, body, indent, expression.span),
+            ExprKind::With {
+                bindings,
+                body,
+                arms,
+            } => self.with_expression(bindings, body, arms.as_deref(), indent, expression.span),
+            ExprKind::Return(value) => {
+                self.control_prefix("return", value, indent, expression.span)
+            }
+            ExprKind::Defer(value) => self.control_prefix("defer", value, indent, expression.span),
+            ExprKind::PostfixIf { value, condition } => {
+                self.postfix_if(value, condition, indent, expression.span)
+            }
+            ExprKind::ConditionMatch(arms) => self.condition_match(arms, indent, expression.span),
+            ExprKind::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => self.conditional(
+                condition,
+                then_branch,
+                else_branch.as_deref(),
+                indent,
+                expression.span,
+            ),
+            _ => Err(Diagnostic::new(
+                expression.span,
+                "expected control expression",
+            )),
+        }
     }
 
     /// Require a delimiter-safe inline expression for arguments and guards.
@@ -351,6 +384,66 @@ impl Renderer<'_> {
             .next()
             .map(|line| line.text)
             .unwrap_or_default())
+    }
+
+    /// Render loop suites without changing collection evaluation or pattern scope.
+    fn for_loop(
+        &self,
+        pattern: &Pattern,
+        iterable: &Expr,
+        body: &Expr,
+        indent: usize,
+        span: Span,
+    ) -> Result<Vec<Line>> {
+        let mut header = self.grouped(iterable, indent)?;
+        if let Some(first) = header.first_mut() {
+            first.text = format!("for {} in {}", pattern_text(pattern), first.text);
+            first.anchor = span.start;
+        }
+        let mut last = header
+            .pop()
+            .ok_or_else(|| Diagnostic::new(span, "missing loop iterable"))?;
+        last.text.push(':');
+        header.extend(self.suite(last.text, last.anchor, body, indent)?);
+        Ok(header)
+    }
+
+    /// Canonicalize Result binding layout while retaining inline versus block success bodies.
+    fn with_expression(
+        &self,
+        bindings: &[ast::WithBinding],
+        body: &Expr,
+        arms: Option<&[ast::MatchArm]>,
+        indent: usize,
+        span: Span,
+    ) -> Result<Vec<Line>> {
+        let mut lines = vec![line(indent, "with", span.start)];
+        for (index, binding) in bindings.iter().enumerate() {
+            let mut value = self.expression(&binding.value, indent + 1)?;
+            if let Some(first) = value.first_mut() {
+                first.text = format!("{} <- {}", pattern_text(&binding.pattern), first.text);
+                first.anchor = binding.span.start;
+            }
+            if index + 1 < bindings.len() {
+                if value.len() == 1 {
+                    value[0].text.push(',');
+                } else {
+                    value.push(line(indent + 1, ",", binding.span.end));
+                }
+            }
+            lines.extend(value);
+        }
+        lines.extend(self.suite("do".into(), body.span.start, body, indent)?);
+        if let Some(arms) = arms {
+            let anchor = arms.first().map_or(span.end, |arm| arm.span.start);
+            lines.push(line(
+                indent,
+                "else",
+                self.else_anchor(body.span.end, anchor),
+            ));
+            lines.extend(self.match_arms(arms, indent + 1)?);
+        }
+        Ok(lines)
     }
 
     /// Keep return and defer spelling separate from their complete operand expressions.
@@ -757,13 +850,20 @@ impl Renderer<'_> {
             format!("match {}:", self.inline(value, indent)?),
             span.start,
         )];
+        lines.extend(self.match_arms(arms, indent + 1)?);
+        Ok(lines)
+    }
+
+    /// Share pattern/guard spelling for ordinary matches and with error handlers.
+    fn match_arms(&self, arms: &[ast::MatchArm], indent: usize) -> Result<Vec<Line>> {
+        let mut lines = Vec::new();
         for arm in arms {
             let mut header = pattern_text(&arm.pattern);
             if let Some(guard) = &arm.guard {
-                header.push_str(&format!(" if {}", self.inline(guard, indent + 1)?));
+                header.push_str(&format!(" if {}", self.inline(guard, indent)?));
             }
             header.push_str(" ->");
-            lines.extend(self.suite(header, arm.pattern.span.start, &arm.body, indent + 1)?);
+            lines.extend(self.suite(header, arm.pattern.span.start, &arm.body, indent)?);
         }
         Ok(lines)
     }
@@ -789,6 +889,7 @@ fn module_anchor(source: &str) -> usize {
 fn type_text(ty: &Type) -> Result<String> {
     Ok(match ty {
         Type::Int => "Int".into(),
+        Type::Range => "Range".into(),
         Type::Float => "Float".into(),
         Type::Bool => "Bool".into(),
         Type::String => "String".into(),
@@ -1079,15 +1180,20 @@ fn clear_expression(expression: &mut Expr) {
         | ExprKind::Return(value)
         | ExprKind::Defer(value)
         | ExprKind::Field { value, .. } => clear_expression(value),
-        ExprKind::Binary { left, right, .. } => {
+        ExprKind::Binary { left, right, .. }
+        | ExprKind::Range {
+            start: left,
+            end: right,
+            ..
+        } => {
             clear_expression(left);
             clear_expression(right);
         }
-        ExprKind::PostfixIf { value, condition } => {
-            clear_expression(value);
-            clear_expression(condition);
-        }
-        ExprKind::ConditionMatch(arms) => clear_conditions(arms),
+        kind @ (ExprKind::PostfixIf { .. }
+        | ExprKind::ConditionMatch(_)
+        | ExprKind::For { .. }
+        | ExprKind::With { .. }
+        | ExprKind::If { .. }) => clear_control(kind),
         ExprKind::Pipe { value, args, .. } => {
             clear_expression(value);
             for arg in args {
@@ -1118,6 +1224,43 @@ fn clear_expression(expression: &mut Expr) {
                 clear_expression(argument);
             }
         }
+        ExprKind::Match { value, arms } => clear_match(value, arms),
+        ExprKind::Map(pairs) => clear_pairs(pairs),
+        ExprKind::RecordUpdate { value, fields } => clear_update(value, fields),
+        ExprKind::Block(statements) => clear_statements(statements),
+        ExprKind::Int(_)
+        | ExprKind::Break
+        | ExprKind::Continue
+        | ExprKind::Float(_)
+        | ExprKind::Bool(_)
+        | ExprKind::String(_)
+        | ExprKind::Name(_)
+        | ExprKind::Unit => {}
+    }
+}
+
+/// Clear control children once, preserving iteration and error handler scopes.
+fn clear_control(kind: &mut ExprKind) {
+    match kind {
+        ExprKind::PostfixIf { value, condition } => {
+            clear_expression(value);
+            clear_expression(condition);
+        }
+        ExprKind::ConditionMatch(arms) => clear_conditions(arms),
+        ExprKind::For {
+            pattern,
+            iterable,
+            body,
+        } => {
+            clear_pattern(pattern);
+            clear_expression(iterable);
+            clear_expression(body);
+        }
+        ExprKind::With {
+            bindings,
+            body,
+            arms,
+        } => clear_with(bindings, body, arms),
         ExprKind::If {
             condition,
             then_branch,
@@ -1129,16 +1272,24 @@ fn clear_expression(expression: &mut Expr) {
                 clear_expression(otherwise);
             }
         }
-        ExprKind::Match { value, arms } => clear_match(value, arms),
-        ExprKind::Map(pairs) => clear_pairs(pairs),
-        ExprKind::RecordUpdate { value, fields } => clear_update(value, fields),
-        ExprKind::Block(statements) => clear_statements(statements),
-        ExprKind::Int(_)
-        | ExprKind::Float(_)
-        | ExprKind::Bool(_)
-        | ExprKind::String(_)
-        | ExprKind::Name(_)
-        | ExprKind::Unit => {}
+        _ => {}
+    }
+}
+
+/// Clear sequential-binding and handler locations without changing their distinct scopes.
+fn clear_with(
+    bindings: &mut [ast::WithBinding],
+    body: &mut Expr,
+    arms: &mut Option<Vec<ast::MatchArm>>,
+) {
+    for binding in bindings {
+        binding.span = Span::default();
+        clear_pattern(&mut binding.pattern);
+        clear_expression(&mut binding.value);
+    }
+    clear_expression(body);
+    if let Some(arms) = arms {
+        clear_arms(arms);
     }
 }
 
@@ -1173,6 +1324,11 @@ fn clear_update(value: &mut Expr, fields: &mut [ast::RecordField]) {
 /// Clear match locations and its nested guards, patterns and values together.
 fn clear_match(value: &mut Expr, arms: &mut [ast::MatchArm]) {
     clear_expression(value);
+    clear_arms(arms);
+}
+
+/// Clear each arm once to keep nested with/match traversal linear.
+fn clear_arms(arms: &mut [ast::MatchArm]) {
     for arm in arms {
         arm.span = Span::default();
         clear_pattern(&mut arm.pattern);

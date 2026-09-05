@@ -61,7 +61,9 @@ impl Checker<'_> {
             })
             .collect();
         let previous = std::mem::replace(&mut self.function_return, result.clone());
+        let previous_loop = std::mem::replace(&mut self.loop_depth, 0);
         let checked = self.expression_expected(body, Some(&result), depth);
+        self.loop_depth = previous_loop;
         self.function_return = previous;
         self.scopes.pop();
         let body = checked?;
@@ -108,6 +110,29 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
+        if let ast::ExprKind::Field { value, name } = &callee.kind {
+            if name == "enumerate" {
+                let value = self.expression(value, depth)?;
+                if value.ty == Type::Never {
+                    return Ok((value.kind, Type::Never));
+                }
+                if matches!(self.inference.resolve(&value.ty, span)?, Type::List(_)) {
+                    return self.enumerate_value(value, args, expected, span);
+                }
+                let (kind, ty) = self.field(value, name, callee.span)?;
+                return self.invoke(
+                    ir::Expr {
+                        kind,
+                        ty,
+                        span: callee.span,
+                    },
+                    args,
+                    expected,
+                    span,
+                    depth,
+                );
+            }
+        }
         let callee = self.expression(callee, depth)?;
         self.invoke(callee, args, expected, span, depth)
     }
@@ -167,6 +192,17 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
+        if let Some(receiver) = name.strip_suffix(".enumerate") {
+            if self
+                .local(receiver.split('.').next().unwrap_or(receiver))
+                .is_some()
+            {
+                let (_, ty) = self.name(receiver, span)?;
+                if matches!(self.inference.resolve(&ty, span)?, Type::List(_)) {
+                    return self.enumerate_receiver(receiver, args, expected, span, depth);
+                }
+            }
+        }
         if self.local(name.split('.').next().unwrap_or(name)).is_some() {
             let (kind, ty) = self
                 .name(name, span)
@@ -369,6 +405,11 @@ fn captures(body: &ir::Expr, outer_count: usize) -> Checked<Vec<ir::Capture>> {
 /// Discover deferred lambda-containing arguments without evaluating or rewriting their order.
 fn contains_lambda(expr: &ast::Expr) -> bool {
     match &expr.kind {
+        ast::ExprKind::Range { .. } | ast::ExprKind::For { .. } | ast::ExprKind::With { .. } => {
+            iteration::source_children(expr)
+                .into_iter()
+                .any(contains_lambda)
+        }
         ast::ExprKind::Lambda { .. } => true,
         ast::ExprKind::Map(entries) => entries
             .iter()

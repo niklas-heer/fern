@@ -242,14 +242,25 @@ pub(super) fn statement_span(stmt: &ast::Stmt) -> Span {
 pub(super) fn strict_divergence(kind: ir::ExprKind, ty: Type) -> TypedKind {
     use ir::ExprKind::*;
     let children: Vec<&ir::Expr> = match &kind {
-        Return(value) | Try(value) | Unary { value, .. } | Field { value, .. } => vec![value],
+        For {
+            iterable: value, ..
+        }
+        | Return(value)
+        | Try(value)
+        | Unary { value, .. }
+        | Field { value, .. } => vec![value],
         Invoke { callee, args } => std::iter::once(callee.as_ref()).chain(args).collect(),
         Binary {
             op: ast::BinaryOp::And | ast::BinaryOp::Or,
             left,
             ..
         } => vec![left],
-        Binary { left, right, .. } => vec![left, right],
+        Range {
+            start: left,
+            end: right,
+            ..
+        }
+        | Binary { left, right, .. } => vec![left, right],
         Call { args, .. }
         | List(args)
         | Tuple(args)

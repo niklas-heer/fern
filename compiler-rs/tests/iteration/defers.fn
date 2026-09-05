@@ -1,0 +1,8 @@
+fn walk() -> ():
+    for n in 0..4:
+        continue if n == 1
+        defer println(n)
+        break if n == 2
+        println(n)
+    println("done")
+fn main(): walk()

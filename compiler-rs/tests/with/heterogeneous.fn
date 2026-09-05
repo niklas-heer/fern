@@ -1,0 +1,23 @@
+type AuthFailure:
+    AuthError(message: String)
+type LoadFailure:
+    LoadError(code: Int)
+fn auth(ok: Bool) -> Result(Int, AuthFailure):
+    println("auth")
+    if ok: Ok(7) else: Err(AuthError("denied"))
+fn load(id: Int, ok: Bool) -> Result(String, LoadFailure):
+    println(id)
+    if ok: Ok("done") else: Err(LoadError(5))
+fn execute(auth_ok: Bool, load_ok: Bool) -> String:
+    with
+        id <- auth(auth_ok),
+        text <- load(id, load_ok)
+    do
+        text
+    else
+        Err(AuthError(message)) -> message
+        Err(LoadError(code)) -> "failed {code}"
+fn main():
+    println(execute(true, true))
+    println(execute(false, true))
+    println(execute(true, false))

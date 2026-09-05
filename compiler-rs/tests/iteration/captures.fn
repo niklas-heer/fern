@@ -1,0 +1,8 @@
+fn capture() -> () -> Int:
+    for value in [42]:
+        defer println("leaving")
+        return () -> value
+    () -> 0
+fn main():
+    let callback = capture()
+    println(callback())

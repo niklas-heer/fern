@@ -55,6 +55,8 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
 - Inline and indented `if`/`else`, including value-producing branches. An `if`
   without `else` has type `Unit`.
 - Early returns, postfix conditionals, condition-only matches and `let-else` unwrapping.
+- Sequential `with` Result bindings with typed handlers or implicit error propagation.
+- List/Map/range `for` iteration, list enumeration and scoped `break`/`continue`.
 - Dynamic `defer` cleanup runs at function exit, including early return and `?` propagation.
 - `print`, `println`, `String.concat`, `String.eq`, and `String.len`.
 - Immutable list literals, `List.len/get/head/tail/is_empty/push/reverse/concat`,
@@ -81,7 +83,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
 
 Unsupported syntax produces diagnostics. Gaps include actor execution, triple-quoted multiline strings, block comments, named
 arguments, non-ASCII identifiers, and inferred return types outside `main`.
-`with`, collection/range iteration and full release parity remain migration work.
+Full release parity remains migration work.
 
 `fmt` formats the supported syntax in place, preserves comments, and verifies that
 the complete syntax tree remains equivalent before replacing the file atomically.
@@ -128,6 +130,41 @@ Each callback has its own `?` propagation boundary. Capturing an already-produce
 Result-bearing value currently gives an explicit diagnostic; delayed ownership
 tracking is still required to lift that restriction. Returning a Result from a
 function is supported. Function equality is not defined.
+
+## Iteration and grouped error handling
+
+```fern
+fn main():
+    for (index, name) in ["Fern", "Rust"].enumerate():
+        println("{index}: {name}")
+    for number in 0..=3:
+        continue if number == 1
+        println(number)
+```
+
+Ranges are immutable `Range` values with Int endpoints. `start..end` excludes the
+end; `start..=end` includes it. Reversed ranges are empty, and even an inclusive
+range ending at the maximum Int does not overflow. A loop evaluates its iterable
+once. Lists follow element order, maps yield `(key, value)` in insertion order,
+and `List.enumerate(values)` or `values.enumerate()` yields `(index, value)`.
+Loop patterns must match every element. Break and continue affect the nearest
+loop in the same function; deferred cleanup still waits until function exit.
+
+```fern
+fn read_size(path: String) -> Int:
+    with
+        text <- File.read(path)
+    do
+        String.len(text)
+    else
+        Err(_) -> 0
+```
+
+With bindings execute sequentially and stop on the first error. Each error type
+has a checked exhaustive handler; different steps may have different success
+and error types. Handlers use `Err(pattern)` or `_` and see the outer scope,
+while later steps and `do` see successful bindings. Guarded arms preserve source
+order. Omitting `else` propagates errors under the same Result constraint as `?`.
 
 ## Returns and cleanup
 

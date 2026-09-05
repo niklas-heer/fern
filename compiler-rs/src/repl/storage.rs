@@ -57,13 +57,22 @@ impl<'a> CodeBudget<'a> {
         self.pending.push(Part::Type(&expr.ty));
         match &expr.kind {
             String(text) => self.bytes += text.len(),
-            Map(pairs) => {
-                self.pending.extend(
-                    pairs
-                        .iter()
-                        .flat_map(|(key, value)| [Part::Expr(key), Part::Expr(value)]),
-                );
-            }
+            Range { start, end, .. } => self.pending.extend([Part::Expr(start), Part::Expr(end)]),
+            For {
+                pattern,
+                iterable,
+                body,
+            } => self.pending.extend([
+                Part::Pattern(pattern),
+                Part::Expr(iterable),
+                Part::Expr(body),
+            ]),
+            With {
+                steps,
+                body,
+                handlers,
+            } => self.with_block(steps, body, handlers),
+            Map(pairs) => self.map_pairs(pairs),
             List(xs)
             | Tuple(xs)
             | Interpolate(xs)
@@ -105,9 +114,35 @@ impl<'a> CodeBudget<'a> {
             Lambda { .. } | FunctionValue { .. } => {
                 return Err("unfinalized interactive closure".into())
             }
-            Int(_) | Float(_) | Bool(_) | Local(_) | Unit => {}
+            Int(_) | Float(_) | Bool(_) | Local(_) | Unit | Break | Continue => {}
         }
         Ok(())
+    }
+    /// Visit every key and value retained by a map literal.
+    fn map_pairs(&mut self, pairs: &'a [(ir::Expr, ir::Expr)]) {
+        self.pending.extend(
+            pairs
+                .iter()
+                .flat_map(|(key, value)| [Part::Expr(key), Part::Expr(value)]),
+        );
+    }
+    /// Include each specialized error handler once and all sequential binding patterns.
+    fn with_block(
+        &mut self,
+        steps: &'a [ir::WithStep],
+        body: &'a ir::Expr,
+        handlers: &'a [ir::WithHandler],
+    ) {
+        self.bytes += std::mem::size_of_val(steps) + std::mem::size_of_val(handlers);
+        self.pending.push(Part::Expr(body));
+        for step in steps {
+            self.pending
+                .extend([Part::Pattern(&step.pattern), Part::Expr(&step.value)]);
+        }
+        for handler in handlers {
+            self.pending
+                .extend([Part::Type(&handler.error.ty), Part::Expr(&handler.body)]);
+        }
     }
     /// Charge every statement and all scopes retained by a let-else fallback.
     fn statements(&mut self, statements: &'a [ir::Stmt]) {

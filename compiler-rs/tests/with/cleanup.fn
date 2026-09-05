@@ -1,0 +1,19 @@
+fn fail() -> Result(Int, String): Err("bad")
+fn forward() -> Result(Int, String):
+    defer println("forward cleanup")
+    with
+        value <- fail()
+    do
+        println("wrong")
+        Ok(value)
+fn recover() -> Int:
+    defer println("recover cleanup")
+    with
+        value <- fail()
+    do
+        return value
+    else
+        Err(_) -> return 9
+fn main():
+    println(Result.is_err(forward()))
+    println(recover())

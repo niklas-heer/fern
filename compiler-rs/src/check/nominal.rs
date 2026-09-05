@@ -300,6 +300,18 @@ impl Registry {
 /// List child expressions, including guards, without traversing type layouts.
 pub(super) fn children(expr: &ir::Expr) -> Vec<&ir::Expr> {
     match &expr.kind {
+        ir::ExprKind::Range { start, end, .. } => vec![start, end],
+        ir::ExprKind::For { iterable, body, .. } => vec![iterable, body],
+        ir::ExprKind::With {
+            steps,
+            body,
+            handlers,
+        } => steps
+            .iter()
+            .map(|s| &s.value)
+            .chain(std::iter::once(body.as_ref()))
+            .chain(handlers.iter().map(|h| &h.body))
+            .collect(),
         ir::ExprKind::Lambda { captures, body, .. } => captures
             .iter()
             .map(|c| &c.value)

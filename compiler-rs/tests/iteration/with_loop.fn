@@ -1,0 +1,18 @@
+fn step(n: Int) -> Result(Int, Int):
+    return Err(0) if n == 0
+    return Err(1) if n == 2
+    Ok(n + 10)
+fn execute() -> ():
+    for value in 0..4:
+        defer println(value)
+        with
+            number <- step(value)
+        do
+            println(number)
+        else
+            Err(0) -> continue
+            Err(1) -> break
+            Err(_) -> return ()
+        println("after")
+    println("finished")
+fn main(): execute()

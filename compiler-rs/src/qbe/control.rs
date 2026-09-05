@@ -16,6 +16,8 @@ impl Emitter<'_> {
             ExprKind::List(items) | ExprKind::Tuple(items) | ExprKind::Interpolate(items) => {
                 items.iter().collect()
             }
+            ExprKind::Range { start, end, .. } => vec![start, end],
+            ExprKind::For { iterable, .. } if iterable.ty == Type::Never => vec![iterable],
             ExprKind::Map(entries) => entries.iter().flat_map(|(k, v)| [k, v]).collect(),
             ExprKind::CustomConstruct { fields, .. } => fields.iter().collect(),
             ExprKind::Construct { value, .. } => value.iter().map(|v| v.as_ref()).collect(),

@@ -1,0 +1,21 @@
+fn fallback(source: Result(a, Int), otherwise: a) -> a:
+    with
+        value <- source
+    do
+        value
+    else
+        Err(_) -> otherwise
+fn forward(source: Result(a, e)) -> Result(a, e):
+    with
+        value <- source
+    do
+        Ok(value)
+fn main():
+    println(fallback(Ok(1.25), 2.5))
+    println(fallback(Err(1), "fallback"))
+    let good: Result(Int, String) = Ok(4294967296)
+    println(Result.unwrap_or(forward(good), 0))
+    let failed: Result(Int, String) = Err("bad")
+    match forward(failed):
+        Ok(value) -> println(value)
+        Err(error) -> println(error)

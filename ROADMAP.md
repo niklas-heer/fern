@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (352 Rust tests, 4 measurement-harness tests, 102 core native programs, 59 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (396 Rust tests, 4 measurement-harness tests, 116 core native programs, 73 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -77,7 +77,8 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Retain originating compiled code for interactive closures, preserve capture/effect order and bound unique retained programs (interactive closure and storage regressions).
 - [x] Immutable maps and record updates with semantic keys, persistent aliases and source-order evaluation (six native programs, nine invalid programs and interactive regressions).
 - [x] Early returns, postfix conditionals, condition matches, let-else and function-exit deferred cleanup (nine native programs, ten invalid cases and eight interactive control regressions).
-- [ ] With error handling, iteration, multiline strings and complete native-language audit.
+- [x] With error handling, List/Map/range iteration and loop control (14 native programs, 14 invalid cases and ten interactive regressions).
+- [ ] Multiline strings, remaining syntax and complete native-language audit.
 
 ### Rust Migration: Collections and Error Values
 

@@ -86,6 +86,23 @@ pub enum ExprKind {
     Try(Box<Expr>),
     Return(Box<Expr>),
     Defer(Box<Expr>),
+    Break,
+    Continue,
+    Range {
+        start: Box<Expr>,
+        end: Box<Expr>,
+        inclusive: bool,
+    },
+    For {
+        pattern: Pattern,
+        iterable: Box<Expr>,
+        body: Box<Expr>,
+    },
+    With {
+        bindings: Vec<WithBinding>,
+        body: Box<Expr>,
+        arms: Option<Vec<MatchArm>>,
+    },
     PostfixIf {
         value: Box<Expr>,
         condition: Box<Expr>,
@@ -162,6 +179,14 @@ pub struct MatchArm {
 pub struct ConditionArm {
     pub condition: Option<Expr>,
     pub body: Expr,
+    pub span: Span,
+}
+
+/// One sequential Result binding; later bindings can use earlier successful payloads.
+#[derive(Clone, Debug)]
+pub struct WithBinding {
+    pub pattern: Pattern,
+    pub value: Expr,
     pub span: Span,
 }
 

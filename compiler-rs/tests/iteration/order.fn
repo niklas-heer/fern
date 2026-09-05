@@ -1,0 +1,11 @@
+fn mark(n: Int) -> Int:
+    println(n)
+    n
+fn items() -> List(Int):
+    println("items")
+    [4, 5]
+fn main():
+    for n in mark(0)..mark(3):
+        println(n)
+    for n in items():
+        println(n)

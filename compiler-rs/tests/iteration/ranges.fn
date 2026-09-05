@@ -1,0 +1,11 @@
+fn main():
+    for n in 9223372036854775806..=9223372036854775807:
+        println(n)
+    for n in -9223372036854775808..-9223372036854775806:
+        println(n)
+    for n in 3..1:
+        println("wrong")
+    for n in 2..2:
+        println("wrong")
+    for n in 2..=2:
+        println(n)

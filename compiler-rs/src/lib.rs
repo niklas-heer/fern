@@ -40,6 +40,7 @@ impl Diagnostic {
 pub enum Type {
     /// Internal bottom type of control flow that never produces a value.
     Never,
+    Range,
     Int,
     Float,
     Bool,

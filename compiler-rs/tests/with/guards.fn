@@ -1,0 +1,14 @@
+fn guard(value: Bool) -> Bool:
+    println("guard")
+    value
+fn execute() -> Int:
+    with
+        value <- failure()
+    do
+        value
+    else
+        Err(error) if guard(false) -> error
+        Err(error) if guard(true) -> error + 1
+        _ -> 0
+fn failure() -> Result(Int, Int): Err(4)
+fn main(): println(execute())

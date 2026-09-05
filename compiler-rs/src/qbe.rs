@@ -11,12 +11,16 @@ mod closures;
 mod control;
 #[path = "qbe/higher_order.rs"]
 mod higher_order;
+#[path = "qbe/iteration.rs"]
+mod iteration;
 #[path = "qbe/maps.rs"]
 mod maps;
 #[path = "qbe/nominal.rs"]
 mod nominal;
 #[path = "qbe/runtime_calls.rs"]
 mod runtime_calls;
+#[path = "qbe/with.rs"]
+mod with;
 
 const MAX_DEPTH: usize = 128;
 const MAX_NODES: usize = 200_000;
@@ -92,11 +96,15 @@ fn emit_inner(program: &ir::Program) -> Lowering<String> {
         strings: 0,
         nodes: 0,
         maps_used: false,
+        enumerate_used: false,
     };
     for function in &program.functions {
         emitter.function(function)?;
     }
     emitter.output.push_str(include_str!("qbe/control.ssa"));
+    if emitter.enumerate_used {
+        emitter.output.push_str(include_str!("qbe/iteration.ssa"));
+    }
     emitter.main_wrapper(main);
     emitter.float_print_helpers();
     if emitter.maps_used {
@@ -117,7 +125,8 @@ fn invalid(span: Span, message: &str) -> Exit {
 /// Map semantic `ty` to QBE scalar width; pointers and integers remain distinct in IR.
 fn width(ty: Type) -> char {
     match ty {
-        Type::Int
+        Type::Range
+        | Type::Int
         | Type::String
         | Type::Map(_, _)
         | Type::List(_)
@@ -154,6 +163,7 @@ struct Emitter<'a> {
     strings: usize,
     nodes: usize,
     maps_used: bool,
+    enumerate_used: bool,
 }
 
 struct Locals {
@@ -161,6 +171,7 @@ struct Locals {
     defined: BTreeSet<usize>,
     count: usize,
     return_type: Type,
+    loops: Vec<iteration::LoopTargets>,
     temporary: usize,
     label: usize,
     current: String,
@@ -202,6 +213,7 @@ impl Emitter<'_> {
             defined: BTreeSet::new(),
             count: function.local_count,
             return_type: function.return_type.clone(),
+            loops: vec![],
             temporary: 0,
             label: 0,
             current: "@start".into(),
@@ -265,8 +277,15 @@ impl Emitter<'_> {
         self.validate_expr(expr, depth)?;
         self.strict_termination(expr, locals, depth + 1)?;
         let (actual, value) = match &expr.kind {
-            ExprKind::Return(value) => self.returned(value, locals, depth + 1)?,
-            ExprKind::Defer(value) => self.defer(value, locals, depth + 1)?,
+            ExprKind::With { .. }
+            | ExprKind::For { .. }
+            | ExprKind::Range { .. }
+            | ExprKind::Break
+            | ExprKind::Continue
+            | ExprKind::Return(_)
+            | ExprKind::Defer(_)
+            | ExprKind::Match { .. }
+            | ExprKind::If { .. } => self.flow_expr(expr, locals, depth + 1)?,
             ExprKind::Lambda { .. } | ExprKind::FunctionValue { .. } => {
                 return Err(invalid(expr.span, "unlifted callable expression"));
             }
@@ -298,7 +317,6 @@ impl Emitter<'_> {
                 locals,
                 depth + 1,
             )?,
-            ExprKind::Match { value, arms } => self.matching(value, arms, locals, depth + 1)?,
             ExprKind::Int(value) => (Type::Int, value.to_string()),
             ExprKind::Float(value) => self.float_literal(*value, locals),
             ExprKind::Bool(value) => (Type::Bool, u8::from(*value).to_string()),
@@ -311,6 +329,40 @@ impl Emitter<'_> {
             ExprKind::Call { target, args } => {
                 self.call(*target, args, &expr.ty, expr.span, locals, depth + 1)?
             }
+            ExprKind::Block(stmts) => self.block(stmts, locals, depth + 1)?,
+        };
+        expect_type(actual, expr.ty.clone(), expr.span)?;
+        Ok(value)
+    }
+
+    /// Lower structured control independently from scalar and aggregate value dispatch.
+    fn flow_expr(
+        &mut self,
+        expr: &Expr,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Lowering<(Type, String)> {
+        match &expr.kind {
+            ExprKind::With {
+                steps,
+                body,
+                handlers,
+            } => self.with(steps, body, handlers, locals, depth),
+            ExprKind::For {
+                pattern,
+                iterable,
+                body,
+            } => self.iteration(pattern, iterable, body, locals, depth),
+            ExprKind::Range {
+                start,
+                end,
+                inclusive,
+            } => self.range(start, end, *inclusive, locals, depth),
+            ExprKind::Break => self.loop_exit(false, expr.span, locals),
+            ExprKind::Continue => self.loop_exit(true, expr.span, locals),
+            ExprKind::Return(value) => self.returned(value, locals, depth),
+            ExprKind::Defer(value) => self.defer(value, locals, depth),
+            ExprKind::Match { value, arms } => self.matching(value, arms, locals, depth),
             ExprKind::If {
                 condition,
                 then_branch,
@@ -320,18 +372,23 @@ impl Emitter<'_> {
                 then_branch,
                 else_branch.as_deref(),
                 locals,
-                depth + 1,
-            )?,
-            ExprKind::Block(stmts) => self.block(stmts, locals, depth + 1)?,
-        };
-        expect_type(actual, expr.ty.clone(), expr.span)?;
-        Ok(value)
+                depth,
+            ),
+            _ => Err(invalid(expr.span, "expected control expression")),
+        }
     }
 
     /// Validate a node's concrete type and bound recursive lowering before emitting it.
     fn validate_expr(&mut self, expr: &Expr, depth: usize) -> Lowering<()> {
-        if matches!(expr.kind, ExprKind::Return(_)) && expr.ty != Type::Never {
-            return Err(invalid(expr.span, "return expression requires Never type"));
+        if matches!(
+            expr.kind,
+            ExprKind::Return(_) | ExprKind::Break | ExprKind::Continue
+        ) && expr.ty != Type::Never
+        {
+            return Err(invalid(
+                expr.span,
+                "control exit expression requires Never type",
+            ));
         }
         if expr.ty != Type::Never {
             nominal::resolved(&expr.ty, &self.layouts, expr.span, 0)?;
@@ -508,6 +565,9 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Lowering<(Type, String)> {
+        if target == CallTarget::Builtin(Builtin::ListEnumerate) {
+            return self.enumerate(args, span, locals, depth);
+        }
         if let CallTarget::Runtime(id) = target {
             return self.runtime_call(id, args, span, locals, depth);
         }
@@ -843,9 +903,13 @@ fn concrete(ty: &Type, span: Span, depth: usize) -> Lowering<()> {
             concrete(ok, span, depth + 1)?;
             concrete(err, span, depth + 1)
         }
-        Type::Native(_) | Type::Int | Type::Float | Type::Bool | Type::String | Type::Unit => {
-            Ok(())
-        }
+        Type::Range
+        | Type::Native(_)
+        | Type::Int
+        | Type::Float
+        | Type::Bool
+        | Type::String
+        | Type::Unit => Ok(()),
     }
 }
 

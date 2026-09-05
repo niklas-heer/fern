@@ -9,6 +9,7 @@ enum Value {
     Bool(bool),
     String(Rc<String>),
     Unit,
+    Range(i64, i64, bool),
     List(Rc<Vec<Value>>),
     Map(Rc<Vec<(Value, Value)>>),
     Sum(usize, Rc<Vec<Value>>),
@@ -30,6 +31,8 @@ impl PartialEq for ClosureValue {
 enum Failure {
     Message(String),
     Return(Value),
+    Break,
+    Continue,
 }
 type Eval<T> = Result<T, Failure>;
 fn fault(message: impl Into<String>) -> Failure {
@@ -91,6 +94,9 @@ impl Session {
             Ok(value) => value,
             Err(Failure::Message(message)) => return Err(message),
             Err(Failure::Return(_)) => return Err("return outside an interactive function".into()),
+            Err(Failure::Break | Failure::Continue) => {
+                return Err("loop control outside a loop".into())
+            }
         };
         graph_budget(machine.locals.values())?;
         if binding {
@@ -148,13 +154,26 @@ impl Machine {
         use ir::ExprKind::*;
         match &expr.kind {
             Return(value) => Err(Failure::Return(self.expression(value)?)),
+            Break => Err(Failure::Break),
+            Continue => Err(Failure::Continue),
+            Range {
+                start,
+                end,
+                inclusive,
+            } => self.range(start, end, *inclusive),
+            For {
+                pattern,
+                iterable,
+                body,
+            } => self.for_each(pattern, iterable, body),
+            With {
+                steps,
+                body,
+                handlers,
+            } => self.with_block(steps, body, handlers),
             Defer(value) => self.defer(value),
             Closure { function, captures } => self.closure(*function, captures),
-            Invoke { callee, args } => {
-                let callee = self.expression(callee)?;
-                let args = self.arguments(args)?;
-                self.invoke(&callee, args)
-            }
+            Invoke { callee, args } => self.apply_expression(callee, args),
             Lambda { .. } | FunctionValue { .. } => Err(fault("unfinalized interactive closure")),
             Interpolate(parts) => self.interpolate(parts),
             Int(n) => Ok(Value::Int(*n)),
@@ -191,10 +210,7 @@ impl Machine {
                 then_branch,
                 else_branch,
             } => self.conditional(condition, then_branch, else_branch.as_deref()),
-            Match { value, arms } => {
-                let value = self.expression(value)?;
-                self.matching(&value, arms)
-            }
+            Match { value, arms } => self.match_expression(value, arms),
             Block(statements) => {
                 let previous = self.locals.clone();
                 let result = self.statements(statements);
@@ -202,6 +218,17 @@ impl Machine {
                 result
             }
         }
+    }
+    /// Evaluate a callable before its arguments, preserving abrupt exits from either.
+    fn apply_expression(&mut self, callee: &ir::Expr, args: &[ir::Expr]) -> Eval<Value> {
+        let callee = self.expression(callee)?;
+        let args = self.arguments(args)?;
+        self.invoke(&callee, args)
+    }
+    /// Evaluate the scrutinee once before examining any pattern or guard.
+    fn match_expression(&mut self, value: &ir::Expr, arms: &[ir::MatchArm]) -> Eval<Value> {
+        let value = self.expression(value)?;
+        self.matching(&value, arms)
     }
     /// Evaluate each capture once and retain the code that assigned its function identity.
     fn closure(&mut self, function: ir::FunctionId, captures: &[ir::Expr]) -> Eval<Value> {
@@ -359,6 +386,7 @@ impl Machine {
         self.program = previous_program;
         match result {
             Err(Failure::Return(value)) => Ok(value),
+            Err(Failure::Break | Failure::Continue) => Err(fault("loop control outside a loop")),
             other => other,
         }
     }
@@ -499,6 +527,9 @@ fn display(value: &Value) -> String {
         Value::Bool(v) => v.to_string(),
         Value::String(s) => format!("{s:?}"),
         Value::Unit => "()".into(),
+        Value::Range(start, end, inclusive) => {
+            format!("{start}..{}{end}", if *inclusive { "=" } else { "" })
+        }
         Value::Closure(_) => "<function>".into(),
         Value::Map(_) => "<map>".into(),
         Value::List(values) => format!(
@@ -548,10 +579,14 @@ mod builtins;
 mod control;
 #[path = "repl/functions.rs"]
 mod functions;
+#[path = "repl/iteration.rs"]
+mod iteration;
 #[path = "repl/maps.rs"]
 mod maps;
 #[path = "repl/storage.rs"]
 mod storage;
+#[path = "repl/with.rs"]
+mod with;
 
 /// Bound retained immutable graphs using unique Rc identities, including shared subtrees.
 fn graph_budget<'a>(values: impl Iterator<Item = &'a Value>) -> Result<(), String> {

@@ -537,6 +537,7 @@ fn reserved_declaration(name: &str) -> bool {
                 | "Unit"
                 | "List"
                 | "Map"
+                | "Range"
                 | "Option"
                 | "Result"
                 | "Some"
@@ -716,7 +717,7 @@ fn rewrite(
             rewrite_values(args, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Interpolate(parts) => {
-            rewrite_string(parts, names, prefixes, scopes, offset)?;
+            rewrite_string(parts, names, prefixes, scopes, offset)?
         }
         ast::ExprKind::Call { name, args } => {
             resolve_name(name, names, prefixes, scopes).map_err(|e| at_span(e, original))?;
@@ -730,11 +731,9 @@ fn rewrite(
         | ast::ExprKind::Defer(value)
         | ast::ExprKind::Unary { value, .. }
         | ast::ExprKind::Field { value, .. } => rewrite(value, names, prefixes, scopes, offset)?,
-        ast::ExprKind::Binary { left, right, .. } => {
-            rewrite(left, names, prefixes, scopes, offset)?;
-            rewrite(right, names, prefixes, scopes, offset)?;
-        }
-        kind @ (ast::ExprKind::If { .. }
+        kind @ (ast::ExprKind::Binary { .. }
+        | ast::ExprKind::Range { .. }
+        | ast::ExprKind::If { .. }
         | ast::ExprKind::PostfixIf { .. }
         | ast::ExprKind::ConditionMatch(_)) => {
             rewrite_control(kind, names, prefixes, scopes, offset)?
@@ -747,7 +746,82 @@ fn rewrite(
         ast::ExprKind::RecordUpdate { value, fields } => {
             rewrite_update(value, fields, names, prefixes, scopes, offset)?
         }
+        kind @ (ast::ExprKind::For { .. } | ast::ExprKind::With { .. }) => {
+            rewrite_binding_flow(kind, names, prefixes, scopes, offset)?
+        }
         _ => {}
+    }
+    Ok(())
+}
+
+/// Dispatch expressions whose bindings have success-only or per-iteration scope.
+fn rewrite_binding_flow(
+    kind: &mut ast::ExprKind,
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    match kind {
+        ast::ExprKind::For {
+            pattern,
+            iterable,
+            body,
+        } => rewrite_for(pattern, iterable, body, names, prefixes, scopes, offset),
+        ast::ExprKind::With {
+            bindings,
+            body,
+            arms,
+        } => rewrite_with(bindings, body, arms, names, prefixes, scopes, offset),
+        _ => Ok(()),
+    }
+}
+
+/// Loop iterable names resolve before its per-iteration pattern bindings become visible.
+fn rewrite_for(
+    binding: &mut ast::Pattern,
+    iterable: &mut ast::Expr,
+    body: &mut ast::Expr,
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    rewrite(iterable, names, prefixes, scopes, offset)?;
+    scopes.push(BTreeSet::new());
+    pattern(binding, names, scopes.last_mut().unwrap(), offset)?;
+    let result = rewrite(body, names, prefixes, scopes, offset);
+    scopes.pop();
+    result
+}
+
+/// With success scopes accumulate sequentially; error arms see only the outer scope.
+fn rewrite_with(
+    bindings: &mut [ast::WithBinding],
+    body: &mut ast::Expr,
+    arms: &mut Option<Vec<ast::MatchArm>>,
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    scopes.push(BTreeSet::new());
+    for binding in bindings {
+        rewrite(&mut binding.value, names, prefixes, scopes, offset)?;
+        pattern(
+            &mut binding.pattern,
+            names,
+            scopes.last_mut().unwrap(),
+            offset,
+        )?;
+        shift(&mut binding.span, offset);
+    }
+    rewrite(body, names, prefixes, scopes, offset)?;
+    scopes.pop();
+    if let Some(arms) = arms {
+        for arm in arms {
+            rewrite_arm(arm, names, prefixes, scopes, offset)?;
+        }
     }
     Ok(())
 }
@@ -761,6 +835,15 @@ fn rewrite_control(
     offset: usize,
 ) -> Result<(), Error> {
     match kind {
+        ast::ExprKind::Binary { left, right, .. }
+        | ast::ExprKind::Range {
+            start: left,
+            end: right,
+            ..
+        } => {
+            rewrite(left, names, prefixes, scopes, offset)?;
+            rewrite(right, names, prefixes, scopes, offset)?;
+        }
         ast::ExprKind::If {
             condition,
             then_branch,

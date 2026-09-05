@@ -87,7 +87,13 @@ pub(super) fn resolved(
             resolved(ok, layouts, span, depth + 1)?;
             resolved(err, layouts, span, depth + 1)?;
         }
-        Type::Native(_) | Type::Int | Type::Float | Type::Bool | Type::String | Type::Unit => {}
+        Type::Range
+        | Type::Native(_)
+        | Type::Int
+        | Type::Float
+        | Type::Bool
+        | Type::String
+        | Type::Unit => {}
     }
     Ok(())
 }
@@ -616,5 +622,43 @@ fn subsumes(prior: &Pattern, next: &Pattern) -> bool {
             a == b && af.len() == bf.len() && af.iter().zip(bf).all(|(a, b)| subsumes(a, b))
         }
         _ => false,
+    }
+}
+
+impl Emitter<'_> {
+    /// Bind only patterns proven to cover every value of their concrete input type.
+    pub(super) fn bind_irrefutable(
+        &mut self,
+        pattern: &Pattern,
+        ty: &Type,
+        value: &str,
+        span: Span,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Lowering<()> {
+        let pattern = self.checked_pattern(pattern, ty, span, 0)?;
+        let mut budget = 8192;
+        if !self.exhaustive(
+            std::slice::from_ref(ty),
+            &[vec![pattern.clone()]],
+            &mut budget,
+            0,
+        )? {
+            return Err(invalid(span, "binding pattern must be irrefutable"));
+        }
+        let failure = locals.label();
+        let success = locals.label();
+        let mut state = PatternState {
+            failure: &failure,
+            bindings: vec![],
+            span,
+            depth,
+        };
+        self.pattern_branch(&pattern, ty, value, &mut state, locals)?;
+        self.output.push_str(&format!("    jmp {success}\n"));
+        self.start_block(locals, &failure);
+        self.output.push_str("    hlt\n");
+        self.start_block(locals, &success);
+        Ok(())
     }
 }

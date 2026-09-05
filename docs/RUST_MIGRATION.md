@@ -234,3 +234,25 @@ returns, conditional registrations, lexical snapshots, failure propagation,
 let-else scopes, lambda boundaries and recursive captures. Interactive tests also
 verify cleanup after division and work-budget failures. With blocks and collection
 iteration remain the next control-flow requirements; C remains the default.
+
+
+## Iteration and typed with handlers — 2026-09-05
+
+For loops now consume one immutable List, Map or Range snapshot. Range values
+store endpoints instead of allocating elements; native and interactive loops
+check the inclusive endpoint before incrementing, including Int::MAX. Map loops
+yield full-width key/value tuples in insertion order. List enumeration retains
+semantic values, including Float and closures. Loop targets are local to each
+function; break/continue preserve registered function-exit cleanup.
+
+With blocks retain flat sequential steps and distinct typed error handlers.
+Each handler checks applicable source arms in order and requires exhaustive
+coverage, while preserving its error payload's real type. A failed step skips
+all following initializers and the success body. Handlers cannot access success
+bindings; they can return, propagate errors or control an enclosing loop using
+the existing abrupt-exit rules. Omitting else uses ordinary Result propagation.
+
+Native fixtures cover heterogeneous nominal errors, generic With specialization,
+Float payloads, scope shadowing, guarded handlers, full-width range boundaries,
+collection enumeration, retained range/loop captures and cleanup during loop
+control. Interactive tests enforce the same semantics and bounded range work.

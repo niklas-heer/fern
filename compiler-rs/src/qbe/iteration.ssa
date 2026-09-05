@@ -1,0 +1,26 @@
+function l $fern_rs_list_enumerate(l %list) {
+@start
+    %length =l call $fern_list_len(l %list)
+    %empty =w ceql %length, 0
+    %extra =l extuw %empty
+    %capacity =l add %length, %extra
+    %output =l call $fern_list_with_capacity(l %capacity)
+    jmp @head
+@head
+    %index =l phi @start 0, @body %next
+    %available =w csltl %index, %length
+    jnz %available, @body, @done
+@body
+    %raw =l call $fern_list_get(l %list, l %index)
+    %tuple =l call $fern_alloc(l 24)
+    storel 0, %tuple
+    %islot =l add %tuple, 8
+    storel %index, %islot
+    %vslot =l add %tuple, 16
+    storel %raw, %vslot
+    call $fern_list_push_mut(l %output, l %tuple)
+    %next =l add %index, 1
+    jmp @head
+@done
+    ret %output
+}

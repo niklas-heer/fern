@@ -6,6 +6,7 @@ impl Machine {
     pub(super) fn higher_order(&mut self, builtin: ir::Builtin, args: &[Value]) -> Eval<Value> {
         use ir::Builtin::*;
         match (builtin, args) {
+            (ListEnumerate, [Value::List(xs)]) => self.enumerate(xs),
             (ListMap | ListFilter | ListFind | ListAny | ListAll, [Value::List(xs), callback]) => {
                 self.list_callback(builtin, xs, callback)
             }
