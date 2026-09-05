@@ -1,0 +1,22 @@
+fn add(left: Int, right: Int) -> Int: left + right
+fn then_value(effect: (), value: Int) -> Int: value
+fn load() -> Result(Int, String): Ok(4)
+fn main():
+    println(add(if true:
+        10
+    else:
+        20, 3))
+    println(
+        if false:
+            0
+        else:
+            42
+    )
+    println(then_value(for value in [1, 2]:
+        println(value), 7))
+    println(with
+        value <- load()
+    do
+        value + 1
+    else
+        Err(_) -> 0)

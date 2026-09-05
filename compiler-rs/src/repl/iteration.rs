@@ -97,7 +97,7 @@ impl Machine {
     /// Restore iteration locals on every path while retaining function-owned deferred captures.
     fn iteration(&mut self, binding: &ir::Pattern, value: &Value, body: &ir::Expr) -> Eval<Value> {
         let previous = self.locals.clone();
-        let result = if pattern(binding, value, &mut self.locals) {
+        let result = if self.pattern(binding, value)? {
             self.expression(body)
         } else {
             Err(fault("for binding must match every item"))

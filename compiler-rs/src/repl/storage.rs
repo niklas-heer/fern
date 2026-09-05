@@ -191,6 +191,16 @@ impl<'a> CodeBudget<'a> {
     fn pattern(&mut self, pattern: &'a ir::Pattern) {
         self.bytes += std::mem::size_of::<ir::Pattern>();
         match pattern {
+            ir::Pattern::List { prefix, rest } => {
+                self.pending.extend(prefix.iter().map(Part::Pattern));
+                if let Some(rest) = rest {
+                    self.pending.push(Part::Pattern(rest));
+                }
+            }
+            ir::Pattern::TupleRest { prefix, rest } => {
+                self.pending.extend(prefix.iter().map(Part::Pattern));
+                self.pending.push(Part::Pattern(rest));
+            }
             ir::Pattern::Tuple(xs) | ir::Pattern::Variant { fields: xs, .. } => {
                 self.pending.extend(xs.iter().map(Part::Pattern));
             }

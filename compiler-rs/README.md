@@ -49,7 +49,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
 - Module declarations, public functions/types, qualified/aliased/selected imports,
   and public reexports from `module.fn` or `module/mod.fn`.
 - Immutable `let` with inferred or annotated type, lexical scopes, and shadowing.
-- Structural tuple types/literals, nested tuple patterns/destructuring, and `.0` field access.
+- Structural tuple types/literals, nested tuple/list patterns, suffix binding with `..rest`, and `.0` field access.
 - Standard and placeholder pipes evaluate their input exactly once before other arguments.
 - Integer/Float arithmetic, powers and comparisons, Int bitwise operations, string addition/equality, boolean operators
   with short-circuit evaluation, and unary `-`/`not`.
@@ -64,7 +64,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
   and scalar `List.contains` (Int, Float, Bool, or String elements).
 - `Some`, `None`, `Ok`, and `Err`, with payload types inferred from bindings,
   function signatures, calls, and branches. Empty lists also use this context.
-- Exhaustive `match` on scalar literals, Bool, Option, or Result, with wildcard
+- Exhaustive `match` on scalar literals, Bool, lists, nominal types, Option, or Result, with wildcard
   and name catchalls, recursively nested constructor patterns, guards, and scoped multiline arms.
   Guarded arms do not establish exhaustiveness.
 - Postfix `?` unwraps Ok or immediately returns Err from a Result-returning helper;
@@ -108,6 +108,40 @@ Splitting on an empty delimiter returns complete Unicode scalars. Integer domain
 faults are reported after cleanup, as described below. A source
 file is limited to 1 MiB, 65,536 tokens, and a syntax nesting depth of 128. These
 explicit prototype limits prevent unbounded parser recursion/allocation.
+
+## List and tuple patterns
+
+```fern
+fn length(items: List(Int)) -> Int:
+    match items:
+        [] -> 0
+        [_, ..rest] -> 1 + length(rest)
+
+fn first_or_zero(items: List(Int)) -> Int:
+    let [first, .._] = items else: return 0
+    first
+```
+
+List patterns without rest require an exact length. A final `..rest` binds the
+suffix; `.._` ignores it. Tuple suffixes remain tuples, including singleton tuples;
+an empty tuple suffix is Unit. Ignoring a prefix or suffix that contains Result
+values is rejected. Guards run after all structural checks and required bindings.
+
+Ordinary let, for and with success bindings require irrefutable patterns. A
+nonempty list prefix can fail, so use match or let-else. Zero-prefix `[..all]`
+always matches a list and shares its original immutable value. Fixed tuple
+suffix bindings are irrefutable when their prefix fits the tuple type.
+
+Named list tails currently copy their suffix once the entire structural pattern
+matches. Recursive decomposition can therefore take quadratic time; prefer for
+or List.fold for large scans. Ignored tails allocate nothing. Interactive tail
+copies share the evaluation work budget, and failed matches publish no bindings.
+The compiler bounds both source pattern nesting and expanded coverage analysis.
+Multiline match, if, for, with and callback expressions also work inside call
+arguments, list elements and tuple elements, including inline separators/closers.
+Result handling still uses reference-based checks beyond wildcard patterns;
+inspecting a List(Result) length can currently satisfy its usage obligation.
+Complete semantic Result-consumption tracking remains migration work.
 
 ## Entry results and return inference
 

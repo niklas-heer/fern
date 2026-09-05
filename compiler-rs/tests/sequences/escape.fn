@@ -1,0 +1,8 @@
+fn make(xs: List(Float)) -> () -> Float:
+    let [_, ..rest] = xs else: return () -> 0.0
+    () -> List.head(rest)
+fn main():
+    let read = make([0.0, 9.25])
+    for index in 0..1200:
+        let trash = String.repeat("x", 1024)
+    println(read())

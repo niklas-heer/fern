@@ -343,8 +343,12 @@ impl Renderer<'_> {
             ExprKind::MultilineString(parts) => self.interpolation(parts, indent, true)?,
             ExprKind::Name(name) => name.clone(),
             ExprKind::Unit => "()".into(),
-            ExprKind::Tuple(items) => tuple_text(self.arguments(items, indent)?, items.len()),
-            ExprKind::List(items) => format!("[{}]", self.arguments(items, indent)?),
+            ExprKind::Tuple(items) => {
+                return self.delimited_values("(", ")", items, indent, expression.span, true)
+            }
+            ExprKind::List(items) => {
+                return self.delimited_values("[", "]", items, indent, expression.span, false)
+            }
             ExprKind::Map(pairs) => return self.map(pairs, indent, expression.span),
             ExprKind::RecordUpdate { value, fields } => {
                 return self.record_update(value, fields, indent, expression.span)
@@ -737,24 +741,45 @@ impl Renderer<'_> {
         Ok(lines)
     }
 
-    /// Keep compact calls inline and place callback blocks within their own argument layout.
+    /// Keep compact calls inline and give embedded suites their own argument layout.
     fn call(&self, callee: &str, args: &[Expr], indent: usize, span: Span) -> Result<Vec<Line>> {
+        self.delimited_values(&format!("{callee}("), ")", args, indent, span, false)
+    }
+
+    /// Preserve tuple identity and close embedded suites before argument separators.
+    fn delimited_values(
+        &self,
+        open: &str,
+        close: &str,
+        args: &[Expr],
+        indent: usize,
+        span: Span,
+        tuple: bool,
+    ) -> Result<Vec<Line>> {
         let arguments = args
             .iter()
             .map(|arg| self.expression(arg, indent + 1))
             .collect::<Result<Vec<_>>>()?;
+        let singleton = tuple && args.len() == 1;
         if arguments.iter().all(|lines| lines.len() == 1) {
-            let text = arguments
+            let mut text = arguments
                 .iter()
                 .map(|lines| lines[0].text.clone())
                 .collect::<Vec<_>>()
                 .join(", ");
-            return Ok(vec![line(indent, format!("{callee}({text})"), span.start)]);
+            if singleton {
+                text.push(',');
+            }
+            return Ok(vec![line(
+                indent,
+                format!("{open}{text}{close}"),
+                span.start,
+            )]);
         }
-        let mut lines = vec![line(indent, format!("{callee}("), span.start)];
+        let mut lines = vec![line(indent, open, span.start)];
         let count = arguments.len();
         for (index, mut argument) in arguments.into_iter().enumerate() {
-            if index + 1 < count {
+            if index + 1 < count || singleton {
                 if argument.len() == 1 {
                     argument[0].text.push(',');
                 } else {
@@ -763,7 +788,7 @@ impl Renderer<'_> {
             }
             lines.extend(argument);
         }
-        lines.push(line(indent, ")", span.end));
+        lines.push(line(indent, close, span.end));
         Ok(lines)
     }
 
@@ -777,15 +802,6 @@ impl Renderer<'_> {
         lines.extend(callee);
         lines.extend(self.call(")", args, indent, span)?);
         Ok(lines)
-    }
-
-    /// Render comma-separated positional values from their checked source syntax.
-    fn arguments(&self, arguments: &[Expr], indent: usize) -> Result<String> {
-        Ok(arguments
-            .iter()
-            .map(|argument| self.inline(argument, indent))
-            .collect::<Result<Vec<_>>>()?
-            .join(", "))
     }
 
     /// Preserve binary grouping and keep continuation operators outside nested blocks.
@@ -1007,6 +1023,12 @@ fn field_text(field: &ast::Field) -> Result<String> {
 /// Render literal, catchall and recursively nested constructor patterns.
 fn pattern_text(pattern: &Pattern) -> String {
     match &pattern.kind {
+        PatternKind::List { prefix, rest } => {
+            format!("[{}]", sequence_pattern_text(prefix, rest.as_deref()))
+        }
+        PatternKind::TupleRest { prefix, rest } => {
+            format!("({})", sequence_pattern_text(prefix, Some(rest)))
+        }
         PatternKind::Tuple(fields) => tuple_text(
             fields
                 .iter()
@@ -1051,6 +1073,15 @@ fn pattern_text(pattern: &Pattern) -> String {
             }
         }
     }
+}
+
+/// Render a source-ordered prefix followed by its optional named or discarded suffix.
+fn sequence_pattern_text(prefix: &[Pattern], rest: Option<&Pattern>) -> String {
+    let mut fields = prefix.iter().map(pattern_text).collect::<Vec<_>>();
+    if let Some(rest) = rest {
+        fields.push(format!("..{}", pattern_text(rest)));
+    }
+    fields.join(", ")
 }
 
 /// Preserve physical multiline content while escaping delimiters and interpolation braces.
@@ -1456,12 +1487,27 @@ fn clear_statements(statements: &mut [Stmt]) {
 /// Remove pattern locations while keeping nested constructor structure intact.
 fn clear_pattern(pattern: &mut Pattern) {
     pattern.span = Span::default();
-    if let PatternKind::NamedConstructor { fields, .. } | PatternKind::Tuple(fields) =
-        &mut pattern.kind
-    {
-        for field in fields {
-            clear_pattern(field);
+    match &mut pattern.kind {
+        PatternKind::NamedConstructor { fields, .. } | PatternKind::Tuple(fields) => {
+            for field in fields {
+                clear_pattern(field);
+            }
         }
+        PatternKind::List { prefix, rest } => {
+            for field in prefix {
+                clear_pattern(field);
+            }
+            if let Some(rest) = rest {
+                clear_pattern(rest);
+            }
+        }
+        PatternKind::TupleRest { prefix, rest } => {
+            for field in prefix {
+                clear_pattern(field);
+            }
+            clear_pattern(rest);
+        }
+        _ => {}
     }
 }
 

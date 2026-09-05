@@ -287,7 +287,7 @@ pub(super) fn strict_divergence(kind: ir::ExprKind, ty: Type) -> TypedKind {
     }
 }
 
-/// Enforce Result obligations for successful let-else payloads that a wildcard would erase.
+/// Enforce Result obligations for successful pattern payloads that a wildcard would erase.
 pub(super) fn pattern_discards(
     pattern: &ir::Pattern,
     ty: &Type,
@@ -295,10 +295,15 @@ pub(super) fn pattern_discards(
     registry: &nominal::Registry,
 ) -> Checked<()> {
     match pattern {
+        ir::Pattern::List { .. } | ir::Pattern::TupleRest { .. } => {
+            for (p, t) in sequences::parts(pattern, ty, span)? {
+                pattern_discards(p, &t, span, registry)?;
+            }
+        }
         ir::Pattern::Wildcard if registry.contains_result(ty)? => {
             return Err(Diagnostic::new(
                 span,
-                "Result payload cannot be discarded by a let-else wildcard",
+                "Result payload cannot be discarded by a wildcard pattern",
             ))
         }
         ir::Pattern::Tuple(fields) if fields.is_empty() && *ty == Type::Unit => {}

@@ -1,0 +1,9 @@
+fn consume(xs: List(Result(Int, String))) -> Int:
+    match xs:
+        [] -> 0
+        [item, ..rest] -> Result.unwrap_or(item, 0) + consume(rest)
+fn main():
+    println(consume([Ok(9223372036854775807), Err("missing")]))
+    let (head, ..tail) = (1, Ok(9))
+    let result: Result(Int, String) = tail.0
+    println(head + Result.unwrap_or(result, 0))

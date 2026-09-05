@@ -9,6 +9,8 @@ enum Head {
     String(String),
     Variant(usize),
     Unit,
+    Nil,
+    Cons,
 }
 type Heads = Vec<(Head, Vec<Type>)>;
 
@@ -28,7 +30,8 @@ pub(super) fn validate(
     let mut matrix = Vec::new();
     let mut budget = 20_000;
     for arm in arms {
-        let pattern = lower(&arm.pattern);
+        bound_expansion(&arm.pattern, arm.span)?;
+        let pattern = lower(&arm.pattern, subject, registry, arm.span)?;
         if !useful(
             &matrix,
             &[pattern.clone()],
@@ -65,18 +68,50 @@ pub(super) fn validate(
 }
 
 /// Convert resolved patterns into constructor matrices; binders behave as wildcards.
-fn lower(pattern: &ir::Pattern) -> Pattern {
-    match pattern {
+fn lower(pattern: &ir::Pattern, ty: &Type, registry: &Registry, span: Span) -> Checked<Pattern> {
+    Ok(match pattern {
         ir::Pattern::Wildcard | ir::Pattern::Bind(_) => Pattern::Any,
-        ir::Pattern::Int(n) => Pattern::Specific(Head::Int(*n), Vec::new()),
-        ir::Pattern::Bool(b) => Pattern::Specific(Head::Bool(*b), Vec::new()),
-        ir::Pattern::String(s) => Pattern::Specific(Head::String(s.clone()), Vec::new()),
+        ir::Pattern::Int(n) => Pattern::Specific(Head::Int(*n), vec![]),
+        ir::Pattern::Bool(b) => Pattern::Specific(Head::Bool(*b), vec![]),
+        ir::Pattern::String(s) => Pattern::Specific(Head::String(s.clone()), vec![]),
         ir::Pattern::Tuple(fields) if fields.is_empty() => Pattern::Specific(Head::Unit, vec![]),
-        ir::Pattern::Tuple(fields) => {
-            Pattern::Specific(Head::Variant(0), fields.iter().map(lower).collect())
+        ir::Pattern::Tuple(fields) | ir::Pattern::Variant { tag: 0, fields } => {
+            lower_variant(0, fields, ty, registry, span)?
         }
-        ir::Pattern::Variant { tag, fields } => {
-            Pattern::Specific(Head::Variant(*tag), fields.iter().map(lower).collect())
+        ir::Pattern::Variant { tag, fields } => lower_variant(*tag, fields, ty, registry, span)?,
+        ir::Pattern::TupleRest { prefix, .. } => {
+            let fields = super::sequences::tuple_fields(ty, span)?;
+            let mut patterns = prefix
+                .iter()
+                .zip(fields)
+                .map(|(p, t)| lower(p, t, registry, span))
+                .collect::<Checked<Vec<_>>>()?;
+            patterns.resize(fields.len(), Pattern::Any);
+            Pattern::Specific(
+                if fields.is_empty() {
+                    Head::Unit
+                } else {
+                    Head::Variant(0)
+                },
+                patterns,
+            )
+        }
+        ir::Pattern::List { prefix, rest } => {
+            let Type::List(element) = ty else {
+                return Err(Diagnostic::new(span, "list pattern requires List type"));
+            };
+            let mut tail = if rest.is_some() {
+                Pattern::Any
+            } else {
+                Pattern::Specific(Head::Nil, vec![])
+            };
+            for field in prefix.iter().rev() {
+                tail = Pattern::Specific(
+                    Head::Cons,
+                    vec![lower(field, element, registry, span)?, tail],
+                );
+            }
+            tail
         }
         ir::Pattern::Constructor { constructor, .. } => {
             let (tag, fields) = match constructor {
@@ -86,7 +121,58 @@ fn lower(pattern: &ir::Pattern) -> Pattern {
             };
             Pattern::Specific(Head::Variant(tag), fields)
         }
+    })
+}
+
+/// Resolve constructor payload types before lowering nested sequence patterns.
+fn lower_variant(
+    tag: usize,
+    fields: &[ir::Pattern],
+    ty: &Type,
+    registry: &Registry,
+    span: Span,
+) -> Checked<Pattern> {
+    let variants = registry.variants(ty, span)?;
+    let payload = variants
+        .get(tag)
+        .ok_or_else(|| Diagnostic::new(span, "invalid pattern tag"))?;
+    let fields = fields
+        .iter()
+        .zip(payload)
+        .map(|(p, t)| lower(p, t, registry, span))
+        .collect::<Checked<Vec<_>>>()?;
+    Ok(Pattern::Specific(Head::Variant(tag), fields))
+}
+
+/// Bound conceptual Cons depth before allocating recursive matrices or cloning their tails.
+fn bound_expansion(pattern: &ir::Pattern, span: Span) -> Checked<()> {
+    let mut pending = vec![(pattern, 0)];
+    while let Some((pattern, depth)) = pending.pop() {
+        if depth > MAX_EXPR_DEPTH {
+            return Err(Diagnostic::new(
+                span,
+                "pattern coverage expansion limit exceeded",
+            ));
+        }
+        match pattern {
+            ir::Pattern::List { prefix, .. } => {
+                if depth + prefix.len() > MAX_EXPR_DEPTH {
+                    return Err(Diagnostic::new(
+                        span,
+                        "pattern coverage expansion limit exceeded",
+                    ));
+                }
+                pending.extend(prefix.iter().enumerate().map(|(i, p)| (p, depth + i + 1)));
+            }
+            ir::Pattern::Tuple(fields)
+            | ir::Pattern::Variant { fields, .. }
+            | ir::Pattern::TupleRest { prefix: fields, .. } => {
+                pending.extend(fields.iter().map(|p| (p, depth + 1)));
+            }
+            _ => {}
+        }
     }
+    Ok(())
 }
 
 /// Determine whether a candidate tuple contains a value not covered by the matrix.
@@ -212,6 +298,10 @@ fn finite_heads(ty: &Type, registry: &Registry, span: Span) -> Checked<Option<He
             (Head::Bool(false), vec![]),
         ])),
         Type::Unit => Ok(Some(vec![(Head::Unit, vec![])])),
+        Type::List(element) => Ok(Some(vec![
+            (Head::Nil, vec![]),
+            (Head::Cons, vec![*element.clone(), ty.clone()]),
+        ])),
         Type::Tuple(_) | Type::Option(_) | Type::Result(..) | Type::Named(..) => Ok(Some(
             registry
                 .variants(ty, span)?
@@ -226,6 +316,9 @@ fn finite_heads(ty: &Type, registry: &Registry, span: Span) -> Checked<Option<He
 
 /// Return the checked payload types of one concrete constructor descriptor.
 fn payload_types(ty: &Type, head: &Head, registry: &Registry, span: Span) -> Checked<Vec<Type>> {
+    if let (Type::List(element), Head::Cons) = (ty, head) {
+        return Ok(vec![*element.clone(), ty.clone()]);
+    }
     if let Head::Variant(tag) = head {
         registry
             .variants(ty, span)?

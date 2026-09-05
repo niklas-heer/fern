@@ -1,0 +1,11 @@
+fn source() -> List(Int):
+    println("source")
+    [1, 2, 3]
+fn guard(xs: List(Int)) -> Bool:
+    println(List.len(xs))
+    false
+fn main():
+    match source():
+        [_, ..tail] if guard(tail) -> println(0)
+        [_, ..tail] -> println(List.head(tail))
+        [] -> println(-1)

@@ -1,0 +1,7 @@
+fn main():
+    let tail = 99
+    println(match ([1, 2, 3], false):
+        ([_, ..tail], true) -> 0
+        ([_, ..tail], _) if List.len(tail) == 2 -> List.head(tail)
+        _ -> -1)
+    println(tail)

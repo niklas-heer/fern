@@ -211,6 +211,14 @@ pub struct Pattern {
 #[derive(Clone, Debug)]
 pub enum PatternKind {
     Tuple(Vec<Pattern>),
+    List {
+        prefix: Vec<Pattern>,
+        rest: Option<Box<Pattern>>,
+    },
+    TupleRest {
+        prefix: Vec<Pattern>,
+        rest: Box<Pattern>,
+    },
     Wildcard,
     Bind(String),
     Int(i64),

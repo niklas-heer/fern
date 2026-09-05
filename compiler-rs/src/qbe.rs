@@ -108,6 +108,7 @@ fn emit_inner(program: &ir::Program) -> Lowering<String> {
         list_access_used: false,
         repeat_used: false,
         slice_used: false,
+        pattern_tail_used: false,
     };
     for function in &program.functions {
         emitter.function(function)?;
@@ -172,6 +173,7 @@ struct Emitter<'a> {
     list_access_used: bool,
     repeat_used: bool,
     slice_used: bool,
+    pattern_tail_used: bool,
 }
 
 struct Locals {
@@ -238,6 +240,9 @@ impl Emitter<'_> {
         }
         self.main_wrapper(main);
         self.float_print_helpers();
+        if self.pattern_tail_used {
+            self.output.push_str(include_str!("qbe/pattern_tail.ssa"));
+        }
         if self.maps_used {
             self.output.push_str(include_str!("qbe/maps.ssa"));
         }

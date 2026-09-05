@@ -33,7 +33,7 @@ impl Machine {
             }
             match tag {
                 0 => {
-                    if !pattern(&step.pattern, &fields[0], &mut self.locals) {
+                    if !self.pattern(&step.pattern, &fields[0])? {
                         return Err(fault("with binding must match every success"));
                     }
                 }

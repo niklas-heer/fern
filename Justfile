@@ -455,6 +455,7 @@ rust-check: rust-build
     python3 scripts/test_rust_iteration.py
     python3 scripts/test_rust_numeric.py
     python3 scripts/test_rust_boundaries.py
+    python3 scripts/test_rust_sequences.py
     python3 scripts/test_rust_stdlib.py
     python3 scripts/test_runtime_directory.py
     python3 scripts/test_rust_fuzz.py

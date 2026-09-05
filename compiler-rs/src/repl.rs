@@ -390,7 +390,7 @@ impl Machine {
     fn matching(&mut self, value: &Value, arms: &[ir::MatchArm]) -> Eval<Value> {
         for arm in arms {
             let previous = self.locals.clone();
-            let matched = pattern(&arm.pattern, value, &mut self.locals);
+            let matched = self.pattern(&arm.pattern, value)?;
             let guard = if matched {
                 arm.guard
                     .as_ref()
@@ -412,59 +412,6 @@ impl Machine {
     }
 }
 
-/// Match only types already validated by the checker.
-fn pattern(pattern: &ir::Pattern, value: &Value, locals: &mut HashMap<usize, Value>) -> bool {
-    use ir::Pattern::*;
-    match (pattern, value) {
-        (Wildcard, _) => true,
-        (Bind(id), value) => {
-            locals.insert(id.0, value.clone());
-            true
-        }
-        (Int(a), Value::Int(b)) => a == b,
-        (Bool(a), Value::Bool(b)) => a == b,
-        (String(a), Value::String(b)) => a == b.as_ref(),
-        (Tuple(fields), Value::Sum(0, values)) => {
-            fields.len() == values.len()
-                && fields
-                    .iter()
-                    .zip(values.iter())
-                    .all(|(p, v)| self::pattern(p, v, locals))
-        }
-        (Variant { tag, fields }, Value::Sum(actual, values)) => {
-            tag == actual
-                && fields.len() == values.len()
-                && fields
-                    .iter()
-                    .zip(values.iter())
-                    .all(|(p, v)| self::pattern(p, v, locals))
-        }
-        (
-            Constructor {
-                constructor,
-                binding,
-            },
-            Value::Sum(tag, fields),
-        ) => {
-            let expected = usize::from(matches!(
-                constructor,
-                crate::Constructor::None | crate::Constructor::Err
-            ));
-            if expected != *tag {
-                return false;
-            }
-            if let Some(id) = binding {
-                if let Some(value) = fields.first() {
-                    locals.insert(id.0, value.clone());
-                } else {
-                    return false;
-                }
-            }
-            true
-        }
-        _ => false,
-    }
-}
 /// Evaluate scalar unary operators with Fern's numeric domains.
 fn unary(op: ast::UnaryOp, value: Value) -> Eval<Value> {
     match (op, value) {
@@ -575,8 +522,9 @@ fn type_name(ty: &Type) -> String {
         Type::Option(a) => format!("Option({})", type_name(a)),
         Type::Result(a, b) => format!("Result({}, {})", type_name(a), type_name(b)),
         Type::Tuple(args) => format!(
-            "({})",
-            args.iter().map(type_name).collect::<Vec<_>>().join(", ")
+            "({}{})",
+            args.iter().map(type_name).collect::<Vec<_>>().join(", "),
+            if args.len() == 1 { "," } else { "" }
         ),
         Type::Named(name, args) => {
             if args.is_empty() {
@@ -603,6 +551,7 @@ mod functions;
 mod iteration;
 #[path = "repl/maps.rs"]
 mod maps;
+mod patterns;
 #[path = "repl/storage.rs"]
 mod storage;
 #[path = "repl/with.rs"]

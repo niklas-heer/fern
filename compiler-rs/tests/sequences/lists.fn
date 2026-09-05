@@ -1,0 +1,9 @@
+fn describe(xs: List(Int)) -> Int:
+    match xs:
+        [] -> 0
+        [only] -> only
+        [first, ..rest] -> first + List.len(rest)
+fn main():
+    println(describe([]))
+    println(describe([7]))
+    println(describe([10, 20, 30]))

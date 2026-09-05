@@ -1,0 +1,8 @@
+fn second(xs: List(a)) -> Option(a):
+    match xs:
+        [] -> None
+        [_] -> None
+        [_, value, .._] -> Some(value)
+fn main():
+    println(Option.unwrap_or(second([1.25, 9.75]), 0.0))
+    println(Option.unwrap_or(second(["a", "🌿"]), "missing"))

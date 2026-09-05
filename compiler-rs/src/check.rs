@@ -11,6 +11,7 @@ mod nominal;
 mod pipes;
 mod preflight;
 mod returns;
+mod sequences;
 mod specialize;
 mod with_flow;
 
@@ -809,6 +810,7 @@ impl Checker<'_> {
         }
         let checked = self.pattern(pattern, &value.ty, &mut HashSet::new(), 0)?;
         let ty = self.inference.resolve(&value.ty, span)?;
+        iteration::irrefutable(&checked, &ty, span, self.registry)?;
         let id = self.bind("_", ty.clone());
         statements.push(ir::Stmt::Let { id, value });
         Self::destructure_fields(
@@ -840,6 +842,9 @@ impl Checker<'_> {
             ));
         }
         match pattern {
+            ir::Pattern::List { .. } | ir::Pattern::TupleRest { .. } => {
+                sequences::destructure(pattern, value, statements, registry, depth)?;
+            }
             ir::Pattern::Bind(id) => statements.push(ir::Stmt::Let { id: *id, value }),
             ir::Pattern::Wildcard => reject_discard(&value, registry)?,
             ir::Pattern::Tuple(patterns) if patterns.is_empty() && value.ty == Type::Unit => {}
@@ -1249,25 +1254,8 @@ impl Checker<'_> {
             ));
         }
         let (checked, expected) = match &pattern.kind {
-            Tuple(fields) if fields.is_empty() => {
-                self.inference
-                    .unify(ty, &Type::Unit, pattern.span, "unit pattern")?;
-                return Ok(ir::Pattern::Tuple(vec![]));
-            }
-            Tuple(fields) => {
-                let types: Vec<_> = fields.iter().map(|_| self.inference.fresh()).collect();
-                self.inference.unify(
-                    ty,
-                    &Type::Tuple(types.clone()),
-                    pattern.span,
-                    "tuple pattern",
-                )?;
-                let fields = fields
-                    .iter()
-                    .zip(types)
-                    .map(|(p, t)| self.pattern(p, &t, names, depth + 1))
-                    .collect::<Checked<Vec<_>>>()?;
-                return Ok(ir::Pattern::Tuple(fields));
+            Tuple(_) | List { .. } | TupleRest { .. } => {
+                return self.sequence_pattern(pattern, ty, names, depth)
             }
             Wildcard => return Ok(ir::Pattern::Wildcard),
             Bind(name) => {
@@ -1550,6 +1538,7 @@ impl Checker<'_> {
     ) -> Checked<()> {
         self.finalize(value)?;
         for arm in arms.iter_mut() {
+            sequences::reject_discards(&arm.pattern, &value.ty, arm.span, self.registry)?;
             if let Some(guard) = &mut arm.guard {
                 self.finalize(guard)?;
             }
@@ -1839,6 +1828,11 @@ fn fallible_bindings(
     bindings: &mut Vec<(usize, Span)>,
 ) -> Checked<()> {
     match pattern {
+        ir::Pattern::List { .. } | ir::Pattern::TupleRest { .. } => {
+            for (p, t) in sequences::parts(pattern, ty, span)? {
+                fallible_bindings(p, &t, span, registry, bindings)?;
+            }
+        }
         ir::Pattern::Bind(id) => {
             if registry.contains_result(ty)? {
                 bindings.push((id.0, span));

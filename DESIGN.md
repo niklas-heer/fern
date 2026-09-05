@@ -903,6 +903,12 @@ let [first, _, third] = items  # Ignore second element
 let User(name, _, _) = user  # Only need name
 ```
 
+**Refutable bindings:** A list length pattern can fail. Use `let pattern = value else: ...`
+with a diverging else branch, or `match`, unless the pattern is irrefutable (such
+as `[..all]`). This rule also applies to loop and with success bindings. The
+plain-list examples below illustrate the pattern shape; potentially failing
+uses require explicit failure handling (decision 60).
+
 **Ignore remaining values:**
 ```fern
 # List - collect rest

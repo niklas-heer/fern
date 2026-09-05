@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (463 Rust tests, 4 measurement-harness tests, 123 core native programs, 21 entry/access programs, 8 numeric-fault cases, 85 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (503 Rust tests, 4 measurement-harness tests, 133 core native programs, 21 entry/access programs, 8 numeric-fault cases, 100 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -83,7 +83,10 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Replace shared runtime list access assertions with defined failures before access (six native ABI regressions; preserves full-width successful values).
 - [x] Private return inference with bounded recursive constraints, explicit public return signatures and concrete Result-valued entry points (17 checker regressions, bounded type-work checks and native execution).
 - [x] Guard Rust list access, repetition and UTF-8 slicing/splitting through deferred cleanup, including native malformed-byte input (21 native programs, 26 shared-runtime UTF-8 cases and interactive regressions).
+- [x] Shared exact list and list/tuple rest patterns, bounded coverage and Result discard checks; native length guards and atomic interactive bindings.
+- [x] Embedded multiline match/if/for/with/callback suites inside calls, lists and tuples, preserving inline separators and closers (ten native sequence programs, 15 invalid inputs and formatter equivalence).
 - [ ] Remaining function/type syntax and complete native-language audit.
+- [ ] Track semantic Result handling beyond local references (for example, inspecting a List(Result) length currently counts as handling its elements).
 
 ### Rust Migration: Collections and Error Values
 

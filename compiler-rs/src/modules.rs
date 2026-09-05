@@ -1081,6 +1081,20 @@ fn pattern(
     let original = pattern.span;
     shift(&mut pattern.span, offset);
     match &mut pattern.kind {
+        ast::PatternKind::List { prefix, rest } => {
+            for field in prefix {
+                pattern_binding(field, names, bound, offset)?;
+            }
+            if let Some(rest) = rest {
+                pattern_binding(rest, names, bound, offset)?;
+            }
+        }
+        ast::PatternKind::TupleRest { prefix, rest } => {
+            for field in prefix {
+                pattern_binding(field, names, bound, offset)?;
+            }
+            pattern_binding(rest, names, bound, offset)?;
+        }
         ast::PatternKind::Tuple(fields) => {
             for field in fields {
                 pattern_binding(field, names, bound, offset)?;

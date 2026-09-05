@@ -4,6 +4,20 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 61 Preserve indentation for block expressions inside delimiters
+* **Date**: 2026-09-05
+* **Status**: Accepted for Rust migration completion
+* **Decision**: I will preserve bounded indentation frames for multiline expression suites inside calls, lists and tuples, including inline separating commas and closing delimiters.
+* **Context**: Suppressing all layout within parentheses prevented valid composition such as `println(match value: ...)`. Block callbacks already needed a limited version of the same mechanism. Users should not need a temporary variable merely to pass an expression to a function.
+* **Consequences**: Match, if, for, with and callback suites restore significant layout at their owning delimiter depth. Ordinary nested delimiters still suspend layout. Frames close only their owned indentation before separators/closers; malformed or excessive nesting reports a source diagnostic. Comment and multiline-string contents do not become layout instructions. Formatting must retain equivalent checked IR and remain idempotent. The unavailable `/decision` skill is replaced by the established decision format.
+
+### 60 Share bounded sequence patterns across language constructs
+* **Date**: 2026-09-05
+* **Status**: Accepted for Rust migration completion
+* **Decision**: I will support exact list patterns and list/tuple suffix patterns ending in `..name` or `.._` through the common checked pattern engine. Potentially failing destructuring requires match or let-else; ordinary let, for and with success bindings retain their existing irrefutability requirement.
+* **Context**: DESIGN specifies list and tuple rest patterns, including function clauses, but its plain-list destructuring examples do not explain length mismatch. Silently reading beyond a list or introducing an unchecked failure would violate the existing binding contract.
+* **Consequences**: List lengths and nested tags are checked before projections. Named tails are materialized only after the whole structural pattern succeeds and before any guard that uses them; ignored tails allocate nothing. List tails initially copy a bounded suffix and preserve immutable aliases. Tuple tails retain tuple identity, including singleton tuples, while an empty suffix is Unit. Match coverage models empty/nonempty lists and remains bounded under sequence expansion. Rest must appear last and can only bind or discard; Result-bearing values cannot be silently discarded by prefix or suffix patterns. Refutable plain-list examples require an else branch or match until a stronger static length proof exists. The unavailable `/decision` skill is replaced by the established decision format.
+
 ### 59 Infer private return schemes before concrete specialization
 * **Date**: 2026-09-05
 * **Status**: Accepted for Rust migration completion

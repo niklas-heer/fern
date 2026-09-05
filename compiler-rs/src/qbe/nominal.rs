@@ -1,5 +1,7 @@
 //! Concrete nominal layouts and guarded recursive matching at the backend boundary.
 use super::*;
+#[path = "sequence_patterns.rs"]
+mod sequences;
 
 /// Index concrete named layouts, validating record metadata and referenced field types.
 pub(super) fn layouts(types: &[ir::TypeLayout]) -> Lowering<HashMap<Type, &ir::TypeLayout>> {
@@ -244,6 +246,12 @@ impl Emitter<'_> {
         }
         match pattern {
             Pattern::Tuple(fields) => self.checked_tuple_pattern(fields, ty, span, depth),
+            Pattern::List { prefix, rest } => {
+                self.checked_list_pattern(prefix, rest.as_deref(), ty, span, depth)
+            }
+            Pattern::TupleRest { prefix, rest } => {
+                self.checked_tuple_rest(prefix, rest, ty, span, depth)
+            }
             Pattern::Wildcard | Pattern::Bind(_) => Ok(pattern.clone()),
             Pattern::Int(_) => {
                 expect_type(ty.clone(), Type::Int, span)?;
@@ -299,6 +307,7 @@ impl Emitter<'_> {
 struct PatternState<'a> {
     failure: &'a str,
     bindings: Vec<usize>,
+    pending: Vec<sequences::Pending>,
     span: Span,
     depth: usize,
 }
@@ -384,7 +393,7 @@ impl Emitter<'_> {
         }
     }
 
-    /// Enumerate finite constructors; scalar/list domains require a catchall column.
+    /// Enumerate finite constructors, modeling array lists as logical empty/cons values.
     fn coverage_variants(&self, ty: &Type) -> Option<Vec<Vec<Type>>> {
         match ty {
             Type::Bool => Some(vec![vec![], vec![]]),
@@ -392,6 +401,7 @@ impl Emitter<'_> {
             Type::Option(item) => Some(vec![vec![*item.clone()], vec![]]),
             Type::Result(ok, err) => Some(vec![vec![*ok.clone()], vec![*err.clone()]]),
             Type::Tuple(fields) => Some(vec![fields.clone()]),
+            Type::List(item) => Some(vec![vec![], vec![*item.clone(), ty.clone()]]),
             Type::Named(_, _) => self.layouts.get(ty).map(|layout| layout.variants.clone()),
             _ => None,
         }
@@ -414,10 +424,12 @@ impl Emitter<'_> {
             let mut state = PatternState {
                 failure: &failure,
                 bindings: vec![],
+                pending: vec![],
                 span: arm.span,
                 depth,
             };
             self.pattern_branch(&pattern, &value.ty, &scrutinee, &mut state, locals)?;
+            self.materialize_rests(&mut state, locals)?;
             let result = self.match_arm(arm, &failure, locals, depth);
             for id in state.bindings {
                 locals.values.remove(&id);
@@ -465,10 +477,12 @@ impl Emitter<'_> {
         let mut state = PatternState {
             failure: &failure,
             bindings: vec![],
+            pending: vec![],
             span: value.span,
             depth,
         };
         self.pattern_branch(&pattern, &value.ty, &scrutinee, &mut state, locals)?;
+        self.materialize_rests(&mut state, locals)?;
         let bound = locals.values.clone();
         self.output.push_str(&format!("    jmp {success}\n"));
         locals.values = outer;
@@ -505,6 +519,12 @@ impl Emitter<'_> {
             return Err(invalid(state.span, "pattern lowering limit exceeded"));
         }
         match pattern {
+            Pattern::List { prefix, rest } => {
+                self.list_pattern(prefix, rest.as_deref(), ty, value, state, locals)?
+            }
+            Pattern::TupleRest { prefix, rest } => {
+                self.tuple_rest_pattern(prefix, rest, ty, value, state, locals)?
+            }
             Pattern::Wildcard => {}
             Pattern::Bind(id) => {
                 locals.define(id.0, ty.clone(), value.to_owned(), state.span)?;
@@ -596,11 +616,18 @@ impl Emitter<'_> {
 /// Recognize a pattern covering every value without inspecting its representation.
 fn catchall(pattern: &Pattern) -> bool {
     matches!(pattern, Pattern::Wildcard | Pattern::Bind(_))
+        || matches!(pattern, Pattern::List {prefix, rest: Some(_)} if prefix.is_empty())
 }
 
 /// Expand one matrix row into a chosen finite constructor, or discard mismatched rows.
 fn specialize(pattern: &Pattern, tag: usize, fields: usize) -> Option<Vec<Pattern>> {
     match pattern {
+        Pattern::List { prefix, rest } => sequences::specialize_list(prefix, rest.as_deref(), tag),
+        Pattern::TupleRest { prefix, .. } if tag == 0 => {
+            let mut expanded = prefix.clone();
+            expanded.resize(fields, Pattern::Wildcard);
+            Some(expanded)
+        }
         Pattern::Wildcard | Pattern::Bind(_) => Some(vec![Pattern::Wildcard; fields]),
         Pattern::Bool(value) if usize::from(*value) == tag => Some(vec![]),
         Pattern::Variant {
@@ -614,6 +641,20 @@ fn specialize(pattern: &Pattern, tag: usize, fields: usize) -> Option<Vec<Patter
 /// Recognize direct structural subsumption without treating guarded rows as coverage.
 fn subsumes(prior: &Pattern, next: &Pattern) -> bool {
     match (prior, next) {
+        (
+            Pattern::List {
+                prefix: a,
+                rest: ar,
+            },
+            Pattern::List {
+                prefix: b,
+                rest: br,
+            },
+        ) => {
+            (ar.is_some() || (br.is_none() && a.len() == b.len()))
+                && a.len() <= b.len()
+                && a.iter().zip(b).all(|(a, b)| subsumes(a, b))
+        }
         (Pattern::Wildcard | Pattern::Bind(_), _) => true,
         (Pattern::Int(a), Pattern::Int(b)) => a == b,
         (Pattern::Bool(a), Pattern::Bool(b)) => a == b,
@@ -651,10 +692,12 @@ impl Emitter<'_> {
         let mut state = PatternState {
             failure: &failure,
             bindings: vec![],
+            pending: vec![],
             span,
             depth,
         };
         self.pattern_branch(&pattern, ty, value, &mut state, locals)?;
+        self.materialize_rests(&mut state, locals)?;
         self.output.push_str(&format!("    jmp {success}\n"));
         self.start_block(locals, &failure);
         self.output.push_str("    hlt\n");

@@ -4,11 +4,16 @@ use super::*;
 impl Machine {
     /// Reserve a separate entry-wide cleanup budget, including nested cleanup calls.
     pub(super) fn charge_step(&mut self) -> Eval<()> {
+        self.charge_steps(1)
+    }
+
+    /// Reserve aggregate work before copying pattern tails or executing a node.
+    pub(super) fn charge_steps(&mut self, count: usize) -> Eval<()> {
         let exhausted = if self.cleanup_depth == 0 {
-            self.steps += 1;
+            self.steps = self.steps.saturating_add(count);
             self.steps > 100_000
         } else {
-            self.cleanup_steps += 1;
+            self.cleanup_steps = self.cleanup_steps.saturating_add(count);
             self.cleanup_steps > 10_000
         };
         if exhausted || self.depth >= 128 {
@@ -60,7 +65,7 @@ impl Machine {
     ) -> Eval<Value> {
         let value = self.expression(value)?;
         let previous = self.locals.clone();
-        if pattern(binding, &value, &mut self.locals) {
+        if self.pattern(binding, &value)? {
             Ok(Value::Unit)
         } else {
             self.locals = previous;

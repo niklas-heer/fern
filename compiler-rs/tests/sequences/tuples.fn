@@ -1,0 +1,13 @@
+fn main():
+    let (head, ..tail) = (9223372036854775807, "🌿", 1.25)
+    println(head)
+    println(tail.0)
+    println(tail.1)
+    let (_, ..single) = (0, "single")
+    println(single.0)
+    let (_, ..empty) = (7,)
+    match empty:
+        () -> println("unit")
+    let (..whole) = ()
+    match whole:
+        () -> println("whole unit")

@@ -311,3 +311,32 @@ separate combining marks, and produces no elements for empty input. A preflight
 check also rejects malformed UTF-8 entering through legacy native I/O before
 splitting, preserving cleanup. Nonempty-delimiter behavior remains unchanged;
 consistent UTF-8 validation at all native string ingress is still an audit item.
+
+
+## Shared list and tuple sequence patterns
+
+Exact list patterns and final list/tuple rest patterns use the same AST, checked
+IR, coverage analysis and execution engine in match, let-else, irrefutable
+bindings, loops and with. Result discard checks include prefix and suffix values.
+List lengths dominate all element reads; named suffix copying is delayed until
+all nested structural checks succeed, before a guard needs its binders. Ignored
+tails allocate nothing and whole-list bindings alias the original immutable list.
+Tuple suffixes preserve singleton identity and use Unit for empty suffixes.
+
+Coverage expands list shapes into conceptual empty/nonempty constructors, with
+an expansion depth budget checked before building recursive matrices. The REPL
+stages bindings atomically and reserves suffix-copy work before allocating, so
+failed siblings or exhausted budgets cannot publish partial bindings. Retained
+closure code storage also counts the new pattern variants. Named list suffixes
+currently copy, making repeated recursive tail scans quadratic; persistent list
+views and tail-call optimization remain separate performance work.
+
+
+Embedded expression suites now preserve bounded indentation frames inside calls,
+lists and tuples. Match, if, for, with and callbacks compose with inline separators
+and closing delimiters; ordinary nested delimiters still suppress layout. Ten
+native programs and formatting/checked-IR equivalence cover sequence bindings,
+block arguments, effect order, full-width payloads, Result tails and escaping
+closures. Fifteen invalid programs retain the output-file preservation contract.
+An independent audit of 1,850 small Boolean/nested-list pattern matrices found no
+coverage/usefulness mismatch; this supplements the bounded checker regressions.

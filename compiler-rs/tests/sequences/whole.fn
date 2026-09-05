@@ -1,0 +1,6 @@
+fn main():
+    let empty: List(Int) = []
+    let [..all] = empty
+    println(List.len(all))
+    match [true, false]:
+        [.._] -> println("all")

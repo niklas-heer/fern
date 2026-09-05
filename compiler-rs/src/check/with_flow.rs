@@ -286,6 +286,25 @@ fn compatible(pattern: &ast::Pattern, ty: &Type, registry: &nominal::Registry) -
         Int(_) => *ty == Type::Int,
         Bool(_) => *ty == Type::Bool,
         String(_) => *ty == Type::String,
+        List { prefix, .. } => {
+            if let Type::List(element) = ty {
+                let mut matches = true;
+                for p in prefix {
+                    matches &= compatible(p, element, registry)?;
+                }
+                matches
+            } else {
+                false
+            }
+        }
+        TupleRest { prefix, .. } => {
+            if let Type::Tuple(types) = ty {
+                prefix.len() <= types.len()
+                    && compatible_fields(prefix, &types[..prefix.len()], registry)?
+            } else {
+                prefix.is_empty() && *ty == Type::Unit
+            }
+        }
         Tuple(fields) => {
             if let Type::Tuple(types) = ty {
                 compatible_fields(fields, types, registry)?

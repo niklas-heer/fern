@@ -1,0 +1,11 @@
+fn unpack() -> Result(Int, String):
+    with
+        [..items] <- Ok([1, 2])
+    do
+        Ok(List.len(items))
+fn main():
+    for [..items] in [[1, 2], []]: println(List.len(items))
+    for (index, ..tail) in [1.25, 2.5].enumerate():
+        println(index)
+        println(tail.0)
+    println(Result.unwrap_or(unpack(), 0))

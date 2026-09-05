@@ -58,7 +58,21 @@ impl Budget {
                 ));
             }
             let bytes = match &pattern.kind {
+                ast::PatternKind::List { prefix, rest } => {
+                    self.sequence(prefix, rest.as_deref(), &mut pending, depth, pattern.span)?;
+                    0
+                }
+                ast::PatternKind::TupleRest { prefix, rest } => {
+                    self.sequence(prefix, Some(rest), &mut pending, depth, pattern.span)?;
+                    0
+                }
                 ast::PatternKind::Tuple(fields) => {
+                    if fields.len() > 128 {
+                        return Err(Diagnostic::new(
+                            pattern.span,
+                            "sequence pattern prefix limit exceeded",
+                        ));
+                    }
                     pending.extend(fields.iter().map(|p| (p, depth + 1)));
                     0
                 }
@@ -73,6 +87,36 @@ impl Budget {
                 _ => 0,
             };
             self.charge(bytes, pattern.span)?;
+        }
+        Ok(())
+    }
+    /// Bound flat sequence fields and reject recursively structured rest payloads before copies.
+    fn sequence<'a>(
+        &mut self,
+        prefix: &'a [ast::Pattern],
+        rest: Option<&'a ast::Pattern>,
+        pending: &mut Vec<(&'a ast::Pattern, usize)>,
+        depth: usize,
+        span: Span,
+    ) -> Checked<()> {
+        if prefix.len() > 128 {
+            return Err(Diagnostic::new(
+                span,
+                "sequence pattern prefix limit exceeded",
+            ));
+        }
+        pending.extend(prefix.iter().map(|p| (p, depth + 1)));
+        if let Some(rest) = rest {
+            if !matches!(
+                rest.kind,
+                ast::PatternKind::Bind(_) | ast::PatternKind::Wildcard
+            ) {
+                return Err(Diagnostic::new(
+                    rest.span,
+                    "sequence rest must be a binding or wildcard",
+                ));
+            }
+            pending.push((rest, depth + 1));
         }
         Ok(())
     }

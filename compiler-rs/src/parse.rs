@@ -8,6 +8,7 @@ use crate::{Constructor, Diagnostic, Span, Type};
 const MAX_SOURCE: usize = 1024 * 1024;
 const MAX_TOKENS: usize = 65_536;
 const MAX_DEPTH: usize = 128;
+const MAX_PATTERN_PREFIX: usize = 128;
 type ParseResult<T> = Result<T, Diagnostic>;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -102,7 +103,7 @@ fn push(tokens: &mut Vec<Token>, kind: Kind, start: usize, end: usize) -> ParseR
     Ok(())
 }
 
-struct CallbackLayout {
+struct SuiteLayout {
     delimiters: usize,
     indent: usize,
     levels: usize,
@@ -112,16 +113,16 @@ struct LayoutLexer {
     tokens: Vec<Token>,
     levels: Vec<usize>,
     delimiters: Vec<Token>,
-    callbacks: Vec<CallbackLayout>,
+    suites: Vec<SuiteLayout>,
 }
 
-/// Tokenize physical lines while preserving layout inside bounded callback bodies.
+/// Tokenize logical rows while preserving bounded expression suites inside delimiters.
 fn lex(source: &str) -> ParseResult<Vec<Token>> {
     let mut lexer = LayoutLexer {
         tokens: Vec::new(),
         levels: vec![0],
         delimiters: Vec::new(),
-        callbacks: Vec::new(),
+        suites: Vec::new(),
     };
     let mut offset = 0;
     while offset < source.len() {
@@ -159,39 +160,16 @@ impl LayoutLexer {
             return Ok(consumed);
         }
         self.prepare_layout(rest, indent, offset)?;
-        let from = self.tokens.len();
-        for token in raw {
-            push(
-                &mut self.tokens,
-                token.kind,
-                token.span.start,
-                token.span.end,
-            )?;
-        }
-        track_delimiters(&self.tokens[from..], &mut self.delimiters)?;
-        if self
-            .callbacks
-            .last()
-            .is_some_and(|frame| self.delimiters.len() < frame.delimiters)
-        {
-            return Err(Diagnostic::new(
-                span,
-                "close callback argument delimiters on a dedented line",
-            ));
-        }
-        if !self.delimiters.is_empty()
-            && self
-                .tokens
-                .last()
-                .is_some_and(|token| token.kind == Kind::Arrow)
-        {
-            if self.callbacks.len() >= MAX_DEPTH {
+        let opens = suite_header(&raw, self.delimiters.len())?;
+        self.append_line(raw)?;
+        if opens && !self.delimiters.is_empty() && !self.layout_active() {
+            if self.suites.len() >= MAX_DEPTH {
                 return Err(Diagnostic::new(
                     span,
-                    "callback layout depth limit exceeded",
+                    "embedded suite layout depth limit exceeded",
                 ));
             }
-            self.callbacks.push(CallbackLayout {
+            self.suites.push(SuiteLayout {
                 delimiters: self.delimiters.len(),
                 indent,
                 levels: self.levels.len(),
@@ -208,26 +186,16 @@ impl LayoutLexer {
         Ok(consumed)
     }
 
-    /// End callback frames before their parent's separators without consuming outer layout.
+    /// End embedded frames at parent layout while retaining enclosing indentation.
     fn prepare_layout(&mut self, rest: &str, indent: usize, offset: usize) -> ParseResult<()> {
-        while let Some(frame) = self.callbacks.last() {
+        while let Some(frame) = self.suites.last() {
             if self.delimiters.len() != frame.delimiters || indent > frame.indent {
                 break;
             }
-            if self.levels.len() == frame.levels {
-                return Err(Diagnostic::new(
-                    Span {
-                        start: offset,
-                        end: offset + indent,
-                    },
-                    "expected indented callback body",
-                ));
-            }
-            while self.levels.len() > frame.levels {
-                self.levels.pop();
-                push(&mut self.tokens, Kind::Dedent, offset, offset + indent)?;
-            }
-            self.callbacks.pop();
+            self.close_suite(Span {
+                start: offset,
+                end: offset + indent,
+            })?;
         }
         if self.layout_active() {
             if rest.starts_with("|>") && indent >= *self.levels.last().unwrap() {
@@ -241,14 +209,106 @@ impl LayoutLexer {
         Ok(())
     }
 
-    /// A callback restores layout only at its own surrounding delimiter depth.
+    /// Close complete embedded bodies before their caller's comma or closing delimiter.
+    fn append_line(&mut self, raw: Vec<Token>) -> ParseResult<()> {
+        for token in raw {
+            if matches!(
+                token.kind,
+                Kind::Comma | Kind::Right | Kind::RightBracket | Kind::RightBrace
+            ) {
+                while self
+                    .suites
+                    .last()
+                    .is_some_and(|frame| frame.delimiters == self.delimiters.len())
+                {
+                    self.close_suite(token.span)?;
+                }
+            }
+            track_delimiters(std::slice::from_ref(&token), &mut self.delimiters)?;
+            push(
+                &mut self.tokens,
+                token.kind,
+                token.span.start,
+                token.span.end,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Emit only the indentation owned by one bounded embedded suite frame.
+    fn close_suite(&mut self, span: Span) -> ParseResult<()> {
+        let frame = self.suites.last().expect("checked suite frame");
+        if self.levels.len() == frame.levels {
+            return Err(Diagnostic::new(
+                span,
+                "expected indented embedded suite body",
+            ));
+        }
+        while self.levels.len() > frame.levels {
+            self.levels.pop();
+            push(&mut self.tokens, Kind::Dedent, span.start, span.end)?;
+        }
+        self.suites.pop();
+        Ok(())
+    }
+
+    /// A suite restores layout only at its own surrounding delimiter depth.
     fn layout_active(&self) -> bool {
         self.delimiters.is_empty()
             || self
-                .callbacks
+                .suites
                 .last()
                 .is_some_and(|frame| frame.delimiters == self.delimiters.len())
     }
+}
+
+/// Recognize a final suite introducer without treating map keys or string holes as layout.
+fn suite_header(tokens: &[Token], mut depth: usize) -> ParseResult<bool> {
+    let mut heads = Vec::new();
+    let mut strings = 0usize;
+    let mut opens = false;
+    for token in tokens {
+        opens = false;
+        match token.kind {
+            Kind::StringOpen | Kind::MultilineOpen => {
+                strings += 1;
+                continue;
+            }
+            Kind::StringClose | Kind::MultilineClose => {
+                strings = strings.saturating_sub(1);
+                continue;
+            }
+            _ if strings > 0 => continue,
+            _ => {}
+        }
+        match &token.kind {
+            Kind::Left | Kind::LeftBracket | Kind::LeftBrace => depth += 1,
+            Kind::Right | Kind::RightBracket | Kind::RightBrace => {
+                heads.retain(|head| *head < depth);
+                depth = depth.saturating_sub(1);
+            }
+            Kind::Name(name) if matches!(name.as_str(), "if" | "match" | "for" | "else") => {
+                if heads.len() >= MAX_DEPTH {
+                    return Err(Diagnostic::new(
+                        token.span,
+                        "embedded suite header depth limit exceeded",
+                    ));
+                }
+                heads.push(depth);
+                opens = name == "else";
+            }
+            Kind::Name(name) if matches!(name.as_str(), "with" | "do") => opens = true,
+            Kind::Colon => {
+                if let Some(index) = heads.iter().rposition(|head| *head == depth) {
+                    heads.remove(index);
+                    opens = true;
+                }
+            }
+            Kind::Arrow => opens = true,
+            _ => {}
+        }
+    }
+    Ok(opens)
 }
 
 /// Validate delimiter pairing and suspend layout inside parenthesized/list syntax.
@@ -2357,7 +2417,10 @@ impl Parser {
     /// Parse nested constructors, scalar literals, wildcard and lowercase bindings.
     fn pattern_value(&mut self) -> ParseResult<Pattern> {
         if self.current().kind == Kind::Left {
-            return self.tuple_pattern();
+            return self.sequence_pattern(false);
+        }
+        if self.current().kind == Kind::LeftBracket {
+            return self.sequence_pattern(true);
         }
         if matches!(self.current().kind, Kind::Name(_)) && !self.word("true") && !self.word("false")
         {
@@ -2406,35 +2469,70 @@ impl Parser {
         Ok(Pattern { kind, span })
     }
 
-    /// Parse positional patterns, retaining singleton commas and grouping.
-    fn tuple_pattern(&mut self) -> ParseResult<Pattern> {
+    /// Parse bounded list/tuple prefixes, preserving grouping and singleton tuple identity.
+    fn sequence_pattern(&mut self, list: bool) -> ParseResult<Pattern> {
         let mut span = self.take().span;
-        let mut fields = Vec::new();
-        if self.current().kind != Kind::Right {
-            let first = self.pattern()?;
+        let close = if list {
+            Kind::RightBracket
+        } else {
+            Kind::Right
+        };
+        let mut prefix = Vec::new();
+        let mut rest = None;
+        let mut comma = false;
+        for _ in 0..self.tokens.len() {
+            if self.current().kind == close {
+                break;
+            }
+            if self.eat(&Kind::Range) {
+                rest = Some(Box::new(self.rest_pattern()?));
+                self.eat(&Kind::Comma);
+                if self.current().kind != close {
+                    return Err(
+                        self.error("rest pattern must be last; only one rest binding is allowed")
+                    );
+                }
+                break;
+            }
+            if prefix.len() >= MAX_PATTERN_PREFIX {
+                return Err(self.error("sequence pattern prefix limit exceeded (128)"));
+            }
+            prefix.push(self.pattern()?);
             if !self.eat(&Kind::Comma) {
-                self.expect(Kind::Right, "expected ',' or ')' after pattern")?;
-                return Ok(first);
+                break;
             }
-            fields.push(first);
-            for _ in 0..self.tokens.len() {
-                if self.current().kind == Kind::Right {
-                    break;
-                }
-                fields.push(self.pattern()?);
-                if !self.eat(&Kind::Comma) {
-                    break;
-                }
-            }
+            comma = true;
         }
         span.end = self
-            .expect(Kind::Right, "expected ',' or ')' after tuple pattern")?
+            .expect(
+                close,
+                "expected ',' or closing delimiter after sequence pattern",
+            )?
             .span
             .end;
-        Ok(Pattern {
-            kind: PatternKind::Tuple(fields),
-            span,
-        })
+        let kind = if list {
+            PatternKind::List { prefix, rest }
+        } else if let Some(rest) = rest {
+            PatternKind::TupleRest { prefix, rest }
+        } else if prefix.len() == 1 && !comma {
+            return Ok(prefix.remove(0));
+        } else {
+            PatternKind::Tuple(prefix)
+        };
+        Ok(Pattern { kind, span })
+    }
+
+    /// Restrict a suffix to one identifier or wildcard; nested patterns are never rest values.
+    fn rest_pattern(&mut self) -> ParseResult<Pattern> {
+        let (name, span) = self
+            .name()
+            .map_err(|_| self.error("rest pattern requires a binding name or '_'"))?;
+        let kind = if name == "_" {
+            PatternKind::Wildcard
+        } else {
+            PatternKind::Bind(name)
+        };
+        Ok(Pattern { kind, span })
     }
 
     /// Parse recursive constructor fields while retaining the compatible flat AST form.
