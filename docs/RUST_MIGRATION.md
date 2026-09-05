@@ -516,3 +516,21 @@ iteration effects and rollback after rejected entries.
 Delayed-shape checkpoint gates pass: 693 Rust tests, 550 C tests, 173 core native
 programs, 156 invalid inputs and the complete entry/access, controlled-fault, fuzz
 and documentation suites on macOS arm64.
+
+## Native JSON core
+
+The runtime now provides an immutable opaque JSON tree with validating parsing,
+ordered compact serialization, typed accessors and exact number text. Explicit
+Int conversion rejects fractions/overflow; Float conversion preserves binary64
+bits and uses a private locale. Unicode validation, decoded duplicate-key
+rejection, escaped NUL preservation and explicit resource limits are documented
+in [the native contract](JSON_NATIVE_CORE.md).
+
+This checkpoint preserves both legacy JSON symbols and current source bindings.
+Fourteen new ABI symbols remain explicitly internal until the source-type and
+adapter migration lands. Debug, release and ASan/UBSan runs each pass 14,309 API
+checks, 24 internal budget checks and 6,000 deterministic numeric oracle cases.
+The new native gate runs with the full Rust suite.
+
+The integrated native JSON checkpoint passes all C/Rust/native/fuzz/documentation
+gates on macOS arm64; existing source-language behavior remains compatible.

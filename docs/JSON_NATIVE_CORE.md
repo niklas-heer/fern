@@ -1,0 +1,141 @@
+# Immutable JSON native core (J1)
+
+This is a native foundation, not a completed source-language JSON API. The
+existing `fern_json_parse` and `fern_json_stringify` string-copy ABI and current
+source signatures are unchanged. Builders, collection adapters, source type and
+registry migration, and REPL parity belong to subsequent checkpoints.
+
+## ABI and ownership
+
+`runtime/fern_runtime.h` declares opaque `FernJsonValue` and `FernJsonError`
+pointers. All allocations use Fern's existing scanned runtime allocator and are
+retained by the GC; callers must not free them individually. Values are immutable.
+The C API requires valid, non-NULL opaque pointers returned by this API. It does
+not validate forged C pointers or provide mutable access to internal fields.
+
+All functions below use the `fern_json_value_` prefix:
+
+| Suffix | Parameters | Result |
+| --- | --- | --- |
+| `parse` | `const char*` | `Result(Value*, Error*)` |
+| `stringify` | `const Value*` | `Result(String, Error*)` |
+| `is_null` | `const Value*` | `int64_t`, zero or one |
+| `get` | `const Value*, const char*` | `Result(Value*, Error*)` |
+| `at` | `const Value*, int64_t` | `Result(Value*, Error*)` |
+| `length` | `const Value*` | `Result(Int, Error*)`, array/object only |
+| `as_bool` | `const Value*` | `Result(Bool, Error*)` |
+| `as_int` | `const Value*` | `Result(Int, Error*)` |
+| `as_float` | `const Value*` | `Result(Float bits, Error*)` |
+| `as_string` | `const Value*` | `Result(String, Error*)` |
+| `number_text` | `const Value*` | `Result(String, Error*)` |
+| `error_code` | `const Error*` | `int64_t` |
+| `error_offset` | `const Error*` | `int64_t` |
+| `error_message` | `const Error*` | static `const char*` |
+
+Every Result is the existing full-width heap Result returned as `int64_t`.
+Success/failure tags are read with `fern_result_is_ok`; the full-width payload is
+read with `fern_result_unwrap`. Pointer payloads convert through `intptr_t`.
+Float success payloads are binary64 bits copied with `memcpy`, not an integer
+numeric conversion. These are ordinary Result failures, not hidden fault-context
+errors; normal source Result handling will apply after the vertical migration.
+
+## Format profile
+
+Parsing accepts scalar roots, JSON's four whitespace bytes, and at most one
+leading UTF-8 BOM. Offsets include the BOM. Comments, trailing content, trailing
+commas, malformed numbers and other whitespace are rejected. Strings require
+Unicode scalar UTF-8; escaped surrogate pairs decode to one scalar, and unpaired
+surrogates are rejected. A malformed scalar reports its first byte (a malformed
+surrogate pair reports the first backslash). Incomplete or nonhex `\u` syntax
+reports the first syntax failure instead.
+
+Objects preserve input member order and reject duplicate **decoded** names,
+including differently escaped names. A stable sorted index supports lookup
+without changing serialization order. Duplicate errors identify the later
+member's opening quote within the first duplicate group encountered in sorted
+key order. `get` distinguishes missing names from wrong value kinds. Empty names
+and prefix-related names remain distinct. `at` checks negative and large signed
+indices before reading array storage. `length` never treats a String as an array.
+
+Decoded JSON strings and names retain lengths and can contain escaped NUL.
+Stringification re-escapes NUL as `\u0000`; `as_string` returns code10 if exposing
+the string through Fern's current NUL-terminated String ABI would truncate it.
+C input parameters are NUL-terminated; embedded input bytes after the terminator
+are outside that ABI. `get` therefore cannot address a NUL-containing key; such
+keys remain preserved by parse/stringify, with a lossless members adapter planned
+for the next checkpoint.
+
+Numbers preserve the entire validated ASCII spelling. Parsing never rounds
+through Float. `number_text` and stringification preserve exponent spelling,
+trailing fractional zeros, negative zero, and arbitrary precision within limits.
+`as_int` analyzes decimal digits/exponents exactly, accepts mathematically
+integral values, and rejects fractions or signed64 overflow. Exponents saturate
+for analysis, so their magnitude never controls loop counts. `as_float` explicitly
+rounds to binary64 in a private C locale; finite subnormals are accepted, while
+nonfinite overflow and mathematically nonzero values rounded to zero return
+code8. Negative zero retains its sign. Locale handles are released after use;
+no process-global locale changes or fault state are introduced.
+
+Encoding is compact, preserves object order and number spelling, and emits UTF-8
+with JSON escapes for controls, quotes and backslashes. It is not a canonical
+signing format. It allocates once using validated subtree byte-count metadata.
+
+## Stable errors
+
+Parse offsets are zero-based input bytes; unexpected EOF uses input length.
+Accessor/conversion/encoding failures use offset `-1`. Messages are static and
+do not incorporate untrusted input. The first failure is preserved.
+
+| Code | Name | Message |
+| --- | --- | --- |
+| 1 | Syntax | `invalid JSON syntax` |
+| 2 | InvalidUnicode | `invalid JSON Unicode` |
+| 3 | DuplicateKey | `duplicate JSON object key` |
+| 4 | LimitExceeded | `JSON resource limit exceeded` |
+| 5 | TypeMismatch | `JSON value has wrong type` |
+| 6 | MissingKey | `JSON object key not found` |
+| 7 | IndexOutOfBounds | `JSON array index out of bounds` |
+| 8 | NumberOutOfRange | `JSON number out of range` |
+| 9 | NonIntegralNumber | `JSON number is not an integer` |
+| 10 | UnrepresentableString | `JSON string contains NUL` |
+| 11 | NonFiniteNumber | `JSON number is not finite` |
+
+Code11 is reserved for the upcoming Float builder. The parser rejects NaN and
+Infinity as syntax; conversion overflow uses code8. Host failure to create the
+private conversion locale returns code4. Actual allocation exhaustion follows
+the existing runtime allocator contract, not a promised recoverable JSON OOM.
+
+## Bounds and testing
+
+- Input: 1 MiB excluding the C terminator; over-limit offset is 1048576.
+- Depth: 128, counting the root at depth1.
+- Nodes: 100,000, counting root, children and object key String nodes.
+- Logical allocations per parse: 32 MiB, including abandoned growth buffers and
+  both sorting indices. Allocator bookkeeping and the fixed Result/error envelope
+  are outside this logical byte count. Every allocation is charged before use.
+- Encoded content: 16 MiB, excluding the terminator. Subtree metadata records
+  height, expanded node count and encoded bytes for later immutable builders.
+- Work: `8 * input_bytes + 64 * 100000`. The linear scan/copy bound of
+  `8 * input_bytes` is reserved before parsing; additional node work, string
+  decoding units, vector copies, merge steps and compared key bytes are charged
+  from the remainder. Exhaustion returns code4, never a partial value.
+
+Index construction uses bounded bottom-up merge sort, with compared bytes
+charged individually to prevent common-prefix amplification. Lookup is bounded
+binary search over at most 100,000 nodes and keys of at most1 MiB. Decimal
+conversion loops are bounded by the number lexeme length and at most19 output
+digits. Encoding traversal is bounded by cached expanded nodes/depth/output;
+opaque J1 values cannot contain cycles or shared exponential trees.
+
+The 32 MiB allocation and 16 MiB output checks are defensive ceilings: parsed
+J1 trees normally reach the stricter input/node limits first. Internal boundary
+tests exercise those ceilings directly without exposing a public limit override.
+Future builders must enforce depth, expanded-node and byte metadata when sealing;
+the current parser supplies the first two invariants during descent/allocation.
+
+Run `env -u LIBRARY_PATH python3 scripts/test_runtime_json.py` after building the
+runtime archive in the selected checkout. It compiles fresh JSON objects for
+three variants (debug, release and ASan/UBSan), and tests the actual runtime GC
+and Result ABI. Temporary objects/binaries are isolated; it never starts a shared
+runtime build. Boehm owns its heap, so sanitizer success complements explicit
+bounds checks rather than claiming instrumentation of every GC allocation.

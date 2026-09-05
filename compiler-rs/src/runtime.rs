@@ -1136,6 +1136,7 @@ const ENTRIES: &[Entry] = &[
 ];
 
 const OMISSIONS: &[Omission] = &[
+    Omission { names: &["fern_json_value_as_bool", "fern_json_value_as_float", "fern_json_value_as_int", "fern_json_value_as_string", "fern_json_value_at", "fern_json_value_error_code", "fern_json_value_error_message", "fern_json_value_error_offset", "fern_json_value_get", "fern_json_value_is_null", "fern_json_value_length", "fern_json_value_number_text", "fern_json_value_parse", "fern_json_value_stringify"], reason: "Opaque JSON native core; source typing and explicit ABI adapters are a separately gated migration." },
     Omission {
         names: &["fern_str_slice_is_valid", "fern_str_split_is_valid"],
         reason: "Internal nonallocating UTF-8 preflight helpers used by compiler-generated fault guards, not source APIs",

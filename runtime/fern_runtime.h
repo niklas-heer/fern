@@ -845,6 +845,110 @@ int64_t fern_read_dir_result(const char* path);
 
 /* ========== Gate C Stdlib Runtime Surface ========== */
 
+/* Immutable JSON native core: legacy source bindings below remain unchanged. */
+typedef struct FernJsonValue FernJsonValue;
+typedef struct FernJsonError FernJsonError;
+
+/**
+ * Parse a bounded JSON document; Result(Value pointer, Error pointer).
+ * @param text non-NULL NUL-terminated input (maximum1 MiB).
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_parse(const char* text);
+
+/**
+ * Compactly encode a valid immutable value; Result(String, Error pointer).
+ * @param value valid opaque value returned by this API.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_stringify(const FernJsonValue* value);
+
+/**
+ * Test the JSON null kind; returns zero or one.
+ * @param value valid opaque value.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_is_null(const FernJsonValue* value);
+
+/**
+ * Look up an object member; Result(Value pointer, Error pointer).
+ * @param value valid opaque value.
+ * @param key non-NULL NUL-terminated lookup name.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_get(const FernJsonValue* value, const char* key);
+
+/**
+ * Read an array element with bounds checking; Result(Value pointer, Error pointer).
+ * @param value valid opaque value.
+ * @param index signed zero-based index.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_at(const FernJsonValue* value, int64_t index);
+
+/**
+ * Count array elements or object members; Result(Int, Error pointer).
+ * @param value valid opaque value.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_length(const FernJsonValue* value);
+
+/**
+ * Extract Bool; failure carries Error pointer.
+ * @param value valid opaque value.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_as_bool(const FernJsonValue* value);
+
+/**
+ * Convert exact integral decimal to signed64; failure carries Error pointer.
+ * @param value valid opaque value.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_as_int(const FernJsonValue* value);
+
+/**
+ * Convert to binary64; successful Result payload contains Float bits; failure carries Error pointer.
+ * @param value valid opaque value.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_as_float(const FernJsonValue* value);
+
+/**
+ * Extract NUL-free decoded text; failure carries Error pointer.
+ * @param value valid opaque value.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_as_string(const FernJsonValue* value);
+
+/**
+ * Extract original number lexeme; failure carries Error pointer.
+ * @param value valid opaque value.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_number_text(const FernJsonValue* value);
+
+/**
+ * Read stable code1..11.
+ * @param error valid opaque error.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_error_code(const FernJsonError* error);
+
+/**
+ * Read zero-based input byte offset or -1.
+ * @param error valid opaque error.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+int64_t fern_json_value_error_offset(const FernJsonError* error);
+
+/**
+ * Read a stable static message.
+ * @param error valid opaque error.
+ * @return See description; all referenced allocations are runtime-owned.
+ */
+const char* fern_json_value_error_message(const FernJsonError* error);
+
 /**
  * Parse JSON text.
  * Placeholder Gate C contract:

@@ -463,6 +463,7 @@ rust-check: rust-build
     python3 scripts/test_rust_inference_shapes.py
     python3 scripts/test_rust_stdlib.py
     python3 scripts/test_runtime_directory.py
+    python3 scripts/test_runtime_json.py
     python3 scripts/test_rust_fuzz.py
 
 # Build both frontends with release settings for the opt-in evaluation.

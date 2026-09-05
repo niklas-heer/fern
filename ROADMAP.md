@@ -195,7 +195,8 @@ The design document is broader than the executable implementation. See
 Do not interpret the historical Gate A–D labels as language completion.
 
 - [ ] Execute actor functions with suspension, typed messages/receive/timeouts, and descendant supervision lifecycle.
-- [ ] Complete the JSON value/parser API beyond the compatible string-copy baseline.
+- [x] Immutable native JSON parser/accessors/stringifier with exact numbers, Unicode validation and bounded resources (14,309 API checks, 24 budget checks and 6,000 numeric oracle cases in debug/release/sanitizer builds).
+- [ ] Migrate source JSON values, builders, collection adapters and REPL beyond the compatible string-copy baseline.
 - [ ] Implement HTTP serving and the broader SQL query/resource APIs described in the design.
 - [ ] Complete function clauses/pattern parameters, labeled calls, aliases/newtypes/unions, traits/constraints and full private signature inference through native execution.
 - [ ] Complete Sets and the specified standard modules, including data formats, testing/utilities, IO/system, cryptography and compression.
