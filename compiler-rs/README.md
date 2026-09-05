@@ -378,7 +378,19 @@ bindings; already completed filesystem effects cannot be rolled back.
 UTF-16 diagnostics, full/incremental document changes and module-aware checking
 against unsaved buffers. Imported errors retain their source URI; dependency edits
 recheck callers and clear stale diagnostics. It currently reports the first error
-per checked module graph and advertises diagnostics/synchronization only.
+per checked module graph. Go-to-definition follows source bindings, including
+shadowed locals, clause parameters, captures and visible imported declarations.
+Completion respects lexical scope and module visibility, replaces the current
+identifier using UTF-16 ranges, and offers builtin prefixes such as `List.` even
+when the surrounding source is incomplete. Comments and plain string contents
+do not produce code suggestions.
+
+Navigation rebuilds its bounded source index from current accepted buffers on
+each request; it never falls back to stale locations from a previous valid edit.
+It requires a parsable source graph but can work before type errors are fixed.
+Completion returns at most 256 items and 1 MiB of output; retained editor symbol
+names are capped at 8 MiB. Hover, typed record
+members, rename and code actions remain subsequent tooling checkpoints.
 
 ## Architecture
 

@@ -12,6 +12,13 @@ This document tracks major architectural and technical decisions made during the
 * **Consequences**: Capability requirements preserve the concrete domains of arithmetic, addition, ordering, equality, printing, collection membership and map keys. Calls and function values instantiate and propagate those requirements with their types, under bounded work. Concrete impossible requirements and incompatible universal returns are errors even when unused. Conditional Result discard obligations remain distinct from type equality. Concrete specialization continues to validate the backend boundary. Public where/trait syntax and whole private-signature generalization build on this internal scheme representation separately. The unavailable `/decision` skill is replaced by the established decision format.
 
 
+### 65 Index editor symbols by source identity and lexical scope
+* **Date**: 2026-09-05
+* **Status**: Accepted for Rust migration completion
+* **Decision**: I will build bounded editor symbol snapshots from the current source graph and lexical bindings, with definitions identified by their original file and source anchor. Navigation and completion will use the same module visibility and qualification facts as compilation.
+* **Context**: Final IR identifiers are local to functions and may be duplicated by generic specialization or closure lifting. Text matching cannot distinguish shadowed bindings, separate clause parameters or imported private names. Existing unsaved overlays and UTF-16 synchronization already define coherent editor inputs.
+* **Consequences**: Accepted edits invalidate semantic snapshots. Unresolved or invalid current source produces no stale semantic locations. Completion is deterministic, bounded and respects scopes, aliases and public exports; builtin prefix completion may remain available on incomplete source without inventing types. Exact source ranges distinguish code from comments and literal text. Semantic hover and typed members require checker facts and will be advertised only when implemented. The unavailable `/decision` skill is replaced by the established decision format.
+
 ### 64 Infer private parameter types from complete pattern evidence
 * **Date**: 2026-09-05
 * **Status**: Accepted for Rust migration completion

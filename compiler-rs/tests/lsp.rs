@@ -1,6 +1,4 @@
-use fern_prototype::{ast, check, modules, parse, Diagnostic, Span, Type};
-#[path = "../src/lsp.rs"]
-mod lsp;
+use fern_prototype::lsp;
 
 fn frame(message: &str) -> Vec<u8> {
     format!("Content-Length: {}\r\n\r\n{message}", message.len()).into_bytes()

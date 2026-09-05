@@ -9,6 +9,7 @@ use std::{
 
 const MAX_FILES: usize = 128;
 const MAX_BYTES: usize = 8 * 1024 * 1024;
+const MAX_EDITOR_SYMBOL_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug)]
 pub struct Error {
@@ -27,7 +28,22 @@ pub struct SourceDiagnostic {
 pub struct Loaded {
     pub program: ast::Program,
     sources: Vec<Source>,
+    pub symbols: Vec<ModuleSymbols>,
 }
+/// Visible spellings retained before import aliases are flattened for compilation.
+#[derive(Debug)]
+pub struct ModuleSymbols {
+    pub path: PathBuf,
+    pub names: BTreeMap<String, String>,
+}
+
+/// Borrowed source mapping for editor positions without cloning entire documents.
+pub struct SourceView<'a> {
+    pub path: &'a Path,
+    pub text: &'a str,
+    pub start: usize,
+}
+
 #[derive(Debug)]
 struct Source {
     path: PathBuf,
@@ -47,6 +63,7 @@ struct Loader {
     seen: BTreeMap<PathBuf, usize>,
     visiting: BTreeSet<PathBuf>,
     bytes: usize,
+    editor: bool,
 }
 type Names = BTreeMap<String, String>;
 
@@ -59,6 +76,23 @@ pub fn load(entry: &Path) -> Result<Loaded, Error> {
 pub fn load_with_sources(
     entry: &Path,
     sources: &HashMap<PathBuf, String>,
+) -> Result<Loaded, Error> {
+    load_sources(entry, sources, false)
+}
+
+/// Load a navigation snapshot with bounded per-file visible names; compiler loading omits these tables.
+pub fn load_editor_sources(
+    entry: &Path,
+    sources: &HashMap<PathBuf, String>,
+) -> Result<Loaded, Error> {
+    load_sources(entry, sources, true)
+}
+
+/// Share identical import resolution while making editor-only metadata an explicit bounded opt-in.
+fn load_sources(
+    entry: &Path,
+    sources: &HashMap<PathBuf, String>,
+    editor: bool,
 ) -> Result<Loaded, Error> {
     let snapshots = snapshots(sources)?;
     let entry = source_identity(entry)?;
@@ -101,12 +135,38 @@ pub fn load_with_sources(
         seen: BTreeMap::new(),
         visiting: BTreeSet::new(),
         bytes: 0,
+        editor,
     };
     let entry_id = loader.visit(&entry, Some(&name), 0)?;
     loader.resolve(entry_id)
 }
 
 impl Loaded {
+    /// Borrow every original source and its offset in the flattened syntax.
+    pub fn sources(&self) -> impl Iterator<Item = SourceView<'_>> {
+        self.sources.iter().map(|source| SourceView {
+            path: &source.path,
+            text: &source.text,
+            start: source.start,
+        })
+    }
+
+    /// Locate a source span without modifying or allocating source contents.
+    pub fn locate_span(&self, span: Span) -> Option<(&Path, Span)> {
+        let source = self.sources.iter().find(|source| {
+            span.start <= span.end
+                && span.start >= source.start
+                && span.end <= source.start + source.text.len()
+        })?;
+        Some((
+            &source.path,
+            Span {
+                start: span.start - source.start,
+                end: span.end - source.start,
+            },
+        ))
+    }
+
     /// Locate a checker diagnostic without losing its original source or byte range.
     pub fn locate(&self, mut diagnostic: Diagnostic) -> Option<SourceDiagnostic> {
         let source = self.sources.iter().find(|s| {
@@ -369,6 +429,9 @@ impl Loader {
         let mut exports: Vec<Names> = Vec::new();
         let mut program = ast::Program::default();
         let mut sources = Vec::new();
+        let mut symbols = Vec::new();
+        let mut symbol_count = 0;
+        let mut symbol_bytes = 0;
         for (id, mut module) in self.modules.into_iter().enumerate() {
             let public = (|| {
                 let mut visible = own_names(&module, id == entry)?;
@@ -384,6 +447,15 @@ impl Loader {
                         &mut imported_prefixes,
                     )
                     .map_err(|e| at_span(e, import.span))?;
+                }
+                if self.editor {
+                    record_symbols(
+                        &mut symbols,
+                        &mut symbol_count,
+                        &mut symbol_bytes,
+                        &module.source.path,
+                        &visible,
+                    )?;
                 }
                 for doc in &mut module.syntax.docs {
                     doc.target = own[&doc.target].clone();
@@ -409,8 +481,40 @@ impl Loader {
             exports.push(public);
             sources.push(module.source);
         }
-        Ok(Loaded { program, sources })
+        Ok(Loaded {
+            program,
+            sources,
+            symbols,
+        })
     }
+}
+
+/// Bound aliases to 100,000 entries and 8 MiB of name bytes before cloning across the graph.
+/// The navigation index's one active visibility-table clone is bounded by this same aggregate cap.
+fn record_symbols(
+    symbols: &mut Vec<ModuleSymbols>,
+    count: &mut usize,
+    bytes: &mut usize,
+    path: &Path,
+    names: &Names,
+) -> Result<(), Error> {
+    *count = count.saturating_add(names.len());
+    if *count > 100_000 {
+        return Err(failure("editor symbol index limit exceeded"));
+    }
+    for (name, target) in names {
+        *bytes = bytes
+            .saturating_add(name.len())
+            .saturating_add(target.len());
+        if *bytes > MAX_EDITOR_SYMBOL_BYTES {
+            return Err(failure("editor symbol byte limit exceeded"));
+        }
+    }
+    symbols.push(ModuleSymbols {
+        path: path.to_owned(),
+        names: names.clone(),
+    });
+    Ok(())
 }
 
 /// Expand exported types to include only their own constructors.

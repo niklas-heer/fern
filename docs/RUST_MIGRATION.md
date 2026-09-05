@@ -401,3 +401,34 @@ interactive regressions check early rejection and preserved session state.
 
 Generic scheme checkpoint gates pass: 579 Rust tests, 550 C tests, complete
 native/fuzz checks and documentation checks on macOS arm64.
+
+## Source navigation and completion
+
+The Rust language server now advertises go-to-definition and completion alongside
+its existing synchronization and diagnostics. Definition locations use original
+source identities, preserving separate clause binders, local shadowing, captures,
+constructor/type references and visible imported names. Unsaved dependencies,
+module aliases and public re-exports use the compiler's module-resolution facts.
+
+Each request builds a fresh bounded index from accepted editor buffers. Syntax
+errors never reuse an older source location; type errors do not prevent lexical
+navigation through a successfully parsed graph. Lexer spans exclude comments and
+literal text while retaining code inside interpolation. Both cursor positions
+and replacement ranges use UTF-16, including non-BMP identifiers.
+
+Completion filters by lexical scope and prefix, with deterministic ordering and
+limits of 256 entries and 1 MiB of serialized output. Builtin prefix suggestions
+also work for incomplete expressions such as `List.`. Ordinary compilation does
+not retain editor-only symbol copies. Typed hover, record-member completion,
+rename, code actions and broader incomplete-code recovery remain open.
+
+Retained editor symbol names have an aggregate 8 MiB byte limit, in addition to
+the entry count bound. This bounds the new editor copies; the existing resolver
+still has a separate transient alias-expansion limitation.
+
+The checkpoint adds 21 navigation regressions and three module/index regressions.
+An executable JSON-RPC smoke verifies initialization, definition, scoped
+completion, shutdown and clean protocol output.
+
+Reviewed navigation checkpoint gates pass: 603 Rust tests, 550 C tests, complete
+native/fuzz gates and documentation checks on macOS arm64.

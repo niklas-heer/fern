@@ -1,6 +1,10 @@
 //! Bounded JSON-RPC transport and UTF-16 editor diagnostics.
 //! Lifecycle and sync follow https://microsoft.github.io/language-server-protocol/.
-use crate::{ast, check, modules, parse, Span, Type};
+use crate::{ast, check, modules, parse, runtime, Span, Type};
+#[path = "lsp/index.rs"]
+mod index;
+#[path = "lsp/navigation.rs"]
+mod navigation;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
@@ -603,6 +607,14 @@ impl Server {
                             "capabilities",
                             object([
                                 ("positionEncoding", string("utf-16")),
+                                ("definitionProvider", Json::Bool(true)),
+                                (
+                                    "completionProvider",
+                                    object([
+                                        ("resolveProvider", Json::Bool(false)),
+                                        ("triggerCharacters", Json::Array(vec![string(".")])),
+                                    ]),
+                                ),
                                 (
                                     "textDocumentSync",
                                     object([
@@ -621,6 +633,12 @@ impl Server {
                         ),
                     ]),
                 )
+            }
+            "textDocument/definition" | "textDocument/completion" => {
+                match self.navigation(method, params) {
+                    Ok(result) => respond(output, id, result),
+                    Err(error) => send_error(output, id, -32602, &error),
+                }
             }
             "initialize" => send_error(output, id, -32600, "initialize may only be requested once"),
             "shutdown" => {

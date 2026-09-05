@@ -1,0 +1,809 @@
+//! Source identities and cursor-local lexical scopes, independent of generated IR.
+use super::{ast, modules, parse, Span};
+use std::{collections::BTreeMap, path::Path};
+
+type Bindings = BTreeMap<String, Span>;
+#[derive(Clone)]
+pub(super) struct Symbol {
+    pub span: Span,
+    pub kind: i64,
+}
+pub(super) struct Source<'a> {
+    pub path: &'a Path,
+    pub text: &'a str,
+    pub start: usize,
+    pub tokens: parse::IdentifierIndex,
+}
+pub(super) struct Index<'a> {
+    pub sources: Vec<Source<'a>>,
+    pub visible: BTreeMap<String, String>,
+    pub globals: BTreeMap<String, Symbol>,
+    pub locals: Bindings,
+    pub target: Option<Span>,
+    cursor: usize,
+    token: Option<Span>,
+    work: usize,
+    blocked: bool,
+}
+
+impl<'a> Index<'a> {
+    /// Build from the exact source graph already resolved with all current editor overlays.
+    pub fn loaded(loaded: &'a modules::Loaded, path: &Path, cursor: usize) -> Option<Self> {
+        let source = loaded.sources().find(|s| s.path == path)?;
+        let offset = source.start;
+        let sources = loaded
+            .sources()
+            .map(|s| Self::source(s.path, s.text, s.start))
+            .collect::<Option<Vec<_>>>()?;
+        let visible = loaded
+            .symbols
+            .iter()
+            .find(|s| s.path == path)?
+            .names
+            .clone();
+        Self::build(&loaded.program, sources, visible, offset + cursor)
+    }
+    /// Non-file documents use the same lexical rules without inventing filesystem imports.
+    pub fn single(
+        program: &ast::Program,
+        source: &'a str,
+        path: &'a Path,
+        cursor: usize,
+    ) -> Option<Self> {
+        let sources = vec![Self::source(path, source, 0)?];
+        let mut visible = BTreeMap::new();
+        for function in &program.functions {
+            visible.insert(function.name.clone(), function.name.clone());
+        }
+        for ty in &program.types {
+            visible.insert(ty.name.clone(), ty.name.clone());
+            for variant in &ty.variants {
+                visible.insert(variant.name.clone(), variant.name.clone());
+                let leaf = variant.name.rsplit('.').next().unwrap_or(&variant.name);
+                visible.insert(format!("{}.{leaf}", ty.name), variant.name.clone());
+            }
+        }
+        Self::build(program, sources, visible, cursor)
+    }
+    /// Keep lexical indexing bounded independently of parser layout and checker work.
+    fn source(path: &'a Path, text: &'a str, start: usize) -> Option<Source<'a>> {
+        Some(Source {
+            path,
+            text,
+            start,
+            tokens: parse::identifier_index(text).ok()?,
+        })
+    }
+    /// Collect declaration identities once; inspect only scopes containing this request's cursor.
+    fn build(
+        program: &ast::Program,
+        sources: Vec<Source<'a>>,
+        visible: BTreeMap<String, String>,
+        cursor: usize,
+    ) -> Option<Self> {
+        let count: usize = sources.iter().map(|s| s.tokens.identifiers.len()).sum();
+        if count > 100_000 || visible.len() > 100_000 {
+            return None;
+        }
+        let token = sources.iter().find_map(|s| {
+            s.tokens
+                .identifiers
+                .iter()
+                .find(|span| span.start + s.start <= cursor && cursor <= span.end + s.start)
+                .map(|span| Span {
+                    start: span.start + s.start,
+                    end: span.end + s.start,
+                })
+        });
+        let mut index = Self {
+            sources,
+            visible,
+            globals: BTreeMap::new(),
+            locals: Bindings::new(),
+            target: None,
+            cursor,
+            token,
+            work: 0,
+            blocked: false,
+        };
+        index.declarations(program);
+        let extended = index.extended_function(program);
+        for function in &program.functions {
+            if !index.contains(function.span) && extended != Some(function.span.start) {
+                continue;
+            }
+            let mut locals = Bindings::new();
+            for param in &function.params {
+                index.pattern(&param.pattern, &mut locals, 0)?;
+            }
+            if let Some(guard) = &function.guard {
+                index.expression(guard, &locals, 0)?;
+            }
+            if extended == Some(function.span.start) {
+                if let ast::ExprKind::Block(statements) = &function.body.kind {
+                    index.capture(&locals)?;
+                    index.block(statements, &locals, 0)?;
+                }
+            } else {
+                index.expression(&function.body, &locals, 0)?;
+            }
+        }
+        index.global_reference();
+        Some(index)
+    }
+    /// An indented trailing blank line remains inside its last block until another declaration begins.
+    fn extended_function(&self, program: &ast::Program) -> Option<usize> {
+        let source = self
+            .sources
+            .iter()
+            .find(|s| self.cursor >= s.start && self.cursor <= s.start + s.text.len())?;
+        let before = source.text.get(..self.cursor - source.start)?;
+        let line = before.rsplit('\n').next()?;
+        if line.is_empty() || !line.bytes().all(|b| b == b' ') {
+            return None;
+        }
+        let function = program
+            .functions
+            .iter()
+            .filter(|f| f.span.start >= source.start && f.span.start <= self.cursor)
+            .max_by_key(|f| f.span.start)?;
+        if self.cursor <= function.span.end
+            || !matches!(function.body.kind, ast::ExprKind::Block(_))
+            || !self.extends(function.span, false)
+        {
+            return None;
+        }
+        let separated = program
+            .types
+            .iter()
+            .map(|d| d.span.start)
+            .chain(program.imports.iter().map(|d| d.span.start))
+            .any(|start| start > function.span.start && start <= self.cursor);
+        (!separated).then_some(function.span.start)
+    }
+
+    /// Source declarations retain their first clause and exact selected identifier range.
+    fn declarations(&mut self, program: &ast::Program) {
+        for function in &program.functions {
+            if let Some(span) = self.identifier(function.span, 1) {
+                self.globals
+                    .entry(function.name.clone())
+                    .or_insert(Symbol { span, kind: 3 });
+            }
+        }
+        for ty in &program.types {
+            if let Some(span) = self.identifier(ty.span, 1) {
+                self.globals
+                    .insert(ty.name.clone(), Symbol { span, kind: 7 });
+            }
+            for variant in &ty.variants {
+                for field in &variant.fields {
+                    if field.name.is_some() {
+                        if let Some(span) = self.identifier(field.span, 0) {
+                            if self.contains(span) {
+                                self.target = Some(span);
+                            }
+                        }
+                    }
+                }
+                if ty.record {
+                    continue;
+                }
+                if let Some(span) = self.identifier(variant.span, 0) {
+                    self.globals
+                        .insert(variant.name.clone(), Symbol { span, kind: 4 });
+                }
+            }
+        }
+    }
+    /// Complete unresolved global occurrences, including annotations and import selectors.
+    fn global_reference(&mut self) {
+        if self.target.is_some() || self.blocked {
+            return;
+        }
+        let Some(token) = self.token else {
+            return;
+        };
+        let Some(word) = self.word(token) else {
+            return;
+        };
+        let Some(text) = self.text(word) else {
+            return;
+        };
+        let root = text.split('.').next().unwrap_or(text);
+        if let Some(binding) = self.locals.get(root) {
+            if word == token {
+                self.target = Some(*binding);
+            }
+            return;
+        }
+        if token.end != word.end {
+            return;
+        }
+        if let Some(name) = self.visible.get(text) {
+            self.target = self.globals.get(name).map(|s| s.span);
+        }
+    }
+
+    /// Resolve source-qualified spellings for annotations and pipeline targets without substring search.
+    fn word(&self, token: Span) -> Option<Span> {
+        let (_, source, local) = self.location(token)?;
+        let index = self
+            .sources
+            .iter()
+            .find(|s| token.start >= s.start && token.end <= s.start + s.text.len())?;
+        let mut first = index
+            .tokens
+            .identifiers
+            .partition_point(|s| s.start < local.start);
+        let mut last = first;
+        for _ in 0..128 {
+            if first == 0 {
+                break;
+            }
+            let previous = index.tokens.identifiers[first - 1];
+            let current = index.tokens.identifiers[first];
+            if source.get(previous.end..current.start) != Some(".") {
+                break;
+            }
+            first -= 1;
+        }
+        for _ in 0..128 {
+            let Some(next) = index.tokens.identifiers.get(last + 1) else {
+                break;
+            };
+            let current = index.tokens.identifiers[last];
+            if source.get(current.end..next.start) != Some(".") {
+                break;
+            }
+            last += 1;
+        }
+        Some(Span {
+            start: index.tokens.identifiers[first].start + index.start,
+            end: index.tokens.identifiers[last].end + index.start,
+        })
+    }
+    /// Locate a globally shifted span while borrowing its original source bytes.
+    pub fn location(&self, span: Span) -> Option<(&Path, &str, Span)> {
+        self.sources
+            .iter()
+            .find(|s| span.start >= s.start && span.end <= s.start + s.text.len())
+            .map(|s| {
+                (
+                    s.path,
+                    s.text,
+                    Span {
+                        start: span.start - s.start,
+                        end: span.end - s.start,
+                    },
+                )
+            })
+    }
+    /// Read a global source span through its original file without copying text.
+    fn text(&self, span: Span) -> Option<&str> {
+        let (_, source, span) = self.location(span)?;
+        source.get(span.start..span.end)
+    }
+    /// Select an identifier by token identity, never by searching comments or literal text.
+    fn identifier(&self, span: Span, skip: usize) -> Option<Span> {
+        let source = self
+            .sources
+            .iter()
+            .find(|s| span.start >= s.start && span.end <= s.start + s.text.len())?;
+        let first = source
+            .tokens
+            .identifiers
+            .partition_point(|id| id.start + source.start < span.start);
+        let id = source.tokens.identifiers.get(first.checked_add(skip)?)?;
+        (id.end + source.start <= span.end).then_some(Span {
+            start: id.start + source.start,
+            end: id.end + source.start,
+        })
+    }
+    /// Treat the caret immediately after a token as belonging to its source span.
+    fn contains(&self, span: Span) -> bool {
+        span.start <= self.cursor && self.cursor <= span.end
+    }
+    /// A trailing blank caret inherits a completed suite only while indentation keeps it open.
+    fn extends(&self, span: Span, block: bool) -> bool {
+        if self.cursor <= span.end {
+            return false;
+        }
+        let Some(source) = self
+            .sources
+            .iter()
+            .find(|s| span.start >= s.start && self.cursor <= s.start + s.text.len())
+        else {
+            return false;
+        };
+        let cursor = self.cursor - source.start;
+        let line = source.text[..cursor].rsplit('\n').next().unwrap_or("");
+        if line.is_empty() || !line.bytes().all(|b| b == b' ') {
+            return false;
+        }
+        let head = source.text[..span.start - source.start]
+            .rsplit('\n')
+            .next()
+            .unwrap_or("");
+        let indent = head.bytes().take_while(|b| *b == b' ').count();
+        if line.len() < indent + usize::from(!block) {
+            return false;
+        }
+        Self::trivia(source, span.end - source.start, cursor)
+    }
+    /// Skip only whitespace and indexed comments, never intervening declarations or literal text.
+    fn trivia(source: &Source<'_>, mut at: usize, end: usize) -> bool {
+        while at < end {
+            if source.text.as_bytes()[at].is_ascii_whitespace() {
+                at += 1;
+                continue;
+            }
+            let index = source
+                .tokens
+                .excluded
+                .partition_point(|span| span.start < at);
+            let Some(span) = source.tokens.excluded.get(index) else {
+                return false;
+            };
+            if span.start != at || span.end > end {
+                return false;
+            }
+            let text = &source.text[span.start..span.end];
+            if !text.starts_with('#') && !text.starts_with("/*") {
+                return false;
+            }
+            at = span.end;
+        }
+        true
+    }
+    /// Bound traversal and scope copying, including very large caller-created syntax graphs.
+    fn charge(&mut self, amount: usize, depth: usize) -> Option<()> {
+        self.work = self.work.checked_add(amount)?;
+        (self.work <= 400_000 && depth <= 128).then_some(())
+    }
+    /// Save only the currently visible lexical bindings under the shared work budget.
+    fn capture(&mut self, locals: &Bindings) -> Option<()> {
+        self.charge(locals.len(), 0)?;
+        self.locals = locals.clone();
+        Some(())
+    }
+    /// Match references only against their head tokens; argument names belong to their own scopes.
+    fn reference(&mut self, name: &str, span: Span, locals: &Bindings) {
+        let Some(token) = self.token else {
+            return;
+        };
+        let Some(first) = self.identifier(span, 0) else {
+            return;
+        };
+        let Some((_, text, local)) = self.location(span) else {
+            return;
+        };
+        let prefix = text
+            .get(local.start..)
+            .unwrap_or("")
+            .split(|c: char| c == '(' || c.is_whitespace())
+            .next()
+            .unwrap_or("");
+        if token.start < first.start || token.end > first.start + prefix.len() {
+            return;
+        }
+        let Some(root) = self.text(first) else {
+            return;
+        };
+        if let Some(binding) = locals.get(root) {
+            if token == first {
+                self.target = Some(*binding);
+            } else {
+                self.blocked = true;
+            }
+        } else if let Some(symbol) = self.globals.get(name) {
+            self.target = Some(symbol.span);
+        }
+    }
+    /// Introduce recursive pattern binders only within the scope supplied by their owner.
+    fn pattern(
+        &mut self,
+        pattern: &ast::Pattern,
+        locals: &mut Bindings,
+        depth: usize,
+    ) -> Option<()> {
+        self.charge(1, depth)?;
+        match &pattern.kind {
+            ast::PatternKind::Bind(name) => {
+                locals.insert(name.clone(), pattern.span);
+                if self.contains(pattern.span) {
+                    self.target = Some(pattern.span);
+                }
+            }
+            ast::PatternKind::Tuple(fields) | ast::PatternKind::NamedConstructor { fields, .. } => {
+                if let ast::PatternKind::NamedConstructor { name, .. } = &pattern.kind {
+                    self.reference(name, pattern.span, locals);
+                }
+                for field in fields {
+                    self.pattern(field, locals, depth + 1)?;
+                }
+            }
+            ast::PatternKind::List { prefix, rest } => {
+                for field in prefix {
+                    self.pattern(field, locals, depth + 1)?;
+                }
+                if let Some(rest) = rest {
+                    self.pattern(rest, locals, depth + 1)?;
+                }
+            }
+            ast::PatternKind::TupleRest { prefix, rest } => {
+                for field in prefix {
+                    self.pattern(field, locals, depth + 1)?;
+                }
+                self.pattern(rest, locals, depth + 1)?;
+            }
+            ast::PatternKind::Constructor {
+                binding: Some(name),
+                ..
+            } if name != "_" => {
+                if let Some(span) = self.identifier(pattern.span, 1) {
+                    locals.insert(name.clone(), span);
+                    if self.contains(span) {
+                        self.target = Some(span);
+                    }
+                }
+            }
+            _ => {}
+        }
+        Some(())
+    }
+    /// Select only the current expression subtree while retaining surrounding visible bindings.
+    fn expression(
+        &mut self,
+        expression: &ast::Expr,
+        locals: &Bindings,
+        depth: usize,
+    ) -> Option<()> {
+        if !self.contains(expression.span)
+            && !self.extends(
+                expression.span,
+                matches!(expression.kind, ast::ExprKind::Block(_)),
+            )
+        {
+            return Some(());
+        }
+        self.charge(1, depth)?;
+        self.capture(locals)?;
+        use ast::ExprKind as E;
+        match &expression.kind {
+            E::Name(name) => self.reference(name, expression.span, locals),
+            E::Call { name, args } => {
+                self.reference(name, expression.span, locals);
+                self.values(args, locals, depth)?;
+            }
+            E::Block(statements) => self.block(statements, locals, depth + 1)?,
+            E::Match { value, arms } => {
+                self.expression(value, locals, depth + 1)?;
+                self.arms(arms, locals, depth + 1)?;
+            }
+            E::Lambda { params, body } => {
+                let mut inner = locals.clone();
+                for p in params {
+                    let span = self.identifier(p.span, 0)?;
+                    inner.insert(p.name.clone(), span);
+                    if self.contains(span) {
+                        self.target = Some(span);
+                    }
+                }
+                self.expression(body, &inner, depth + 1)?;
+            }
+            E::For {
+                pattern,
+                iterable,
+                body,
+            } => {
+                self.expression(iterable, locals, depth + 1)?;
+                let mut inner = locals.clone();
+                self.pattern(pattern, &mut inner, depth + 1)?;
+                self.expression(body, &inner, depth + 1)?;
+            }
+            E::With {
+                bindings,
+                body,
+                arms,
+            } => self.with(bindings, body, arms.as_deref(), locals, depth + 1)?,
+            _ => self.children(expression, locals, depth + 1)?,
+        }
+        Some(())
+    }
+    /// Visit ordered expression children while preserving their surrounding scope.
+    fn values(&mut self, values: &[ast::Expr], locals: &Bindings, depth: usize) -> Option<()> {
+        for value in values {
+            self.expression(value, locals, depth + 1)?;
+        }
+        Some(())
+    }
+    /// Sequential initializers and let-else failures use old bindings; successful patterns begin later.
+    fn block(&mut self, statements: &[ast::Stmt], locals: &Bindings, depth: usize) -> Option<()> {
+        let mut inner = locals.clone();
+        for statement in statements {
+            self.charge(1, depth)?;
+            let (value, span) = match statement {
+                ast::Stmt::Expr(value) => {
+                    self.expression(value, &inner, depth + 1)?;
+                    continue;
+                }
+                ast::Stmt::Let { value, span, .. }
+                | ast::Stmt::LetPattern { value, span, .. }
+                | ast::Stmt::LetElse { value, span, .. } => (value, *span),
+            };
+            self.expression(value, &inner, depth + 1)?;
+            if let ast::Stmt::LetElse { else_branch, .. } = statement {
+                self.expression(else_branch, &inner, depth + 1)?;
+            }
+            if let ast::Stmt::Let { .. } = statement {
+                if let Some(binding) = self.identifier(span, 1) {
+                    if self.contains(binding) {
+                        self.target = Some(binding);
+                    }
+                }
+            }
+            if self.cursor < span.end {
+                if let ast::Stmt::LetPattern { pattern, .. } | ast::Stmt::LetElse { pattern, .. } =
+                    statement
+                {
+                    if self.contains(pattern.span) {
+                        self.pattern(pattern, &mut Bindings::new(), depth + 1)?;
+                    }
+                }
+                continue;
+            }
+            match statement {
+                ast::Stmt::Let { name, .. } => {
+                    if let Some(span) = self.identifier(span, 1) {
+                        inner.insert(name.clone(), span);
+                    }
+                }
+                ast::Stmt::LetPattern { pattern, .. } | ast::Stmt::LetElse { pattern, .. } => {
+                    self.pattern(pattern, &mut inner, depth + 1)?
+                }
+                _ => {}
+            }
+            self.capture(&inner)?;
+        }
+        Some(())
+    }
+    /// Expose pattern bindings only within the arm containing the current cursor.
+    fn arms(&mut self, arms: &[ast::MatchArm], locals: &Bindings, depth: usize) -> Option<()> {
+        for arm in arms {
+            if !self.contains(arm.span) && !self.extends(arm.span, false) {
+                continue;
+            }
+            let mut inner = locals.clone();
+            self.pattern(&arm.pattern, &mut inner, depth + 1)?;
+            self.capture(&inner)?;
+            if let Some(guard) = &arm.guard {
+                self.expression(guard, &inner, depth + 1)?;
+            }
+            self.expression(&arm.body, &inner, depth + 1)?;
+        }
+        Some(())
+    }
+    /// Introduce successful bindings sequentially while error arms retain the outer scope.
+    fn with(
+        &mut self,
+        bindings: &[ast::WithBinding],
+        body: &ast::Expr,
+        arms: Option<&[ast::MatchArm]>,
+        locals: &Bindings,
+        depth: usize,
+    ) -> Option<()> {
+        let mut inner = locals.clone();
+        for binding in bindings {
+            self.expression(&binding.value, &inner, depth + 1)?;
+            if self.cursor >= binding.span.end {
+                self.pattern(&binding.pattern, &mut inner, depth + 1)?;
+            } else if self.contains(binding.pattern.span) {
+                self.pattern(&binding.pattern, &mut Bindings::new(), depth + 1)?;
+            }
+        }
+        self.expression(body, &inner, depth + 1)?;
+        if let Some(arms) = arms {
+            self.arms(arms, locals, depth + 1)?;
+        }
+        Some(())
+    }
+    /// Visit embedded expressions without interpreting literal string text as code.
+    fn interpolation(
+        &mut self,
+        parts: &[ast::StringPart],
+        locals: &Bindings,
+        depth: usize,
+    ) -> Option<()> {
+        for part in parts {
+            if let ast::StringPart::Value(value) = part {
+                self.expression(value, locals, depth)?;
+            }
+        }
+        Some(())
+    }
+    /// Untyped record members cannot navigate to an unrelated global with the same spelling.
+    fn field_reference(
+        &mut self,
+        value: &ast::Expr,
+        locals: &Bindings,
+        depth: usize,
+    ) -> Option<()> {
+        if self.cursor > value.span.end {
+            self.blocked = true;
+        }
+        self.expression(value, locals, depth)
+    }
+
+    /// Nonbinding expression children inherit the same lexical scope.
+    fn children(&mut self, expression: &ast::Expr, locals: &Bindings, depth: usize) -> Option<()> {
+        use ast::ExprKind as E;
+        match &expression.kind {
+            E::Unary { value, .. } | E::Try(value) | E::Return(value) | E::Defer(value) => {
+                self.expression(value, locals, depth)?
+            }
+            E::Field { value, .. } => self.field_reference(value, locals, depth)?,
+            E::Binary { left, right, .. }
+            | E::Range {
+                start: left,
+                end: right,
+                ..
+            }
+            | E::PostfixIf {
+                value: left,
+                condition: right,
+            } => {
+                self.expression(left, locals, depth)?;
+                self.expression(right, locals, depth)?;
+            }
+            E::Apply { callee, args } => {
+                self.expression(callee, locals, depth)?;
+                self.values(args, locals, depth)?;
+            }
+            E::List(values) | E::Tuple(values) => self.values(values, locals, depth)?,
+            E::Map(pairs) => {
+                for (key, value) in pairs {
+                    self.expression(key, locals, depth)?;
+                    self.expression(value, locals, depth)?;
+                }
+            }
+            E::RecordUpdate { value, fields } => {
+                self.expression(value, locals, depth)?;
+                for field in fields {
+                    self.expression(&field.value, locals, depth)?;
+                }
+            }
+            E::Pipe { value, args, .. } => {
+                self.expression(value, locals, depth)?;
+                self.values(args, locals, depth)?;
+            }
+            E::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.expression(condition, locals, depth)?;
+                self.expression(then_branch, locals, depth)?;
+                if let Some(otherwise) = else_branch {
+                    self.expression(otherwise, locals, depth)?;
+                }
+            }
+            E::ConditionMatch(arms) => {
+                for arm in arms {
+                    if let Some(condition) = &arm.condition {
+                        self.expression(condition, locals, depth)?;
+                    }
+                    self.expression(&arm.body, locals, depth)?;
+                }
+            }
+            E::Interpolate(parts) | E::MultilineString(parts) => {
+                self.interpolation(parts, locals, depth)?
+            }
+            _ => {}
+        }
+        Some(())
+    }
+}
+
+/// Exact lexical completion prefix and replacement range, excluding comments and literal contents.
+pub(super) fn prefix(source: &str, cursor: usize) -> Option<(String, String, Span)> {
+    let tokens = parse::identifier_index(source).ok()?;
+    if tokens.excluded.iter().any(|s| {
+        s.start <= cursor
+            && (cursor < s.end || (cursor == s.end && source[s.start..s.end].starts_with('#')))
+    }) {
+        return None;
+    }
+    let token = tokens
+        .identifiers
+        .iter()
+        .find(|s| s.start <= cursor && cursor <= s.end);
+    let span = token.copied().unwrap_or(Span {
+        start: cursor,
+        end: cursor,
+    });
+    let prefix = source.get(span.start..cursor)?.to_owned();
+    let mut start = span.start;
+    let mut depth = 0;
+    while start > 0 && source.as_bytes().get(start - 1) == Some(&b'.') {
+        depth += 1;
+        if depth > 128 {
+            return None;
+        }
+        let index = tokens.identifiers.partition_point(|s| s.end < start - 1);
+        let previous = tokens
+            .identifiers
+            .get(index)
+            .filter(|s| s.end == start - 1)?;
+        start = previous.start;
+    }
+    let receiver = source
+        .get(start..span.start)?
+        .trim_end_matches('.')
+        .to_owned();
+    Some((receiver, prefix, span))
+}
+
+const CORE: &[&str] = &[
+    "Map.new",
+    "Map.get",
+    "Map.put",
+    "Map.delete",
+    "Map.len",
+    "Map.is_empty",
+    "Map.contains",
+    "Map.keys",
+    "Map.values",
+    "print",
+    "println",
+    "String.concat",
+    "String.eq",
+    "String.len",
+    "List.enumerate",
+    "List.map",
+    "List.fold",
+    "List.filter",
+    "List.find",
+    "List.any",
+    "List.all",
+    "Option.map",
+    "Result.map",
+    "Result.and_then",
+    "Result.unwrap_or_else",
+    "List.len",
+    "List.get",
+    "List.head",
+    "List.tail",
+    "List.is_empty",
+    "List.push",
+    "List.reverse",
+    "List.concat",
+    "List.contains",
+    "Option.is_some",
+    "Option.is_none",
+    "Option.unwrap_or",
+    "Result.is_ok",
+    "Result.is_err",
+    "Result.unwrap_or",
+    "Some",
+    "None",
+    "Ok",
+    "Err",
+];
+
+/// Compiler builtins complement the central runtime registry; unsupported names are filtered.
+pub(super) fn builtins() -> Vec<String> {
+    let mut names: Vec<_> = super::runtime::names()
+        .iter()
+        .filter(|n| super::runtime::lookup(n).is_some())
+        .map(|s| (*s).to_owned())
+        .collect();
+    names.extend(
+        CORE.iter()
+            .filter(|n| {
+                super::check::builtin(n).is_some() || matches!(**n, "Some" | "None" | "Ok" | "Err")
+            })
+            .map(|s| (*s).to_owned()),
+    );
+    names
+}

@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (579 Rust tests, 4 measurement-harness tests, 158 core native programs, 21 entry/access programs, 9 controlled-fault cases, 136 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (603 Rust tests, 4 measurement-harness tests, 158 core native programs, 21 entry/access programs, 9 controlled-fault cases, 136 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -90,6 +90,9 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Typed adjacent function clauses, guards and arrow bodies through shared dispatch, generic inference, modules/formatting and 255-parameter coverage (seven native programs and 11 invalid inputs).
 - [x] Private parameter inference from all clause patterns and supplied annotations, including delayed tuple-rest arity and nominal payload evidence; public boundaries and ambiguity diagnostics retained (seven native programs, nine invalid inputs and interactive regressions).
 - [x] Validate every generic body before specialization using rigid type equality and intrinsic capability requirements; propagate requirements through callbacks/recursive helpers and nominal Map fields (four native programs, 16 invalid programs and interactive regressions).
+- [x] Source-based LSP go-to-definition and scoped completion over current overlays, with module visibility, shadowing, UTF-16 edits and bounded output (21 navigation and three source-index regressions; executable protocol smoke).
+- [ ] Whole private-signature inference and SCC generalization, including delayed shape constraints.
+- [ ] Typed editor hover/member completion and incomplete-code recovery.
 - [ ] Remaining function/type syntax and complete native-language audit.
 - [ ] Track semantic Result handling beyond local references (for example, inspecting a List(Result) length currently counts as handling its elements).
 
@@ -196,10 +199,10 @@ Do not interpret the historical Gate A–D labels as language completion.
 
 ## Next Session Start Here
 
-For the active Rust migration, finish control flow and error handling, then
-remaining specified syntax and full native/tooling parity. Closures, higher-order
-operations, maps and record updates have verified checkpoints. Preserve the
-concrete type/ABI and native-output gates in
+For the active Rust migration, finish whole private-signature inference and
+typed editor tooling, then remaining specified syntax and native/stdlib parity.
+Control flow, closures, maps, function clauses and generic-body validation have
+verified checkpoints. Preserve the concrete type/ABI and native-output gates in
 [migration progress](docs/RUST_MIGRATION.md).
 
 1. Implement real actor execution and descendant lifecycle; preserve the deterministic contracts.

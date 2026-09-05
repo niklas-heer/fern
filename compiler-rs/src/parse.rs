@@ -950,6 +950,45 @@ pub(crate) fn line_continues(source: &str) -> bool {
     })
 }
 
+/// Source token ranges used by editor navigation; literal text and comments are excluded.
+#[derive(Clone, Debug, Default)]
+pub struct IdentifierIndex {
+    pub identifiers: Vec<Span>,
+    pub excluded: Vec<Span>,
+}
+
+/// Index exact UTF-8 identifier boundaries without requiring complete delimiter layout.
+pub fn identifier_index(source: &str) -> Result<IdentifierIndex, Diagnostic> {
+    if source.len() > MAX_SOURCE {
+        return Err(Diagnostic::new(
+            Span::default(),
+            "source exceeds 1 MiB limit",
+        ));
+    }
+    let mut tokens = Vec::new();
+    let mut offset = 0;
+    while offset < source.len() {
+        offset += lex_line(&source[offset..], 0, offset, &mut tokens)?;
+    }
+    let mut index = IdentifierIndex::default();
+    for token in tokens {
+        match token.kind {
+            Kind::Name(_) => index.identifiers.push(token.span),
+            Kind::Text(_)
+            | Kind::Comment
+            | Kind::Doc(_)
+            | Kind::StringOpen
+            | Kind::StringClose
+            | Kind::MultilineOpen
+            | Kind::MultilineClose => {
+                index.excluded.push(token.span);
+            }
+            _ => {}
+        }
+    }
+    Ok(index)
+}
+
 /// Recognize punctuation or report unsupported characters at a UTF-8 boundary.
 fn punctuation(rest: &str, start: usize) -> ParseResult<(Kind, usize)> {
     let pairs = [
