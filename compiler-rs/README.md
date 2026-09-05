@@ -444,7 +444,7 @@ Documentation uses the parser to retain function clause groups, guards, nested
 signatures, type declarations and Unicode names. All declarations are included,
 with their original visibility and annotations. Each literal @doc belongs to its
 own declaration. Generation requires valid syntax, but no main, backend or code
-execution. It does not infer missing signatures. HTML displays documentation as
+execution. Use `--inferred` to add checked signatures as described below. HTML displays documentation as
 escaped literal text; Markdown retains authored documentation markup.
 
 Single files are bounded to 1 MiB and 4,096 declarations; single-file output is
@@ -462,6 +462,24 @@ links are not followed. Limits are 256 files, 8,192 visited entries, directory
 depth 32, 8 MiB combined source, 4,096 declarations and 16 MiB project output;
 each source retains the parser's 1 MiB limit. Errors preserve the previous output,
 and output aliases of any discovered source are rejected.
+
+Use `fern-rs doc library.fn --inferred` or `fern-rs doc src --inferred --html`
+to supplement original headers with resolved signatures and intrinsic requirements.
+This checks each current module graph once, including private/generic bodies,
+and never executes code. Imports and source anchors determine which declaration
+owns each signature; generated generic names are rendered as ordinary variables.
+Invalid graphs preserve previous output. Default source-only generation remains
+available for syntactically valid code with unfinished type errors.
+
+Checked generation protects both documented files and imported dependencies from
+output replacement. It retains up to 1,024 cached source snapshots while each
+module graph keeps the compiler's 128-file/8 MiB limits. Across roots, copied
+snapshot bytes (copied once) plus loaded graph bytes are limited to 16 MiB, and at most 1,024
+loaded source instances are checked. Metadata uses 16,384 type nodes and 1 MiB of
+names per graph; each rendered signature/requirements block is at most 32 KiB.
+Unrelated cached source contents are borrowed during graph loading. Library callers
+supplying `FunctionInfo` must preserve facts from the same source snapshot;
+identity and size checks cannot attest caller-edited semantic types.
 
 ## Executable documentation examples
 

@@ -2,21 +2,26 @@
 use fern_prototype::documentation::{self, Output};
 use std::{ffi::OsString, fs, io::Read, path::PathBuf};
 mod directory;
+mod inferred;
 struct Options {
     source: PathBuf,
     output: Option<PathBuf>,
     format: Output,
+    inferred: bool,
 }
 
 /// Parse the doc action, validate source, then print or atomically install the complete document.
 pub(super) fn run(arguments: Vec<OsString>) -> Result<u8, String> {
     if arguments.len() == 2 && (arguments[1] == "--help" || arguments[1] == "-h") {
         use std::io::Write;
-        std::io::stdout().lock().write_all(b"Usage: fern-rs doc <source.fn|directory> [--html] [-o output]\nGenerate source documentation without executing code. Markdown is written to stdout by default. Directory HTML includes module navigation and local search.\n")
+        std::io::stdout().lock().write_all(b"Usage: fern-rs doc <source.fn|directory> [--html] [--inferred] [-o output]\nGenerate source documentation without executing code. Markdown is written to stdout by default. Directory HTML includes module navigation and local search. --inferred checks the current module graph and adds resolved signatures.\n")
             .map_err(|error| error.to_string())?;
         return Ok(0);
     }
     let options = options(arguments)?;
+    if options.inferred {
+        return inferred::run(&options.source, options.output.as_deref(), options.format);
+    }
     if options.source.is_dir() {
         return directory::run(&options.source, options.output.as_deref(), options.format);
     }
@@ -58,9 +63,15 @@ fn options(arguments: Vec<OsString>) -> Result<Options, String> {
     let mut source = None;
     let mut output = None;
     let mut html = false;
+    let mut inferred = false;
     let mut arguments = arguments.into_iter().skip(1);
     while let Some(argument) = arguments.next() {
-        if argument == "--html" {
+        if argument == "--inferred" {
+            if inferred {
+                return Err("--inferred specified more than once".into());
+            }
+            inferred = true;
+        } else if argument == "--html" {
             if html {
                 return Err("--html specified more than once".into());
             }
@@ -83,6 +94,7 @@ fn options(arguments: Vec<OsString>) -> Result<Options, String> {
         source: source.ok_or("doc requires a source file or directory")?,
         output,
         format: if html { Output::Html } else { Output::Markdown },
+        inferred,
     })
 }
 

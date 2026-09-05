@@ -8,12 +8,50 @@ pub struct SourceDocument<'a> {
     pub source: &'a str,
 }
 
+/// One original module paired with finalized source-local function schemes.
+pub struct InferredDocument<'a> {
+    pub path: &'a str,
+    pub source: &'a str,
+    pub schemes: &'a [crate::check::editor::FunctionInfo],
+}
+
+/// Render checked module documentation using the same navigation, escaping and output bounds.
+pub fn render_inferred_project(
+    documents: &[InferredDocument<'_>],
+    title: &str,
+    output: Output,
+) -> Result<String, Diagnostic> {
+    if documents.len() > 256 {
+        return Err(limit("project documentation file limit exceeded"));
+    }
+    let sources: Vec<_> = documents
+        .iter()
+        .map(|d| SourceDocument {
+            path: d.path,
+            source: d.source,
+        })
+        .collect();
+    let schemes: std::collections::HashMap<_, _> =
+        documents.iter().map(|d| (d.path, d.schemes)).collect();
+    render(&sources, title, output, Some(&schemes))
+}
+
 /// Render 1–256 unique modules without loading imports or executing examples.
 /// Aggregate source is limited to 8 MiB and generated output to 16 MiB.
 pub fn render_project(
     documents: &[SourceDocument<'_>],
     title: &str,
     output: Output,
+) -> Result<String, Diagnostic> {
+    render(documents, title, output, None)
+}
+
+/// Share source rendering while optionally joining each module's checked source-local anchors.
+fn render(
+    documents: &[SourceDocument<'_>],
+    title: &str,
+    output: Output,
+    schemes: Option<&std::collections::HashMap<&str, &[crate::check::editor::FunctionInfo]>>,
 ) -> Result<String, Diagnostic> {
     validate(documents, title)?;
     let mut documents = documents.to_vec();
@@ -31,8 +69,15 @@ pub fn render_project(
     for (index, document) in documents.iter().enumerate() {
         let parsed =
             parse::parse(document.source).map_err(|error| source_error(document, error))?;
-        let declarations = declarations(document.source, &parsed)
+        let mut declarations = declarations(document.source, &parsed)
             .map_err(|error| source_error(document, error))?;
+        if let Some(schemes) = schemes {
+            let metadata = schemes
+                .get(document.path)
+                .ok_or_else(|| limit("missing checked module metadata"))?;
+            inferred::attach(&parsed, &mut declarations, metadata)
+                .map_err(|error| source_error(document, error))?;
+        }
         if declarations.len() > 4096_usize.saturating_sub(count) {
             return Err(limit("project documentation declaration limit exceeded"));
         }

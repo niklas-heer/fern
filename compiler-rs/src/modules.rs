@@ -57,15 +57,15 @@ struct Module {
     syntax: ast::Program,
     dependencies: Vec<usize>,
 }
-struct Loader {
-    snapshots: HashMap<PathBuf, String>,
+struct Loader<'a> {
+    snapshots: HashMap<PathBuf, &'a str>,
     root: PathBuf,
     modules: Vec<Module>,
     seen: BTreeMap<PathBuf, usize>,
     visiting: BTreeSet<PathBuf>,
     bytes: usize,
     editor: bool,
-    entry_syntax: Option<(PathBuf, ast::Program)>,
+    entry_syntax: Option<(PathBuf, ast::Program, String)>,
     recovery: Option<parse::HoleSite>,
 }
 type Names = BTreeMap<String, String>;
@@ -80,7 +80,7 @@ pub fn load_with_sources(
     entry: &Path,
     sources: &HashMap<PathBuf, String>,
 ) -> Result<Loaded, Error> {
-    load_sources(entry, sources, false, None)
+    load_sources(entry, sources, false, None, MAX_FILES)
 }
 
 /// Load a navigation snapshot with bounded per-file visible names; compiler loading omits these tables.
@@ -88,7 +88,7 @@ pub fn load_editor_sources(
     entry: &Path,
     sources: &HashMap<PathBuf, String>,
 ) -> Result<Loaded, Error> {
-    load_sources(entry, sources, true, None)
+    load_sources(entry, sources, true, None, MAX_FILES)
 }
 
 /// Load one private token-level hole in the entry; every dependency uses ordinary current parsing.
@@ -97,7 +97,16 @@ pub(crate) fn load_member_sources(
     sources: &HashMap<PathBuf, String>,
     cursor: usize,
 ) -> Result<Loaded, Error> {
-    load_sources(entry, sources, false, Some(cursor))
+    load_sources(entry, sources, false, Some(cursor), MAX_FILES)
+}
+
+/// Load one checked documentation graph from a bounded project snapshot cache.
+/// Each resolved graph retains 128-file/8 MiB limits; cached snapshots cap at 1024/16 MiB.
+pub fn load_documentation_sources(
+    entry: &Path,
+    sources: &HashMap<PathBuf, String>,
+) -> Result<Loaded, Error> {
+    load_sources(entry, sources, false, None, 1024)
 }
 
 /// Share identical import resolution while making editor-only metadata an explicit bounded opt-in.
@@ -106,8 +115,9 @@ fn load_sources(
     sources: &HashMap<PathBuf, String>,
     editor: bool,
     cursor: Option<usize>,
+    snapshot_limit: usize,
 ) -> Result<Loaded, Error> {
-    let mut snapshots = snapshots(sources)?;
+    let snapshots = snapshots(sources, snapshot_limit)?;
     let entry = source_identity(entry)?;
     let text = read_source(&entry, &snapshots)?;
     let (syntax, recovery) = match cursor {
@@ -147,8 +157,6 @@ fn load_sources(
             )));
         }
     }
-    // The cached entry syntax and its later source view must describe identical bytes.
-    snapshots.insert(entry.clone(), text);
     let mut loader = Loader {
         snapshots,
         root,
@@ -157,7 +165,7 @@ fn load_sources(
         visiting: BTreeSet::new(),
         bytes: 0,
         editor,
-        entry_syntax: Some((entry.clone(), syntax)),
+        entry_syntax: Some((entry.clone(), syntax, text)),
         recovery,
     };
     let entry_id = loader.visit(&entry, Some(&name), 0)?;
@@ -267,10 +275,14 @@ pub fn source_identity(path: &Path) -> Result<PathBuf, Error> {
 }
 
 /// Normalize aliases once, rejecting conflicting snapshots and oversized editor inputs.
-fn snapshots(sources: &HashMap<PathBuf, String>) -> Result<HashMap<PathBuf, String>, Error> {
-    if sources.len() > MAX_FILES || sources.values().map(String::len).sum::<usize>() > 2 * MAX_BYTES
-    {
-        return Err(failure("source snapshots exceed 128-file or 16 MiB limit"));
+fn snapshots(
+    sources: &HashMap<PathBuf, String>,
+    maximum: usize,
+) -> Result<HashMap<PathBuf, &str>, Error> {
+    if sources.len() > maximum || sources.values().map(String::len).sum::<usize>() > 2 * MAX_BYTES {
+        return Err(failure(format!(
+            "source snapshots exceed {maximum}-file or 16 MiB limit"
+        )));
     }
     let mut result = HashMap::new();
     for (path, text) in sources {
@@ -278,16 +290,19 @@ fn snapshots(sources: &HashMap<PathBuf, String>) -> Result<HashMap<PathBuf, Stri
             return Err(failure("source exceeds 1 MiB limit"));
         }
         let path = source_identity(path)?;
-        if result.get(&path).is_some_and(|old| old != text) {
+        if result.get(&path).is_some_and(|old| *old != text.as_str()) {
             return Err(failure("conflicting snapshots for the same source file"));
         }
-        result.insert(path, text.clone());
+        result.insert(path, text.as_str());
     }
     Ok(result)
 }
 
-fn read_source(path: &Path, sources: &HashMap<PathBuf, String>) -> Result<String, Error> {
-    sources.get(path).cloned().map_or_else(|| read(path), Ok)
+/// Copy only the selected source from a borrowed snapshot, or read bounded current disk bytes.
+fn read_source(path: &Path, sources: &HashMap<PathBuf, &str>) -> Result<String, Error> {
+    sources
+        .get(path)
+        .map_or_else(|| read(path), |text| Ok((*text).to_owned()))
 }
 
 fn located(path: &Path, source: &str, diagnostic: Diagnostic) -> Error {
@@ -351,7 +366,7 @@ fn valid_module(name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-impl Loader {
+impl Loader<'_> {
     /// Visit one dependency after recording the current DFS stack to reject cycles.
     fn visit(&mut self, path: &Path, expected: Option<&str>, depth: usize) -> Result<usize, Error> {
         let path = source_identity(path)?;
@@ -367,7 +382,7 @@ impl Loader {
         if depth >= MAX_FILES || self.modules.len() + self.visiting.len() >= MAX_FILES {
             return Err(failure("module graph exceeds 128-file limit"));
         }
-        let text = read_source(&path, &self.snapshots)?;
+        let text = self.source_text(&path)?;
         let start = self.bytes;
         self.bytes += text.len() + 1;
         if self.bytes > MAX_BYTES {
@@ -422,12 +437,20 @@ impl Loader {
         Ok(id)
     }
 
+    /// Consume the exact entry bytes paired with cached syntax, or copy only the selected dependency.
+    fn source_text(&mut self, path: &Path) -> Result<String, Error> {
+        match &mut self.entry_syntax {
+            Some((entry, _, text)) if entry == path => Ok(std::mem::take(text)),
+            _ => read_source(path, &self.snapshots),
+        }
+    }
+
     /// Reuse the entry's proven syntax once; dependencies always parse their current snapshots.
     fn source_syntax(&mut self, path: &Path, text: &str) -> Result<ast::Program, Error> {
         if self
             .entry_syntax
             .as_ref()
-            .is_some_and(|(entry, _)| entry == path)
+            .is_some_and(|(entry, _, _)| entry == path)
         {
             return Ok(self.entry_syntax.take().expect("matching entry syntax").1);
         }

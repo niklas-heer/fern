@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (830 Rust tests, 4 measurement-harness tests, 194 core native programs, 21 entry/access programs, 9 controlled-fault cases, 184 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (840 Rust tests, 4 measurement-harness tests, 194 core native programs, 21 entry/access programs, 9 controlled-fault cases, 184 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -94,7 +94,7 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Parser-based documentation for individual source files: clause groups, original signatures, types and literal @doc metadata; bounded Markdown/HTML output and atomic CLI writes (15 documentation/CLI regressions).
 - [x] Directory documentation with deterministic module navigation and local HTML search; bounded discovery, escaping and atomic source-safe publication (seven new library/CLI regressions and browser search/navigation checks).
 - [x] Rust executable documentation tests with checked pattern expectations, original module scope, isolated processes, bounded time/output and explicit library checking (20 Rust regressions and native execution scenarios).
-- [ ] Inferred documentation signatures.
+- [x] Checked inferred documentation signatures from one finalized source-scheme pass per module graph, retaining original headers and protecting all source dependencies (ten Rust regressions and browser search/layout checks).
 - [x] Whole private-signature inference and SCC generalization, including delayed shape constraints.
 - [x] Core private-signature generalization from patterns and bodies, with callee-first recursive components, rigid annotations and intrinsic requirements (eight native programs, 14 invalid programs and three interactive regressions).
 - [x] Delayed shape obligations using later body evidence for fields, updates, tuple-rest and iteration; non-executable probes rejected at publication boundaries (seven native programs, eight invalid programs and two interactive regressions).
@@ -211,8 +211,8 @@ Do not interpret the historical Gate A–D labels as language completion.
 
 ## Next Session Start Here
 
-For the active Rust migration, finish executable documentation, incomplete-code
-editor recovery and distinct newtypes, then the remaining
+For the active Rust migration, integrate distinct newtypes, finish regular unit-test
+execution and module namespace separation, then the remaining
 specified syntax and native/stdlib parity.
 Control flow, closures, maps, function clauses and generic-body validation have
 verified checkpoints. Preserve the concrete type/ABI and native-output gates in

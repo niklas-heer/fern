@@ -1,7 +1,9 @@
 //! Bounded documentation from parsed source declarations, without executing user code.
 use crate::{ast, parse, Diagnostic, Span};
+mod inferred;
 mod project;
-pub use project::{render_project, SourceDocument};
+pub use inferred::{render_inferred, render_with_schemes};
+pub use project::{render_inferred_project, render_project, InferredDocument, SourceDocument};
 const MAX_OUTPUT: usize = 8 * 1024 * 1024;
 const MAX_DECLARATIONS: usize = 4096;
 
@@ -16,6 +18,7 @@ struct Declaration<'a> {
     span: Span,
     headers: Vec<String>,
     doc: &'a str,
+    checked: Option<String>,
 }
 struct Writer {
     text: String,
@@ -29,8 +32,15 @@ pub fn render(source: &str, title: &str, output: Output) -> Result<String, Diagn
     if title.len() > 4096 {
         return Err(limit("documentation title exceeds 4096 bytes"));
     }
-    let program = parse::parse(source)?;
-    let declarations = declarations(source, &program)?;
+    render_with_schemes(source, title, output, None)
+}
+
+/// Render parsed declarations after optional checked signatures have been attached.
+fn render_declarations(
+    title: &str,
+    output: Output,
+    declarations: &[Declaration<'_>],
+) -> Result<String, Diagnostic> {
     let mut writer = Writer {
         text: String::new(),
         maximum: MAX_OUTPUT,
@@ -72,6 +82,7 @@ fn declarations<'a>(
                 span: function.span,
                 headers: vec![header],
                 doc: "",
+                checked: None,
             });
         }
     }
@@ -91,6 +102,7 @@ fn declarations<'a>(
             span,
             headers: vec![format!("{}{header}", if public { "pub " } else { "" })],
             doc: "",
+            checked: None,
         });
     }
     declarations.sort_by_key(|declaration| declaration.span.start);
@@ -174,6 +186,11 @@ impl Writer {
                 self.html(header)?;
                 self.push("</code></pre>\n")?;
             }
+            if let Some(checked) = &item.checked {
+                self.push("<p class=\"checked\">Checked signature</p><pre><code>")?;
+                self.html(checked)?;
+                self.push("</code></pre>\n")?;
+            }
             if !doc.is_empty() {
                 self.push("<pre class=\"doc\">")?;
                 self.html(doc)?;
@@ -186,6 +203,10 @@ impl Writer {
         self.push("\n\n")?;
         for header in &item.headers {
             self.code(header)?;
+        }
+        if let Some(checked) = &item.checked {
+            self.push("Checked signature:\n\n")?;
+            self.code(checked)?;
         }
         if !doc.is_empty() {
             self.push(doc)?;

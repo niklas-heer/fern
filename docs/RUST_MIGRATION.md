@@ -708,3 +708,34 @@ The loader retains exactly the bytes from which its entry AST was parsed.
 
 Incomplete-completion checkpoint gates pass: 830 Rust tests, 550 C tests and the
 complete native, sanitizer, fuzz and documentation suites on macOS arm64.
+
+
+## Checked inferred documentation
+
+The explicit `doc --inferred` mode checks current library graphs once per source
+root and collects bounded reusable function schemes from finalized source facts.
+Generated docs keep original headers, patterns, guards, aliases and literal text,
+then add resolved signatures and intrinsic requirements using the same generic
+display identities as hover. Default source-only docs retain their old contract.
+
+Imported declarations are attributed by canonical source path and byte anchor.
+Directory output shares existing navigation, local search, escaping and atomic
+publication. Every documented source and loaded dependency is protected against
+replacement, including hardlinks. Graph and copied snapshot work have aggregate
+limits distinct from each graph's ordinary compiler limits. External presentation
+metadata is bounded before copying and must match exact original source anchors.
+
+Ten new Rust regressions cover generic schemes, aliases/clauses/doc ownership,
+invalid source behavior, metadata bounds, imported signatures, atomic dependency
+protection and 129 independent files without conflating cache and graph limits.
+Review regressions reject mismatched metadata names/arity/clauses and ensure modest
+projects do not repeatedly copy every unrelated snapshot for each module graph.
+Snapshot contents are borrowed; exact entry bytes remain paired with their parsed AST.
+Externally supplied metadata must remain unmodified from the same source snapshot;
+size and identity validation do not authenticate caller-edited semantic types.
+
+Browser verification confirms checked signatures and requirements are visible,
+and searching requirements filters to the correct module and declaration.
+
+Checked-documentation checkpoint gates pass: 840 Rust tests, 550 C tests and the
+complete native, sanitizer, fuzz and documentation suites on macOS arm64.

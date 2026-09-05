@@ -65,6 +65,59 @@ pub fn analyze(source: &ast::Program, query: Query) -> Checked<Facts> {
     .map(|(_, facts)| facts)
 }
 
+/// Publish reusable schemes for every source group after one complete library check.
+/// Metadata shares a 16k-node/1MiB budget; clause groups retain their original anchors.
+pub fn function_schemes(source: &ast::Program) -> Checked<Vec<FunctionInfo>> {
+    super::pipeline(source, |_, _, signatures| {
+        let mut budget = Budget::default();
+        let mut result = Vec::new();
+        let mut index = 0;
+        while index < source.functions.len() {
+            let first = &source.functions[index];
+            let mut end = index + 1;
+            while end < source.functions.len() && source.functions[end].name == first.name {
+                end += 1;
+            }
+            let signature = signatures
+                .get(&first.name)
+                .ok_or_else(|| Diagnostic::new(first.span, "missing finalized source signature"))?;
+            result.push(signature_info(first, signature, end - index, &mut budget)?);
+            index = end;
+        }
+        Ok(result)
+    })
+    .map(|(_, facts)| facts)
+}
+
+/// Validate caller-supplied presentation metadata before any type/name cloning.
+pub(crate) fn validate_schemes(schemes: &[FunctionInfo]) -> Checked<()> {
+    if schemes.len() > 4096 {
+        return Err(limit());
+    }
+    let mut budget = Budget::default();
+    for info in schemes {
+        if info.parameters.len() > 255
+            || info.generics.len() > 4096
+            || info.requirements.len() > 4096
+            || !valid_span(info.origin)
+        {
+            return Err(limit());
+        }
+        budget.text(&info.name)?;
+        for ty in info.parameters.iter().chain([&info.result]) {
+            budget.ty(ty)?;
+        }
+        for name in &info.generics {
+            budget.text(name)?;
+        }
+        for requirement in &info.requirements {
+            budget.ty(&requirement.ty)?;
+            budget.text(&requirement.message)?;
+        }
+    }
+    Ok(())
+}
+
 /// Keep preparation and backend validation identical to ordinary compilation.
 fn analyze_prepared(
     source: &ast::Program,
@@ -152,6 +205,23 @@ fn function_info(
     else {
         return Ok(None);
     };
+    signature_info(
+        first,
+        signature,
+        source.functions.iter().filter(|f| f.name == name).count(),
+        budget,
+    )
+    .map(Some)
+}
+
+/// Copy one final scheme only after charging its complete structured metadata.
+fn signature_info(
+    first: &ast::Function,
+    signature: &Signature,
+    clauses: usize,
+    budget: &mut Budget,
+) -> Checked<FunctionInfo> {
+    let name = first.name.as_str();
     if !valid_span(first.span) {
         return Err(Diagnostic::new(
             first.span,
@@ -175,15 +245,15 @@ fn function_info(
             message: message.into(),
         });
     }
-    Ok(Some(FunctionInfo {
+    Ok(FunctionInfo {
         name: name.into(),
         origin: first.span,
         parameters: signature.params.clone(),
         result: signature.result.clone(),
         generics: signature.generics.clone(),
         requirements,
-        clauses: source.functions.iter().filter(|f| f.name == name).count(),
-    }))
+        clauses,
+    })
 }
 
 /// Resolve members using the same nominal substitution as field access, retaining source origins.
