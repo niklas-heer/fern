@@ -73,27 +73,21 @@ fn acceptance_fixtures_are_syntactically_valid_before_json_is_implemented() {
 }
 
 #[test]
-fn repl_json_calls_refuse_explicitly_and_do_not_commit_values() {
+fn repl_json_calls_use_the_checked_native_type_identities() {
     use fern_prototype::repl::Session;
     let mut session = Session::default();
     for source in [
-        "let missing = json.null()",
-        "let missing = Json.null()",
-        "let missing = List.map([1], json.from_int)",
+        "let value = json.null()",
+        "let value = Json.null()",
+        "let value = List.map([1], json.from_int)",
     ] {
-        let error = session.evaluate(source).unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("interactive support is not implemented"),
-            "{error}"
-        );
-        assert!(session.evaluate("missing").is_err());
+        session.evaluate(source).unwrap();
+        assert!(session.evaluate("value").unwrap().contains("json.Value"));
     }
 }
 
 #[test]
-fn retained_wrappers_and_closures_remain_explicitly_native_only() {
+fn retained_wrappers_and_closures_evaluate_json_values() {
     use fern_prototype::repl::Session;
     let mut session = Session::default();
     session.evaluate("let build = Json.from_int").unwrap();
@@ -102,12 +96,12 @@ fn retained_wrappers_and_closures_remain_explicitly_native_only() {
     session
         .evaluate("fn deferred() -> json.Value: json.null()")
         .unwrap();
-    for source in ["let missing = build(1)", "let missing = deferred()"] {
-        let error = session.evaluate(source).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("interactive support is not implemented"));
-        assert!(session.evaluate("missing").is_err());
+    for source in ["let value = build(1)", "let value = deferred()"] {
+        session.evaluate(source).unwrap();
+        assert_eq!(
+            session.evaluate("value").unwrap(),
+            "<json.Value> : json.Value\n"
+        );
     }
 }
 

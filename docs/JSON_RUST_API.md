@@ -2,9 +2,9 @@
 
 The Rust frontend now checks and compiles immutable JSON values through the
 validating native runtime. The C frontend retains its legacy string-copy source
-API. Interactive REPL evaluation reports that native JSON support is unavailable;
-stored functions may refer to the API, but invoking them does not fabricate JSON
-values or commit failed bindings. REPL parity is the next checkpoint.
+API. The REPL evaluates the same dynamic API using immutable Rust values and the
+same format/error profile. Values and closures persist across successful entries;
+failed evaluations do not commit new bindings.
 
 Use `json` or the compatibility spelling `Json`. Qualified annotations
 `json.Value`/`json.Error` and `Json.Value`/`Json.Error` identify the same opaque
@@ -88,5 +88,39 @@ The native gate runs ten exact-output programs and twelve semantic rejection
 cases, including direct/first-class calls, NUL members, signed 64-bit Int/Float values,
 opaque values retained through GC, deferred cleanup, and shared-tree limits.
 Eight Rust integration tests additionally cover qualified aliases, formatting,
-public-IR signature rejection and atomic explicit REPL refusal. Typed
+public-IR signature rejection and retained interactive wrappers. Typed
 `json.encode`, `json.decode(User)` and `derive(Json)` remain future codec work.
+
+## Interactive resource limits
+
+The REPL uses a safe, std-only JSON implementation. It preserves exact number
+lexemes, signed zero, native builder spelling, byte offsets, duplicate-key order,
+all eleven ordinary Result errors and escaped NUL. Opaque previews show
+`<json.Value>`/`<json.Error>`; explicit source printing still requires conversion.
+JSON String arguments observe the prefix before raw NUL, matching the native
+NUL-terminated ABI. Decoded escaped NUL remains lossless in JSON; `as_string`
+returns error 10 when it cannot expose that string through the source String ABI.
+
+Each JSON operation retains the native profile above. One interactive entry also
+has separate 64 MiB ceilings for aggregate charged JSON work and logical allocation;
+cleanup has independent 8 MiB reserves. Aggregate allocation charges also account
+for larger Rust node/collection storage; native logical per-operation counters
+remain unchanged. Failed attempts consume charges before
+execution. Exceeding an aggregate ceiling uses the existing interactive evaluation
+fault and cleanup rules, preserving the first failure. Ordinary JSON errors remain
+Result values and can be handled or retained. Existing interactive output/work
+limits and the 16 MiB/200,000 retained-value limits still apply; these can be tighter
+than the maximum output of an individual JSON operation.
+
+The retained graph walk counts unique shared nodes, text/vector storage and edges
+iteratively, including values captured in closures. Repeated aliases do not multiply
+subtrees; independent graphs consume storage separately. Existing output buffering,
+local file effects and failed-entry commit rules are unchanged. This does not make
+external file writes transactional, or add invalid-byte support to REPL File.read.
+
+Six REPL integration tests reuse all ten native JSON output oracles and cover
+cross-entry closures, offsets, rollback and shared storage. Fifteen private engine
+tests cover resource boundaries, cleanup budgets, exact 16 MiB encoding, DAG limits,
+and 6,000 decimal/binary64 plus 6,000 Float formatting oracles. The independent
+checksum generator is `scripts/json_repl_oracles.py`; it is test tooling, never
+called by JSON evaluation. C source migration and typed codecs remain future work.

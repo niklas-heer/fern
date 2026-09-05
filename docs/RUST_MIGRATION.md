@@ -633,8 +633,9 @@ builders evaluate their Map input once and reserve bounded parallel-list storage
 
 The [source contract](JSON_RUST_API.md) identifies the unreleased Rust signature
 breaks. The C source JSON contract and legacy copy symbols remain unchanged;
-REPL execution refuses these native-only calls explicitly and atomically until
-J3. Typed encode/decode and derive(Json) are still future work. The acceptance
+The J3 checkpoint below adds REPL parity; at J2 these calls were explicitly
+unavailable during interactive evaluation. Typed encode/decode and derive(Json)
+are still future work. The acceptance
 corpus adds ten native output programs and twelve semantic rejection programs;
 eight Rust tests cover aliases, formatting, opaque/public-IR validation and REPL
 refusal. Native debug/release/sanitizer tests add248 builder checks, including
@@ -671,3 +672,21 @@ Documentation-test checkpoint gates pass: 788 Rust tests, 550 C tests, the
 complete native/JSON/fuzz suites and documentation checks on macOS arm64.
 Frontend-only Cargo tests require no C/QBE backend; native example execution
 is verified separately by the explicit rust-check gate.
+
+
+## Interactive JSON parity (J3)
+
+All 24 dynamic JSON operations now execute in the Rust REPL through a std-only
+immutable value representation. The parser, exact conversions, ordered objects,
+NUL behavior, errors and per-operation limits match the native contract. Native
+C source migration and typed codecs remain separate.
+
+Six Session tests reuse all ten native output programs and verify retained values,
+closures, failure rollback and shared graph storage. Fifteen engine tests cover
+caps, ordinary errors, independent cleanup budgets, exact output boundaries and
+12,000 independent numeric/formatter oracles. Decision 77 records additional
+64 MiB normal and 8 MiB cleanup aggregate work/allocation limits; retained graphs
+remain under the existing 16 MiB/200,000 limits with unique Rc identity counting.
+
+Interactive JSON checkpoint gates pass: 809 Rust tests, 550 C tests and the
+complete native, sanitizer, fuzz and documentation suites on macOS arm64.

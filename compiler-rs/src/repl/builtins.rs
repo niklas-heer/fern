@@ -75,6 +75,9 @@ impl Machine {
         if let Some(builtin) = core_builtin(signature.symbol, signature.operation) {
             return self.builtin(builtin, args);
         }
+        if let Some(value) = self.json(signature.symbol, &args) {
+            return value;
+        }
         if let Some(value) = strings(signature.symbol, &args) {
             return value;
         }

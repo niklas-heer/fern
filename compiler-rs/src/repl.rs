@@ -9,6 +9,8 @@ enum Value {
     Bool(bool),
     String(Rc<String>),
     Unit,
+    Json(json::Json),
+    JsonError(json::Error),
     Range(i64, i64, bool),
     List(Rc<Vec<Value>>),
     Map(Rc<Vec<(Value, Value)>>),
@@ -122,6 +124,8 @@ struct Machine {
     defers: Vec<Value>,
     cleanup_depth: usize,
     cleanup_steps: usize,
+    json_limits: json::Limits,
+    json_cleanup: json::Limits,
 }
 impl Machine {
     /// Initialize one evaluation entry with fresh work and cleanup budgets.
@@ -135,6 +139,8 @@ impl Machine {
             defers: Vec::new(),
             cleanup_depth: 0,
             cleanup_steps: 0,
+            json_limits: json::Limits::new(64 * 1024 * 1024),
+            json_cleanup: json::Limits::new(8 * 1024 * 1024),
         }
     }
     /// Bound evaluator recursion and work independently of compiler syntax limits.
@@ -495,6 +501,8 @@ fn display(value: &Value) -> String {
         Value::Bool(v) => v.to_string(),
         Value::String(s) => format!("{s:?}"),
         Value::Unit => "()".into(),
+        Value::Json(_) => "<json.Value>".into(),
+        Value::JsonError(_) => "<json.Error>".into(),
         Value::Range(start, end, inclusive) => {
             format!("{start}..{}{end}", if *inclusive { "=" } else { "" })
         }
@@ -550,6 +558,7 @@ mod control;
 mod functions;
 #[path = "repl/iteration.rs"]
 mod iteration;
+mod json;
 #[path = "repl/maps.rs"]
 mod maps;
 mod patterns;
@@ -563,11 +572,13 @@ fn graph_budget<'a>(values: impl Iterator<Item = &'a Value>) -> Result<(), Strin
     let mut pending: Vec<_> = values.collect();
     let mut seen = std::collections::HashSet::new();
     let mut programs = std::collections::HashSet::new();
+    let mut json = json::Storage::default();
     let mut bytes = 0usize;
     let mut count = 0usize;
     while let Some(value) = pending.pop() {
         count += 1;
         match value {
+            Value::Json(value) => json.add(value, &mut bytes, &mut count)?,
             Value::String(s) => {
                 if seen.insert(Rc::as_ptr(s) as usize) {
                     bytes = bytes.saturating_add(s.len());

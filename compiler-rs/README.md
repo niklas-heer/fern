@@ -533,5 +533,6 @@ Native Rust programs use opaque `json.Value`/`json.Error` types and the complete
 [dynamic JSON API](../docs/JSON_RUST_API.md): validating parse/stringify, exact
 numeric conversion, immutable builders and ordered collection access. `Json` is
 a compatible module spelling. The old String/Int source signatures no longer
-apply to Rust; C source and both legacy native symbols remain unchanged. JSON
-execution in the REPL is explicitly unavailable pending its parity checkpoint.
+apply to Rust; C source and both legacy native symbols remain unchanged. The REPL evaluates the same JSON API using bounded immutable Rust values,
+including retained closures and ordinary Result errors. Its aggregate work and
+storage limits are documented in the API reference.

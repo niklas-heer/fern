@@ -3,7 +3,9 @@
 This document defines the native parser/accessor foundation. J2 adds immutable
 builders and collection adapters, exposed by the [Rust native API](JSON_RUST_API.md).
 The existing `fern_json_parse` and `fern_json_stringify` string-copy ABI and C
-source signatures remain unchanged. REPL parity and typed codecs remain separate.
+source signatures remain unchanged. The Rust REPL implements the same dynamic
+profile with additional interactive aggregate/retention limits; typed codecs remain
+separate. See [the Rust API](JSON_RUST_API.md).
 
 ## ABI and ownership
 
