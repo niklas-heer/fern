@@ -53,6 +53,11 @@ unreleased migration change; see the compatibility policy and Decision 50.
 
 ### `json`
 
+The following signatures describe the legacy C frontend. The Rust frontend now
+uses opaque values/errors and immutable builders; see [the Rust JSON API](JSON_RUST_API.md).
+Its `parse` returns `Result(json.Value, json.Error)` and `stringify` accepts a Value.
+The `Json` compatibility spelling follows the selected frontend.
+
 ```fern
 json.parse(text: String) -> Result(String, Int)
 json.stringify(text: String) -> Result(String, Int)

@@ -1,0 +1,1 @@
+fn main(): json.from_array([1, 2])

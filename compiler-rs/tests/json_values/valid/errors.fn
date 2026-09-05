@@ -1,0 +1,13 @@
+fn report(result: Result(json.Value, json.Error)):
+    match result:
+        Ok(_) -> println("unexpected")
+        Err(error) ->
+            println(json.error_code(error))
+            println(json.error_offset(error))
+            println(json.error_message(error))
+fn main() -> Result((), json.Error):
+    report(json.parse("[1,]"))
+    report(json.get(json.parse("\{\}")?, "missing"))
+    report(json.at(json.parse("[]")?, -1))
+    report(json.from_float(1.0 / 0.0))
+    Ok(())

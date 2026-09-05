@@ -1,0 +1,1 @@
+fn main(): println(Result.is_ok(json.stringify("[]")))

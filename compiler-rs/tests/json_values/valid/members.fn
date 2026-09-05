@@ -1,0 +1,13 @@
+fn main() -> Result((), json.Error):
+    let value = json.parse("\{\"a\\u0000b\":1,\"🌿\":2\}")?
+    for (key, item) in json.members(value)?:
+        println(json.stringify(key)?)
+        println(json.as_int(item)?)
+    let array = json.from_array([json.from_bool(false), value])?
+    for item in json.elements(array)?:
+        println(json.stringify(item)?)
+    match json.members(json.null()):
+        Ok(_) -> println("unexpected")
+        Err(error) -> println(json.error_code(error))
+    println(List.len(json.members(json.parse("\{\}")?)?))
+    Ok(())

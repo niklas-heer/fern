@@ -845,9 +845,90 @@ int64_t fern_read_dir_result(const char* path);
 
 /* ========== Gate C Stdlib Runtime Surface ========== */
 
-/* Immutable JSON native core: legacy source bindings below remain unchanged. */
+/* Immutable JSON native core: legacy C source bindings below remain unchanged. */
 typedef struct FernJsonValue FernJsonValue;
 typedef struct FernJsonError FernJsonError;
+
+/** Audited native member ABI; source tuples require an explicit tagged-layout adapter. */
+typedef struct { const FernJsonValue* key; const FernJsonValue* value; } FernJsonMember;
+
+/**
+ * Construct JSON null.
+ *
+ * @return Runtime-owned immutable value.
+ */
+FernJsonValue* fern_json_value_null(void);
+
+/**
+ * Construct JSON Boolean.
+ * @param boolean zero or one.
+ * @return Runtime-owned immutable value.
+ */
+FernJsonValue* fern_json_value_from_bool(int64_t boolean);
+
+/**
+ * Construct exact signed64 JSON number.
+ * @param number signed integer.
+ * @return Runtime-owned immutable value.
+ */
+FernJsonValue* fern_json_value_from_int(int64_t number);
+
+/**
+ * Construct finite JSON number, rejecting nonfinite Float.
+ * @param number binary64 Float.
+ * @return Heap Result with full-width success or opaque Error pointer; failures have offset-1.
+ */
+int64_t fern_json_value_from_float(double number);
+
+/**
+ * Validate and copy a decoded JSON String.
+ * @param text non-NULL text, at most1 MiB.
+ * @return Heap Result with full-width success or opaque Error pointer; failures have offset-1.
+ */
+int64_t fern_json_value_from_string(const char* text);
+
+/**
+ * Preserve exactly one JSON number token without whitespace.
+ * @param text non-NULL number text, at most1 MiB.
+ * @return Heap Result with full-width success or opaque Error pointer; failures have offset-1.
+ */
+int64_t fern_json_value_from_number_text(const char* text);
+
+/**
+ * Copy immutable JSON array references.
+ * @param list valid Value-pointer list.
+ * @return Heap Result with full-width success or opaque Error pointer; failures have offset-1.
+ */
+int64_t fern_json_value_from_array(const FernList* list);
+
+/**
+ * Build an ordered object from parallel lists.
+ * @param keys valid String-pointer list.
+ * @param values valid Value-pointer list with matching length.
+ * @return Heap Result with full-width success or opaque Error pointer; failures have offset-1.
+ */
+int64_t fern_json_value_from_object(const FernList* keys, const FernList* values);
+
+/**
+ * Copy array references into fresh FernList storage.
+ * @param value valid opaque value.
+ * @return Heap Result with full-width success or opaque Error pointer; failures have offset-1.
+ */
+int64_t fern_json_value_elements(const FernJsonValue* value);
+
+/**
+ * Return ordered FernList of FernJsonMember pointers; keys retain NUL.
+ * @param value valid opaque value.
+ * @return Heap Result with full-width success or opaque Error pointer; failures have offset-1.
+ */
+int64_t fern_json_value_members(const FernJsonValue* value);
+
+/**
+ * Fail a compiler-side adapter preflight without oversized allocation.
+ *
+ * @return Heap Result with full-width success or opaque Error pointer; failures have offset-1.
+ */
+int64_t fern_json_value_limit_error(void);
 
 /**
  * Parse a bounded JSON document; Result(Value pointer, Error pointer).

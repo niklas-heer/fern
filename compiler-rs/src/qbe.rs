@@ -223,6 +223,9 @@ impl Locals {
 impl Emitter<'_> {
     /// Append compiler-owned helper definitions once, including only used numeric adapters.
     fn support_helpers(&mut self, main: &Function) {
+        if self.output.contains("call $fern_rs_json_") {
+            self.output.push_str(include_str!("qbe/json.ssa"));
+        }
         self.output.push_str(include_str!("qbe/control.ssa"));
         self.output.push_str(include_str!("qbe/fault.ssa"));
         if self.numeric_used {

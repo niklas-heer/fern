@@ -1,0 +1,17 @@
+type Box(a):
+    value: a
+fn box(value: a) -> Box(a): Box(value)
+fn retain(value: json.Value) -> () -> json.Value:
+    () -> value
+fn main() -> Result((), json.Error):
+    let saved = retain(box(json.parse("\{\"retained\":true\}")?).value)
+    let list = [Some(saved())]
+    let mapping = %{"keep": box(saved())}
+    for _ in 0..1200:
+        match json.parse("[1,2,3]"):
+            Ok(_) -> ()
+            Err(_) -> ()
+    println(json.stringify(saved())?)
+    println(List.len(list))
+    println(Map.len(mapping))
+    Ok(())

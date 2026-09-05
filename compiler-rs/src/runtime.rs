@@ -3,7 +3,7 @@
 //! Packed Options and FernStringList require explicit adapters before Rust can call them.
 use crate::Type;
 
-/// Opaque runtime-owned TUI handles; callers cannot inspect or construct their C fields.
+/// Opaque runtime-owned handles; callers cannot inspect or construct their C fields.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NativeType {
     Panel,
@@ -11,6 +11,8 @@ pub enum NativeType {
     Tree,
     Progress,
     Spinner,
+    JsonValue,
+    JsonError,
 }
 
 impl NativeType {
@@ -22,18 +24,27 @@ impl NativeType {
             Self::Tree => "Tui.Tree",
             Self::Progress => "Tui.Progress",
             Self::Spinner => "Tui.Spinner",
+            Self::JsonValue => "json.Value",
+            Self::JsonError => "json.Error",
         }
     }
 }
 
 /// Recognize only canonical native object annotations, never user-defined layout aliases.
 pub fn native_type(name: &str) -> Option<NativeType> {
+    let name = match name {
+        "Json.Value" => "json.Value",
+        "Json.Error" => "json.Error",
+        name => name,
+    };
     [
         NativeType::Panel,
         NativeType::Table,
         NativeType::Tree,
         NativeType::Progress,
         NativeType::Spinner,
+        NativeType::JsonValue,
+        NativeType::JsonError,
     ]
     .into_iter()
     .find(|ty| ty.name() == name)
@@ -43,6 +54,10 @@ pub fn native_type(name: &str) -> Option<NativeType> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ValueAbi {
     Word64,
+    /// Native C double argument, never an integer payload transport.
+    Double64,
+    /// Heap Result(List(native member records)) requires tagged tuple conversion.
+    HeapJsonMembers,
     Word32,
     Void,
     /// Existing Result allocations already carry full-width tagged payloads.
@@ -71,6 +86,8 @@ pub enum ValueAbi {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Operation {
     Direct,
+    /// Adapt one compiler-owned Map into checked parallel native lists.
+    JsonObject,
     InvertBool,
     /// Accept Int/Float/Bool/String; Float uses a typed helper and String uses semantic comparison.
     ScalarContains,
@@ -103,6 +120,7 @@ impl Signature {
                     matches!(
                         abi,
                         ValueAbi::PackedOption
+                            | ValueAbi::HeapJsonMembers
                             | ValueAbi::StringList
                             | ValueAbi::NullableStringList
                             | ValueAbi::HeapStringListResult
@@ -158,13 +176,69 @@ pub fn names() -> Vec<&'static str> {
         .collect()
 }
 
+/// Reserve canonical namespaces, while preserving the preexisting bare Json user name.
+/// Its qualified compatibility APIs and opaque annotations remain individually reserved.
+pub fn reserved_namespace(name: &str) -> bool {
+    name != "Json"
+        && ENTRIES
+            .iter()
+            .flat_map(|entry| entry.names.iter())
+            .any(|api| {
+                api.strip_prefix(name)
+                    .is_some_and(|suffix| suffix.starts_with('.'))
+            })
+}
+
 /// Inventory runtime symbols handled outside this registry or awaiting an explicit ABI.
 pub fn omissions() -> &'static [Omission] {
     OMISSIONS
 }
 
 #[derive(Clone, Copy)]
+enum JsonShape {
+    Value,
+    Error,
+    List,
+    Map,
+    ResultValue,
+    ResultString,
+    ResultBool,
+    ResultInt,
+    ResultFloat,
+    ResultList,
+    ResultMembers,
+}
+impl JsonShape {
+    fn ty(self) -> Type {
+        let value = Type::Native(NativeType::JsonValue);
+        let error = Type::Native(NativeType::JsonError);
+        let payload = match self {
+            Self::Value => return value,
+            Self::Error => return error,
+            Self::List => return Type::List(Box::new(value)),
+            Self::Map => return Type::Map(Box::new(Type::String), Box::new(value)),
+            Self::ResultValue => value,
+            Self::ResultString => Type::String,
+            Self::ResultBool => Type::Bool,
+            Self::ResultInt => Type::Int,
+            Self::ResultFloat => Type::Float,
+            Self::ResultList => Type::List(Box::new(value)),
+            Self::ResultMembers => Type::List(Box::new(Type::Tuple(vec![value.clone(), value]))),
+        };
+        Type::Result(Box::new(payload), Box::new(error))
+    }
+    fn abi(self) -> ValueAbi {
+        match self {
+            Self::Value | Self::Error | Self::List | Self::Map => ValueAbi::Word64,
+            _ => ValueAbi::HeapResult,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 enum Shape {
+    Float,
+    Json(JsonShape),
     Int,
     Bool,
     String,
@@ -189,6 +263,8 @@ impl Shape {
     /// Instantiate a signature shape using explicit generic parameter names.
     fn ty(self) -> Type {
         match self {
+            Self::Float => Type::Float,
+            Self::Json(shape) => shape.ty(),
             Self::DirectoryResult => Type::Result(
                 Box::new(Type::List(Box::new(Type::String))),
                 Box::new(Type::Int),
@@ -227,6 +303,8 @@ impl Shape {
     /// Default runtime transport; divergent representations require explicit table overrides.
     fn abi(self) -> ValueAbi {
         match self {
+            Self::Float => ValueAbi::Double64,
+            Self::Json(shape) => shape.abi(),
             Self::Unit => ValueAbi::Void,
             Self::OptionA | Self::OptionInt => ValueAbi::HeapOption,
             Self::ResultAE | Self::ResultSI | Self::ResultII => ValueAbi::HeapResult,
@@ -519,12 +597,17 @@ const ENTRIES: &[Entry] = &[
         ),
         ValueAbi::HeapStringListResult,
     ),
-    entry(&["json.parse"], &[String], ResultSI, "fern_json_parse"),
     entry(
-        &["json.stringify"],
+        &["json.parse", "Json.parse"],
         &[String],
-        ResultSI,
-        "fern_json_stringify",
+        Json(JsonShape::ResultValue),
+        "fern_json_value_parse",
+    ),
+    entry(
+        &["json.stringify", "Json.stringify"],
+        &[Json(JsonShape::Value)],
+        Json(JsonShape::ResultString),
+        "fern_json_value_stringify",
     ),
     entry(&["http.get"], &[String], ResultSI, "fern_http_get"),
     entry(
@@ -1133,10 +1216,149 @@ const ENTRIES: &[Entry] = &[
         entry(&["Tui.Term.size"], &[], TermTuple, "fern_term_size"),
         ValueAbi::TermSize,
     ),
+    entry(
+        &["json.is_null", "Json.is_null"],
+        &[Json(JsonShape::Value)],
+        Bool,
+        "fern_json_value_is_null",
+    ),
+    entry(
+        &["json.get", "Json.get"],
+        &[Json(JsonShape::Value), String],
+        Json(JsonShape::ResultValue),
+        "fern_json_value_get",
+    ),
+    entry(
+        &["json.at", "Json.at"],
+        &[Json(JsonShape::Value), Int],
+        Json(JsonShape::ResultValue),
+        "fern_json_value_at",
+    ),
+    entry(
+        &["json.length", "Json.length"],
+        &[Json(JsonShape::Value)],
+        Json(JsonShape::ResultInt),
+        "fern_json_value_length",
+    ),
+    entry(
+        &["json.as_bool", "Json.as_bool"],
+        &[Json(JsonShape::Value)],
+        Json(JsonShape::ResultBool),
+        "fern_json_value_as_bool",
+    ),
+    entry(
+        &["json.as_int", "Json.as_int"],
+        &[Json(JsonShape::Value)],
+        Json(JsonShape::ResultInt),
+        "fern_json_value_as_int",
+    ),
+    entry(
+        &["json.as_float", "Json.as_float"],
+        &[Json(JsonShape::Value)],
+        Json(JsonShape::ResultFloat),
+        "fern_json_value_as_float",
+    ),
+    entry(
+        &["json.as_string", "Json.as_string"],
+        &[Json(JsonShape::Value)],
+        Json(JsonShape::ResultString),
+        "fern_json_value_as_string",
+    ),
+    entry(
+        &["json.number_text", "Json.number_text"],
+        &[Json(JsonShape::Value)],
+        Json(JsonShape::ResultString),
+        "fern_json_value_number_text",
+    ),
+    entry(
+        &["json.error_code", "Json.error_code"],
+        &[Json(JsonShape::Error)],
+        Int,
+        "fern_json_value_error_code",
+    ),
+    entry(
+        &["json.error_offset", "Json.error_offset"],
+        &[Json(JsonShape::Error)],
+        Int,
+        "fern_json_value_error_offset",
+    ),
+    entry(
+        &["json.error_message", "Json.error_message"],
+        &[Json(JsonShape::Error)],
+        String,
+        "fern_json_value_error_message",
+    ),
+    entry(
+        &["json.null", "Json.null"],
+        &[],
+        Json(JsonShape::Value),
+        "fern_json_value_null",
+    ),
+    entry(
+        &["json.from_bool", "Json.from_bool"],
+        &[Bool],
+        Json(JsonShape::Value),
+        "fern_json_value_from_bool",
+    ),
+    entry(
+        &["json.from_int", "Json.from_int"],
+        &[Int],
+        Json(JsonShape::Value),
+        "fern_json_value_from_int",
+    ),
+    entry(
+        &["json.from_float", "Json.from_float"],
+        &[Float],
+        Json(JsonShape::ResultValue),
+        "fern_json_value_from_float",
+    ),
+    entry(
+        &["json.from_string", "Json.from_string"],
+        &[String],
+        Json(JsonShape::ResultValue),
+        "fern_json_value_from_string",
+    ),
+    entry(
+        &["json.from_number_text", "Json.from_number_text"],
+        &[String],
+        Json(JsonShape::ResultValue),
+        "fern_json_value_from_number_text",
+    ),
+    entry(
+        &["json.from_array", "Json.from_array"],
+        &[Json(JsonShape::List)],
+        Json(JsonShape::ResultValue),
+        "fern_json_value_from_array",
+    ),
+    entry(
+        &["json.elements", "Json.elements"],
+        &[Json(JsonShape::Value)],
+        Json(JsonShape::ResultList),
+        "fern_json_value_elements",
+    ),
+    returned(
+        entry(
+            &["json.members", "Json.members"],
+            &[Json(JsonShape::Value)],
+            Json(JsonShape::ResultMembers),
+            "fern_json_value_members",
+        ),
+        ValueAbi::HeapJsonMembers,
+    ),
+    operation(
+        entry(
+            &["json.from_object", "Json.from_object"],
+            &[Json(JsonShape::Map)],
+            Json(JsonShape::ResultValue),
+            "fern_json_value_from_object",
+        ),
+        Operation::JsonObject,
+    ),
 ];
 
 const OMISSIONS: &[Omission] = &[
-    Omission { names: &["fern_json_value_as_bool", "fern_json_value_as_float", "fern_json_value_as_int", "fern_json_value_as_string", "fern_json_value_at", "fern_json_value_error_code", "fern_json_value_error_message", "fern_json_value_error_offset", "fern_json_value_get", "fern_json_value_is_null", "fern_json_value_length", "fern_json_value_number_text", "fern_json_value_parse", "fern_json_value_stringify"], reason: "Opaque JSON native core; source typing and explicit ABI adapters are a separately gated migration." },
+    Omission { names: &["fern_json_parse", "fern_json_stringify"], reason: "Legacy string-copy ABI retained for C source; Rust JSON uses opaque typed values." },
+    Omission { names: &["fern_json_value_limit_error"], reason: "Internal checked JSON adapter preflight; not a source API." },
     Omission {
         names: &["fern_str_slice_is_valid", "fern_str_split_is_valid"],
         reason: "Internal nonallocating UTF-8 preflight helpers used by compiler-generated fault guards, not source APIs",

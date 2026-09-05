@@ -501,3 +501,12 @@ Rust's expected output. Seeded generated programs exercise the shared subset.
 See [migration progress](../docs/RUST_MIGRATION.md),
 [initial evaluation results](../docs/RUST_FRONTEND_EVALUATION.md),
 [decision 45](../DECISIONS.md), and the [roadmap](../ROADMAP.md).
+
+## Immutable native JSON
+
+Native Rust programs use opaque `json.Value`/`json.Error` types and the complete
+[dynamic JSON API](../docs/JSON_RUST_API.md): validating parse/stringify, exact
+numeric conversion, immutable builders and ordered collection access. `Json` is
+a compatible module spelling. The old String/Int source signatures no longer
+apply to Rust; C source and both legacy native symbols remain unchanged. JSON
+execution in the REPL is explicitly unavailable pending its parity checkpoint.

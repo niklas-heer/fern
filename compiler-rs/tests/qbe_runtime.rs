@@ -246,8 +246,41 @@ fn sample(ty: &Type) -> Expr {
 fn every_registered_signature_lowers_with_its_audited_result_contract() {
     for name in runtime::names() {
         let signature = runtime::lookup(name).unwrap();
-        let args = signature.parameters.iter().map(sample).collect();
-        let result = emit(call(name, args, concrete(&signature.return_type)));
+        let parameters: Vec<_> = signature
+            .parameters
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| Param {
+                id: LocalId(index),
+                ty: concrete(ty),
+            })
+            .collect();
+        let args = parameters
+            .iter()
+            .map(|param| ex(ExprKind::Local(param.id), param.ty.clone()))
+            .collect();
+        let helper = Function {
+            id: FunctionId(1),
+            name: "audited_runtime".into(),
+            captures: vec![],
+            local_count: parameters.len(),
+            params: parameters,
+            return_type: concrete(&signature.return_type),
+            body: call(name, args, concrete(&signature.return_type)),
+        };
+        let main = Function {
+            id: FunctionId(0),
+            name: "main".into(),
+            captures: vec![],
+            params: vec![],
+            local_count: 0,
+            return_type: Type::Unit,
+            body: ex(ExprKind::Unit, Type::Unit),
+        };
+        let result = qbe::emit(&Program {
+            types: vec![],
+            functions: vec![main, helper],
+        });
         if signature.return_abi == runtime::ValueAbi::NullableStringList {
             assert!(result.unwrap_err().message.contains("nullable"), "{name}");
         } else {

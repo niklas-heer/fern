@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test the new native JSON core without migrating the legacy source API.
+"""Test native JSON parsing/builders while preserving the legacy C source API.
 
 Requires bin/libfern_runtime.a from the selected checkout. All instrumented JSON
 objects and test binaries stay in a temporary directory; shared builds are never
@@ -54,7 +54,7 @@ def main():
     numeric_input, numeric_expected = numeric_cases()
     with tempfile.TemporaryDirectory(prefix="fern-json-core-") as directory:
         for name, flags in variants:
-            for fixture in ["json_value_runtime", "json_value_budget", "json_value_numeric"]:
+            for fixture in ["json_value_runtime", "json_value_budget", "json_value_numeric", "json_value_builders"]:
                 binary = Path(directory) / f"{fixture}-{name}"
                 sources = [f"tests/fixtures/{fixture}.c"]
                 if fixture != "json_value_budget":

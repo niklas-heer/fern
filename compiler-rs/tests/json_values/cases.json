@@ -1,0 +1,68 @@
+{
+  "native": {
+    "core": {
+      "stdout": "42\ntrue\n2\n{\"count\":42,\"empty\":null}\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "builders": {
+      "stdout": "[null,true,-7,1.5,\"🌿\\n\",1.00e2]\n{\"second\":[null,true,-7,1.5,\"🌿\\n\",1.00e2],\"first\":1}\n[]\n{}\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "members": {
+      "stdout": "\"a\\u0000b\"\n1\n\"🌿\"\n2\nfalse\n{\"a\\u0000b\":1,\"🌿\":2}\n5\n0\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "errors": {
+      "stdout": "1\n3\ninvalid JSON syntax\n6\n-1\nJSON object key not found\n7\n-1\nJSON array index out of bounds\n11\n-1\nJSON number is not finite\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "numeric": {
+      "stdout": "9007199254740993\n9007199254740993\n1.5\n-9223372036854775808\n1e999999999999999999999999\ntrue\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "first_class": {
+      "stdout": "[1,2,3]\n2.5\nfalse\nbuild once\n{\"x\":1}\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "containers": {
+      "stdout": "{\"retained\":true}\n1\n1\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "effects": {
+      "stdout": "read done\nrun done\n1\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "aliases": {
+      "stdout": "[]\n7\nordinary\n9\n",
+      "stderr": "",
+      "exit": 0
+    },
+    "dag_limits": {
+      "stdout": "4\n-1\n",
+      "stderr": "",
+      "exit": 0
+    }
+  },
+  "invalid": [
+    "old_stringify",
+    "old_parse_string",
+    "fake_value",
+    "fake_error",
+    "field",
+    "equality",
+    "print",
+    "opaque_map_key",
+    "wrong_array",
+    "wrong_object",
+    "ignored_result",
+    "decode_not_implemented"
+  ]
+}

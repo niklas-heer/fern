@@ -1,0 +1,13 @@
+fn source() -> Map(String, json.Value):
+    println("build once")
+    %{"x": json.from_int(1)}
+fn main() -> Result((), json.Error):
+    let parse: (String) -> Result(json.Value, json.Error) = json.parse
+    let number: (Float) -> Result(json.Value, json.Error) = json.from_float
+    let values = List.map([1, 2, 3], json.from_int)
+    println(json.stringify(json.from_array(values)?)?)
+    println(json.stringify(number(2.5)?)?)
+    println(json.stringify(parse("false")?)?)
+    let object: (Map(String, json.Value)) -> Result(json.Value, json.Error) = json.from_object
+    println(json.stringify(object(source())?)?)
+    Ok(())

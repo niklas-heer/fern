@@ -537,7 +537,7 @@ fn type_name(ty: &Type) -> String {
                 )
             }
         }
-        Type::Native(native) => format!("Tui.{native:?}"),
+        Type::Native(native) => native.name().into(),
         _ => format!("{ty:?}"),
     }
 }

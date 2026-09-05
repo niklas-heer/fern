@@ -1,0 +1,2 @@
+fn inspect(value: json.Value) -> Map(json.Value, Int): %{value: 1}
+fn main(): ()

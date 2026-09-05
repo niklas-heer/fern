@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (760 Rust tests, 4 measurement-harness tests, 184 core native programs, 21 entry/access programs, 9 controlled-fault cases, 172 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (768 Rust tests, 4 measurement-harness tests, 194 core native programs, 21 entry/access programs, 9 controlled-fault cases, 184 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -199,7 +199,8 @@ Do not interpret the historical Gate A–D labels as language completion.
 
 - [ ] Execute actor functions with suspension, typed messages/receive/timeouts, and descendant supervision lifecycle.
 - [x] Immutable native JSON parser/accessors/stringifier with exact numbers, Unicode validation and bounded resources (14,309 API checks, 24 budget checks and 6,000 numeric oracle cases in debug/release/sanitizer builds).
-- [ ] Migrate source JSON values, builders, collection adapters and REPL beyond the compatible string-copy baseline.
+- [x] Migrate Rust native JSON to opaque values/errors, immutable builders and bounded lossless collection adapters (ten native programs, twelve semantic rejections, eight Rust integration tests and 248 native builder checks per build).
+- [ ] Add Rust REPL JSON parity and separately migrate the legacy C source contract; typed JSON codecs remain subsequent work.
 - [ ] Implement HTTP serving and the broader SQL query/resource APIs described in the design.
 - [ ] Complete function clauses/pattern parameters, labeled calls, aliases/newtypes/unions, traits/constraints and full private signature inference through native execution.
 - [ ] Complete Sets and the specified standard modules, including data formats, testing/utilities, IO/system, cryptography and compression.
@@ -208,8 +209,9 @@ Do not interpret the historical Gate A–D labels as language completion.
 
 ## Next Session Start Here
 
-For the active Rust migration, finish whole private-signature inference and
-typed editor tooling, then remaining specified syntax and native/stdlib parity.
+For the active Rust migration, finish executable documentation, incomplete-code
+editor recovery, JSON REPL parity and distinct newtypes, then the remaining
+specified syntax and native/stdlib parity.
 Control flow, closures, maps, function clauses and generic-body validation have
 verified checkpoints. Preserve the concrete type/ABI and native-output gates in
 [migration progress](docs/RUST_MIGRATION.md).

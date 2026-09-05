@@ -179,10 +179,7 @@ fn reserved(name: &str) -> bool {
     }
     builtin(name).is_some()
         || runtime::lookup(name).is_some()
-        || runtime::names().iter().any(|api| {
-            api.strip_prefix(name)
-                .is_some_and(|suffix| suffix.starts_with('.'))
-        })
+        || runtime::reserved_namespace(name)
         || matches!(
             name,
             "Range"

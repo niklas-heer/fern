@@ -1,0 +1,7 @@
+fn main() -> Result((), json.Error):
+    let value = json.parse("\{\"count\":42,\"empty\":null\}")?
+    println(json.as_int(json.get(value, "count")?)?)
+    println(json.is_null(json.get(value, "empty")?))
+    println(json.length(value)?)
+    println(json.stringify(value)?)
+    Ok(())

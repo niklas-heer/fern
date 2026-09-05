@@ -1,0 +1,15 @@
+type Json:
+    number: Int
+type Value:
+    value: Int
+type Error:
+    value: String
+fn same(value: Json.Value) -> json.Value: value
+fn same_error(error: Json.Error) -> json.Error: error
+fn main() -> Result((), Json.Error):
+    let value = Json.parse("[]")?
+    println(json.stringify(same(value))?)
+    println(Value(7).value)
+    println(Error("ordinary").value)
+    println(Json(9).number)
+    Ok(())

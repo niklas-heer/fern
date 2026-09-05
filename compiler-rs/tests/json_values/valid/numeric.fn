@@ -1,0 +1,10 @@
+fn main() -> Result((), json.Error):
+    let exact = json.parse("9007199254740993")?
+    println(json.as_int(exact)?)
+    println(json.number_text(exact)?)
+    println(json.as_float(json.from_float(1.5)?)?)
+    println(json.stringify(json.from_int(-9223372036854775808))?)
+    let huge = json.from_number_text("1e999999999999999999999999")?
+    println(json.number_text(huge)?)
+    println(Result.is_err(json.as_float(huge)))
+    Ok(())

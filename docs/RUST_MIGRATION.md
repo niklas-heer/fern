@@ -620,3 +620,26 @@ Four native rejection cases preserve existing output and local type diagnostics.
 
 Module-identity checkpoint gates pass: 760 Rust tests, 550 C tests, 184 core
 native programs, 172 invalid inputs and the complete remaining gate suite.
+
+
+## Rust native JSON migration (J2)
+
+Following the J1 native foundation, Rust now exposes24 `json` functions through
+opaque `json.Value`/`json.Error` types, with `Json` aliases. Immutable builders,
+exact conversions and lossless members/elements access use explicit native ABI
+adapters. The Float builder uses C double/QBE d; members convert native two-word
+records into tagged Fern tuples only after successful Result inspection. Object
+builders evaluate their Map input once and reserve bounded parallel-list storage.
+
+The [source contract](JSON_RUST_API.md) identifies the unreleased Rust signature
+breaks. The C source JSON contract and legacy copy symbols remain unchanged;
+REPL execution refuses these native-only calls explicitly and atomically until
+J3. Typed encode/decode and derive(Json) are still future work. The acceptance
+corpus adds ten native output programs and twelve semantic rejection programs;
+eight Rust tests cover aliases, formatting, opaque/public-IR validation and REPL
+refusal. Native debug/release/sanitizer tests add248 builder checks, including
+actual exact16 MiB output and shared-DAG/depth rejection.
+
+Integrated JSON source gates pass: 768 Rust tests, 550 C tests, 194 core native
+programs, 184 invalid inputs and the full JSON sanitizer, fuzz and documentation
+suites on macOS arm64.

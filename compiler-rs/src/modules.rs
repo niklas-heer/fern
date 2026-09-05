@@ -681,10 +681,7 @@ fn own_names(module: &Module, entry: bool) -> Result<Names, Error> {
 fn reserved_declaration(name: &str) -> bool {
     crate::runtime::native_type(name).is_some()
         || crate::runtime::lookup(name).is_some()
-        || crate::runtime::names().iter().any(|api| {
-            api.strip_prefix(name)
-                .is_some_and(|suffix| suffix.starts_with('.'))
-        })
+        || crate::runtime::reserved_namespace(name)
         || matches!(
             name,
             "print"

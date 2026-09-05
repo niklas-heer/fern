@@ -60,23 +60,7 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Lowering<(Type, String)> {
-        let signature =
-            runtime::signature(id).ok_or_else(|| invalid(span, "unknown runtime identity"))?;
-        if signature.parameters.len() != args.len() {
-            return Err(invalid(
-                span,
-                "runtime argument count differs from signature",
-            ));
-        }
-        if signature.return_abi == ValueAbi::NullableStringList {
-            return Err(invalid(span, "nullable directory-list result needs an explicit error contract before native lowering"));
-        }
-        let mut bindings = HashMap::new();
-        for (template, arg) in signature.parameters.iter().zip(args) {
-            nominal::resolved(&arg.ty, &self.layouts, arg.span, 0)?;
-            bind_type(template, &arg.ty, &mut bindings, arg.span, 0)?;
-        }
-        let ty = return_type(&signature.return_type, &bindings, span)?;
+        let (signature, ty) = self.checked_runtime_signature(id, args, span)?;
         match signature.symbol {
             "fern_list_get" | "fern_list_head" => {
                 return self.list_access(
@@ -95,6 +79,15 @@ impl Emitter<'_> {
             return self.float_contains(args, span, locals, depth);
         }
         let symbol = runtime_symbol(&signature, args, span)?;
+        if signature.operation == Operation::JsonObject {
+            let map = self.expr(&args[0], locals, depth)?;
+            let value = self.assign(
+                locals,
+                ty.clone(),
+                &format!("call $fern_rs_json_object(l {map})"),
+            );
+            return Ok((ty, value));
+        }
         let mut values = Vec::new();
         for (arg, abi) in args.iter().zip(&signature.parameter_abi) {
             let value = self.expr(arg, locals, depth)?;
@@ -121,6 +114,33 @@ impl Emitter<'_> {
             value = self.assign(locals, Type::Bool, &format!("ceqw {value}, 0"));
         }
         Ok((ty, value))
+    }
+
+    /// Validate the complete public IR signature before evaluating argument effects.
+    fn checked_runtime_signature(
+        &self,
+        id: usize,
+        args: &[Expr],
+        span: Span,
+    ) -> Lowering<(Signature, Type)> {
+        let signature =
+            runtime::signature(id).ok_or_else(|| invalid(span, "unknown runtime identity"))?;
+        if signature.parameters.len() != args.len() {
+            return Err(invalid(
+                span,
+                "runtime argument count differs from signature",
+            ));
+        }
+        if signature.return_abi == ValueAbi::NullableStringList {
+            return Err(invalid(span, "nullable directory-list result needs an explicit error contract before native lowering"));
+        }
+        let mut bindings = HashMap::new();
+        for (template, arg) in signature.parameters.iter().zip(args) {
+            nominal::resolved(&arg.ty, &self.layouts, arg.span, 0)?;
+            bind_type(template, &arg.ty, &mut bindings, arg.span, 0)?;
+        }
+        let ty = return_type(&signature.return_type, &bindings, span)?;
+        Ok((signature, ty))
     }
 
     /// Apply source/native arity and enum differences after evaluating arguments once.
@@ -183,6 +203,10 @@ impl Emitter<'_> {
         locals: &mut Locals,
     ) -> Lowering<String> {
         match abi {
+            ValueAbi::Double64 => {
+                expect_type(ty.clone(), Type::Float, span)?;
+                Ok(format!("d {value}"))
+            }
             ValueAbi::StringList => Ok(format!(
                 "l {}",
                 self.emit_string_list_argument(&value, locals)
@@ -210,6 +234,11 @@ impl Emitter<'_> {
             }
             ValueAbi::Word32 => raw,
             ValueAbi::StringList => self.emit_string_list_result(&raw, locals),
+            ValueAbi::HeapJsonMembers => self.assign(
+                locals,
+                ty.clone(),
+                &format!("call $fern_rs_json_members(l {raw})"),
+            ),
             ValueAbi::HeapStringListResult => self.native_list_result(&raw, locals),
             ValueAbi::ExecResult => self.native_tuple(&raw, 3, &[1, 2], locals),
             ValueAbi::TermSize => self.native_tuple(&raw, 2, &[], locals),

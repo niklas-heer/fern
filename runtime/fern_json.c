@@ -8,6 +8,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #ifdef __APPLE__
 #include <xlocale.h>
@@ -18,6 +19,9 @@
 #define JSON_NODES_MAX ((size_t)100000)
 #define JSON_ALLOC_MAX ((size_t)33554432)
 #define JSON_OUTPUT_MAX ((size_t)16777216)
+
+_Static_assert(sizeof(FernJsonMember) == 16, "JSON member ABI requires two 64-bit pointers");
+_Static_assert(offsetof(FernJsonMember, value) == 8, "JSON member value ABI offset");
 
 typedef enum { J_NULL, J_BOOL, J_NUMBER, J_STRING, J_ARRAY, J_OBJECT } JsonKind;
 
@@ -374,6 +378,7 @@ static bool json_seal(JsonParser* p, FernJsonValue* v) {
         const FernJsonValue* child = v->children[i];
         if (child->encoded > JSON_OUTPUT_MAX - v->encoded) { json_fail(p, 4, p->position); return false; }
         v->encoded += child->encoded;
+        if (child->nodes > JSON_NODES_MAX - v->nodes || child->height >= JSON_DEPTH_MAX) { json_fail(p, 4, p->position); return false; }
         v->nodes += child->nodes;
         if (child->height >= v->height) v->height = child->height + 1;
     }
@@ -721,4 +726,238 @@ const char* fern_json_value_error_message(const FernJsonError* error) {
         "JSON array index out of bounds", "JSON number out of range", "JSON number is not an integer",
         "JSON string contains NUL", "JSON number is not finite"};
     return messages[error->code];
+}
+
+/** Initialize bounded builder state. @param bytes newly scanned bytes; @return local budgets. */
+static JsonParser json_builder(size_t bytes) {
+    assert(bytes <= JSON_OUTPUT_MAX);
+    assert(JSON_NODES_MAX <= SIZE_MAX / 64);
+    JsonParser parser = {.work = 8 * bytes + 64 * JSON_NODES_MAX};
+    (void)json_work(&parser, 8 * bytes);
+    return parser;
+}
+
+/** Publish only a valid sealed value. @param p builder; @param value candidate; @return ordinary Result. */
+static int64_t json_built(JsonParser* p, FernJsonValue* value) {
+    assert(p != NULL);
+    assert(value != NULL || p->code != 0);
+    if (p->code != 0) return json_error(p->code, -1);
+    if (value->height > JSON_DEPTH_MAX || value->nodes > JSON_NODES_MAX || value->encoded > JSON_OUTPUT_MAX) return json_error(4, -1);
+    return fern_result_ok((int64_t)(intptr_t)value);
+}
+
+/** Construct a JSON null. @return runtime-owned immutable value. */
+FernJsonValue* fern_json_value_null(void) {
+    JsonParser parser = json_builder(0);
+    FernJsonValue* value = json_node(&parser, J_NULL);
+    assert(value != NULL);
+    assert(value->nodes == 1);
+    value->encoded = 4;
+    return value;
+}
+
+/** Construct a JSON Boolean. @param boolean zero or one; @return immutable value. */
+FernJsonValue* fern_json_value_from_bool(int64_t boolean) {
+    assert(boolean == 0 || boolean == 1);
+    JsonParser parser = json_builder(0);
+    FernJsonValue* value = json_node(&parser, J_BOOL);
+    assert(value != NULL);
+    value->boolean = boolean != 0;
+    value->encoded = boolean ? 4 : 5;
+    return value;
+}
+
+/** Parse exactly one number token for builders. @param text NUL-terminated number; @return Result(Value*, Error*). */
+int64_t fern_json_value_from_number_text(const char* text) {
+    assert(text != NULL);
+    assert(JSON_INPUT_MAX < JSON_ALLOC_MAX);
+    size_t length = strnlen(text, JSON_INPUT_MAX + 1);
+    if (length > JSON_INPUT_MAX) return json_error(4, -1);
+    if (!length || (text[0] != '-' && !json_digit((unsigned char)text[0]))) return json_error(1, -1);
+    JsonParser parser = json_builder(length);
+    parser.text = (const unsigned char*)text;
+    parser.length = length;
+    FernJsonValue* value = json_number(&parser);
+    if (!parser.code && parser.position != length) json_fail(&parser, 1, parser.position);
+    return json_built(&parser, value);
+}
+
+/** Construct an exact signed64 JSON number. @param number signed integer; @return immutable value. */
+FernJsonValue* fern_json_value_from_int(int64_t number) {
+    char text[32];
+    int length = snprintf(text, sizeof(text), "%lld", (long long)number);
+    assert(length > 0 && (size_t)length < sizeof(text));
+    (void)length;
+    int64_t result = fern_json_value_from_number_text(text);
+    assert(fern_result_is_ok(result));
+    return (FernJsonValue*)(intptr_t)fern_result_unwrap(result);
+}
+
+/** Format binary64 in a temporary thread-local C locale. @param number finite Float; @param text bounded output; @return success. */
+static bool json_float_text(double number, char text[64]) {
+    assert(isfinite(number));
+    assert(text != NULL);
+    locale_t locale = newlocale(LC_NUMERIC_MASK, "C", (locale_t)0);
+    if (!locale) return false;
+    locale_t previous = uselocale(locale);
+    if (!previous) { freelocale(locale); return false; }
+    int length = snprintf(text, 64, "%.17g", number);
+    (void)uselocale(previous);
+    freelocale(locale);
+    return length > 0 && length < 64;
+}
+
+/** Construct a finite binary64 JSON number. @param number Float; @return Result(Value*, Error*). */
+int64_t fern_json_value_from_float(double number) {
+    assert(sizeof(number) == 8);
+    assert(JSON_INPUT_MAX >= 64);
+    if (!isfinite(number)) return json_error(11, -1);
+    char text[64];
+    if (!json_float_text(number, text)) return json_error(4, -1);
+    return fern_json_value_from_number_text(text);
+}
+
+/** Validate and copy decoded UTF-8, including legal JSON controls. @param p budget; @param text bytes; @param length byte count; @return String node. */
+static FernJsonValue* json_text_node(JsonParser* p, const char* text, size_t length) {
+    assert(p != NULL && text != NULL);
+    assert(length <= JSON_INPUT_MAX);
+    JsonParser scan = {.text = (const unsigned char*)text, .length = length};
+    unsigned char bytes[4];
+    for (size_t i = 0; scan.position < length && i < length; i++) {
+        (void)json_raw_scalar(&scan, bytes);
+        if (scan.code) { json_fail(p, scan.code, p->position); return NULL; }
+    }
+    FernJsonValue* value = json_node(p, J_STRING);
+    if (!value) return NULL;
+    value->length = length;
+    value->text = json_allocate(p, length + 1);
+    if (!value->text) return NULL;
+    memcpy(value->text, text, length);
+    value->encoded = 2;
+    for (size_t i = 0; i < length; i++) value->encoded += json_escape_size((unsigned char)text[i]);
+    return value;
+}
+
+/** Construct a validated JSON String. @param text NUL-terminated text; @return Result(Value*, Error*). */
+int64_t fern_json_value_from_string(const char* text) {
+    assert(text != NULL);
+    assert(JSON_INPUT_MAX < JSON_OUTPUT_MAX);
+    size_t length = strnlen(text, JSON_INPUT_MAX + 1);
+    if (length > JSON_INPUT_MAX) return json_error(4, -1);
+    JsonParser parser = json_builder(length);
+    return json_built(&parser, json_text_node(&parser, text, length));
+}
+
+/** Validate list dimensions before accessing data. @param list native list; @param maximum length limit; @return permitted dimensions. */
+static bool json_list_size(const FernList* list, size_t maximum) {
+    assert(list != NULL);
+    assert(maximum <= JSON_NODES_MAX);
+    return list->len >= 0 && (uint64_t)list->len <= maximum && list->cap >= list->len;
+}
+
+/** Copy an immutable child vector. @param p builder; @param list children; @return array node. */
+static FernJsonValue* json_array_node(JsonParser* p, const FernList* list) {
+    assert(p != NULL && list != NULL);
+    assert(json_list_size(list, JSON_NODES_MAX - 1));
+    FernJsonValue* value = json_node(p, J_ARRAY);
+    if (!value) return NULL;
+    value->length = (size_t)list->len;
+    value->children = json_allocate(p, value->length * sizeof(*value->children));
+    if (!value->children) return NULL;
+    for (size_t i = 0; i < value->length; i++) {
+        value->children[i] = (FernJsonValue*)(intptr_t)list->data[i];
+        assert(value->children[i] != NULL);
+    }
+    return json_seal(p, value) ? value : NULL;
+}
+
+/** Copy source array storage, retaining immutable children. @param list valid Value-pointer list; @return Result(Value*, Error*). */
+int64_t fern_json_value_from_array(const FernList* list) {
+    assert(list != NULL);
+    assert(JSON_NODES_MAX > 1);
+    if (!json_list_size(list, JSON_NODES_MAX - 1)) return json_error(4, -1);
+    JsonParser parser = json_builder(0);
+    return json_built(&parser, json_array_node(&parser, list));
+}
+
+/** Bound aggregate copied key text before object allocations. @param keys String-pointer list; @param total output; @return bytes fit profile. */
+static bool json_key_bytes(const FernList* keys, size_t* total) {
+    assert(keys != NULL);
+    assert(total != NULL);
+    *total = 0;
+    for (int64_t i = 0; i < keys->len; i++) {
+        const char* text = (const char*)(intptr_t)keys->data[i];
+        assert(text != NULL);
+        size_t length = strnlen(text, JSON_INPUT_MAX + 1);
+        if (length > JSON_INPUT_MAX || length > JSON_OUTPUT_MAX - *total) return false;
+        *total += length;
+    }
+    return true;
+}
+
+/** Build checked object fields in source order. @param p builder; @param keys String list; @param values Value list; @return sealed object. */
+static FernJsonValue* json_object_node(JsonParser* p, const FernList* keys, const FernList* values) {
+    assert(p != NULL && keys != NULL && values != NULL);
+    assert(keys->len == values->len);
+    FernJsonValue* value = json_node(p, J_OBJECT);
+    if (!value) return NULL;
+    value->length = (size_t)keys->len * 2;
+    value->children = json_allocate(p, value->length * sizeof(*value->children));
+    if (!value->children) return NULL;
+    for (size_t i = 0; i < (size_t)keys->len; i++) {
+        const char* key = (const char*)(intptr_t)keys->data[i];
+        value->children[i*2] = json_text_node(p, key, strlen(key));
+        if (!value->children[i*2]) return NULL;
+        value->children[i*2+1] = (FernJsonValue*)(intptr_t)values->data[i];
+        assert(value->children[i*2+1] != NULL);
+    }
+    return json_seal(p, value) ? value : NULL;
+}
+
+/** Build from checked parallel lists, reserving the source Map bridge allocation. @param keys String list; @param values Value list; @return Result(Value*, Error*). */
+int64_t fern_json_value_from_object(const FernList* keys, const FernList* values) {
+    assert(keys != NULL);
+    assert(values != NULL);
+    size_t maximum = (JSON_NODES_MAX - 1) / 2;
+    if (!json_list_size(keys, maximum) || !json_list_size(values, maximum) || keys->len != values->len) return json_error(4, -1);
+    size_t bytes;
+    if (!json_key_bytes(keys, &bytes)) return json_error(4, -1);
+    JsonParser parser = json_builder(bytes);
+    size_t capacity = keys->len ? (size_t)keys->len : 1;
+    parser.allocated = capacity * 16 + 2 * sizeof(FernList);
+    return json_built(&parser, json_object_node(&parser, keys, values));
+}
+
+/** Copy array references into fresh list storage. @param value valid opaque value; @return Result(List(Value*), Error*). */
+int64_t fern_json_value_elements(const FernJsonValue* value) {
+    assert(value != NULL);
+    assert(value->nodes <= JSON_NODES_MAX);
+    if (value->kind != J_ARRAY) return json_error(5, -1);
+    FernList* list = fern_list_with_capacity(value->length ? (int64_t)value->length : 1);
+    for (size_t i = 0; i < value->length; i++) fern_list_push_mut(list, (int64_t)(intptr_t)value->children[i]);
+    return fern_result_ok((int64_t)(intptr_t)list);
+}
+
+/** Return native member records, reserving the emitted tuple bridge allocation. @param value valid opaque value; @return Result(List(Member*), Error*). */
+int64_t fern_json_value_members(const FernJsonValue* value) {
+    assert(value != NULL);
+    assert(value->nodes <= JSON_NODES_MAX);
+    if (value->kind != J_OBJECT) return json_error(5, -1);
+    size_t capacity = value->length ? value->length : 1;
+    if (capacity > (JSON_ALLOC_MAX - 2 * sizeof(FernList)) / 56) return json_error(4, -1);
+    FernList* list = fern_list_with_capacity((int64_t)capacity);
+    for (size_t i = 0; i < value->length; i++) {
+        FernJsonMember* member = fern_alloc(sizeof(*member));
+        member->key = value->children[i*2];
+        member->value = value->children[i*2+1];
+        fern_list_push_mut(list, (int64_t)(intptr_t)member);
+    }
+    return fern_result_ok((int64_t)(intptr_t)list);
+}
+
+/** Reject an oversized compiler-side adapter before it allocates. @return Err LimitExceeded without input offset. */
+int64_t fern_json_value_limit_error(void) {
+    assert(JSON_NODES_MAX > 0);
+    assert(JSON_ALLOC_MAX >= sizeof(FernJsonError));
+    return json_error(4, -1);
 }

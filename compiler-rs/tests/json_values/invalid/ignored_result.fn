@@ -1,0 +1,4 @@
+fn main():
+    let value = json.from_int(1)
+    json.stringify(value)
+    ()

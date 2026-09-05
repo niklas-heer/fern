@@ -1,0 +1,1 @@
+fn main(): json.from_object(%{"x": "value"})

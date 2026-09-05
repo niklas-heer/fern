@@ -1,0 +1,8 @@
+fn main() -> Result((), json.Error):
+    let array = json.from_array([json.null(), json.from_bool(true), json.from_int(-7), json.from_float(1.5)?, json.from_string("🌿\n")?, json.from_number_text("1.00e2")?])?
+    println(json.stringify(array)?)
+    let object = json.from_object(%{"second": array, "first": json.from_int(1)})?
+    println(json.stringify(object)?)
+    println(json.stringify(json.from_array([])?)?)
+    println(json.stringify(json.from_object(%{})?)?)
+    Ok(())

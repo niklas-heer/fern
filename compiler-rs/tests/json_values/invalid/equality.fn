@@ -1,0 +1,2 @@
+fn compare(a: json.Value, b: json.Value) -> Bool: a == b
+fn main(): ()

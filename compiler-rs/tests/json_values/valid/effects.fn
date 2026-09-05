@@ -1,0 +1,12 @@
+fn read() -> Result(json.Value, json.Error):
+    defer println("read done")
+    json.parse("invalid")
+fn run() -> Result((), json.Error):
+    defer println("run done")
+    let ignored = read()?
+    println(json.stringify(ignored)?)
+    Ok(())
+fn main():
+    match run():
+        Ok(_) -> println("unexpected")
+        Err(error) -> println(json.error_code(error))

@@ -1,0 +1,2 @@
+fn parse() -> Result(String, Int): json.parse("[]")
+fn main(): ()

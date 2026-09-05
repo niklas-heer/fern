@@ -1,0 +1,11 @@
+fn expand(value: json.Value, left: Int) -> Result(json.Value, json.Error):
+    if left == 0:
+        Ok(value)
+    else:
+        expand(json.from_array([value, value])?, left - 1)
+fn main():
+    match expand(json.null(), 17):
+        Ok(_) -> println("unexpected")
+        Err(error) ->
+            println(json.error_code(error))
+            println(json.error_offset(error))

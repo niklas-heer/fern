@@ -1,9 +1,9 @@
 # Immutable JSON native core (J1)
 
-This is a native foundation, not a completed source-language JSON API. The
-existing `fern_json_parse` and `fern_json_stringify` string-copy ABI and current
-source signatures are unchanged. Builders, collection adapters, source type and
-registry migration, and REPL parity belong to subsequent checkpoints.
+This document defines the native parser/accessor foundation. J2 adds immutable
+builders and collection adapters, exposed by the [Rust native API](JSON_RUST_API.md).
+The existing `fern_json_parse` and `fern_json_stringify` string-copy ABI and C
+source signatures remain unchanged. REPL parity and typed codecs remain separate.
 
 ## ABI and ownership
 
@@ -62,8 +62,7 @@ Stringification re-escapes NUL as `\u0000`; `as_string` returns code10 if exposi
 the string through Fern's current NUL-terminated String ABI would truncate it.
 C input parameters are NUL-terminated; embedded input bytes after the terminator
 are outside that ABI. `get` therefore cannot address a NUL-containing key; such
-keys remain preserved by parse/stringify, with a lossless members adapter planned
-for the next checkpoint.
+keys remain preserved by parse/stringify, through the lossless `json.members` adapter as JSON String values.
 
 Numbers preserve the entire validated ASCII spelling. Parsing never rounds
 through Float. `number_text` and stringification preserve exponent spelling,
@@ -100,8 +99,8 @@ do not incorporate untrusted input. The first failure is preserved.
 | 10 | UnrepresentableString | `JSON string contains NUL` |
 | 11 | NonFiniteNumber | `JSON number is not finite` |
 
-Code11 is reserved for the upcoming Float builder. The parser rejects NaN and
-Infinity as syntax; conversion overflow uses code8. Host failure to create the
+Code11 is used by the Float builder for NaN/infinity. The parser rejects those
+spellings as syntax; numeric conversion overflow uses code8. Host failure to create the
 private conversion locale returns code4. Actual allocation exhaustion follows
 the existing runtime allocator contract, not a promised recoverable JSON OOM.
 
@@ -130,8 +129,8 @@ opaque J1 values cannot contain cycles or shared exponential trees.
 The 32 MiB allocation and 16 MiB output checks are defensive ceilings: parsed
 J1 trees normally reach the stricter input/node limits first. Internal boundary
 tests exercise those ceilings directly without exposing a public limit override.
-Future builders must enforce depth, expanded-node and byte metadata when sealing;
-the current parser supplies the first two invariants during descent/allocation.
+Builders enforce cached depth, expanded-node and encoded-byte metadata when
+sealing; the parser also enforces depth/nodes during descent/allocation.
 
 Run `env -u LIBRARY_PATH python3 scripts/test_runtime_json.py` after building the
 runtime archive in the selected checkout. It compiles fresh JSON objects for
@@ -139,3 +138,31 @@ three variants (debug, release and ASan/UBSan), and tests the actual runtime GC
 and Result ABI. Temporary objects/binaries are isolated; it never starts a shared
 runtime build. Boehm owns its heap, so sanitizer success complements explicit
 bounds checks rather than claiming instrumentation of every GC allocation.
+
+## J2 builders and collection ABI
+
+All added entry points retain the `fern_json_value_` prefix. `null`, `from_bool`
+and `from_int` return a raw opaque Value pointer. `from_float(double)`,
+`from_string`, `from_number_text`, `from_array(const FernList*)` and
+`from_object(const FernList* keys, const FernList* values)` return heap Results.
+The native object builder receives parallel String-pointer/Value-pointer lists.
+It copies key bytes, validates Unicode, retains immutable child values, seals
+expanded metadata and rejects duplicate decoded names. All builder errors have
+offset-1. Every input list dimension is checked before reading its data.
+
+`elements` returns Result(List(Value*), Error*). `members` returns
+Result(List(FernJsonMember*), Error*); each member record has exactly two64-bit
+fields, `key` at offset0 and `value` at offset8. Static C assertions check this
+layout. The Rust emitter converts successful member results to tagged three-word
+source tuples; it preserves Err pointers without reading them as lists.
+`limit_error()` is an internal adapter preflight helper, never a source function.
+
+Scalar input text is limited to1 MiB. Object key scans stop once aggregate copied
+bytes exceed16 MiB. Builder work reserves eight times newly scanned text bytes,
+then charges repeated indexing comparisons against64 *100,000 units. Expanded
+child metadata is checked without traversing shared subtrees. Existing storage is
+not mutated. A maximum16 MiB encoded value may exceed the1 MiB parse-input cap.
+
+The JSON native test runner now includes248 builder/collection checks per build,
+including actual exact/above16 MiB encodings from shared children, depth/expanded
+node limits, invalid Unicode, locale-independent numbers and immutable copies.

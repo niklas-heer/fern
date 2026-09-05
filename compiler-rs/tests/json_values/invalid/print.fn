@@ -1,0 +1,2 @@
+fn inspect(value: json.Value): println(value)
+fn main(): ()

@@ -1,0 +1,2 @@
+fn inspect(value: json.Value) -> Int: value.tag
+fn main(): ()
