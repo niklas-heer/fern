@@ -1,5 +1,12 @@
 /* Fern Compiler - Main Entry Point */
 
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -456,46 +463,80 @@ static Codegen* compile_to_qbe(Arena* arena, const char* source, const char* fil
 }
 
 /**
- * Find the runtime library path relative to fern executable.
- * @param exe_path Path to the fern executable (argv[0]).
- * @param buf Buffer to write the runtime library path (output parameter).
- * @param buf_size Size of the buffer.
- * @return true if found, false otherwise.
+ * Resolve the running compiler, including PATH invocation and symlinks.
+ * @param exe_path Original argv[0] for portable fallback.
+ * @param resolved Output buffer of at least PATH_MAX bytes.
+ * @return Whether the executable location was resolved.
  */
-static bool find_runtime_lib(const char* exe_path, char* buf, size_t buf_size) {  // FERN_STYLE: allow(no-raw-char) buf is output parameter
-    // FERN_STYLE: allow(assertion-density) path manipulation with multiple checks
-    
-    // Try to find runtime library in same directory as fern executable
-    // Find the directory containing the executable
-    const char* last_slash = NULL;
-    for (const char* p = exe_path; *p; p++) {
-        if (*p == '/' || *p == '\\') {
-            last_slash = p;
-        }
+static bool resolve_executable(const char* exe_path, char* resolved) {
+    // FERN_STYLE: allow(no-raw-char) POSIX path API output buffer.
+    assert(exe_path != NULL);
+    assert(resolved != NULL);
+    char candidate[PATH_MAX];
+#ifdef __APPLE__
+    uint32_t size = sizeof(candidate);
+    if (_NSGetExecutablePath(candidate, &size) == 0) {
+        return realpath(candidate, resolved) != NULL;
     }
-    
-    if (last_slash) {
-        size_t dir_len = (size_t)(last_slash - exe_path);
-        if (dir_len + 20 < buf_size) {
-            memcpy(buf, exe_path, dir_len);
-            strcpy(buf + dir_len, "/libfern_runtime.a");
-            
-            // Check if file exists
-            struct stat st;
-            if (stat(buf, &st) == 0) {
-                return true;
-            }
-        }
+#elif defined(__linux__)
+    ssize_t size = readlink("/proc/self/exe", candidate, sizeof(candidate) - 1);
+    if (size > 0 && (size_t)size < sizeof(candidate) - 1) {
+        candidate[size] = '\0';
+        return realpath(candidate, resolved) != NULL;
     }
-    
-    // Try current directory
-    snprintf(buf, buf_size, "./bin/libfern_runtime.a");
+#endif
+    return realpath(exe_path, resolved) != NULL;
+}
+
+/**
+ * Find the runtime archive beside the actual compiler executable.
+ * @param exe_path Original compiler invocation path.
+ * @param buf Output path buffer.
+ * @param buf_size Size of output buffer in bytes.
+ * @return Whether a regular runtime archive exists beside the compiler.
+ */
+static bool find_runtime_lib(const char* exe_path, char* buf, size_t buf_size) {
+    // FERN_STYLE: allow(no-raw-char) POSIX path API output buffer.
+    assert(exe_path != NULL);
+    assert(buf != NULL);
+    char resolved[PATH_MAX];
+    if (!resolve_executable(exe_path, resolved)) {
+        return false;
+    }
+    char* slash = strrchr(resolved, '/');
+    if (!slash) {
+        return false;
+    }
+    *slash = '\0';
+    int size = snprintf(buf, buf_size, "%s/libfern_runtime.a", resolved);
     struct stat st;
-    if (stat(buf, &st) == 0) {
-        return true;
+    return size >= 0 && (size_t)size < buf_size && stat(buf, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+/**
+ * Quote one filesystem path as a literal shell argument.
+ * @param arena Storage for the quoted argument.
+ * @param path Filesystem path to quote without expansion.
+ * @return Arena-owned shell argument, including its surrounding quotes.
+ */
+static String* quote_shell_path(Arena* arena, const char* path) {
+    assert(arena != NULL);
+    assert(path != NULL);
+    size_t length = strlen(path);
+    char* quoted = arena_alloc(arena, length * 4 + 3);
+    size_t used = 0;
+    quoted[used++] = '\'';
+    for (size_t i = 0; i < length; i++) {
+        if (path[i] == '\'') {
+            memcpy(quoted + used, "'\\''", 4);
+            used += 4;
+        } else {
+            quoted[used++] = path[i];
+        }
     }
-    
-    return false;
+    quoted[used++] = '\'';
+    quoted[used] = '\0';
+    return string_new_len(arena, quoted, used);
 }
 
 /* Global variable to store exe path from main */
@@ -582,20 +623,22 @@ static bool parse_color_flag(const char* arg, ErrorsColorMode* mode_out) {
 /**
  * Run QBE compiler and linker to create executable.
  * Uses embedded QBE backend - no external qbe binary needed.
+ * @param arena Storage for toolchain commands.
  * @param ssa_file Path to QBE IR file.
  * @param output_file Path for output executable.
  * @return 0 on success, non-zero on error.
  */
-static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
+static int run_qbe_and_link(Arena* arena, const char* ssa_file, const char* output_file) {
     // FERN_STYLE: allow(assertion-density) compilation pipeline
     // FERN_STYLE: allow(function-length) QBE/link pipeline is cohesive
-    char cmd[1024];
-    char asm_file[256];
-    char obj_file[256];
+    String* cmd;
+    const char* asm_file = string_cstr(string_format(arena, "%s.s", output_file));
+    const char* obj_file = string_cstr(string_format(arena, "%s.o", output_file));
     int ret;
 
-    snprintf(asm_file, sizeof(asm_file), "%s.s", output_file);
-    snprintf(obj_file, sizeof(obj_file), "%s.o", output_file);
+    const char* quoted_output = string_cstr(quote_shell_path(arena, output_file));
+    const char* quoted_obj = string_cstr(quote_shell_path(arena, obj_file));
+    const char* quoted_asm = string_cstr(quote_shell_path(arena, asm_file));
 
     // Open SSA input file
     FILE* ssa_input = fopen(ssa_file, "r");
@@ -626,8 +669,8 @@ static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
 
     // Assemble using system compiler
     log_verbose("verbose: assembling %s -> %s\n", asm_file, obj_file);
-    snprintf(cmd, sizeof(cmd), "cc -c -o %s %s 2>&1", obj_file, asm_file);
-    ret = system(cmd);
+    cmd = string_format(arena, "cc -c -o %s %s 2>&1", quoted_obj, quoted_asm);
+    ret = system(string_cstr(cmd));
     if (ret != 0) {
         error_print("assembly failed");
         unlink(asm_file);
@@ -635,7 +678,7 @@ static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
     }
 
     // Find and link with runtime library + GC + sqlite3 runtime dependencies.
-    char runtime_lib[512];
+    char runtime_lib[PATH_MAX];
     const char* gc_link = "$(pkg-config --variable=libdir bdw-gc 2>/dev/null | xargs -I{} echo {}/libgc.a || "
                           "for d in /opt/homebrew/lib /usr/local/lib /usr/lib /usr/lib/x86_64-linux-gnu; do "
                           "[ -f $d/libgc.a ] && echo $d/libgc.a && break; done)";
@@ -644,16 +687,19 @@ static int run_qbe_and_link(const char* ssa_file, const char* output_file) {
     const char* thread_link = "-pthread";
     if (g_exe_path && find_runtime_lib(g_exe_path, runtime_lib, sizeof(runtime_lib))) {
         log_verbose("verbose: linking with runtime %s\n", runtime_lib);
-        snprintf(cmd, sizeof(cmd), "cc -o %s %s %s %s %s %s %s 2>&1",
-            output_file, obj_file, runtime_lib, gc_link, sqlite_link, openssl_link, thread_link);
+        cmd = string_format(arena, "cc -o %s %s %s %s %s %s %s 2>&1",
+            quoted_output, quoted_obj, string_cstr(quote_shell_path(arena, runtime_lib)),
+            gc_link, sqlite_link, openssl_link, thread_link);
     } else {
         // Fall back to linking without runtime (will fail if runtime functions used)
         log_verbose("verbose: runtime library not found near executable, linking fallback path\n");
-        snprintf(cmd, sizeof(cmd), "cc -o %s %s %s %s %s %s 2>&1",
-            output_file, obj_file, gc_link, sqlite_link, openssl_link, thread_link);
+        error_print("runtime library missing beside fern; reinstall fern with libfern_runtime.a");
+        unlink(asm_file);
+        unlink(obj_file);
+        return 1;
     }
 
-    ret = system(cmd);
+    ret = system(string_cstr(cmd));
     if (ret != 0) {
         error_print("linking failed");
         unlink(asm_file);
@@ -761,26 +807,20 @@ static int cmd_build(Arena* arena, const char* filename) {
         return 1;
     }
     
-    // Determine output filename
-    char output_file[256];
-    if (g_output_file) {
-        snprintf(output_file, sizeof(output_file), "%s", g_output_file);
-    } else {
-        String* basename = get_basename(arena, filename);
-        snprintf(output_file, sizeof(output_file), "%s", string_cstr(basename));
+    const char* output_file = g_output_file ? g_output_file
+        : string_cstr(get_basename(arena, filename));
+    if (output_file[0] == '-') {
+        output_file = string_cstr(string_format(arena, "./%s", output_file));
     }
-    
-    // Write QBE IR to temp file
-    char ssa_file[256];
-    snprintf(ssa_file, sizeof(ssa_file), "%s.ssa", output_file);
-    
+    const char* ssa_file = string_cstr(string_format(arena, "%s.ssa", output_file));
+
     if (!codegen_write(cg, ssa_file)) {
         error_print("cannot write QBE IR to '%s'", ssa_file);
         return 1;
     }
     
     // Run QBE and link
-    int ret = run_qbe_and_link(ssa_file, output_file);
+    int ret = run_qbe_and_link(arena, ssa_file, output_file);
     
     // Clean up SSA file on success
     if (ret == 0) {
@@ -879,34 +919,37 @@ static int cmd_run(Arena* arena, const char* filename) {
         return 1;
     }
     
-    // Write QBE IR to temp file
-    String* basename = get_basename(arena, filename);
-    char ssa_file[256];
-    snprintf(ssa_file, sizeof(ssa_file), "/tmp/fern_%s.ssa", string_cstr(basename));
-    
-    if (!codegen_write(cg, ssa_file)) {
-        error_print("cannot write QBE IR to '%s'", ssa_file);
+    // Private directories prevent concurrent runs from clobbering each other.
+    char temp_dir[] = "/tmp/fern-run-XXXXXX";
+    if (!mkdtemp(temp_dir)) {
+        error_print("cannot create temporary run directory");
         return 1;
     }
-    
-    // Run QBE and link to temp executable
-    char output_file[256];
-    snprintf(output_file, sizeof(output_file), "/tmp/fern_%s", string_cstr(basename));
-    
-    int ret = run_qbe_and_link(ssa_file, output_file);
+    const char* ssa_file = string_cstr(string_format(arena, "%s/program.ssa", temp_dir));
+    const char* output_file = string_cstr(string_format(arena, "%s/program", temp_dir));
+    if (!codegen_write(cg, ssa_file)) {
+        error_print("cannot write QBE IR to '%s'", ssa_file);
+        unlink(ssa_file);
+        rmdir(temp_dir);
+        return 1;
+    }
+
+    int ret = run_qbe_and_link(arena, ssa_file, output_file);
     
     // Clean up SSA file
     unlink(ssa_file);
     
     if (ret != 0) {
+        rmdir(temp_dir);
         return ret;
     }
     
-    // Execute the compiled program
-    ret = system(output_file);
+    // Execute the compiled program.
+    ret = system(string_cstr(quote_shell_path(arena, output_file)));
     
-    // Clean up executable
+    // Clean up executable and its private directory.
     unlink(output_file);
+    rmdir(temp_dir);
     
     // Extract actual exit code from system() return value
     if (WIFEXITED(ret)) {
@@ -1339,8 +1382,23 @@ int main(int argc, char** argv) {
     // Check if command requires a file argument (args field is non-empty)
     bool needs_file = cmd->args && cmd->args[0] != '\0';
     
-    // Parse command-specific options
-    while (arg_index < argc && argv[arg_index][0] == '-') {
+    // Accept options on either side of the input file, as common CLI tools do.
+    const char* filename = NULL;
+    bool options_finished = false;
+    while (arg_index < argc) {
+        if (!options_finished && strcmp(argv[arg_index], "--") == 0) {
+            options_finished = true;
+            arg_index++;
+            continue;
+        }
+        if (options_finished || argv[arg_index][0] != '-') {
+            if (filename) {
+                error_print("unexpected argument '%s'", argv[arg_index]);
+                return 1;
+            }
+            filename = argv[arg_index++];
+            continue;
+        }
         if (strcmp(argv[arg_index], "--quiet") == 0) {
             g_log_level = LOG_QUIET;
             arg_index++;
@@ -1399,26 +1457,13 @@ int main(int argc, char** argv) {
 
     log_verbose("verbose: command=%s\n", cmd->name);
     
-    // Need a file argument for commands that require it
-    const char* filename = NULL;
-    if (needs_file) {
-        if (arg_index >= argc) {
-            error_print("missing file argument");
-            fprintf(stderr, "\n");
-            print_usage();
-            return 1;
-        }
-        filename = argv[arg_index];
-        arg_index++;
-    } else if (arg_index < argc) {
-        filename = argv[arg_index];
-        arg_index++;
-    }
-    if (arg_index < argc) {
-        error_print("unexpected argument '%s'", argv[arg_index]);
+    if (needs_file && !filename) {
+        error_print("missing file argument");
+        fprintf(stderr, "\n");
+        print_usage();
         return 1;
     }
-    
+
     // Create arena for compiler session
     Arena* arena = arena_create(4 * 1024 * 1024);  // 4MB
     if (!arena) {

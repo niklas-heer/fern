@@ -2,6 +2,9 @@
 
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
+prefix := env_var_or_default("PREFIX", "/usr/local")
+destdir := env_var_or_default("DESTDIR", "")
+
 cc := "clang"
 base_cflags := "-std=c11 -Wall -Wextra -Wpedantic -Werror -Iinclude -Ilib -Ideps/qbe -Ideps/linenoise"
 debug_flags := "-g -O0 -DDEBUG"
@@ -191,6 +194,10 @@ test: debug
     @just _build-test-runner debug
     @echo "Running tests..."
     @./bin/test_runner
+    python3 tests/integration/test_installation.py
+    python3 scripts/test_tui.py
+    python3 scripts/test_string_codegen.py
+    python3 tests/integration/test_print_types.py
 
 # Build fuzz runner
 fuzz-bin: debug
@@ -203,12 +210,14 @@ clean:
 
 # Install fern compiler
 install: release
-    install -m 755 bin/fern /usr/local/bin/fern
-    @echo "✓ Installed fern to /usr/local/bin/fern"
+    install -d {{quote(destdir + prefix + "/bin")}}
+    install -m 755 bin/fern {{quote(destdir + prefix + "/bin/fern")}}
+    install -m 644 bin/libfern_runtime.a {{quote(destdir + prefix + "/bin/libfern_runtime.a")}}
+    @echo {{quote("✓ Installed fern and runtime to " + destdir + prefix + "/bin")}}
 
 # Uninstall
 uninstall:
-    rm -f /usr/local/bin/fern
+    rm -f {{quote(destdir + prefix + "/bin/fern")}} {{quote(destdir + prefix + "/bin/libfern_runtime.a")}}
     @echo "✓ Uninstalled fern"
 
 # Run with Valgrind for memory checking
