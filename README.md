@@ -1,238 +1,121 @@
 # 🌿 Fern
 
-> A statically-typed, functional language with Python aesthetics that compiles to single binaries.
+> A statically typed, functional language with Python-like syntax and native compilation.
 
-**Status:** 🚧 In active development - Gate D complete, 534 tests passing, release packaging/benchmark publishing in CI, and `Justfile` as the primary task runner
-
-## What is Fern?
-
-Fern is a programming language designed to make both **fast CLI tools** (<1 MB) and **full-stack applications** (2-4 MB) with the same elegant syntax. Compiler outputs are standalone and behavior is designed to stay predictable.
+**Status:** Pre-1.0, in active development. Native CLI programs, core libraries,
+editor tooling, and deterministic actor mailbox primitives are implemented.
+The full language design is not finished. See [release readiness](docs/RELEASE_READINESS.md)
+for the executable feature boundary and [ROADMAP.md](ROADMAP.md) for remaining work.
 
 ```fern
-# Clean, readable syntax with explicit error handling
-let content = read_file("config.txt")?
-let config = parse_config(content)?
-let validated = validate(config)?
-Ok(process(validated))
+fn greet(name: String) -> String:
+    String.concat("Hello, ", name)
+
+fn main():
+    println(greet("Fern"))
 ```
 
-## Design Philosophy
+## Try it
 
-**Fern should spark joy** - for those familiar with functional programming, writing Fern should feel delightful, not tedious.
+Install the [build dependencies](BUILD.md), then:
 
-**One obvious way** - There should be one clear, idiomatic way to accomplish any task. No agonizing over which of five approaches to use.
-
-**No surprises** - The language actively prevents the bugs that waste your afternoon. If it compiles, it probably works.
-
-**Jetpack surface included** - Core modules ship with the compiler; SQL now has a concrete SQLite runtime backend, and HTTP GET/POST calls are backed by the civetweb runtime client.
-
-### Core Principles
-
-| Principle | How Fern Delivers |
-|-----------|------------------|
-| **Readable** | Python-like indentation, no braces, clear keywords |
-| **Functional** | Immutable by default, pure functions, pattern matching |
-| **Safe** | No null, no exceptions, no panics - only Result/Option types |
-| **Predictable** | Explicit error handling, no hidden control flow, exhaustive matching |
-| **Fast** | Compiles to native code, ~35x faster than Python |
-| **Portable** | Single-binary distribution with embedded toolchain/runtime |
-
-### What We Prevent
-
-```
-✗ NullPointerException     → Option type, exhaustive matching
-✗ Unhandled exceptions     → Result type, must handle errors
-✗ Race conditions          → Actors with isolated heaps, no shared state
-✗ "It works on my machine" → Single binary, all dependencies included
-✗ Silent failures          → Compiler enforces error handling
-✗ Action at a distance     → Immutability prevents spooky mutation
+```sh
+just debug
+./bin/fern run examples/tiny_cli.fn
+./bin/fern build examples/tiny_cli.fn -o hello
+./hello
 ```
 
-## Key Features
+Expected output from the program: `hello, fern`.
 
-- **Static types** with inference - safety without verbosity
-- **Pattern matching** - exhaustiveness checking catches bugs
-- **Garbage collected runtime** - Boehm-backed runtime plus Perceus baseline ownership primitives
-- **Language tooling** - LSP with diagnostics, hover, definition, completion, rename, and code actions
-- **Stable stdlib API surface** - `fs`, `http`, `json`, `sql`, `actors`, and `File` alias compatibility
-- **Explicit runtime readiness** - SQL is SQLite-backed today; HTTP GET/POST are runtime-backed for `http://` and `https://` URLs with deterministic `Err(FERN_ERR_IO)` on invalid URLs/network failures
-- **Helpful diagnostics** - snippets, notes, and fix hints in CLI workflows
-- **Reproducible quality gates** - `just check`, fuzz smoke, perf budgets, release policy checks
+Follow the [language guide](docs/LANGUAGE_GUIDE.md) for functions, immutable
+values, lists, errors, and the edit/check/run workflow. Its programs run with
+exact output assertions in the test suite.
 
-## Module Naming
+To install under your home directory:
 
-Canonical module naming in docs/examples:
+```sh
+PREFIX="$HOME/.local" just install
+export PATH="$HOME/.local/bin:$PATH"
+fern --help
+```
 
-- `String`, `List`, `System`, `Regex`, `Result`, `Option`, and `Tui.*`
-- `fs`, `json`, `http`, `sql`, and `actors`
-- `File.*` remains supported as a compatibility alias for `fs.*`
+The installation includes `fern` and `libfern_runtime.a` in the same directory.
+Keep both files together when moving a bundle. QBE is embedded, so a separate
+QBE executable is unnecessary. Native compilation still needs the host C
+compiler and the GC, SQLite, and OpenSSL libraries documented in [BUILD.md](BUILD.md).
 
-## Current Status
+## Why Fern?
 
-Fern is implemented with strict TDD. See [DESIGN.md](DESIGN.md) for language details and [ROADMAP.md](ROADMAP.md) for gate-by-gate status.
+Fern aims to make functional programming feel natural: readable indentation,
+immutable values, explicit errors, and one clear way to express a task. Its
+long-term design spans small CLI tools and concurrent applications with built-in
+services. Working examples and native execution tests guide implementation.
 
-**Execution gates:**
-- ✅ Gate A (DX + language feel) passed
-- ✅ Gate B (reliability + regression resistance) passed
-- ✅ Gate C (stdlib/runtime surface quality) passed
-- ✅ Gate D (ecosystem/adoption hardening) passed
+What you can use today:
 
-**Recent outcomes:**
-- ✅ 534/534 tests passing in local `just test`
-- ✅ Cross-platform CI (Ubuntu + macOS) with build/test/style/perf/fuzz/example checks
-- ✅ Release packaging bundles (`fern` + `libfern_runtime.a` + policy/docs artifacts)
-- ✅ Conventional-commit-driven semver + release notes via `release-please`
-- ✅ Published reproducible benchmark + case-study report in `docs/reports/benchmark-case-studies-2026-02-06.md`
-- ✅ LSP support beyond MVP (completion, rename, code actions, better source positions)
+- Static type checking, inference for local values, functions, lists, strings,
+  conditionals, and Result-based library errors.
+- Native compilation through embedded QBE and a Boehm GC runtime.
+- Filesystem operations, HTTP/HTTPS GET and POST, and SQLite open/execute calls.
+- Terminal styling, panels, tables, editable input/password prompts, cursor
+  controls, immutable trees, and deterministic log formatting.
+- Explicit actor FIFO mailboxes with lifecycle, monitoring, and deterministic
+  supervision policies. These are foundations for the future execution model.
+- CLI diagnostics, formatter, REPL, LSP, and generated editor support.
 
-**Active focus:**
-- 🚧 Post-Gate D stabilization and milestone polish (see [ROADMAP.md](ROADMAP.md))
+Features in [DESIGN.md](DESIGN.md) can still be planned. In particular, spawned
+Fern functions do not execute as concurrent actors, HTTP serving is absent,
+and the current JSON compatibility API copies strings rather than validating
+JSON. Native compilation rejects unsupported actor execution syntax with a
+clear diagnostic. Read the [actor contract](docs/ACTOR_RUNTIME.md) and
+[readiness checklist](docs/RELEASE_READINESS.md) before building on those areas.
+
+## Modules and examples
+
+Core modules use `String`, `List`, `System`, `Regex`, `Result`, `Option`, and
+`Tui.*`. Service modules use `fs`, `json`, `http`, `sql`, and `actors`.
+`File.*` remains a compatibility alias for `fs.*`.
+
+- [Tiny CLI](examples/tiny_cli.fn): string output and command dispatch.
+- [Actor mailboxes](examples/actor_app.fn): enqueue and explicitly consume jobs.
+- [HTTP errors](examples/http_api.fn): deterministic error handling without network access.
+- [Terminal project view](examples/tui_project.fn): structured trees and logs.
+- [Stdlib reference](docs/STDLIB_API_REFERENCE.md): current module signatures.
+
+## Develop and verify
+
+```sh
+just check                 # Clean build, unit/native tests, examples, strict style
+just style-parity          # Native/reference diagnostic parity
+just docs-check            # Documentation generation and doc examples
+just fuzz-smoke            # Reproducible parser/formatter fuzzing
+just perf-budget           # Measured release build/startup/size budgets
+just release-package       # Compiler/runtime bundle and checksum
+```
+
+CI covers Linux and macOS. The tests include relocated installations, unusual
+file paths, exact program output, pseudo-terminal interaction, and seeded actor
+failure scenarios. Python remains the reference quality checker until the
+entire native checker workflow reaches parity.
+
+The complete release checklist is in [release readiness](docs/RELEASE_READINESS.md).
+Releases use conventional commits and `release-please`, starting from the
+`0.1.0` baseline. The release workflow requires its configured repository token.
 
 ## Documentation
 
-- [Documentation Index](docs/README.md) - Canonical map of project docs
-- [Language Design](DESIGN.md) - Complete specification
-- [Implementation Roadmap](ROADMAP.md) - Development plan and progress
-- [Decision Log](DECISIONS.md) - Architectural decisions
-- [Coding Standards](FERN_STYLE.md) - TigerBeetle-inspired style guide
-- [Development Guidelines](CLAUDE.md) - For AI-assisted development
-- [Compatibility Policy](docs/COMPATIBILITY_POLICY.md) - Upgrade/deprecation guarantees
+- [Documentation Index](docs/README.md)
+- [Language Guide](docs/LANGUAGE_GUIDE.md)
+- [Build Guide](BUILD.md)
+- [Language Design](DESIGN.md)
+- [Implementation Roadmap](ROADMAP.md)
+- [Decision Log](DECISIONS.md)
+- [Coding Standards](FERN_STYLE.md)
+- [Development Guidelines](CLAUDE.md)
+- [Compatibility Policy](docs/COMPATIBILITY_POLICY.md)
 
-## Inspiration
+Fern takes inspiration from Gleam, Elixir, Rust, Zig, Python, and Go. Contributions
+follow the test-first workflow in [CLAUDE.md](CLAUDE.md).
 
-Fern takes inspiration from the best features of:
-- **Gleam** - Type system, simplicity
-- **Elixir** - Pattern matching, actors, pragmatic design
-- **Rust** - `?` operator, Result types
-- **Zig** - Comptime, defer, minimalism
-- **Python** - Readability, aesthetics
-- **Go** - Single binary deployment
-
-## Philosophy in Action
-
-**Full-stack shape (stable API surface, SQL + HTTP runtime backends available):**
-```fern
-# No Redis, no RabbitMQ, no separate database
-fn main() -> Result((), Int):
-    let db = sql.open("app.db")?            # SQLite-backed runtime handle
-    let cache = spawn(cache_actor)          # In-memory cache (actor)
-    let queue = spawn(job_queue)            # Job queue (actor)
-
-    http.serve(8080, handler(db, cache, queue))
-
-# One 3.5MB binary, no external dependencies
-```
-
-**CLI tools stay tiny:**
-```fern
-# Fast, small, no runtime
-fn main() -> Result((), Int):
-    let data = fs.read("data.csv")?
-    let processed = process(data)?
-    fs.write("output.csv", processed)?
-    Ok(())
-
-# 600KB binary, <5ms startup
-```
-
-## Building
-
-**Dependencies (for building the compiler):**
-```bash
-# macOS
-brew install bdw-gc sqlite
-
-# Ubuntu/Debian
-apt install libgc-dev libsqlite3-dev
-
-# Fedora
-dnf install gc-devel sqlite-devel
-```
-
-Also install the task runner:
-```bash
-# macOS
-brew install just
-
-# Ubuntu/Debian
-apt install just
-
-# Fedora
-dnf install just
-```
-
-> **Note:** QBE is embedded in the compiler - no external `qbe` binary needed. Boehm GC is statically linked into compiled programs. SQL stdlib calls link against SQLite (`sqlite3`) and HTTP stdlib calls are implemented via vendored civetweb client code in the runtime.
-
-**Preferred task runner (`Justfile`):**
-```bash
-just debug
-just test
-just check
-just docs
-just docs-check
-just release-package
-just benchmark-report
-```
-
-`Justfile` is the primary developer entrypoint for all build and quality tasks.
-
-## Release Automation
-
-Fern uses [release-please](https://github.com/googleapis/release-please) with conventional commits to drive release PRs, semver bumps, and changelog notes automatically.
-The initial release baseline is pinned to `0.1.0` (not `1.0.0`).
-
-- `fix:` commits trigger patch bumps
-- `feat:` commits trigger minor bumps
-- `feat!:` or `BREAKING CHANGE:` triggers minor bumps while `<1.0.0` (and major bumps once `>=1.0.0`)
-- Release notes/changelog entries are generated from conventional-commit history
-
-The workflow in `.github/workflows/release-please.yml` requires `RELEASE_PLEASE_TOKEN` to be set in repo secrets to open/update release PRs.
-
-## FAQ
-
-### Why "Fern"?
-
-Ferns are ancient, resilient plants that have survived for over 350 million years. Like the plant, Fern the language is designed to be:
-
-- **Resilient** - No crashes, no nulls, explicit error handling
-- **Elegant** - Simple fronds (syntax) that unfold into complex patterns
-- **Evergreen** - Clean fundamentals that age well
-
-Plus, it's short, memorable, and wasn't taken.
-
-### What's with the 🌿 emoji?
-
-The fern emoji (🌿) is Fern's visual identity. You can even use it as a file extension:
-
-```bash
-# Both work!
-fern build hello.fn
-fern build hello.🌿
-```
-
-Why? Because we can, and it makes your file explorer more interesting.
-
-### Is Fern production-ready?
-
-Not yet. Core compiler/runtime/tooling paths are heavily tested and Gate D is complete, but Fern is still pre-1.0 and evolving. See [ROADMAP.md](ROADMAP.md) and [docs/COMPATIBILITY_POLICY.md](docs/COMPATIBILITY_POLICY.md) for current guarantees and planned work.
-
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
-**What this means:** You can use Fern for anything (personal, commercial, proprietary) without restrictions. We want Fern to be as widely useful as possible.
-
-## Contributing
-
-We're actively implementing the compiler using AI-assisted test-driven development. See [CLAUDE.md](CLAUDE.md) for development workflow and guidelines.
-
-```bash
-# Build and test
-just test
-
-# Check style compliance
-just style
-
-# See current progress
-cat ROADMAP.md
-```
+MIT License — see [LICENSE](LICENSE).

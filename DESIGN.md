@@ -2938,6 +2938,78 @@ for i in 0..20:
 Tui.Live.done()
 ```
 
+#### Tui.Prompt - Interactive Input
+
+```fern
+let name = Tui.Prompt.input("Your name: ")
+let secret = Tui.Prompt.password("Password: ")
+let confirmed = Tui.Prompt.confirm("Continue?")
+let choice = Tui.Prompt.select("Choose a target", ["native", "wasm"])
+let count = Tui.Prompt.int("Workers", 1, 16)
+```
+
+`input` and `password` use the bundled line editor when both stdin and stdout
+are terminals: left/right arrows, Home/End, Ctrl+A/Ctrl+E, Backspace, Delete,
+Ctrl+U/Ctrl+K, and UTF-8 character editing are supported. Password characters
+are masked; terminal settings are restored on Enter, Ctrl+C, and Ctrl+D.
+EOF or cancellation returns an empty string. Redirected input reads one plain
+line without terminal escapes. Interactive lines use the editor's 4096-byte buffer.
+`confirm`, `select`, and `int` retain their line-oriented input behavior.
+
+#### Tui.Tree - Immutable Hierarchies
+
+```fern
+let root = Tui.Tree.new("project")
+let source = Tui.Tree.add(Tui.Tree.new("src"), Tui.Tree.new("main.fn"))
+let tree = Tui.Tree.add(Tui.Tree.add(root, source), Tui.Tree.new("README.md"))
+println(Tui.Tree.render(tree))
+```
+
+```text
+project
+├── src
+│   └── main.fn
+└── README.md
+```
+
+`add(parent, child)` appends a whole subtree and returns a new `Tree`, preserving
+both inputs. `render` returns plain Unicode text without a trailing newline;
+multiline labels retain their branch indentation. Tree composition works with
+pre-rendered child text, avoiding recursive traversal and a fixed nesting limit.
+
+#### Tui.Log - Deterministic Log Records
+
+```fern
+println(Tui.Log.debug("Build details"))
+println(Tui.Log.info("Build started"))
+println(Tui.Log.warn("No tests found"))
+println(Tui.Log.error("Build failed"))
+```
+
+Each function returns a plain string such as `[INFO] Build started`, with no
+implicit output, timestamp, color, or trailing newline. Newlines, carriage
+returns, tabs, backslashes, and ASCII control characters in messages are escaped,
+so each record occupies one line and terminal escape sequences remain visible text.
+
+#### Additional Terminal Cursor Controls
+
+```fern
+Tui.Term.save_cursor()
+Tui.Term.move_to(2, 5)  # One-based row and column, each clamped to at least 1
+Tui.Term.up(1)
+Tui.Term.down(1)
+Tui.Term.left(2)
+Tui.Term.right(2)
+Tui.Term.hide_cursor()
+Tui.Term.show_cursor()
+Tui.Term.restore_cursor()
+Tui.Term.clear()       # Clear screen and move to top left
+```
+
+These operations return Unit and write ANSI sequences only when stdout is a
+terminal. Relative movement by zero or a negative count does nothing. Pair cursor
+hiding with showing before returning from your application.
+
 ### I/O Functions
 
 Basic print functions (always available):

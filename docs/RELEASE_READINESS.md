@@ -1,0 +1,74 @@
+# Fern release readiness
+
+Fern is pre-1.0. The following describes executable behavior, not every feature in
+[the language design](../DESIGN.md). Historical Gate A–D completion records
+engineering milestones; they do not certify the entire language.
+
+## Available and regression covered
+
+| Surface | Current behavior | Verification |
+| --- | --- | --- |
+| First program | Check, format, compile, run; relocatable compiler/runtime pair; local install | Installation integration tests and tutorial output assertions |
+| Native strings | Quotes, backslashes, control bytes, Unicode, long literals; typed user-function print results | String and print codegen execution regressions |
+| Files | Read/write/append/delete/size with Result errors | Runtime surface and examples |
+| HTTP | GET/POST clients, response bodies on 2xx, integer errors otherwise | Local HTTP/TLS runtime tests; offline error example |
+| SQLite | Open a handle and execute statements | Runtime database regression tests |
+| Actor foundation | String FIFO mailboxes, lifecycle/monitor/restart, three deterministic strategies | Six invariant scenarios and 1,536 seeded strategy crash steps |
+| Terminal UI | Styled output, panels/tables, editable input/password prompts, cursor controls, immutable trees, logs | 13 native/PTY tests and a compiled example |
+| Editor | Existing LSP and generated Tree-sitter support | Unit and JSON-RPC smoke tests |
+| Native checker | Diagnostic parity on pinned fixtures and compiler/library sources | Required CI parity gate |
+
+## Blocking full language completion
+
+- **Concurrency execution:** spawn does not run a function, and the complete typed
+  receive/suspension/timeout/request-reply model is absent. Native compilation
+  rejects the unsupported execution syntax; use `actors.start/post/next` for the
+  available explicit mailbox operations. Supervision tree lifecycle is incomplete.
+  See [the exact actor contract](ACTOR_RUNTIME.md).
+- **JSON:** the compatible `json.parse`/`json.stringify` baseline copies strings;
+  it is not a validating JSON parser or typed JSON value model. Nonempty invalid
+  JSON can currently succeed. This needs an explicit API migration.
+- **Server and database APIs:** HTTP serving, typed SQL queries and the broader
+  design-level application stack are not implemented by the current client and
+  SQLite execute primitives.
+- **Bootstrapping:** build/test/git hygiene/CLI behavior has not reached full native
+  checker parity. Python remains required for the complete quality workflow.
+- **Memory and targets:** Boehm GC remains the native memory backend. Ownership
+  primitives are a baseline, not complete Perceus analysis. WASM is planned.
+- **Language coverage:** every supported design construct still needs a complete
+  parse/check/native-output audit. The existing examples cover a useful subset,
+  and successful type checking alone does not certify executable semantics.
+
+## Release verification
+
+Before tagging a release, run these from a clean checkout with documented native
+dependencies installed:
+
+```sh
+just check
+just style-parity
+just docs-check
+just fuzz-smoke
+just lsp-rpc-smoke
+just release-policy-check
+just perf-budget
+just release-package
+just release-package-check
+```
+
+`just check` includes native user workflows, installation, PTY, string/print, and
+actor regression coverage. `just perf-budget` measures a release build; its
+budgets are enforced in the script, not inferred from aspirational README sizes.
+`just release-package` builds the release bundle, and its packaging script verifies
+the archive checksum and required members.
+
+The supported CI matrix is Linux and macOS. Local validation on one host does
+not substitute for both CI jobs. Compilation requires a host C compiler, GC,
+SQLite, and OpenSSL development libraries; compiled programs may retain platform
+shared-library dependencies. A release must not advertise universal static
+portability without checking its actual linked dependencies.
+
+A 1.0 proposal must close the blocking items above, document compatibility and
+migration behavior, and demonstrate real application execution under the
+[compatibility policy](COMPATIBILITY_POLICY.md). See [ROADMAP.md](../ROADMAP.md)
+for the current task list and [the language guide](LANGUAGE_GUIDE.md) to get started.

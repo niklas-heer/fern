@@ -1,16 +1,18 @@
 # Fern Roadmap
 
-Last updated: 2026-02-09
+Last updated: 2026-09-05
 
 This file is the only active roadmap. Historical context is in [`docs/HISTORY.md`](docs/HISTORY.md).
 
 ## Current Status Snapshot
 
-- Quality gate: `just check` passing (`534/534` tests, style passing, examples passing)
-- Perf gate: `just perf-budget` passing (compile/startup/size budgets)
-- Fuzz gate: `just fuzz-smoke` passing
-- Docs gate: `just docs-check` passing
-- Release readiness: `just release-package-check` now validates the real staging layout (`dist/staging`)
+- Quality gate: `just check` passing (542 C tests, native workflow/string/print tests, 13 TUI tests, 18 examples, strict style); validated with stale host `LIBRARY_PATH` excluded
+- Perf gate: `just perf-budget` passing on macOS arm64 (7.49 s build, 549,384-byte compiler, 2.82 ms startup p95)
+- Fuzz gate: `just fuzz-smoke` passing (64 cases, seed `0xC0FFEE`)
+- Docs gate: `just docs-check` passing (consistency, generation, doc tests); LSP RPC smoke passing
+- Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
+- Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
+- Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
 
 ## Canonical Documents
 
@@ -33,7 +35,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 
 ### Priority 1: Repository Hygiene and Release Flow
 
-Status: Active
+Status: Complete for the tracked hygiene tasks
 
 - [x] Fix release staging validation mismatch (`release-package-check` now stages and validates `dist/staging`)
 - [x] Keep generated outputs out of source control by default (release artifacts, benchmark binaries)
@@ -48,19 +50,22 @@ Exit criteria:
 
 Status: Active
 
+- [x] Enforce restart budgets at time zero, single replacement lineage, acyclic ownership, invalid PID rejection, and stopped-sibling semantics (six runtime scenarios, 1,536 seeded crash steps)
+- [x] Preserve runtime `send` Result values through native codegen (success and invalid-PID execution regressions)
 - [ ] Close remaining supervision/runtime behavior gaps not yet modeled end-to-end
 - [ ] Expand deterministic FernSim scenarios for supervision trees and failure policies
-- [ ] Add stronger actor runtime invariants to regression suites
+- [x] Add stronger actor runtime invariants to regression suites (seeded native-runtime scenarios)
 
 Exit criteria:
 - Actor runtime semantics are deterministic, regression-covered, and documented as compatibility commitments.
 
 ### Priority 3: Milestone 9 Bootstrapping
 
-Status: Not started
+Status: Diagnostic parity complete; workflow parity remains open
 
+- [x] Compare exact diagnostics, severity, messages, and exits on pinned failing fixtures and all `src`/`lib` sources (strict, lenient, summary, nested paths)
 - [ ] Reach feature parity for `scripts/check_style.py` in `scripts/check_style.fn`
-- [ ] Add parity assertions to CI (`just style-parity` as a required gate)
+- [x] Add parity assertions to CI (`just style-parity` as a required gate)
 - [ ] Make Fern-native checker the default once parity is stable
 
 Exit criteria:
@@ -68,11 +73,13 @@ Exit criteria:
 
 ### Priority 4: Milestone 10 TUI Completion
 
-Status: Partially complete
+Status: Complete for the tracked TUI scope
 
-- [ ] Finish prompt line editing and richer terminal cursor controls
-- [ ] Implement tree/log modules for structured CLI UX
-- [ ] Add canonical TUI examples with deterministic test coverage
+- [x] Finish prompt line editing and richer terminal cursor controls
+- [x] Implement tree/log modules for structured CLI UX
+- [x] Add canonical TUI examples with deterministic test coverage
+
+Validation: 13 native and PTY tests cover input/password editing, Unicode, EOF/cancellation, terminal restoration, cursor controls, immutable trees, log escaping, and the canonical Fern example. Other prompt variants retain line-based input.
 
 Exit criteria:
 - TUI surface is complete enough to support first-party tooling UX needs.
@@ -82,14 +89,39 @@ Exit criteria:
 Status: Active
 
 - [ ] Reduce binary size and startup variance further while preserving ergonomics
-- [ ] Tighten release checklist and pre-1.0 readiness criteria
-- [ ] Expand user-facing docs (language guide/tutorial) for adoption
+- [x] Tighten release checklist and pre-1.0 readiness criteria
+- [x] Expand user-facing docs (language guide/tutorial) for adoption
 
 Exit criteria:
 - Pre-1.0 release checklist is explicit, measurable, and continuously validated.
 
+## User Workflow Closure (2026-09-05)
+
+- [x] Validate real release archive names and reject unsafe version/platform metadata.
+- [x] Install the runtime with the compiler; support local `PREFIX` and staging `DESTDIR`.
+- [x] Resolve relocated/PATH/symlinked compiler bundles and quote toolchain paths.
+- [x] Isolate `fern run` artifacts; never overwrite basename-derived files in `/tmp`.
+- [x] Accept build flags before or after the source file.
+- [x] Reject unsupported autonomous spawn/receive execution with actionable diagnostics.
+- [x] Preserve quoted, escaped, Unicode, and long string literals through native codegen.
+- [x] Print declared String/Bool function results and conditional/comparison expressions correctly.
+- [x] Execute canonical examples and four tutorial programs with exact output assertions.
+- [x] Replace the stale HTTP placeholder example with deterministic client error handling.
+
+## Remaining Language Completion Requirements
+
+The design document is broader than the executable implementation. See
+[release readiness](docs/RELEASE_READINESS.md) and [actor contracts](docs/ACTOR_RUNTIME.md).
+Do not interpret the historical Gate A–D labels as language completion.
+
+- [ ] Execute actor functions with suspension, typed messages/receive/timeouts, and descendant supervision lifecycle.
+- [ ] Complete the JSON value/parser API beyond the compatible string-copy baseline.
+- [ ] Implement HTTP serving and the broader SQL query/resource APIs described in the design.
+- [ ] Audit all specified syntax and stdlib calls for complete typecheck-to-native behavior; reject unsupported execution paths.
+- [ ] Complete compiler bootstrapping workflow parity, ownership analysis, and the planned WASM backend.
+
 ## Next Session Start Here
 
-1. Complete repository hygiene tasks (generated artifacts + docs consistency checks).
-2. Pick one Milestone 8 actor-runtime closure task and deliver test-first.
-3. Advance Milestone 9 by landing the next parity slice for the Fern-native style checker.
+1. Implement real actor execution and descendant lifecycle; preserve the deterministic contracts.
+2. Complete the native checker's build/git/CLI workflow parity before making it the default.
+3. Close remaining spec-to-execution gaps using native-output tests, starting with JSON and server/data APIs.

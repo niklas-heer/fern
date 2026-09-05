@@ -4,6 +4,34 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 44 Verify native diagnostics before replacing the reference checker
+* **Date**: 2026-09-05
+* **Status**: Accepted
+* **Decision**: I will require exact diagnostic multisets and exit codes on pinned failing fixtures and repository source before claiming native checker diagnostic parity; Python remains the default until the complete build/git/CLI workflow is validated.
+* **Context**: Comparing successful exit codes alone hid missing checks and a native main function that always exited successfully.
+* **Consequences**: CI requires diagnostic parity; full checker replacement remains an explicit open task. String constants use bounded printable runs and numeric unsafe bytes to preserve assembler-independent content and avoid truncation.
+
+### 43 Actor invariants and explicit executable-feature boundaries
+* **Date**: 2026-09-05
+* **Status**: Accepted
+* **Decision**: I will enforce acyclic single-owner supervision, one replacement per dead PID, zero-safe restart windows, and stopped-sibling preservation. Native build/run will reject unimplemented spawn/receive execution with actionable diagnostics while parse/check can still inspect planned syntax.
+* **Context**: Runtime defects violated existing lifecycle promises; code generation previously created actor records without executing functions and evaluated receive arms without receiving messages. Those successful compilations concealed incorrect behavior.
+* **Consequences**: Mailbox APIs remain executable, `send` preserves its real Result, and unsupported actor execution fails clearly. Full scheduling and descendant supervision are still required. Rejected registrations leave state unchanged; normal/shutdown children stay stopped unless explicitly restarted.
+
+### 42 Relocatable compiler bundles and isolated run artifacts
+* **Date**: 2026-09-05
+* **Status**: Accepted
+* **Decision**: I will install the runtime archive beside the compiler, resolve the actual executable location for runtime lookup, quote filesystem paths passed to the system toolchain, and create a private temporary directory for each `fern run` invocation.
+* **Context**: Installing only the compiler and resolving argv[0] failed outside the checkout; unquoted paths broke ordinary directory names; predictable run paths could overwrite unrelated files. The `/decision` skill is unavailable in this checkout/session, so this entry follows the existing decision format directly.
+* **Consequences**: Bundles remain relocatable, `PREFIX` supports local installation, and simultaneous runs have separate artifacts. Native compilation still requires the documented host compiler and libraries.
+
+### 41 Deterministic terminal UI composition and interactive editing
+* **Date**: 2026-09-05
+* **Status**: Accepted
+* **Decision**: I will reuse vendored linenoise for interactive prompt editing, preserve plain line reads for pipes, compose immutable trees with `new`, `add`, and `render`, expose deterministic log formatters, and emit cursor controls only on terminals.
+* **Context**: Existing terminal modules need structured output and usable editing without another dependency or timing-dependent tests. The `/decision` skill is unavailable; this entry follows the existing format directly.
+* **Consequences**: PTY tests cover interactive behavior and deterministic output fixtures cover trees/logs. Redirected output remains suitable for scripts.
+
 ### 40 Erlang-pattern hardening pass: explicit link context, deterministic supervision clock, and strategy child tables
 * **Date**: 2026-02-06
 * **Status**: ✅ Accepted

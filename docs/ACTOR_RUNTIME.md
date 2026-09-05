@@ -1,0 +1,108 @@
+# Actor runtime status and contracts
+
+Fern currently provides deterministic actor mailbox and supervision primitives.
+It does **not** yet run spawned Fern functions as autonomous actors. The concurrency
+chapter in [DESIGN.md](../DESIGN.md) describes the target language, including typed
+PIDs, selective receive, timeouts, and request/reply calls; it is not a claim that
+those features are executable today. Native build, run, and IR emission reject
+`spawn`, `spawn_link`, and `receive` with an explicit diagnostic directing users
+to the mailbox APIs. `fern check` still accepts their syntax and type signatures
+for language tooling; a successful type check does not imply execution support.
+
+## Available behavior
+
+`actors.start(name)` creates a process-local integer ID and an empty mailbox.
+`actors.post(pid, message)` and `send(pid, message)` copy a string into its FIFO mailbox
+and return the runtime Result directly (`Ok(0)` or an error);
+`actors.next(pid)` removes the oldest string. An empty mailbox returns
+`Err(FERN_ERR_IO)` immediately. The C ABI also exposes round-robin scheduler
+tickets: each successful send supplies one ticket, and requesting a ticket does
+not itself execute code or consume the message.
+
+The runtime C ABI has explicit current-actor context, lifecycle transitions,
+virtual clock controls, and exit injection for integration and simulation tests.
+`spawn_link` requires a live current actor to have been set with
+`fern_actor_set_current`; creating an actor record alone does not set that context.
+`actors.monitor`, `actors.demonitor`, `actors.restart`, `actors.supervise`,
+`actors.supervise_one_for_all`, and `actors.supervise_rest_for_one` have checker,
+codegen, and runtime implementations.
+
+## Lifecycle and supervision commitments
+
+- Exited PIDs are permanently dead. They cannot receive new messages, participate
+  in scheduling, or become current. Invalid IDs, including `INT64_MAX` at the C
+  ABI boundary, return errors rather than triggering assertions.
+- Restart creates a new, empty mailbox with a new ID. Each dead PID can acquire
+  only one replacement. Trying to restart the original PID again returns an
+  error, even if the replacement has subsequently died. Restart the latest PID.
+- Monitor registrations, linked-parent identity, and the child's own supervision
+  policy survive restart. This baseline deliberately preserves monitors across
+  replacements; it does not implement Erlang monitor-reference semantics.
+- A supervised child has one owner. Registration rejects self-supervision, cycles,
+  and changing the owner to a different supervisor. Rejected registration leaves
+  the existing relationships intact. Re-registering with the same owner updates
+  policy and resets that child's restart budget.
+- `normal` and `shutdown` exits deliver notifications but do not automatically
+  restart. An already-dead sibling stays dead during another child's strategy
+  restart. Explicitly restarting that stopped child remains available.
+- Abnormal exits apply `one_for_one`, `one_for_all`, or `rest_for_one` to children
+  registered with the same strategy. `rest_for_one` uses registration order.
+  Affected live siblings stop with `shutdown` before replacements are created in
+  registration order. Existing messages are not replayed into replacements.
+- Restart intensity is currently **per child**, measured in a fixed window that
+  begins with its first failure. Time zero is a valid start, and the window resets
+  when elapsed seconds reach the configured period. Tests use an explicit clock;
+  ordinary runtime operation uses system time. Exhaustion leaves the failed PID
+  dead, emits `ESCALATE(pid,reason)`, and returns an error.
+- Links receive `Exit(pid,reason)`; monitors receive `DOWN(pid,reason)`; successful
+  automatic replacements generate `RESTART(old_pid,new_pid)` to the supervisor.
+  These are strings in the current mailbox ABI, not typed message variants.
+
+## Regression coverage
+
+`tests/fixtures/runtime_actor_scenarios.c` links the actual runtime with FernSim,
+not a separate implementation of supervision. The normal `just check` suite
+runs it through `test_runtime_actor_seeded_lifecycle_invariants`:
+
+- Zero-time restart-window exhaustion and exact window-boundary recovery.
+- Single-use replacement lineage and permanent rejection of stale PIDs.
+- Nested supervision registration, cycle rejection, and conflicting-owner rejection.
+- Invalid PID handling and normally terminated siblings remaining stopped.
+- Compiled `send` preserves both runtime errors and the successful `Ok(0)` payload.
+- Native builds reject unsupported actor execution instead of generating placeholder
+  worker/receive behavior.
+- Eight reproducible seeds across all three strategies, with 64 crash steps each
+  (1,536 total). Every step checks affected-child membership, notification counts,
+  replacement IDs, empty replacement mailboxes, dead-PID rejection, and scheduler
+  cleanup. Repeated replacement also exercises registry capacity growth.
+
+For a focused replay after `just debug`:
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -Iruntime -Iinclude \
+  tests/fixtures/runtime_actor_scenarios.c lib/fernsim.c lib/arena.c \
+  bin/libfern_runtime.a $(pkg-config --libs bdw-gc sqlite3 openssl) \
+  -pthread -o /tmp/fern-actor-scenarios
+FERN_ACTOR_SCENARIO=simulation /tmp/fern-actor-scenarios
+```
+
+Other scenario names are `time-zero`, `single-replacement`, `forest`,
+`invalid-pid`, and `terminated-sibling`. A simulation failure prints the seed and
+strategy so the same case can be reproduced.
+
+## Work still required before concurrency is ready for applications
+
+The scheduler does not execute actor functions, suspend/resume them, or isolate
+per-process heaps. Typed `Pid(Message)`, typed transport, selective receive,
+receive timeouts, and synchronous request/reply calls remain incomplete.
+Supervision relationships can form an acyclic hierarchy, but supervisor death
+currently does not stop descendants, automatically escalate through ancestors,
+or recreate a descendant subtree when its supervisor restarts. Linked exits are
+notifications rather than full bidirectional Erlang exit propagation. The
+single-threaded runtime has no parallel-worker synchronization.
+
+The compiler rejects `spawn(worker)` until it can actually execute `worker`.
+The tests establish mailbox and policy behavior; they do not demonstrate the
+complete actor execution model or the planned million-step reliability target.
+See [ROADMAP.md](../ROADMAP.md) for the remaining milestone work and
+[COMPATIBILITY_POLICY.md](COMPATIBILITY_POLICY.md) for project-wide guarantees.

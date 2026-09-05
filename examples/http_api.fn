@@ -1,25 +1,21 @@
-# HTTP API template
-# Demonstrates API-style flow with the current runtime contract:
-# - http.* signatures are stable but runtime is placeholder-backed (Err)
-# - json.parse has concrete behavior for non-empty input
+# HTTP client error handling, runnable without network access.
+# http.get/post return Ok(body) for successful 2xx responses and Err(Int)
+# for invalid URLs, network failures, and non-2xx responses.
+# An HTTP server is a design target; http.serve is not implemented yet.
 
-fn http_get_placeholder_status(url: String) -> Int:
-    match http.get(url):
-        Ok(_) -> 1
-        Err(_) -> 0
+fn get_rejects_invalid_url() -> Bool:
+    match http.get("invalid://example"):
+        Ok(_) -> false
+        Err(_) -> true
 
-fn http_post_placeholder_status(url: String, payload: String) -> Int:
-    match http.post(url, payload):
-        Ok(_) -> 1
-        Err(_) -> 0
-
-fn json_parse_status(payload: String) -> Int:
-    match json.parse(payload):
-        Ok(_) -> 0
-        Err(_) -> 1
+fn post_rejects_invalid_url() -> Bool:
+    match http.post("invalid://example", "hello"):
+        Ok(_) -> false
+        Err(_) -> true
 
 fn main() -> Int:
-    let get_status = http_get_placeholder_status("https://example.com/health")
-    let post_status = http_post_placeholder_status("https://example.com/users", "name=fern")
-    let json_status = json_parse_status("status=ok")
-    if get_status == 0 and post_status == 0 and json_status == 0: 0 else: 1
+    if get_rejects_invalid_url() and post_rejects_invalid_url():
+        println("HTTP errors are explicit")
+        0
+    else:
+        1

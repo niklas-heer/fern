@@ -174,11 +174,20 @@ Workflow/config files:
 2. `.github/release-please-config.json`
 3. `.github/.release-please-manifest.json`
 
+## Executable Feature Boundaries
+
+The [release readiness checklist](RELEASE_READINESS.md) separates working APIs
+from design targets. The [actor contract](ACTOR_RUNTIME.md) defines the tested
+mailbox and supervision behavior. Native compilation rejects unimplemented
+spawn/spawn_link/receive execution rather than emitting misleading executables;
+parse/check retain planned syntax for tooling. This corrects previously silent
+miscompilation and does not claim the complete concurrency model is available.
+
 ## Release Checklist
 
 Before any tagged release:
 
-1. Run `just check`.
+1. Run `just check` and every gate in [release readiness](RELEASE_READINESS.md).
 2. Run `just perf-budget` (or `PERF_BUDGET_FLAGS=--skip-build just perf-budget` if release build already ran in the same job).
 3. Run `just release-policy-check`.
 4. Publish release notes with:

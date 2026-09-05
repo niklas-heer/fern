@@ -195,10 +195,15 @@ test: debug
     @echo "Running tests..."
     @./bin/test_runner
     python3 tests/integration/test_installation.py
+    python3 scripts/test_user_workflows.py
     python3 scripts/test_tui.py
     python3 scripts/test_string_codegen.py
     python3 tests/integration/test_print_types.py
     python3 scripts/test_release_workflow.py
+
+# Run real user programs and tutorial output checks
+test-user-workflows: debug
+    python3 scripts/test_user_workflows.py
 
 # Build fuzz runner
 fuzz-bin: debug

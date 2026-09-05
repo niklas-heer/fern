@@ -2,6 +2,12 @@
 
 This folder contains project-level reference documents. Use this file as the canonical starting point.
 
+## Start Here
+
+- [Language guide](LANGUAGE_GUIDE.md): runnable first programs and everyday workflow.
+- [Release readiness](RELEASE_READINESS.md): implemented features, remaining gaps, and release gates.
+- [Actor runtime](ACTOR_RUNTIME.md): exact mailbox/supervision commitments and execution limits.
+
 ## Core References
 
 - [`../README.md`](../README.md): project overview and quick start
