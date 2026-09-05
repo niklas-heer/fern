@@ -1,0 +1,6 @@
+fn count(n: Int, acc: Int) -> Int:
+    if n == 0: acc else: count(n - 1, acc + 1)
+fn main():
+    println(count(1000000, 0))
+    let f: (Int, Int) -> Int = count
+    println(f(1000000, 7))

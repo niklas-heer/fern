@@ -1,7 +1,7 @@
 //! Independent, bounded lexer and recursive-descent parser for the prototype.
 use crate::ast::{
-    BinaryOp, Expr, ExprKind, Field, Function, Import, MatchArm, Param, Pattern, PatternKind,
-    Program, Stmt, TypeDecl, UnaryOp, Variant,
+    BinaryOp, Expr, ExprKind, Field, Function, FunctionSyntax, Import, MatchArm, Param, Pattern,
+    PatternKind, Program, Stmt, TypeDecl, UnaryOp, Variant,
 };
 use crate::{Constructor, Diagnostic, Span, Type};
 
@@ -1025,6 +1025,12 @@ fn expression(kind: ExprKind, span: Span, depth: usize) -> ParseResult<Parsed> {
     })
 }
 
+#[derive(Default)]
+struct ClauseGroups {
+    last: Option<(String, usize)>,
+    seen: std::collections::HashSet<String>,
+}
+
 struct Parser {
     tokens: Vec<Token>,
     position: usize,
@@ -1080,6 +1086,7 @@ impl Parser {
     fn program(&mut self) -> ParseResult<Program> {
         let mut program = Program::default();
         let mut pending = None;
+        let mut groups = ClauseGroups::default();
         for _ in 0..self.tokens.len() {
             if self.eat(&Kind::Newline) {
                 continue;
@@ -1104,24 +1111,11 @@ impl Parser {
             } else {
                 false
             };
-            if let Some((text, span)) = pending.take() {
-                if !self.word("fn") && !self.word("type") {
-                    return Err(self.error("@doc must precede a function or type declaration"));
-                }
-                let target = match self.tokens.get(self.position + 1).map(|t| &t.kind) {
-                    Some(Kind::Name(name)) => name.clone(),
-                    _ => return Err(self.error("expected documented declaration name")),
-                };
-                program
-                    .docs
-                    .push(crate::ast::DocComment { target, text, span });
-            }
+            let documented = self.documentation(&mut program, pending.take())?;
+            let is_function = self.word("fn");
             if self.word("fn") {
                 let function = self.function(public)?;
-                if public {
-                    program.exports.push(function.name.clone());
-                }
-                program.functions.push(function);
+                self.add_clause(&mut program, &mut groups, function, documented)?;
             } else if self.word("type") {
                 let declaration = self.type_declaration()?;
                 if public {
@@ -1139,6 +1133,9 @@ impl Parser {
                 self.line_end()?;
             } else {
                 return Err(self.error("expected fn, type, import, or module declaration"));
+            }
+            if !is_function {
+                groups.last = None;
             }
         }
         Err(self.error("parser token limit exceeded"))
@@ -1326,31 +1323,75 @@ impl Parser {
         Ok(Variant { name, fields, span })
     }
 
-    /// Parse a function with explicit parameter types and optional return type.
+    /// Attach literal documentation without losing its following declaration identity.
+    fn documentation(
+        &self,
+        program: &mut Program,
+        pending: Option<(String, Span)>,
+    ) -> ParseResult<bool> {
+        let Some((text, span)) = pending else {
+            return Ok(false);
+        };
+        if !self.word("fn") && !self.word("type") {
+            return Err(self.error("@doc must precede a function or type declaration"));
+        }
+        let target = match self.tokens.get(self.position + 1).map(|t| &t.kind) {
+            Some(Kind::Name(name)) => name.clone(),
+            _ => return Err(self.error("expected documented declaration name")),
+        };
+        program
+            .docs
+            .push(crate::ast::DocComment { target, text, span });
+        Ok(true)
+    }
+
+    /// Preserve group provenance before declaration kinds move into separate syntax vectors.
+    fn add_clause(
+        &self,
+        program: &mut Program,
+        groups: &mut ClauseGroups,
+        mut function: Function,
+        documented: bool,
+    ) -> ParseResult<()> {
+        if let Some((_, start)) = groups
+            .last
+            .as_ref()
+            .filter(|(name, _)| name == &function.name)
+        {
+            if documented {
+                return Err(Diagnostic::new(
+                    function.span,
+                    "@doc belongs before the first clause of a function",
+                ));
+            }
+            function.group_start = *start;
+        } else if !groups.seen.insert(function.name.clone()) {
+            return Err(Diagnostic::new(
+                function.span,
+                "function clauses must be adjacent",
+            ));
+        }
+        groups.last = Some((function.name.clone(), function.group_start));
+        if function.public && !program.exports.contains(&function.name) {
+            program.exports.push(function.name.clone());
+        }
+        program.functions.push(function);
+        Ok(())
+    }
+
+    /// Parse source clauses while retaining typed-colon and expression-arrow body spelling.
     fn function(&mut self, public: bool) -> ParseResult<Function> {
         let start = self.take().span.start;
         let (name, _) = self.name()?;
         self.expect(Kind::Left, "expected '(' after function name")?;
-        let mut params = Vec::new();
-        for _ in 0..self.tokens.len() {
-            if self.eat(&Kind::Right) {
-                break;
-            }
-            let (name, span) = self.name()?;
-            self.expect(Kind::Colon, "prototype parameters require explicit types")?;
-            let ty = self.ty()?;
-            params.push(Param { name, ty, span });
-            if !self.eat(&Kind::Comma) {
-                self.expect(Kind::Right, "expected ',' or ')' after parameter")?;
-                break;
-            }
-        }
-        let return_type = if self.eat(&Kind::Arrow) {
-            Some(self.ty()?)
+        let params = self.function_parameters()?;
+        let guard = if self.word("if") {
+            self.take();
+            Some(self.guard_expression()?.node)
         } else {
             None
         };
-        self.expect(Kind::Colon, "expected ':' before function body")?;
+        let (return_type, syntax) = self.function_body_separator()?;
         let body = self.suite()?;
         if self.current().kind != Kind::End
             && self.current().kind != Kind::Dedent
@@ -1364,12 +1405,60 @@ impl Parser {
             name,
             params,
             return_type,
+            guard,
+            syntax,
+            group_start: start,
             span: Span {
                 start,
                 end: body.node.span.end,
             },
             body: body.node,
         })
+    }
+
+    /// Keep missing annotations explicit for the checker while sharing all bounded patterns.
+    fn function_parameters(&mut self) -> ParseResult<Vec<Param>> {
+        let mut params = Vec::new();
+        for _ in 0..self.tokens.len() {
+            if self.eat(&Kind::Right) {
+                break;
+            }
+            let pattern = self.pattern()?;
+            let annotation = if self.eat(&Kind::Colon) {
+                Some(self.ty()?)
+            } else {
+                None
+            };
+            let span = pattern.span;
+            params.push(Param {
+                pattern,
+                annotation,
+                span,
+            });
+            if !self.eat(&Kind::Comma) {
+                self.expect(Kind::Right, "expected ',' or ')' after parameter")?;
+                break;
+            }
+        }
+        Ok(params)
+    }
+
+    /// Try one bounded type annotation; an arrow without a following type-colon begins a body.
+    fn function_body_separator(&mut self) -> ParseResult<(Option<Type>, FunctionSyntax)> {
+        if !self.eat(&Kind::Arrow) {
+            self.expect(Kind::Colon, "expected ':' or '->' before function body")?;
+            return Ok((None, FunctionSyntax::Colon));
+        }
+        let position = self.position;
+        let depth = self.depth;
+        if let Ok(ty) = self.ty() {
+            if self.eat(&Kind::Colon) {
+                return Ok((Some(ty), FunctionSyntax::Colon));
+            }
+        }
+        self.position = position;
+        self.depth = depth;
+        Ok((None, FunctionSyntax::Arrow))
     }
 
     /// Read a non-reserved identifier for a binding/function/parameter.
@@ -2990,6 +3079,9 @@ mod continuation_tests {
             "with value <- load() do",
             "else # with handler",
             "fn main(): # block",
+            "fn f(0: Int) -> # clause body",
+            "fn f(x: Int) if x > 0 ->",
+            "fn f(x: Int) if ((n: Int) -> n > 0)(x) ->",
             "(x) -> # callback",
             "println(",
             "[1,",
@@ -2999,6 +3091,9 @@ mod continuation_tests {
         }
         for source in [
             "println(42)",
+            "fn f(0: Int) -> 1 # complete clause",
+            "fn f(x: Int) ->\n    x + 1",
+            "fn f(x: Int) if ((n: Int) -> n > 0)(x) -> x",
             "\"colon: arrow -> bracket (\"",
             "\"{(42)}\"",
             "[1)",

@@ -1,5 +1,7 @@
 //! Concrete nominal layouts and guarded recursive matching at the backend boundary.
 use super::*;
+#[path = "pattern_coverage.rs"]
+mod coverage;
 #[path = "sequence_patterns.rs"]
 mod sequences;
 
@@ -364,8 +366,13 @@ impl Emitter<'_> {
         if rows.is_empty() {
             return Ok(false);
         }
-        if types.is_empty() || rows.iter().any(|row| row.iter().all(catchall)) {
+        if coverage::complete_row(rows, types.len(), budget)? {
             return Ok(true);
+        }
+        let common = coverage::shared_columns(rows, types.len(), budget)?;
+        if common > 0 {
+            let rows = coverage::trim_columns(rows, common, budget)?;
+            return self.exhaustive(&types[common..], &rows, budget, depth);
         }
         if let Some(variants) = self.coverage_variants(&types[0]) {
             for (tag, fields) in variants.into_iter().enumerate() {
@@ -414,6 +421,7 @@ impl Emitter<'_> {
         arms: &[MatchArm],
         locals: &mut Locals,
         depth: usize,
+        tail: bool,
     ) -> Lowering<(Type, String)> {
         let (ty, patterns) = self.checked_match(value, arms)?;
         let scrutinee = self.expr(value, locals, depth)?;
@@ -430,7 +438,7 @@ impl Emitter<'_> {
             };
             self.pattern_branch(&pattern, &value.ty, &scrutinee, &mut state, locals)?;
             self.materialize_rests(&mut state, locals)?;
-            let result = self.match_arm(arm, &failure, locals, depth);
+            let result = self.match_arm(arm, &failure, locals, depth, tail);
             for id in state.bindings {
                 locals.values.remove(&id);
             }
@@ -449,12 +457,13 @@ impl Emitter<'_> {
         failure: &str,
         locals: &mut Locals,
         depth: usize,
+        tail: bool,
     ) -> Lowering<String> {
         if let Some(guard) = &arm.guard {
             let test = self.expr(guard, locals, depth)?;
             self.require_pattern(&test, failure, locals);
         }
-        self.expr(&arm.body, locals, depth)
+        self.position_expr(&arm.body, locals, depth, tail)
     }
 
     /// Bind a successful pattern in the surrounding block; failure must leave the function.

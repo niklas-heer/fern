@@ -143,7 +143,7 @@ fn function_type_depth_is_bounded_for_public_caller_built_syntax() {
     for _ in 0..150 {
         ty = Type::Function(vec![Type::Int], Box::new(ty));
     }
-    program.functions[0].params[0].ty = ty;
+    program.functions[0].params[0].annotation = Some(ty);
     assert!(check::check(&program)
         .unwrap_err()
         .message

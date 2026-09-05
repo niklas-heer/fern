@@ -52,6 +52,9 @@ pub struct Field {
 }
 #[derive(Clone, Debug)]
 pub struct Function {
+    pub guard: Option<Expr>,
+    pub group_start: usize,
+    pub syntax: FunctionSyntax,
     /// Original declaration visibility, retained when module exports are flattened.
     pub public: bool,
     pub name: String,
@@ -60,10 +63,16 @@ pub struct Function {
     pub body: Expr,
     pub span: Span,
 }
+/// Preserve whether an arrow introduces a result type or the function body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FunctionSyntax {
+    Colon,
+    Arrow,
+}
 #[derive(Clone, Debug)]
 pub struct Param {
-    pub name: String,
-    pub ty: Type,
+    pub pattern: Pattern,
+    pub annotation: Option<Type>,
     pub span: Span,
 }
 /// Anonymous parameter with optional context-inferred type annotation.

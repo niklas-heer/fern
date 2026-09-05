@@ -16,6 +16,7 @@ impl Emitter<'_> {
         handlers: &[ir::WithHandler],
         locals: &mut Locals,
         depth: usize,
+        tail: bool,
     ) -> Lowering<(Type, String)> {
         let ty = self.with_signature(steps, body, handlers, locals)?;
         let outer = locals.values.clone();
@@ -24,12 +25,12 @@ impl Emitter<'_> {
             .iter()
             .map(|_| Handler {
                 label: locals.label(),
-                slot: self.assign(locals, Type::Int, "alloc8 8"),
+                slot: locals.stack_slot(),
                 reachable: false,
             })
             .collect();
         let mut incoming = Vec::new();
-        let success = self.with_success(steps, body, &mut targets, locals, depth);
+        let success = self.with_success(steps, body, &mut targets, locals, depth, tail);
         locals.values = outer.clone();
         self.incoming(success, &mut incoming, &merge, locals)?;
         for (handler, target) in handlers.iter().zip(targets) {
@@ -45,7 +46,7 @@ impl Emitter<'_> {
                 value,
                 handler.body.span,
             )?;
-            let outcome = self.expr(&handler.body, locals, depth);
+            let outcome = self.position_expr(&handler.body, locals, depth, tail);
             locals.values = outer.clone();
             self.incoming(outcome, &mut incoming, &merge, locals)?;
         }
@@ -111,6 +112,7 @@ impl Emitter<'_> {
         targets: &mut [Handler],
         locals: &mut Locals,
         depth: usize,
+        tail: bool,
     ) -> Lowering<String> {
         for step in steps {
             let value = self.expr(&step.value, locals, depth)?;
@@ -158,6 +160,6 @@ impl Emitter<'_> {
                 depth,
             )?;
         }
-        self.expr(body, locals, depth)
+        self.position_expr(body, locals, depth, tail)
     }
 }

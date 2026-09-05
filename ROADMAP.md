@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (503 Rust tests, 4 measurement-harness tests, 133 core native programs, 21 entry/access programs, 8 numeric-fault cases, 100 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (541 Rust tests, 4 measurement-harness tests, 147 core native programs, 21 entry/access programs, 9 controlled-fault cases, 111 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -85,6 +85,9 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Guard Rust list access, repetition and UTF-8 slicing/splitting through deferred cleanup, including native malformed-byte input (21 native programs, 26 shared-runtime UTF-8 cases and interactive regressions).
 - [x] Shared exact list and list/tuple rest patterns, bounded coverage and Result discard checks; native length guards and atomic interactive bindings.
 - [x] Embedded multiline match/if/for/with/callback suites inside calls, lists and tuples, preserving inline separators and closers (ten native sequence programs, 15 invalid inputs and formatter equivalence).
+- [x] Native direct self-tail-call elimination with full-width parameter updates, entry-only scratch storage and preserved cleanup exclusions (million-step native recursion, effects and fault cases).
+- [x] Atomic REPL paste entries for complete function clause groups; unfinished input and rejected definitions preserve prior state.
+- [x] Typed adjacent function clauses, guards and arrow bodies through shared dispatch, generic inference, modules/formatting and 255-parameter coverage (seven native programs and 11 invalid inputs).
 - [ ] Remaining function/type syntax and complete native-language audit.
 - [ ] Track semantic Result handling beyond local references (for example, inspecting a List(Result) length currently counts as handling its elements).
 

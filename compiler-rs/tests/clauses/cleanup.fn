@@ -1,0 +1,10 @@
+fn visit(0: Int) -> Int: 7
+fn visit(n: Int) -> Int:
+    defer println(n)
+    return visit(n - 1)
+fn decode(Ok(value): Result(Int, String)) -> value
+fn decode(Err(message): Result(Int, String)) -> String.len(message)
+fn main():
+    println(visit(3))
+    println(decode(Ok(9)))
+    println(decode(Err("bad")))

@@ -993,6 +993,9 @@ fn library_main(program: &mut ast::Program) {
         program.functions.push(ast::Function {
             name: "main".into(),
             public: false,
+            guard: None,
+            group_start: 0,
+            syntax: ast::FunctionSyntax::Colon,
             params: Vec::new(),
             return_type: Some(Type::Unit),
             body: ast::Expr {

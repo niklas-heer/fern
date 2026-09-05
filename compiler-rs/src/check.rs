@@ -1,6 +1,7 @@
 //! Resolve source names and types once, including local compound-type inference.
 use crate::{ast, ir, runtime, Constructor, Diagnostic, Span, Type};
 use std::collections::{HashMap, HashSet};
+mod clauses;
 mod closures;
 mod control;
 mod coverage;
@@ -29,6 +30,7 @@ struct Signature {
     params: Vec<Type>,
     result: Type,
     generics: Vec<String>,
+    dispatch: bool,
 }
 #[derive(Default)]
 struct Inference {
@@ -57,8 +59,14 @@ struct Checker<'a> {
 /// No preconditions: caller-created syntax and recursive types are validated too.
 pub fn check(program: &ast::Program) -> Checked<ir::Program> {
     preflight::check(program)?;
-    let registry = nominal::Registry::new(program)?;
-    let (program, signatures) = returns::resolve(program, &registry)?;
+    let normalized = clauses::normalize(program)?;
+    if !normalized.dispatch.is_empty() {
+        preflight::check(&normalized.program)?;
+    }
+    let registry = nominal::Registry::new(&normalized.program)?;
+    let (program, signatures) =
+        returns::resolve(&normalized.program, &registry, &normalized.dispatch)?;
+    clauses::validate_templates(&program, &registry, &signatures)?;
     specialize::run(&program, &registry, &signatures)
 }
 
@@ -67,6 +75,7 @@ fn signatures(
     program: &ast::Program,
     registry: &nominal::Registry,
     inference: &mut Inference,
+    dispatch: &HashSet<String>,
 ) -> Checked<HashMap<String, Signature>> {
     if program.functions.len() > MAX_FUNCTIONS {
         return Err(Diagnostic::new(
@@ -79,10 +88,7 @@ fn signatures(
         if signatures.contains_key(&function.name) {
             return Err(Diagnostic::new(
                 function.span,
-                format!(
-                    "duplicate function '{}' (function clauses are unsupported in the prototype)",
-                    function.name
-                ),
+                format!("duplicate normalized function '{}'", function.name),
             ));
         }
         if reserved(&function.name) || registry.constructor(&function.name).is_some() {
@@ -100,7 +106,7 @@ fn signatures(
             function
                 .params
                 .iter()
-                .map(|p| p.ty.clone())
+                .map(|p| clauses::parameter_type(p).clone())
                 .chain(std::iter::once(result.clone())),
         );
         let allowed = generics.iter().cloned().collect();
@@ -108,7 +114,7 @@ fn signatures(
             registry.validate(&result, &allowed, function.span)?;
         }
         for param in &function.params {
-            registry.validate(&param.ty, &allowed, param.span)?;
+            registry.validate(clauses::parameter_type(param), &allowed, param.span)?;
         }
         signatures.insert(
             function.name.clone(),
@@ -117,10 +123,11 @@ fn signatures(
                 params: function
                     .params
                     .iter()
-                    .map(|param| param.ty.clone())
+                    .map(|param| clauses::parameter_type(param).clone())
                     .collect(),
                 result,
                 generics,
+                dispatch: dispatch.contains(&function.name),
             },
         );
     }
@@ -199,11 +206,12 @@ fn validate_parameters(function: &ast::Function) -> Checked<()> {
     }
     let mut names = HashSet::new();
     for param in &function.params {
-        validate_type(&param.ty, param.span)?;
-        if !names.insert(&param.name) {
+        validate_type(clauses::parameter_type(param), param.span)?;
+        let name = clauses::parameter_name(param);
+        if name != "_" && !names.insert(name) {
             return Err(Diagnostic::new(
                 param.span,
-                format!("duplicate parameter '{}'", param.name),
+                format!("duplicate parameter '{name}'"),
             ));
         }
     }
@@ -462,8 +470,11 @@ impl Checker<'_> {
             .params
             .iter()
             .map(|param| ir::Param {
-                id: self.bind(&param.name, param.ty.clone()),
-                ty: param.ty.clone(),
+                id: self.bind(
+                    clauses::parameter_name(param),
+                    clauses::parameter_type(param).clone(),
+                ),
+                ty: clauses::parameter_type(param).clone(),
             })
             .collect();
         let unit_main = function.name == "main" && return_type == Type::Unit;
@@ -479,6 +490,9 @@ impl Checker<'_> {
                 .unify(&body.ty, &return_type, body.span, "function return")?;
         }
         self.finalize(&mut body)?;
+        if signature.dispatch {
+            clauses::validate_dispatch(&body, self.registry)?;
+        }
         reject_unused_results(&body, &params, self.registry)?;
         if unit_main {
             reject_discard(&body, self.registry)?;

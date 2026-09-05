@@ -1,0 +1,5 @@
+import api.{choose}
+import model.{Item}
+fn main():
+    println(choose([]))
+    println(choose([Item(4), Item(8)]))

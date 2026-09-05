@@ -1,0 +1,11 @@
+fn rotate(n: Int, a: Float, b: Float, flag: Bool, text: String, xs: List(Int), f: (Int) -> Int) -> Float:
+    if n == 0:
+        println(flag)
+        println(text)
+        println(f(List.head(xs)))
+        a
+    else:
+        rotate(n - 1, b, a, not flag, text, xs, f)
+fn main():
+    let base = 5
+    println(rotate(1000001, 1.25, 2.5, false, "retained", [9223372036854775807], (x: Int) -> x - base))

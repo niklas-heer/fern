@@ -54,6 +54,9 @@ fn bind(n: &str, annotation: Option<Type>, value: Expr) -> Stmt {
 fn function(n: &str, ty: Type, body: Expr) -> Function {
     Function {
         public: false,
+        guard: None,
+        group_start: 0,
+        syntax: FunctionSyntax::Colon,
         name: n.into(),
         params: vec![],
         return_type: Some(ty),
@@ -166,8 +169,11 @@ fn declared_function_arguments_constrain_compound_literals() {
         call("Result.unwrap_or", vec![name("r"), int()]),
     );
     accept.params.push(Param {
-        name: "r".into(),
-        ty: result(Type::Int, Type::String),
+        pattern: Pattern {
+            kind: PatternKind::Bind("r".into()),
+            span: Span::default(),
+        },
+        annotation: Some(result(Type::Int, Type::String)),
         span: Span::default(),
     });
     let p = check::check(&Program {
@@ -612,8 +618,11 @@ fn unused_result_parameters_and_wrapped_result_bindings_are_errors() {
     ] {
         let mut ignore = function("ignore", Type::Unit, unit());
         ignore.params.push(Param {
-            name: "r".into(),
-            ty,
+            pattern: Pattern {
+                kind: PatternKind::Bind("r".into()),
+                span: Span::default(),
+            },
+            annotation: Some(ty),
             span: Span::default(),
         });
         let program = Program {
@@ -684,8 +693,11 @@ fn unused_result_pattern_payload_and_catchall_bindings_are_errors() {
 fn using_or_returning_result_parameters_and_pattern_payloads_is_allowed() {
     let mut passthrough = function("passthrough", result(Type::Int, Type::String), name("r"));
     passthrough.params.push(Param {
-        name: "r".into(),
-        ty: result(Type::Int, Type::String),
+        pattern: Pattern {
+            kind: PatternKind::Bind("r".into()),
+            span: Span::default(),
+        },
+        annotation: Some(result(Type::Int, Type::String)),
         span: Span::default(),
     });
     assert!(check::check(&Program {

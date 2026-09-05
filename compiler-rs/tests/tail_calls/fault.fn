@@ -1,0 +1,9 @@
+fn argument(tag: String, value: Int) -> Int:
+    println(tag)
+    value
+fn count(n: Int, value: Int) -> Int:
+    if n == 0: value
+    else: count(argument("first", n / 0), argument("later", value))
+fn main():
+    defer println("cleanup")
+    println(count(1, 2))

@@ -25,6 +25,8 @@ mod nominal;
 mod numeric;
 #[path = "qbe/runtime_calls.rs"]
 mod runtime_calls;
+#[path = "qbe/tail.rs"]
+mod tail;
 #[path = "qbe/with.rs"]
 mod with;
 
@@ -177,6 +179,8 @@ struct Emitter<'a> {
 }
 
 struct Locals {
+    tail: Option<tail::TailLoop>,
+    stack_allocations: String,
     values: BTreeMap<usize, (Type, String)>,
     defined: BTreeSet<usize>,
     count: usize,
@@ -251,6 +255,8 @@ impl Emitter<'_> {
     /// Emit `function` using only its resolved signature and typed body.
     fn function(&mut self, function: &Function) -> Lowering<()> {
         let mut locals = Locals {
+            tail: None,
+            stack_allocations: String::new(),
             values: BTreeMap::new(),
             defined: BTreeSet::new(),
             count: function.local_count,
@@ -277,6 +283,7 @@ impl Emitter<'_> {
             function.id.0,
             params.join(", ")
         ));
+        let entry = self.output.len();
         self.load_captures(function, &mut locals)?;
         self.output.push_str("    %return_slot =l alloc8 8\n    %defer_head =l alloc8 8\n    storel 0, %defer_head\n");
         if function.body.ty != Type::Never
@@ -288,12 +295,14 @@ impl Emitter<'_> {
                 function.body.span,
             )?;
         }
-        match self.expr(&function.body, &mut locals, 0) {
+        self.start_tail(function, &mut locals)?;
+        match self.tail_expr(&function.body, &mut locals, 0) {
             Ok(value) => self.save_return(&value, &mut locals),
             Err(Exit::Terminated) => {}
             Err(error) => return Err(error),
         }
         self.finish_function(&mut locals);
+        self.output.insert_str(entry, &locals.stack_allocations);
         Ok(())
     }
 
@@ -374,7 +383,7 @@ impl Emitter<'_> {
             ExprKind::Call { target, args } => {
                 self.call(*target, args, &expr.ty, expr.span, locals, depth + 1)?
             }
-            ExprKind::Block(stmts) => self.block(stmts, locals, depth + 1)?,
+            ExprKind::Block(stmts) => self.block(stmts, locals, depth + 1, false)?,
         };
         expect_type(actual, expr.ty.clone(), expr.span)?;
         Ok(value)
@@ -392,7 +401,7 @@ impl Emitter<'_> {
                 steps,
                 body,
                 handlers,
-            } => self.with(steps, body, handlers, locals, depth),
+            } => self.with(steps, body, handlers, locals, depth, false),
             ExprKind::For {
                 pattern,
                 iterable,
@@ -407,7 +416,7 @@ impl Emitter<'_> {
             ExprKind::Continue => self.loop_exit(true, expr.span, locals),
             ExprKind::Return(value) => self.returned(value, locals, depth),
             ExprKind::Defer(value) => self.defer(value, locals, depth),
-            ExprKind::Match { value, arms } => self.matching(value, arms, locals, depth),
+            ExprKind::Match { value, arms } => self.matching(value, arms, locals, depth, false),
             ExprKind::If {
                 condition,
                 then_branch,
@@ -418,6 +427,7 @@ impl Emitter<'_> {
                 else_branch.as_deref(),
                 locals,
                 depth,
+                false,
             ),
             _ => Err(invalid(expr.span, "expected control expression")),
         }
@@ -565,9 +575,10 @@ impl Emitter<'_> {
         stmts: &[Stmt],
         locals: &mut Locals,
         depth: usize,
+        tail: bool,
     ) -> Lowering<(Type, String)> {
         let outer = locals.values.clone();
-        let result = self.block_statements(stmts, locals, depth);
+        let result = self.block_statements(stmts, locals, depth, tail);
         locals.values = outer;
         result
     }
@@ -578,9 +589,10 @@ impl Emitter<'_> {
         stmts: &[Stmt],
         locals: &mut Locals,
         depth: usize,
+        tail: bool,
     ) -> Lowering<(Type, String)> {
         let mut result = (Type::Unit, "0".into());
-        for stmt in stmts {
+        for (index, stmt) in stmts.iter().enumerate() {
             match stmt {
                 Stmt::Let { id, value } => {
                     let lowered = self.expr(value, locals, depth)?;
@@ -595,7 +607,12 @@ impl Emitter<'_> {
                     self.let_else(pattern, value, else_branch, locals, depth)?;
                     result = (Type::Unit, "0".into());
                 }
-                Stmt::Expr(value) => result = (value.ty.clone(), self.expr(value, locals, depth)?),
+                Stmt::Expr(value) => {
+                    result = (
+                        value.ty.clone(),
+                        self.position_expr(value, locals, depth, tail && index + 1 == stmts.len())?,
+                    )
+                }
             }
         }
         Ok(result)
@@ -849,6 +866,7 @@ impl Emitter<'_> {
         else_branch: Option<&Expr>,
         locals: &mut Locals,
         depth: usize,
+        tail: bool,
     ) -> Lowering<(Type, String)> {
         expect_type(condition.ty.clone(), Type::Bool, condition.span)?;
         let result_type = if let Some(other) = else_branch {
@@ -864,11 +882,11 @@ impl Emitter<'_> {
         self.output
             .push_str(&format!("    jnz {test}, {then_label}, {else_label}\n"));
         self.start_block(locals, &then_label);
-        let then_value = self.expr(then_branch, locals, depth);
+        let then_value = self.position_expr(then_branch, locals, depth, tail);
         self.incoming(then_value, &mut incoming, &merge, locals)?;
         self.start_block(locals, &else_label);
         let else_value = if let Some(other) = else_branch {
-            self.expr(other, locals, depth)
+            self.position_expr(other, locals, depth, tail)
         } else {
             Ok("0".into())
         };

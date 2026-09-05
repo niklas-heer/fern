@@ -1,0 +1,4 @@
+fn count(n: Int) -> Int:
+    defer println(n)
+    if n == 0: 7 else: count(n - 1)
+fn main(): println(count(3))

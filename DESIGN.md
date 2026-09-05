@@ -3850,6 +3850,12 @@ Fern supports two styles: **multiple clauses** (preferred) and **single function
 
 ### Multiple Clauses (Preferred, Idiomatic)
 
+Clauses use the same coverage rules as `match`: missing cases and unreachable
+clauses are errors, and guards do not establish exhaustive coverage (Decision 63).
+All clauses share arity, parameter types, visibility and supplied return annotations.
+The current Rust checkpoint requires parameter type annotations; the unannotated
+examples below describe the planned private-signature inference syntax.
+
 **The Fern way** - clean, readable, Elixir-inspired:
 
 ```fern

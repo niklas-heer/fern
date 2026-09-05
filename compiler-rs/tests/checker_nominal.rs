@@ -27,12 +27,18 @@ fn named(n: &str, args: Vec<Type>) -> Type {
 fn function(n: &str, params: Vec<(&str, Type)>, ty: Type, body: Expr) -> Function {
     Function {
         public: false,
+        guard: None,
+        group_start: 0,
+        syntax: FunctionSyntax::Colon,
         name: n.into(),
         params: params
             .into_iter()
             .map(|(n, ty)| Param {
-                name: n.into(),
-                ty,
+                pattern: Pattern {
+                    kind: PatternKind::Bind(n.into()),
+                    span: Span::default(),
+                },
+                annotation: Some(ty),
                 span: Span::default(),
             })
             .collect(),

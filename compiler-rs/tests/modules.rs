@@ -206,7 +206,7 @@ fn all_module_failures_carry_the_cli_error_marker() {
     assert!(modules::load(&main).unwrap_err().message.contains("error:"));
     project.write(
         "main.fn",
-        "fn duplicate() -> Int: 0\nfn duplicate() -> Int: 1\nfn main(): 0\n",
+        "fn duplicate() -> Int: 0\nfn main(): 0\nfn duplicate() -> Int: 1\n",
     );
     assert!(modules::load(&main).unwrap_err().message.contains("error:"));
     assert!(modules::load(&project.0.join("absent.fn"))

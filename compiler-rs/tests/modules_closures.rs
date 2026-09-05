@@ -48,7 +48,7 @@ fn function_annotations_and_lambda_parameter_scopes_resolve_across_modules() {
         .find(|f| f.name.ends_with(".apply") || f.name == "apply")
         .unwrap();
     assert!(
-        matches!(&function.params[0].ty,Type::Function(params,result) if matches!(&params[0],Type::Named(name,_) if name.contains("Box")) && **result==Type::Int)
+        matches!(function.params[0].annotation.as_ref().unwrap(),Type::Function(params,result) if matches!(&params[0],Type::Named(name,_) if name.contains("Box")) && **result==Type::Int)
     );
     let main = loaded
         .program

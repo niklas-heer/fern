@@ -773,7 +773,7 @@ fn float_text(value: f64) -> String {
     }
 }
 
-/// Run a bounded line-oriented session; a blank line submits an indented definition.
+/// Run bounded entries; paste mode submits an entire declaration group atomically.
 /// Prompts appear only for a terminal, keeping piped sessions deterministic.
 pub fn serve(
     mut input: impl std::io::BufRead,
@@ -782,6 +782,7 @@ pub fn serve(
 ) -> Result<(), String> {
     let mut session = Session::default();
     let mut pending = String::new();
+    let mut pasting = false;
     if interactive {
         writeln!(
             output,
@@ -791,17 +792,7 @@ pub fn serve(
     }
     loop {
         if interactive {
-            write!(
-                output,
-                "{}",
-                if pending.is_empty() {
-                    "fern> "
-                } else {
-                    "...   "
-                }
-            )
-            .and_then(|()| output.flush())
-            .map_err(|e| e.to_string())?;
+            repl_prompt(&mut output, pending.is_empty() && !pasting)?;
         }
         let mut line = String::new();
         let read = std::io::Read::take(input.by_ref(), 1024 * 1024 + 1)
@@ -811,15 +802,24 @@ pub fn serve(
             return Err("interactive input limit exceeded".into());
         }
         let entry = line.trim_end_matches(['\r', '\n']);
-        if pending.is_empty() && read != 0 && entry.starts_with(':') {
-            match entry {
-                ":quit"|":q"=>break,":reset"=>session=Session::default(),
-                ":help"=>writeln!(output,"Enter expressions, let bindings, or typed functions. Commands: :help :reset :quit. Native-only APIs report a diagnostic here.").map_err(|e|e.to_string())?,
-                _=>writeln!(output,"error: unknown interactive command").map_err(|e|e.to_string())?,
+        if pasting {
+            if read == 0 {
+                writeln!(output, "error: unfinished paste; use :end to submit")
+                    .map_err(|e| e.to_string())?;
+                break;
+            }
+            if entry != ":end" {
+                pending.push_str(entry);
+                pending.push('\n');
+                continue;
+            }
+            pasting = false;
+        } else if pending.is_empty() && read != 0 && entry.starts_with(':') {
+            if !repl_command(entry, &mut session, &mut pasting, &mut output)? {
+                break;
             }
             continue;
-        }
-        if !pending.is_empty() || parse::line_continues(entry) {
+        } else if !pending.is_empty() || parse::line_continues(entry) {
             if !entry.trim().is_empty() {
                 pending.push_str(entry);
                 pending.push('\n');
@@ -840,4 +840,29 @@ pub fn serve(
         }
     }
     Ok(())
+}
+
+/// Handle commands only between entries so source text retains its ordinary meaning.
+fn repl_command(
+    entry: &str,
+    session: &mut Session,
+    pasting: &mut bool,
+    output: &mut impl std::io::Write,
+) -> Result<bool, String> {
+    match entry {
+        ":quit" | ":q" => return Ok(false),
+        ":reset" => *session = Session::default(),
+        ":paste" => *pasting = true,
+        ":help" => writeln!(output, "Enter expressions, let bindings, or typed functions. Commands: :help :reset :quit. Use :paste then :end to submit multiple function clauses together. Native-only APIs report a diagnostic here.").map_err(|e| e.to_string())?,
+        _ => writeln!(output, "error: unknown interactive command").map_err(|e| e.to_string())?,
+    }
+    Ok(true)
+}
+
+/// Flush terminal prompts without changing piped-session output.
+fn repl_prompt(output: &mut impl std::io::Write, ready: bool) -> Result<(), String> {
+    let prompt = if ready { "fern> " } else { "...   " };
+    write!(output, "{prompt}")
+        .and_then(|()| output.flush())
+        .map_err(|e| e.to_string())
 }

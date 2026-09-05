@@ -1,0 +1,3 @@
+pub type Item:
+    value: Int
+pub fn fallback() -> Int: 99

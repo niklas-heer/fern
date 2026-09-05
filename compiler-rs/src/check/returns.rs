@@ -40,9 +40,10 @@ pub(super) fn main_result(ty: &Type) -> bool {
 pub(super) fn resolve<'a>(
     program: &'a ast::Program,
     registry: &nominal::Registry,
+    dispatch: &HashSet<String>,
 ) -> Checked<Prepared<'a>> {
     let mut inference = Inference::default();
-    let mut signatures = super::signatures(program, registry, &mut inference)?;
+    let mut signatures = super::signatures(program, registry, &mut inference, dispatch)?;
     let missing: Vec<_> = program
         .functions
         .iter()
@@ -96,7 +97,7 @@ fn solve(
         for index in pending {
             let function = &program.functions[index];
             match probe(function, registry, signatures, inference) {
-                Ok(()) => {}
+                Ok(_) => {}
                 Err(error) if error.message.contains(WAITING) => waiting.push(index),
                 Err(error) => return Err(error),
             }
@@ -114,12 +115,12 @@ fn solve(
 }
 
 /// Check one body with shared recursive result slots, postponing concrete IR validation.
-fn probe(
+pub(super) fn probe(
     function: &ast::Function,
     registry: &nominal::Registry,
     signatures: &HashMap<String, Signature>,
     inference: &mut Inference,
-) -> Checked<()> {
+) -> Checked<ir::Expr> {
     let signature = &signatures[&function.name];
     let mut checker = Checker {
         signatures,
@@ -136,11 +137,12 @@ fn probe(
     checker.inference.template = !signature.generics.is_empty();
     checker.inference.template_names = signature.generics.iter().cloned().collect();
     for param in &function.params {
-        checker.bind(&param.name, param.ty.clone());
+        checker.bind(
+            clauses::parameter_name(param),
+            clauses::parameter_type(param).clone(),
+        );
     }
-    let result = checker
-        .expression_expected(&function.body, Some(&signature.result), 0)
-        .map(|_| ());
+    let result = checker.expression_expected(&function.body, Some(&signature.result), 0);
     *inference = checker.inference;
     inference.probing = false;
     inference.template = false;

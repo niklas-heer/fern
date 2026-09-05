@@ -1,0 +1,9 @@
+fn probe(tag: String, value: Bool) -> Bool:
+    println(tag)
+    value
+fn pick(n: Int) if probe("first", n < 0) -> 1
+fn pick(n: Int) if probe("second", n == 0) -> 2
+fn pick(n: Int) -> 3
+fn main():
+    println(pick(0))
+    println(pick(1))

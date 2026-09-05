@@ -1,0 +1,5 @@
+fn count(n: Int, value: Result(Int, String)) -> Result(Int, String):
+    if n == 0: value else: count(n - 1, value)
+fn main():
+    println(Result.unwrap_or(count(1000000, Ok(9223372036854775807)), 0))
+    println(Result.unwrap_or(count(1000000, Err("kept")), 9))

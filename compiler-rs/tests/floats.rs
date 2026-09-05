@@ -4,7 +4,7 @@ use fern_prototype::{check, format, parse, qbe, Type};
 fn floating_point_values_keep_their_semantic_type_and_double_abi() {
     let source = "fn scale(x: Float) -> Float: -x * 2.5\nfn main():\n    println(scale(1.25))\n    println(1e2 >= 99.0)\n";
     let syntax = parse::parse(source).unwrap();
-    assert_eq!(syntax.functions[0].params[0].ty, Type::Float);
+    assert_eq!(syntax.functions[0].params[0].annotation, Some(Type::Float));
     let typed = check::check(&syntax).unwrap();
     let output = qbe::emit(&typed).unwrap();
     assert!(output.contains("function d"));

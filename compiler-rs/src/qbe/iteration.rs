@@ -130,7 +130,7 @@ impl Emitter<'_> {
             )
         };
         let flow = Iteration {
-            slot: self.assign(locals, Type::Int, "alloc8 8"),
+            slot: locals.stack_slot(),
             head: locals.label(),
             body: locals.label(),
             next: locals.label(),

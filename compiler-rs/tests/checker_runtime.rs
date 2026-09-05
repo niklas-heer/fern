@@ -115,20 +115,27 @@ fn every_direct_registry_contract_instantiates_into_checked_ir() {
             .iter()
             .enumerate()
             .map(|(i, ty)| ast::Param {
-                name: format!("arg{i}"),
-                ty: concrete(ty),
+                pattern: ast::Pattern {
+                    kind: ast::PatternKind::Bind(format!("arg{i}")),
+                    span: Span::default(),
+                },
+                annotation: Some(concrete(ty)),
                 span: Span::default(),
             })
             .collect();
         let args = params
             .iter()
-            .map(|p| ast::Expr {
-                kind: ast::ExprKind::Name(p.name.clone()),
+            .enumerate()
+            .map(|(index, _)| ast::Expr {
+                kind: ast::ExprKind::Name(format!("arg{index}")),
                 span: Span::default(),
             })
             .collect();
         let probe = ast::Function {
             public: false,
+            guard: None,
+            group_start: 0,
+            syntax: ast::FunctionSyntax::Colon,
             name: "probe".into(),
             params,
             return_type: Some(concrete(&signature.return_type)),

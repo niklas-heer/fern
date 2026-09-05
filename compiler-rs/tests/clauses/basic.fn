@@ -1,0 +1,10 @@
+fn factorial(0: Int) -> 1
+fn factorial(n: Int) -> n * factorial(n - 1)
+fn sign(n: Int) if n < 0 -> "negative"
+fn sign(0: Int) -> "zero"
+fn sign(n: Int) -> "positive"
+fn main():
+    println(factorial(6))
+    println(sign(-2))
+    println(sign(0))
+    println(sign(8))

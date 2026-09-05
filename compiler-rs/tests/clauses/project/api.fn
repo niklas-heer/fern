@@ -1,0 +1,4 @@
+import model.{Item,fallback}
+@doc """All clauses."""
+pub fn choose([Item(fallback),..tail]: List(Item)) if fallback>0 -> Int: fallback+List.len(tail)
+pub fn choose(_: List(Item)) -> Int: fallback()

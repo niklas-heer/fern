@@ -340,3 +340,24 @@ block arguments, effect order, full-width payloads, Result tails and escaping
 closures. Fifteen invalid programs retain the output-file preservation contract.
 An independent audit of 1,850 small Boolean/nested-list pattern matrices found no
 coverage/usefulness mismatch; this supplements the bounded checker regressions.
+
+## Function clauses and native self recursion — 2026-09-05
+
+Adjacent typed parameter clauses normalize through the existing exhaustive match
+engine before private return inference. Guards, source spans, module visibility,
+function-owned return/defer behavior and Result obligations are preserved.
+The formatter retains clause groups and arrow/colon syntax. Interactive `:paste`
+and `:end` submit a whole group without retaining incomplete definitions.
+
+Eligible direct self calls in return position jump to a local recursion header
+only after all arguments finish. Parameter and for/with scratch slots are allocated
+once in the native entry block. Million-step programs cover scalar and pointer
+values, first-class entry, nested cleanup, argument order and runtime faults.
+Owned defer registration disables frame reuse; indirect/mutual recursion and
+interactive evaluation retain their existing call behavior. General proper tail
+calls and zero-copy list suffixes remain future work.
+
+This checkpoint passes 541 Rust tests, including the backend's independent
+255-parameter coverage checks, and retains 550 passing C tests. New native
+coverage includes seven clause programs, seven successful recursion programs
+and one controlled-fault recursion program, plus 11 invalid inputs.

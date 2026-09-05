@@ -84,7 +84,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
   (`Tui.Panel`, `Tui.Tree`, etc.), keeping ordinary user-defined names available.
 
 Unsupported syntax produces diagnostics. Gaps include actor execution, named
-arguments, function clauses and inferred named-function parameter types.
+arguments and inferred named-function parameter types.
 Full release parity remains migration work.
 
 `fmt` formats the supported syntax in place, preserves comments, and verifies that
@@ -155,6 +155,34 @@ retain their declared type parameters and specialize independently per call.
 An unhandled entry error currently prints `fern: main returned Err` to stderr;
 rendering arbitrary error payloads awaits a general display protocol. A runtime
 fault in the body or its cleanup takes precedence over the entry Result.
+
+## Function clauses and native recursion
+
+Adjacent clauses support typed parameter patterns, guards and arrow bodies:
+
+```fern
+fn total([]: List(Int), acc: Int) -> acc
+fn total([head, ..tail]: List(Int), acc: Int) -> total(tail, acc + head)
+```
+
+Clauses share parameter types and visibility, and any supplied return annotations
+must agree. Public groups need a return annotation. Guards run in source order;
+missing cases and unreachable clauses are errors. Patterns use the same rules as
+`match`, including Result discard checks. Parameter annotations are still required
+in this checkpoint. Put whole-function `@doc` text before the first clause.
+
+Native direct self calls in return position reuse the current stack frame when the
+function has no owned `defer`. Arguments finish left-to-right before parameters
+change; Float bits, pointers and the current fault context are retained. A function
+with `defer` retains separate activations and cleanup for each call. Mutual and
+indirect recursion still use ordinary calls. These are native optimizations;
+interactive evaluation retains its explicit step/depth limits. List suffix patterns
+still copy their tails, so tail-call elimination alone does not make repeated list
+suffix traversal linear-time.
+
+In the REPL, enter `:paste`, a complete clause group, then `:end` on its own line.
+Blank lines inside paste mode are retained. Only a successful complete entry is
+saved; EOF before `:end` discards the unfinished entry.
 
 ## Functions and callbacks
 

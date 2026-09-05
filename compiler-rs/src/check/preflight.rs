@@ -373,11 +373,16 @@ pub(super) fn check(program: &ast::Program) -> Checked<()> {
     for function in &program.functions {
         budget.charge(function.name.len(), function.span)?;
         for param in &function.params {
-            budget.charge(param.name.len(), param.span)?;
-            budget.ty(&param.ty, param.span)?;
+            budget.pattern(&param.pattern)?;
+            if let Some(ty) = &param.annotation {
+                budget.ty(ty, param.span)?;
+            }
         }
         if let Some(ty) = &function.return_type {
             budget.ty(ty, function.span)?;
+        }
+        if let Some(guard) = &function.guard {
+            budget.expression(guard)?;
         }
         budget.expression(&function.body)?;
     }

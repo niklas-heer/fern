@@ -38,6 +38,9 @@ fn bind(n: &str, ty: Option<Type>, value: Expr) -> Stmt {
 fn fun(n: &str, ty: Option<Type>, body: Expr) -> Function {
     Function {
         public: false,
+        guard: None,
+        group_start: 0,
+        syntax: FunctionSyntax::Colon,
         name: n.into(),
         params: vec![],
         return_type: ty,
@@ -105,23 +108,29 @@ fn resolves_forward_and_recursive_calls_with_typed_results() {
 #[test]
 fn rejects_invalid_program_signatures() {
     rejects(vec![], "main");
-    rejects(vec![main_fn(int()), main_fn(int())], "duplicate function");
+    rejects(vec![main_fn(int()), main_fn(int())], "unreachable");
     let mut public = fun("helper", None, int());
     public.public = true;
     rejects(vec![main_fn(int()), public], "return type annotation");
     rejects(vec![fun("main", Some(Type::Bool), boolean())], "main");
     let mut f = main_fn(int());
     f.params.push(Param {
-        name: "x".into(),
-        ty: Type::Int,
+        pattern: Pattern {
+            kind: PatternKind::Bind("x".into()),
+            span: Span::default(),
+        },
+        annotation: Some(Type::Int),
         span: Span::default(),
     });
     rejects(vec![f], "main");
     let mut f = fun("helper", Some(Type::Int), int());
     f.params = vec![
         Param {
-            name: "x".into(),
-            ty: Type::Int,
+            pattern: Pattern {
+                kind: PatternKind::Bind("x".into()),
+                span: Span::default()
+            },
+            annotation: Some(Type::Int),
             span: Span::default()
         };
         2
@@ -138,8 +147,11 @@ fn validates_function_return_and_call_contracts() {
     rejects(vec![fun("main", Some(Type::Int), string())], "expected Int");
     let mut f = fun("helper", Some(Type::Int), name("x"));
     f.params.push(Param {
-        name: "x".into(),
-        ty: Type::Int,
+        pattern: Pattern {
+            kind: PatternKind::Bind("x".into()),
+            span: Span::default(),
+        },
+        annotation: Some(Type::Int),
         span: Span::default(),
     });
     rejects(vec![main_fn(call("helper", vec![])), f.clone()], "argument");

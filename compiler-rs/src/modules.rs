@@ -391,22 +391,7 @@ impl Loader {
                 }
                 for function in &mut module.syntax.functions {
                     function.name = own[&function.name].clone();
-                    for param in &mut function.params {
-                        qualify_type(&mut param.ty, &visible)
-                            .map_err(|e| at_span(e, param.span))?;
-                        shift(&mut param.span, module.source.start);
-                    }
-                    if let Some(ty) = &mut function.return_type {
-                        qualify_type(ty, &visible).map_err(|e| at_span(e, function.span))?;
-                    }
-                    let mut scopes = vec![function.params.iter().map(|p| p.name.clone()).collect()];
-                    rewrite(
-                        &mut function.body,
-                        &visible,
-                        &imported_prefixes,
-                        &mut scopes,
-                        module.source.start,
-                    )?;
+                    qualify_function(function, &visible, &imported_prefixes, module.source.start)?;
                     shift(&mut function.span, module.source.start);
                 }
                 qualify_declarations(
@@ -471,10 +456,42 @@ fn qualify_declarations(
     Ok(())
 }
 
+/// Resolve each clause's parameter bindings before its guard and body, retaining group identity.
+fn qualify_function(
+    function: &mut ast::Function,
+    visible: &Names,
+    prefixes: &BTreeSet<String>,
+    offset: usize,
+) -> Result<(), Error> {
+    let mut bound = BTreeSet::new();
+    for param in &mut function.params {
+        if let Some(ty) = &mut param.annotation {
+            qualify_type(ty, visible).map_err(|e| at_span(e, param.span))?;
+        }
+        pattern(&mut param.pattern, visible, &mut bound, offset)?;
+        shift(&mut param.span, offset);
+    }
+    if let Some(ty) = &mut function.return_type {
+        qualify_type(ty, visible).map_err(|e| at_span(e, function.span))?;
+    }
+    let mut scopes = vec![bound];
+    if let Some(guard) = &mut function.guard {
+        rewrite(guard, visible, prefixes, &mut scopes, offset)?;
+    }
+    rewrite(&mut function.body, visible, prefixes, &mut scopes, offset)?;
+    function.group_start += offset;
+    Ok(())
+}
+
 /// Map local function/type/constructor identities into a module-qualified namespace.
 fn own_names(module: &Module, entry: bool) -> Result<Names, Error> {
     let mut names = Names::new();
+    let mut groups = BTreeMap::new();
     for function in &module.syntax.functions {
+        if groups.get(&function.name) == Some(&function.group_start) {
+            continue;
+        }
+        groups.insert(function.name.clone(), function.group_start);
         if reserved_declaration(&function.name) {
             return Err(failure(format!(
                 "{}: {} is reserved for a builtin",

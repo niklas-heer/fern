@@ -10,7 +10,7 @@ fn compound_type_annotations_and_unit_values() {
     let program = parse(source).unwrap();
     let function = &program.functions[0];
     assert_eq!(
-        function.params[0].ty,
+        function.params[0].annotation.clone().unwrap(),
         Type::List(Box::new(Type::Option(Box::new(Type::Int))))
     );
     assert_eq!(

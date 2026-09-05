@@ -4,6 +4,20 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 62 Eliminate eligible self-tail calls without changing cleanup semantics
+* **Date**: 2026-09-05
+* **Status**: Accepted for Rust migration completion
+* **Decision**: I will lower direct self calls in return position to parameter updates and a function-local backedge when that function has no owned defer registration. Compiler scratch stack slots will be declared in the entry block, with initialization retained at each logical use.
+* **Context**: Fern uses recursion instead of while/loop. Ordinary native calls grow the stack, and QBE alloc8 outside the entry block can allocate dynamically on repeated paths. Deferred cleanup must still execute once per actual function activation.
+* **Consequences**: Argument expressions evaluate left-to-right into temporary values before any parameter slot changes. Faults and early exits skip later arguments. Full-width values and the existing environment/fault context are preserved. Functions owning defer, mutual recursion and indirect calls keep ordinary calls; nested lifted closure bodies do not disable an otherwise eligible parent. This is direct self-tail-call elimination, not a general proper-tail-call guarantee. Hoisted scratch storage prevents loop and with temporaries from growing the stack on each backedge. The unavailable `/decision` skill is replaced by the established decision format.
+
+### 63 Normalize adjacent function clauses through the shared pattern engine
+* **Date**: 2026-09-05
+* **Status**: Accepted for Rust migration completion
+* **Decision**: I will retain adjacent clauses in source syntax and normalize each group to one checked function before return inference. Typed pattern parameters, guards and arrow bodies use the existing exhaustive match semantics.
+* **Context**: DESIGN specifies function clauses and pattern parameters, while the Rust frontend already has shared pattern coverage, function-owned control flow and cleanup. A separate dispatch implementation would risk different coverage and Result handling rules.
+* **Consequences**: Clauses must agree on arity, parameter types, visibility and supplied return annotations; initially generic names must remain consistent across a group. Guards do not guarantee coverage, and missing cases are errors rather than DESIGN's earlier warning. Whole-function documentation appears before the first clause. Synthetic argument names cannot collide with source identifiers; balanced dispatch tuples preserve the 255-parameter limit. Whole-pattern Result discard checks precede hidden argument reads, and each arm retains its own binder obligations. This checkpoint requires annotated parameter patterns; pattern-anchored inference and complete private signature generalization follow separately. The unavailable `/decision` skill is replaced by the established decision format.
+
 ### 61 Preserve indentation for block expressions inside delimiters
 * **Date**: 2026-09-05
 * **Status**: Accepted for Rust migration completion

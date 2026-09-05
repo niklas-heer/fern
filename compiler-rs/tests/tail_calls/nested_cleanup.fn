@@ -1,0 +1,9 @@
+fn count(n: Int) -> Int:
+    let cleanup = () ->
+        defer println("nested")
+        ()
+    if n == 0:
+        cleanup()
+        7
+    else: count(n - 1)
+fn main(): println(count(1000000))

@@ -204,6 +204,24 @@ fn useful(
     {
         return Ok(false);
     }
+    let common = shared_wildcards(matrix, candidate, budget, span)?;
+    if common > 0 {
+        charge_columns(
+            matrix.iter().map(|row| row.len() - common).sum(),
+            budget,
+            span,
+        )?;
+        let rows: Vec<_> = matrix.iter().map(|row| row[common..].to_vec()).collect();
+        return useful(
+            &rows,
+            &candidate[common..],
+            &types[common..],
+            registry,
+            depth,
+            budget,
+            span,
+        );
+    }
     match &candidate[0] {
         Pattern::Specific(head, fields) => {
             let payload = payload_types(&types[0], head, registry, span)?;
@@ -224,6 +242,43 @@ fn useful(
         }
         Pattern::Any => useful_any(matrix, candidate, types, registry, depth, budget, span),
     }
+}
+
+/// Remove unconstrained columns together so wide tuples do not consume nesting depth.
+fn shared_wildcards(
+    matrix: &[Vec<Pattern>],
+    candidate: &[Pattern],
+    budget: &mut usize,
+    span: Span,
+) -> Checked<usize> {
+    let mut count = 0;
+    for (index, pattern) in candidate.iter().enumerate() {
+        charge_columns(1, budget, span)?;
+        if !matches!(pattern, Pattern::Any) {
+            break;
+        }
+        let mut shared = true;
+        for row in matrix {
+            charge_columns(1, budget, span)?;
+            if !matches!(row[index], Pattern::Any) {
+                shared = false;
+                break;
+            }
+        }
+        if !shared {
+            break;
+        }
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Bound column inspection and copied cells as well as recursive matrix calls.
+fn charge_columns(work: usize, budget: &mut usize, span: Span) -> Checked<()> {
+    *budget = budget
+        .checked_sub(work)
+        .ok_or_else(|| Diagnostic::new(span, "pattern coverage complexity limit exceeded"))?;
+    Ok(())
 }
 
 /// Search a wildcard candidate through finite constructors or the default matrix.

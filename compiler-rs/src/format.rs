@@ -115,6 +115,7 @@ impl Renderer<'_> {
         let targets: std::collections::BTreeMap<_, _> = program
             .functions
             .iter()
+            .rev()
             .map(|function| (&function.name, function.span.start))
             .chain(
                 program
@@ -185,7 +186,14 @@ impl Renderer<'_> {
         let params = function
             .params
             .iter()
-            .map(|param| Ok(format!("{}: {}", param.name, type_text(&param.ty)?)))
+            .map(|param| match &param.annotation {
+                Some(ty) => Ok(format!(
+                    "{}: {}",
+                    pattern_text(&param.pattern),
+                    type_text(ty)?
+                )),
+                None => Ok(pattern_text(&param.pattern)),
+            })
             .collect::<Result<Vec<_>>>()?;
         let mut header = format!(
             "{}fn {}({})",
@@ -193,10 +201,16 @@ impl Renderer<'_> {
             function.name,
             params.join(", ")
         );
+        if let Some(guard) = &function.guard {
+            header.push_str(&format!(" if {}", self.inline(guard, 0)?));
+        }
         if let Some(ty) = &function.return_type {
             header.push_str(&format!(" -> {}", type_text(ty)?));
         }
-        header.push(':');
+        header.push_str(match function.syntax {
+            ast::FunctionSyntax::Colon => ":",
+            ast::FunctionSyntax::Arrow => " ->",
+        });
         self.suite(header, function.span.start, &function.body, 0)
     }
 
@@ -1259,10 +1273,19 @@ fn structural(mut program: ast::Program) -> String {
     for doc in &mut program.docs {
         doc.span = Span::default();
     }
+    let mut groups = std::collections::BTreeMap::new();
     for function in &mut program.functions {
+        let next = groups.len();
+        function.group_start = *groups
+            .entry((function.name.clone(), function.group_start))
+            .or_insert(next);
         function.span = Span::default();
         for param in &mut function.params {
             param.span = Span::default();
+            clear_pattern(&mut param.pattern);
+        }
+        if let Some(guard) = &mut function.guard {
+            clear_expression(guard);
         }
         clear_expression(&mut function.body);
     }

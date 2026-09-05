@@ -98,7 +98,7 @@ fn conceptual_list_expansion_is_bounded_before_recursive_matrix_allocation() {
         };
         ty = Type::List(Box::new(ty));
     }
-    p.functions[0].params[0].ty = ty;
+    p.functions[0].params[0].annotation = Some(ty);
     let ast::ExprKind::Block(stmts) = &mut p.functions[0].body.kind else {
         panic!()
     };

@@ -157,7 +157,10 @@ fn source_instance(
 ) -> Checked<ast::Function> {
     let mut source = source.clone();
     for param in &mut source.params {
-        param.ty = nominal::substitute(&param.ty, values)?;
+        param.annotation = Some(nominal::substitute(
+            super::clauses::parameter_type(param),
+            values,
+        )?);
     }
     source.return_type = source
         .return_type

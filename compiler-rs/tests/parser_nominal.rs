@@ -40,7 +40,7 @@ fn modules_import_forms_and_public_exports() {
     assert!(program.imports[3].public);
     assert_eq!(program.exports, vec!["area"]);
     assert_eq!(
-        program.functions[0].params[0].ty,
+        program.functions[0].params[0].annotation.clone().unwrap(),
         Type::Named("core.Shape".into(), vec![Type::Int])
     );
 }

@@ -1,0 +1,7 @@
+fn argument(tag: String, value: Int) -> Int:
+    println(tag)
+    value
+fn rotate(n: Int, a: Int, b: Int) -> Int:
+    if n == 0: a * 10 + b
+    else: rotate(argument("n", n - 1), argument("a", b), argument("b", a))
+fn main(): println(rotate(1, 2, 3))

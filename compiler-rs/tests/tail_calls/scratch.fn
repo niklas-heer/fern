@@ -1,0 +1,13 @@
+fn step(n: Int) -> Result(Int, String): Ok(n - 1)
+fn count(n: Int) -> Int:
+    if n == 0: 42
+    else:
+        for value in 0..1:
+            ()
+        with
+            next <- step(n)
+        do
+            count(next)
+        else
+            Err(_) -> 0
+fn main(): println(count(1000000))

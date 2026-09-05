@@ -75,7 +75,7 @@ impl Emitter<'_> {
         depth: usize,
     ) -> Lowering<(Type, String)> {
         expect_type(value.ty.clone(), locals.return_type.clone(), value.span)?;
-        let value = self.expr(value, locals, depth)?;
+        let value = self.tail_expr(value, locals, depth)?;
         self.save_return(&value, locals);
         Err(Exit::Terminated)
     }
