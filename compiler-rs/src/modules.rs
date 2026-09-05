@@ -536,6 +536,7 @@ fn reserved_declaration(name: &str) -> bool {
                 | "String"
                 | "Unit"
                 | "List"
+                | "Map"
                 | "Option"
                 | "Result"
                 | "Some"
@@ -637,7 +638,7 @@ fn qualify_type(ty: &mut Type, names: &Names) -> Result<(), Error> {
             }
         }
         Type::List(t) | Type::Option(t) => qualify_type(t, names)?,
-        Type::Result(a, b) => {
+        Type::Result(a, b) | Type::Map(a, b) => {
             qualify_type(a, names)?;
             qualify_type(b, names)?;
         }
@@ -679,7 +680,8 @@ fn resolve_global(name: &mut String, names: &Names, allow_builtin: bool) -> Resu
 
 /// Builtin-qualified calls need no source import; arbitrary module prefixes do.
 fn builtin_path(name: &str) -> bool {
-    crate::runtime::lookup(name).is_some()
+    crate::check::builtin(name).is_some()
+        || crate::runtime::lookup(name).is_some()
         || crate::runtime::omissions()
             .iter()
             .any(|entry| entry.names.contains(&name))
@@ -714,11 +716,7 @@ fn rewrite(
             rewrite_values(args, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Interpolate(parts) => {
-            for part in parts {
-                if let ast::StringPart::Value(value) = part {
-                    rewrite(value, names, prefixes, scopes, offset)?;
-                }
-            }
+            rewrite_string(parts, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Call { name, args } => {
             resolve_name(name, names, prefixes, scopes).map_err(|e| at_span(e, original))?;
@@ -749,7 +747,59 @@ fn rewrite(
         ast::ExprKind::Match { value, arms } => {
             rewrite_match(value, arms, names, prefixes, scopes, offset)?
         }
+        ast::ExprKind::Map(pairs) => rewrite_pairs(pairs, names, prefixes, scopes, offset)?,
+        ast::ExprKind::RecordUpdate { value, fields } => {
+            rewrite_update(value, fields, names, prefixes, scopes, offset)?
+        }
         _ => {}
+    }
+    Ok(())
+}
+
+/// Resolve embedded expressions without treating literal text as module names.
+fn rewrite_string(
+    parts: &mut [ast::StringPart],
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    for part in parts {
+        if let ast::StringPart::Value(value) = part {
+            rewrite(value, names, prefixes, scopes, offset)?;
+        }
+    }
+    Ok(())
+}
+
+/// Qualify map keys and values in their original evaluation order.
+fn rewrite_pairs(
+    pairs: &mut [(ast::Expr, ast::Expr)],
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    for (key, value) in pairs {
+        rewrite(key, names, prefixes, scopes, offset)?;
+        rewrite(value, names, prefixes, scopes, offset)?;
+    }
+    Ok(())
+}
+
+/// Resolve update expressions while leaving record field labels unqualified.
+fn rewrite_update(
+    value: &mut ast::Expr,
+    fields: &mut [ast::RecordField],
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    rewrite(value, names, prefixes, scopes, offset)?;
+    for field in fields {
+        shift(&mut field.span, offset);
+        rewrite(&mut field.value, names, prefixes, scopes, offset)?;
     }
     Ok(())
 }

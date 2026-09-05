@@ -1,0 +1,16 @@
+fn key(value: Int) -> Int:
+    println(value)
+    value
+fn value(value: Int) -> Int:
+    println(value)
+    value
+fn initial() -> Map(Int, Int):
+    println("map")
+    %{1: 7}
+fn main():
+    let entries = %{key(1): value(10), key(2): value(20), key(1): value(30)}
+    println(List.get(Map.keys(entries), 0))
+    println(List.get(Map.keys(entries), 1))
+    println(Option.unwrap_or(Map.get(entries, 1), 0))
+    let changed = Map.put(initial(), key(1), value(40))
+    println(Option.unwrap_or(Map.get(changed, 1), 0))

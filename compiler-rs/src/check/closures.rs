@@ -351,6 +351,12 @@ fn captures(body: &ir::Expr, outer_count: usize) -> Checked<Vec<ir::Capture>> {
 fn contains_lambda(expr: &ast::Expr) -> bool {
     match &expr.kind {
         ast::ExprKind::Lambda { .. } => true,
+        ast::ExprKind::Map(entries) => entries
+            .iter()
+            .any(|(k, v)| contains_lambda(k) || contains_lambda(v)),
+        ast::ExprKind::RecordUpdate { value, fields } => {
+            contains_lambda(value) || fields.iter().any(|f| contains_lambda(&f.value))
+        }
         ast::ExprKind::Apply { callee, args } => {
             contains_lambda(callee) || args.iter().any(contains_lambda)
         }

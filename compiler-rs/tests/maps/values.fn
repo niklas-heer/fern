@@ -1,0 +1,28 @@
+type Item:
+    value: Float
+fn okay() -> Result(Int, String): Ok(9223372036854775807)
+fn broken() -> Result(Int, String): Err("stored failure")
+fn main():
+    let floats = %{1: 1.25, 2: -2.5}
+    println(Option.unwrap_or(Map.get(floats, 1), 0.0))
+    println(List.get(Map.values(floats), 1))
+    let records = %{"record": Item(3.75)}
+    println(Option.unwrap_or(Map.get(records, "record"), Item(0.0)).value)
+    let callbacks = %{1: (x: Int) -> x + 1, 2: (x: Int) -> x * 2}
+    let action = Option.unwrap_or(Map.get(callbacks, 2), (x: Int) -> 0)
+    println(action(21))
+    println(List.head(Map.values(callbacks))(41))
+    let results = %{"ok": okay(), "err": broken()}
+    match Map.get(results, "ok"):
+        Some(Ok(value)) -> println(value)
+        _ -> println(0)
+    match Map.get(results, "err"):
+        Some(Err(message)) -> println(message)
+        _ -> println("missing")
+    let units = %{1: ()}
+    println(Map.contains(units, 1))
+    let empty: Map(Int, String) = %{}
+    let maker: () -> Map(Int, String) = Map.new
+    println(Map.len(maker()))
+    let get: (Map(Int, String), Int) -> Option(String) = Map.get
+    println(Option.is_none(get(empty, 1)))

@@ -38,7 +38,7 @@ impl Budget {
                 Type::Tuple(args) => pending.extend(args),
                 Type::Generic(n) => self.charge(n.len(), span)?,
                 Type::List(a) | Type::Option(a) => pending.push(a),
-                Type::Result(a, b) => {
+                Type::Result(a, b) | Type::Map(a, b) => {
                     pending.push(a);
                     pending.push(b);
                 }
@@ -178,6 +178,20 @@ impl Budget {
         self.charge(0, span)
     }
 
+    /// Charge record field names and queue initializer expressions before cloning.
+    fn update_fields<'a>(
+        &mut self,
+        fields: &'a [ast::RecordField],
+        pending: &mut Vec<(&'a ast::Expr, usize)>,
+        depth: usize,
+    ) -> Checked<()> {
+        for field in fields {
+            self.charge(field.name.len(), field.span)?;
+            pending.push((&field.value, depth + 1));
+        }
+        Ok(())
+    }
+
     /// Validate expression depth and annotations before source-instance cloning.
     fn expression(&mut self, expr: &ast::Expr) -> Checked<()> {
         let mut pending = vec![(expr, 0)];
@@ -186,6 +200,11 @@ impl Budget {
             match &expr.kind {
                 ast::ExprKind::Interpolate(parts) => {
                     self.interpolation(parts, &mut pending, depth, expr.span)?
+                }
+                ast::ExprKind::Map(entries) => queue_map(entries, &mut pending, depth),
+                ast::ExprKind::RecordUpdate { value, fields } => {
+                    pending.push((value, depth + 1));
+                    self.update_fields(fields, &mut pending, depth)?;
                 }
                 ast::ExprKind::Lambda { params, body } => {
                     self.lambda_params(params, expr.span)?;
@@ -292,4 +311,17 @@ pub(super) fn check(program: &ast::Program) -> Checked<()> {
         }
     }
     Ok(())
+}
+
+/// Queue map keys and values at the same bounded expression depth.
+fn queue_map<'a>(
+    entries: &'a [(ast::Expr, ast::Expr)],
+    pending: &mut Vec<(&'a ast::Expr, usize)>,
+    depth: usize,
+) {
+    pending.extend(
+        entries
+            .iter()
+            .flat_map(|(key, value)| [(key, depth + 1), (value, depth + 1)]),
+    );
 }

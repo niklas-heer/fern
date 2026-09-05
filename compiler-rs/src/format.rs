@@ -261,6 +261,10 @@ impl Renderer<'_> {
             ExprKind::Unit => "()".into(),
             ExprKind::Tuple(items) => tuple_text(self.arguments(items, indent)?, items.len()),
             ExprKind::List(items) => format!("[{}]", self.arguments(items, indent)?),
+            ExprKind::Map(pairs) => return self.map(pairs, indent, expression.span),
+            ExprKind::RecordUpdate { value, fields } => {
+                return self.record_update(value, fields, indent, expression.span)
+            }
             ExprKind::Call { name, args } => return self.call(name, args, indent, expression.span),
             ExprKind::Apply { callee, args } => {
                 return self.apply(callee, args, indent, expression.span)
@@ -319,6 +323,104 @@ impl Renderer<'_> {
             .next()
             .map(|line| line.text)
             .unwrap_or_default())
+    }
+
+    /// Keep map pairs ordered and permit indented callback values inside their braces.
+    fn map(&self, pairs: &[(Expr, Expr)], indent: usize, span: Span) -> Result<Vec<Line>> {
+        let entries = pairs
+            .iter()
+            .map(|(key, value)| {
+                let mut key_lines = self.grouped(key, indent + 1)?;
+                let mut value_lines = self.expression(value, indent + 1)?;
+                if let (Some(last), Some(first)) = (key_lines.last_mut(), value_lines.first()) {
+                    last.text.push_str(&format!(": {}", first.text));
+                }
+                key_lines.extend(value_lines.drain(1..));
+                Ok(key_lines)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.brace_entries(vec![line(indent, "%{", span.start)], entries, indent, span)
+    }
+
+    /// Preserve the update base and written field order instead of sorting declaration slots.
+    fn record_update(
+        &self,
+        value: &Expr,
+        fields: &[ast::RecordField],
+        indent: usize,
+        span: Span,
+    ) -> Result<Vec<Line>> {
+        let mut header = self.grouped(value, indent)?;
+        if let Some(first) = header.first_mut() {
+            first.text.insert_str(0, "%{ ");
+            first.anchor = span.start;
+        }
+        if let Some(last) = header.last_mut() {
+            last.text.push_str(" |");
+        }
+        let entries = fields
+            .iter()
+            .map(|field| {
+                let mut lines = self.expression(&field.value, indent + 1)?;
+                if let Some(first) = lines.first_mut() {
+                    first.text = format!("{}: {}", field.name, first.text);
+                    first.anchor = field.span.start;
+                }
+                Ok(lines)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.brace_entries(header, entries, indent, span)
+    }
+
+    /// Parentheses delimit multiline key/base expressions without changing their AST.
+    fn grouped(&self, value: &Expr, indent: usize) -> Result<Vec<Line>> {
+        let lines = self.expression(value, indent + 1)?;
+        if lines.len() == 1 {
+            return Ok(vec![line(indent, lines[0].text.clone(), value.span.start)]);
+        }
+        let mut result = vec![line(indent, "(", value.span.start)];
+        result.extend(lines);
+        result.push(line(indent, ")", value.span.end));
+        Ok(result)
+    }
+
+    /// Share brace layout while keeping callback terminators on a dedented line.
+    fn brace_entries(
+        &self,
+        mut header: Vec<Line>,
+        entries: Vec<Vec<Line>>,
+        indent: usize,
+        span: Span,
+    ) -> Result<Vec<Line>> {
+        if header.len() == 1 && entries.iter().all(|lines| lines.len() == 1) {
+            let text = entries
+                .iter()
+                .map(|lines| lines[0].text.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let spacing = if header[0].text.ends_with('|') {
+                " "
+            } else {
+                ""
+            };
+            header[0]
+                .text
+                .push_str(&format!("{spacing}{text}{spacing}}}"));
+            return Ok(header);
+        }
+        let count = entries.len();
+        for (index, mut entry) in entries.into_iter().enumerate() {
+            if index + 1 < count {
+                if entry.len() == 1 {
+                    entry[0].text.push(',');
+                } else {
+                    entry.push(line(indent + 1, ",", span.end));
+                }
+            }
+            header.extend(entry);
+        }
+        header.push(line(indent, "}", span.end));
+        Ok(header)
     }
 
     /// Canonicalize both lambda spellings while preserving optional parameter annotations.
@@ -588,6 +690,7 @@ fn type_text(ty: &Type) -> Result<String> {
             fields.len(),
         ),
         Type::List(value) => format!("List({})", type_text(value)?),
+        Type::Map(key, value) => format!("Map({}, {})", type_text(key)?, type_text(value)?),
         Type::Option(value) => format!("Option({})", type_text(value)?),
         Type::Result(value, error) => {
             format!("Result({}, {})", type_text(value)?, type_text(error)?)
@@ -898,6 +1001,8 @@ fn clear_expression(expression: &mut Expr) {
             }
         }
         ExprKind::Match { value, arms } => clear_match(value, arms),
+        ExprKind::Map(pairs) => clear_pairs(pairs),
+        ExprKind::RecordUpdate { value, fields } => clear_update(value, fields),
         ExprKind::Block(statements) => clear_statements(statements),
         ExprKind::Int(_)
         | ExprKind::Float(_)
@@ -905,6 +1010,23 @@ fn clear_expression(expression: &mut Expr) {
         | ExprKind::String(_)
         | ExprKind::Name(_)
         | ExprKind::Unit => {}
+    }
+}
+
+/// Clear both map children without reordering keys or values.
+fn clear_pairs(pairs: &mut [(Expr, Expr)]) {
+    for (key, value) in pairs {
+        clear_expression(key);
+        clear_expression(value);
+    }
+}
+
+/// Clear replacement locations while retaining the base and source field sequence.
+fn clear_update(value: &mut Expr, fields: &mut [ast::RecordField]) {
+    clear_expression(value);
+    for field in fields {
+        field.span = Span::default();
+        clear_expression(&mut field.value);
     }
 }
 

@@ -10,6 +10,7 @@ enum Value {
     String(Rc<String>),
     Unit,
     List(Rc<Vec<Value>>),
+    Map(Rc<Vec<(Value, Value)>>),
     Sum(usize, Rc<Vec<Value>>),
     Closure(Rc<ClosureValue>),
 }
@@ -157,6 +158,7 @@ impl Machine {
                 .cloned()
                 .ok_or_else(|| fault("missing interactive local")),
             List(values) => Ok(Value::List(Rc::new(self.arguments(values)?))),
+            Map(entries) => self.map_literal(entries),
             Tuple(values) => Ok(Value::Sum(0, Rc::new(self.arguments(values)?))),
             CustomConstruct { tag, fields } => {
                 Ok(Value::Sum(*tag, Rc::new(self.arguments(fields)?)))
@@ -480,6 +482,7 @@ fn display(value: &Value) -> String {
         Value::String(s) => format!("{s:?}"),
         Value::Unit => "()".into(),
         Value::Closure(_) => "<function>".into(),
+        Value::Map(_) => "<map>".into(),
         Value::List(values) => format!(
             "[{}]",
             values.iter().map(display).collect::<Vec<_>>().join(", ")
@@ -499,6 +502,7 @@ fn type_name(ty: &Type) -> String {
             type_name(result)
         ),
         Type::List(a) => format!("List({})", type_name(a)),
+        Type::Map(key, value) => format!("Map({}, {})", type_name(key), type_name(value)),
         Type::Option(a) => format!("Option({})", type_name(a)),
         Type::Result(a, b) => format!("Result({}, {})", type_name(a), type_name(b)),
         Type::Tuple(args) => format!(
@@ -524,6 +528,8 @@ fn type_name(ty: &Type) -> String {
 mod builtins;
 #[path = "repl/functions.rs"]
 mod functions;
+#[path = "repl/maps.rs"]
+mod maps;
 #[path = "repl/storage.rs"]
 mod storage;
 
@@ -546,6 +552,13 @@ fn graph_budget<'a>(values: impl Iterator<Item = &'a Value>) -> Result<(), Strin
                 if seen.insert(Rc::as_ptr(xs) as usize) {
                     bytes = bytes.saturating_add(xs.len() * std::mem::size_of::<Value>());
                     pending.extend(xs.iter());
+                }
+            }
+            Value::Map(entries) => {
+                if seen.insert(Rc::as_ptr(entries) as usize) {
+                    bytes =
+                        bytes.saturating_add(entries.len() * std::mem::size_of::<(Value, Value)>());
+                    pending.extend(entries.iter().flat_map(|(key, value)| [key, value]));
                 }
             }
             Value::Closure(closure) => {
@@ -575,6 +588,9 @@ fn display_typed(value: &Value, ty: &Type, syntax: &ast::Program, budget: &mut u
     }
     *budget -= 1;
     match (value, ty) {
+        (Value::Map(entries), Type::Map(key, value)) => {
+            display_map(entries, key, value, syntax, budget)
+        }
         (Value::List(values), Type::List(ty)) => {
             let mut shown = values
                 .iter()
@@ -605,6 +621,30 @@ fn display_typed(value: &Value, ty: &Type, syntax: &ast::Program, budget: &mut u
         }
         _ => display(value),
     }
+}
+/// Render an ordered map with bounded entry and recursive-value previews.
+fn display_map(
+    entries: &[(Value, Value)],
+    key: &Type,
+    value: &Type,
+    syntax: &ast::Program,
+    budget: &mut usize,
+) -> String {
+    let mut shown = entries
+        .iter()
+        .take(64)
+        .map(|(k, v)| {
+            format!(
+                "{}: {}",
+                display_typed(k, key, syntax, budget),
+                display_typed(v, value, syntax, budget)
+            )
+        })
+        .collect::<Vec<_>>();
+    if entries.len() > 64 {
+        shown.push("…".into());
+    }
+    format!("%{{{}}}", shown.join(", "))
 }
 /// Recover constructor spellings from semantic types and the parsed declaration registry.
 fn constructor_types(tag: usize, ty: &Type, syntax: &ast::Program) -> (String, Vec<Type>) {
@@ -657,6 +697,10 @@ fn substitute_type(ty: &Type, names: &HashMap<String, Type>) -> Type {
         Type::Result(a, b) => Type::Result(
             Box::new(substitute_type(a, names)),
             Box::new(substitute_type(b, names)),
+        ),
+        Type::Map(key, value) => Type::Map(
+            Box::new(substitute_type(key, names)),
+            Box::new(substitute_type(value, names)),
         ),
         Type::Function(args, result) => Type::Function(
             args.iter().map(|a| substitute_type(a, names)).collect(),

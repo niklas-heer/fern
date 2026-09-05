@@ -1,0 +1,19 @@
+fn grow(n: Int, state: Map(Int, () -> Int)) -> Map(Int, () -> Int):
+    if n == 0:
+        state
+    else:
+        grow(n - 1, Map.put(state, n, () -> n + 4294967296))
+fn main():
+    let original: Map(Int, () -> Int) = %{}
+    let full = grow(256, original)
+    println(Map.len(original))
+    println(Map.len(full))
+    println(Option.unwrap_or(Map.get(full, 256), () -> 0)())
+    println(Option.unwrap_or(Map.get(full, 1), () -> 0)())
+    let replaced = Map.put(full, 256, () -> 7)
+    println(Option.unwrap_or(Map.get(full, 256), () -> 0)())
+    println(Option.unwrap_or(Map.get(replaced, 256), () -> 0)())
+    let deleted = Map.delete(replaced, 128)
+    println(Map.len(deleted))
+    println(Map.contains(full, 128))
+    println(Map.contains(deleted, 128))

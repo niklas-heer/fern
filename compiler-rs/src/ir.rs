@@ -74,6 +74,7 @@ pub enum ExprKind {
     Local(LocalId),
     Unit,
     List(Vec<Expr>),
+    Map(Vec<(Expr, Expr)>),
     Tuple(Vec<Expr>),
     Try(Box<Expr>),
     CustomConstruct {
@@ -151,6 +152,15 @@ pub enum CallTarget {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Builtin {
+    MapNew,
+    MapGet,
+    MapPut,
+    MapDelete,
+    MapLen,
+    MapIsEmpty,
+    MapContains,
+    MapKeys,
+    MapValues,
     ListMap,
     ListFold,
     ListFilter,

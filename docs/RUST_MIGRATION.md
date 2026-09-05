@@ -137,7 +137,7 @@ collection-heavy compilation separately.
 
 ## Remaining migration work
 
-Maps, `with`, delayed Result ownership, full actor execution, multiline strings,
+`with`, delayed Result ownership, full actor execution, multiline strings,
 block comments, and diagnostic/tooling parity remain open. Main Result exit semantics, safe
 collection indexing, and packed Option interoperability also need follow-up.
 REPL/native semantic coverage, additional LSP features, packaging, and full release
@@ -186,3 +186,24 @@ parser, emitter, formatter, module and interactive regressions protect the pipel
 Closure checkpoint gates pass locally: 287 Rust tests, 550 C tests, 87 core
 native programs, 40 invalid programs, dual-frontend directory/Result contracts,
 192 seeded mutations, formatting/clippy and documentation checks.
+
+## Maps and record updates — 2026-09-05
+
+Immutable maps support Int/Bool/String keys and arbitrary concrete values through
+source parsing, contextual inference, generic specialization, native execution,
+formatting, modules and interactive sessions. Compiler-owned helpers reuse GC
+allocation and list primitives; they do not add a C Map ABI. String equality uses
+contents. Duplicate keys keep their insertion position and last value. Public
+updates preserve existing aliases, and empty maps use valid allocation capacity.
+The initial search/update implementation is linear.
+
+Record updates now construct changed records, evaluating the base and every field
+expression once in source order. This is verified against explicit native output;
+the C backend's unchanged-record behavior is not an oracle. Six new native programs
+and nine invalid cases cover scalar keys, full-width/Float/Result/closure values,
+ordered effects, missing keys, persistent aliases and retained environments.
+
+The design document's old milestone checkmarks have been replaced by acceptance
+criteria with links to the active roadmap, where remaining type-system and
+standard-library work is explicit. C remains the shipping default while the
+remaining language and migration milestones are completed.

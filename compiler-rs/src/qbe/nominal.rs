@@ -80,6 +80,11 @@ pub(super) fn resolved(
             }
         }
         Type::List(item) | Type::Option(item) => resolved(item, layouts, span, depth + 1)?,
+        Type::Map(key, value) => {
+            maps::types(ty, span)?;
+            resolved(key, layouts, span, depth + 1)?;
+            resolved(value, layouts, span, depth + 1)?;
+        }
         Type::Result(ok, err) => {
             resolved(ok, layouts, span, depth + 1)?;
             resolved(err, layouts, span, depth + 1)?;

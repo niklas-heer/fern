@@ -4747,59 +4747,63 @@ just release
 
 ### Implementation Milestones
 
+These are the milestone acceptance criteria. Verified implementation status and
+remaining work are recorded in [ROADMAP.md](ROADMAP.md) and
+[release readiness](docs/RELEASE_READINESS.md).
+
 **Milestone 1: Minimal Compiler**
-- ✅ Lexer (keywords, identifiers, literals)
-- ✅ Parser (functions, expressions, let bindings)
-- ✅ Basic AST with Datatype99
-- ✅ QBE codegen for simple programs
-- ✅ Compile: `fn main() -> Int: 42`
+- Lexer (keywords, identifiers, literals)
+- Parser (functions, expressions, let bindings)
+- Basic AST with Datatype99
+- QBE codegen for simple programs
+- Compile: `fn main() -> Int: 42`
 
 **Milestone 2: Core Language**
-- ✅ Type system (basic inference)
-- ✅ Pattern matching (match expressions)
-- ✅ Recursion (tail call optimization)
-- ✅ Multiple function clauses
-- ✅ Compile factorial, fibonacci, etc.
+- Type system (basic inference)
+- Pattern matching (match expressions)
+- Recursion (tail call optimization)
+- Multiple function clauses
+- Compile factorial, fibonacci, etc.
 
 **Milestone 3: Type System**
-- ✅ Generics (monomorphization)
-- ✅ Traits (definition and implementation)
-- ✅ Sum types (enums)
-- ✅ Record types (structs)
-- ✅ Type constraints (where clauses)
-- ✅ Compile generic data structures
+- Generics (monomorphization)
+- Traits (definition and implementation)
+- Sum types (enums)
+- Record types (structs)
+- Type constraints (where clauses)
+- Compile generic data structures
 
 **Milestone 4: Standard Library**
-- ✅ Collections (List, Map, Set)
-- ✅ Option, Result types
-- ✅ String operations
-- ✅ File I/O
-- ✅ Pipes (`|>` operator)
-- ✅ List comprehensions
+- Collections (List, Map, Set)
+- Option, Result types
+- String operations
+- File I/O
+- Pipes (`|>` operator)
+- List comprehensions
 
 **Milestone 5: Actor Runtime**
-- ✅ Spawn/send/receive primitives
-- ✅ Work-stealing scheduler (C implementation)
-- ✅ Mailboxes with type-safe Pid(msg)
-- ✅ Supervision (spawn_link, monitor)
-- ✅ Integration with QBE-generated code
-- ✅ Stdlib actors (cache, queue, pubsub)
+- Spawn/send/receive primitives
+- Work-stealing scheduler (C implementation)
+- Mailboxes with type-safe Pid(msg)
+- Supervision (spawn_link, monitor)
+- Integration with QBE-generated code
+- Stdlib actors (cache, queue, pubsub)
 
 **Milestone 6: Database Integration**
-- ✅ libSQL C bindings
-- ✅ FFI from Fern to C
-- ✅ db.sql module (open, execute, query)
-- ✅ Migration runner
-- ✅ Transaction support
-- ✅ Complete REST API example
+- libSQL C bindings
+- FFI from Fern to C
+- db.sql module (open, execute, query)
+- Migration runner
+- Transaction support
+- Complete REST API example
 
 **Milestone 7: Production Polish**
-- ✅ Error messages (source locations, hints)
-- ✅ Optimization passes (dead code elimination)
-- ✅ Binary size reduction (strip unused runtime)
-- ✅ Cross-compilation (Linux, macOS, Windows)
-- ✅ Documentation and examples
-- ✅ Self-hosting (compiler compiles itself)
+- Error messages (source locations, hints)
+- Optimization passes (dead code elimination)
+- Binary size reduction (strip unused runtime)
+- Cross-compilation (Linux, macOS, Windows)
+- Documentation and examples
+- Self-hosting (compiler compiles itself)
 
 ### Performance Targets
 

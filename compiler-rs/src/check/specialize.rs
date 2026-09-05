@@ -169,16 +169,14 @@ fn source_instance(
 /// Substitute the bounded expression tree's explicit local annotations and guards.
 fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Type>) -> Checked<()> {
     match &mut expr.kind {
-        ast::ExprKind::Lambda { params, body } => {
-            for param in params {
-                param.annotation = param
-                    .annotation
-                    .as_ref()
-                    .map(|ty| nominal::substitute(ty, values))
-                    .transpose()?;
+        ast::ExprKind::Map(entries) => {
+            for (key, value) in entries {
+                substitute_expr(key, values)?;
+                substitute_expr(value, values)?;
             }
-            substitute_expr(body, values)?;
         }
+        ast::ExprKind::RecordUpdate { value, fields } => substitute_update(value, fields, values)?,
+        ast::ExprKind::Lambda { params, body } => substitute_lambda(params, body, values)?,
         ast::ExprKind::Apply { callee, args } => {
             substitute_expr(callee, values)?;
             for arg in args {
@@ -256,6 +254,35 @@ fn substitute_block(stmts: &mut [ast::Stmt], values: &HashMap<String, Type>) -> 
             }
             ast::Stmt::Expr(value) => substitute_expr(value, values)?,
         }
+    }
+    Ok(())
+}
+
+/// Substitute lambda annotations before its recursively checked body.
+fn substitute_lambda(
+    params: &mut [ast::LambdaParam],
+    body: &mut ast::Expr,
+    values: &HashMap<String, Type>,
+) -> Checked<()> {
+    for param in params {
+        param.annotation = param
+            .annotation
+            .as_ref()
+            .map(|ty| nominal::substitute(ty, values))
+            .transpose()?;
+    }
+    substitute_expr(body, values)
+}
+
+/// Substitute update initializers so generic callback annotations remain concrete.
+fn substitute_update(
+    base: &mut ast::Expr,
+    fields: &mut [ast::RecordField],
+    values: &HashMap<String, Type>,
+) -> Checked<()> {
+    substitute_expr(base, values)?;
+    for field in fields {
+        substitute_expr(&mut field.value, values)?;
     }
     Ok(())
 }

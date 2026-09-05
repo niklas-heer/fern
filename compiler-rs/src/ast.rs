@@ -77,6 +77,11 @@ pub enum ExprKind {
     Name(String),
     Unit,
     List(Vec<Expr>),
+    Map(Vec<(Expr, Expr)>),
+    RecordUpdate {
+        value: Box<Expr>,
+        fields: Vec<RecordField>,
+    },
     Tuple(Vec<Expr>),
     Try(Box<Expr>),
     Pipe {
@@ -120,6 +125,14 @@ pub enum ExprKind {
         else_branch: Option<Box<Expr>>,
     },
     Block(Vec<Stmt>),
+}
+
+/// One immutable record replacement, retained in source evaluation order.
+#[derive(Clone, Debug)]
+pub struct RecordField {
+    pub name: String,
+    pub value: Expr,
+    pub span: Span,
 }
 
 /// Preserve literal segments separately from embedded expressions for formatting.

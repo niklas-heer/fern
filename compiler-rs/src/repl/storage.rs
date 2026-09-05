@@ -57,6 +57,13 @@ impl<'a> CodeBudget<'a> {
         self.pending.push(Part::Type(&expr.ty));
         match &expr.kind {
             String(text) => self.bytes += text.len(),
+            Map(pairs) => {
+                self.pending.extend(
+                    pairs
+                        .iter()
+                        .flat_map(|(key, value)| [Part::Expr(key), Part::Expr(value)]),
+                );
+            }
             List(xs)
             | Tuple(xs)
             | Interpolate(xs)
@@ -116,7 +123,9 @@ impl<'a> CodeBudget<'a> {
         self.bytes += std::mem::size_of::<Type>();
         match ty {
             Type::List(a) | Type::Option(a) => self.pending.push(Part::Type(a)),
-            Type::Result(a, b) => self.pending.extend([Part::Type(a), Part::Type(b)]),
+            Type::Result(a, b) | Type::Map(a, b) => {
+                self.pending.extend([Part::Type(a), Part::Type(b)])
+            }
             Type::Function(args, result) => {
                 self.pending.extend(args.iter().map(Part::Type));
                 self.pending.push(Part::Type(result));

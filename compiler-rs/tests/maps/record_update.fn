@@ -1,0 +1,26 @@
+type Item:
+    first: Int
+    second: String
+    ratio: Float
+    callback: (Int) -> Int
+fn base() -> Item:
+    println("base")
+    Item(1, "original", 1.25, (x) -> x + 1)
+fn integer() -> Int:
+    println("integer")
+    42
+fn text() -> String:
+    println("text")
+    "changed"
+fn main():
+    let original = base()
+    let changed = %{original | second: text(), first: integer()}
+    println(original.first)
+    println(original.second)
+    println(changed.first)
+    println(changed.second)
+    println(changed.ratio)
+    println(changed.callback(41))
+    let temporary = %{base() | ratio: 3.75}
+    println(temporary.first)
+    println(temporary.ratio)

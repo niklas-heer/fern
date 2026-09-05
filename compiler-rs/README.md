@@ -68,6 +68,8 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
 - `Option.is_some/is_none/unwrap_or` and `Result.is_ok/is_err/unwrap_or`.
 - Multiline lists, calls, and type arguments with checked delimiters.
 - Nested string interpolation with Int/Float/Bool/String expressions and escaped literal braces.
+- Immutable Map values with Int/Bool/String keys, ordered inspection and optional lookup;
+  record updates that evaluate their base and fields once.
 - First-class named/anonymous functions, contextual callback inference, escaping captures
   and typed higher-order List/Option/Result operations.
 - Line comments, string escapes, and source-located diagnostics.
@@ -75,7 +77,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
   HTTP clients, explicit mailboxes and terminal UI. Opaque annotations are qualified
   (`Tui.Panel`, `Tui.Tree`, etc.), keeping ordinary user-defined names available.
 
-Unsupported syntax produces diagnostics. Gaps include maps, actor execution, triple-quoted multiline strings, block comments, named
+Unsupported syntax produces diagnostics. Gaps include actor execution, triple-quoted multiline strings, block comments, named
 arguments, non-ASCII identifiers, and inferred return types outside `main`.
 `with`, general early returns and full release parity remain migration work.
 
@@ -124,6 +126,30 @@ Each callback has its own `?` propagation boundary. Capturing an already-produce
 Result-bearing value currently gives an explicit diagnostic; delayed ownership
 tracking is still required to lift that restriction. Returning a Result from a
 function is supported. Function equality is not defined.
+
+## Maps and record updates
+
+```fern
+fn main():
+    let original = %{ "name": "Fern", "stage": "prototype" }
+    let updated = Map.put(original, "stage", "development")
+    println(Option.unwrap_or(Map.get(updated, "name"), "unknown"))
+```
+
+`Map.new`, `get`, `put`, `delete`, `len`, `is_empty`, `contains`, `keys` and
+`values` retain semantic types. Empty maps require an annotation or later use
+that fixes both key and value types. Values may include records, closures and
+Results. Keys are Int, Bool or String; String keys compare by contents.
+
+Updating a key leaves its insertion position unchanged. Duplicate literal keys
+keep their last value, and all key/value expressions still execute in source
+order. Deletion followed by reinsertion appends the key. Operations preserve
+existing aliases. The initial implementation uses linear searches and copies on
+updates; it is intended as a correct baseline for later hashing optimization.
+
+Record updates use `%{ point | y: next_y(), x: next_x() }`. The base executes
+first, followed by fields in written order. Unmentioned fields retain their
+values. Unknown, duplicate or incorrectly typed fields produce diagnostics.
 
 ## Interactive and editor tools
 

@@ -144,6 +144,7 @@ pub(super) fn children_mut(expr: &mut ir::Expr) -> Vec<&mut ir::Expr> {
             .map(|c| &mut c.value)
             .chain(std::iter::once(body.as_mut()))
             .collect(),
+        Map(entries) => entries.iter_mut().flat_map(|(k, v)| [k, v]).collect(),
         Closure { captures, .. } => captures.iter_mut().collect(),
         Invoke { callee, args } => std::iter::once(callee.as_mut())
             .chain(args.iter_mut())

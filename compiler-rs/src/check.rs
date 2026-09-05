@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 mod closures;
 mod coverage;
 mod lift;
+mod maps;
 mod nominal;
 mod pipes;
 mod preflight;
@@ -130,7 +131,7 @@ fn reserved(name: &str) -> bool {
         })
         || matches!(
             name,
-            "String" | "List" | "Option" | "Result" | "Some" | "None" | "Ok" | "Err"
+            "String" | "List" | "Map" | "Option" | "Result" | "Some" | "None" | "Ok" | "Err"
         )
 }
 
@@ -201,6 +202,7 @@ fn validate_type(ty: &Type, span: Span) -> Checked<()> {
             }
             Type::Infer(_) => return Err(Diagnostic::new(span, "explicit types cannot contain inference variables; generic definitions are unsupported")),
             Type::List(inner) | Type::Option(inner) => pending.push((inner, depth + 1)),
+            Type::Map(key, value) => { maps::validate_key(key, span, true)?; pending.push((key, depth + 1)); pending.push((value, depth + 1)); }
             Type::Result(ok, err) => { pending.push((ok, depth + 1)); pending.push((err, depth + 1)); }
             Type::Tuple(args) | Type::Named(_, args) => pending.extend(args.iter().map(|a|(a, depth + 1))),
             Type::Native(_) | Type::Generic(_) | Type::Float | Type::Int | Type::Bool | Type::String | Type::Unit => {}
@@ -274,6 +276,10 @@ impl Inference {
                 depth + 1,
                 budget,
             )?)),
+            Type::Map(key, value) => Type::Map(
+                Box::new(self.resolve_inner(key, span, depth + 1, budget)?),
+                Box::new(self.resolve_inner(value, span, depth + 1, budget)?),
+            ),
             Type::Result(ok, err) => Type::Result(
                 Box::new(self.resolve_inner(ok, span, depth + 1, budget)?),
                 Box::new(self.resolve_inner(err, span, depth + 1, budget)?),
@@ -312,7 +318,7 @@ impl Inference {
                 }
                 Ok(())
             }
-            (Type::Result(a, b), Type::Result(c, d)) => {
+            (Type::Result(a, b), Type::Result(c, d)) | (Type::Map(a, b), Type::Map(c, d)) => {
                 self.unify(a, c, span, context)?;
                 self.unify(b, d, span, context)
             }
@@ -339,7 +345,7 @@ impl Inference {
                     ))
                 }
                 Type::List(inner) | Type::Option(inner) => pending.push(inner),
-                Type::Result(ok, err) => {
+                Type::Result(ok, err) | Type::Map(ok, err) => {
                     pending.push(ok);
                     pending.push(err);
                 }
@@ -382,7 +388,7 @@ impl Inference {
                     ))
                 }
                 Type::List(inner) | Type::Option(inner) => pending.push(inner),
-                Type::Result(ok, err) => {
+                Type::Result(ok, err) | Type::Map(ok, err) => {
                     pending.push(ok);
                     pending.push(err);
                 }
@@ -394,6 +400,7 @@ impl Inference {
                 _ => {}
             }
         }
+        maps::validate_concrete_keys(&ty, span)?;
         Ok(ty)
     }
 }
@@ -493,7 +500,26 @@ impl Checker<'_> {
         depth: usize,
     ) -> Checked<ir::Expr> {
         self.expression_budget(expr.span, depth)?;
-        let (kind, ty) = match &expr.kind {
+        let (kind, ty) = self.expression_kind(expr, expected, depth)?;
+        if let Some(expected) = expected {
+            self.inference
+                .unify(&ty, expected, expr.span, "expression type")?;
+        }
+        Ok(ir::Expr {
+            kind,
+            ty,
+            span: expr.span,
+        })
+    }
+
+    /// Resolve expression forms while preserving the enclosing expected type.
+    fn expression_kind(
+        &mut self,
+        expr: &ast::Expr,
+        expected: Option<&Type>,
+        depth: usize,
+    ) -> Checked<TypedKind> {
+        Ok(match &expr.kind {
             ast::ExprKind::Lambda { params, body } => {
                 self.lambda(params, body, expected, expr.span, depth + 1)?
             }
@@ -519,6 +545,10 @@ impl Checker<'_> {
             }
             ast::ExprKind::Name(name) => self.name(name, expr.span)?,
             ast::ExprKind::Tuple(values) => self.tuple(values, expected, expr.span, depth + 1)?,
+            ast::ExprKind::Map(entries) => self.map(entries, expected, expr.span, depth + 1)?,
+            ast::ExprKind::RecordUpdate { value, fields } => {
+                self.record_update(value, fields, expected, expr.span, depth + 1)?
+            }
             ast::ExprKind::List(values) => self.list(values, expected, expr.span, depth + 1)?,
             ast::ExprKind::Match { value, arms } => {
                 self.matching(value, arms, expected, expr.span, depth + 1)?
@@ -542,15 +572,6 @@ impl Checker<'_> {
                 depth + 1,
             )?,
             ast::ExprKind::Block(stmts) => self.block(stmts, expected, depth + 1)?,
-        };
-        if let Some(expected) = expected {
-            self.inference
-                .unify(&ty, expected, expr.span, "expression type")?;
-        }
-        Ok(ir::Expr {
-            kind,
-            ty,
-            span: expr.span,
         })
     }
 
@@ -1115,6 +1136,8 @@ impl Checker<'_> {
             OptionUnwrapOr => (vec![option, item.clone()], item),
             ResultIsOk | ResultIsErr => (vec![result], Type::Bool),
             ResultUnwrapOr => (vec![result, item.clone()], item),
+            MapNew | MapGet | MapPut | MapDelete | MapLen | MapIsEmpty | MapContains | MapKeys
+            | MapValues => self.map_signature(builtin),
             other => self.higher_order_signature(other),
         }
     }
@@ -1426,6 +1449,7 @@ impl Checker<'_> {
                 }
                 validate_builtin(*target, args, expr.span)?;
             }
+            ir::ExprKind::Map(entries) => self.finalize_map(entries)?,
             ir::ExprKind::Interpolate(values) => self.finalize_interpolation(values)?,
             ir::ExprKind::Tuple(values)
             | ir::ExprKind::List(values)
@@ -1581,9 +1605,19 @@ fn constructor(name: &str) -> Option<Constructor> {
 }
 
 /// Return the stable builtin identity for an unshadowed source name.
-fn builtin(name: &str) -> Option<ir::Builtin> {
+pub(crate) fn builtin(name: &str) -> Option<ir::Builtin> {
     use ir::Builtin::*;
     Some(match name {
+        "Map.new" => MapNew,
+        "Map.get" => MapGet,
+        "Map.put" => MapPut,
+        "Map.delete" => MapDelete,
+        "Map.len" => MapLen,
+        "Map.is_empty" => MapIsEmpty,
+        "Map.contains" => MapContains,
+        "Map.keys" => MapKeys,
+        "Map.values" => MapValues,
+
         "print" => Print,
         "println" => Println,
         "String.concat" => StringConcat,

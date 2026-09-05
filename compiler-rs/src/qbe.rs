@@ -9,6 +9,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 mod closures;
 #[path = "qbe/higher_order.rs"]
 mod higher_order;
+#[path = "qbe/maps.rs"]
+mod maps;
 #[path = "qbe/nominal.rs"]
 mod nominal;
 #[path = "qbe/runtime_calls.rs"]
@@ -63,12 +65,16 @@ pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
         data: String::new(),
         strings: 0,
         nodes: 0,
+        maps_used: false,
     };
     for function in &program.functions {
         emitter.function(function)?;
     }
     emitter.main_wrapper(main);
     emitter.float_print_helpers();
+    if emitter.maps_used {
+        emitter.output.push_str(include_str!("qbe/maps.ssa"));
+    }
     emitter.data.push_str(&emitter.output);
     Ok(emitter.data)
 }
@@ -83,6 +89,7 @@ fn width(ty: Type) -> char {
     match ty {
         Type::Int
         | Type::String
+        | Type::Map(_, _)
         | Type::List(_)
         | Type::Option(_)
         | Type::Result(_, _)
@@ -116,6 +123,7 @@ struct Emitter<'a> {
     data: String,
     strings: usize,
     nodes: usize,
+    maps_used: bool,
 }
 
 struct Locals {
@@ -227,11 +235,7 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Result<String, Diagnostic> {
-        nominal::resolved(&expr.ty, &self.layouts, expr.span, 0)?;
-        self.nodes += 1;
-        if depth > MAX_DEPTH || self.nodes > MAX_NODES {
-            return Err(invalid(expr.span, "lowering complexity limit exceeded"));
-        }
+        self.validate_expr(expr, depth)?;
         let (actual, value) = match &expr.kind {
             ExprKind::Lambda { .. } | ExprKind::FunctionValue { .. } => {
                 return Err(invalid(expr.span, "unlifted callable expression"));
@@ -252,6 +256,9 @@ impl Emitter<'_> {
             ExprKind::Interpolate(parts) => self.interpolate(parts, locals, depth + 1)?,
             ExprKind::Unit => (Type::Unit, "0".into()),
             ExprKind::Tuple(items) => self.tuple(items, &expr.ty, expr.span, locals, depth + 1)?,
+            ExprKind::Map(entries) => {
+                self.map_literal(entries, &expr.ty, expr.span, locals, depth + 1)?
+            }
             ExprKind::List(items) => self.list(items, &expr.ty, expr.span, locals, depth + 1)?,
             ExprKind::Construct { constructor, value } => self.construct(
                 *constructor,
@@ -272,7 +279,7 @@ impl Emitter<'_> {
                 self.binary(*op, left, right, locals, depth + 1)?
             }
             ExprKind::Call { target, args } => {
-                self.call(*target, args, expr.span, locals, depth + 1)?
+                self.call(*target, args, &expr.ty, expr.span, locals, depth + 1)?
             }
             ExprKind::If {
                 condition,
@@ -289,6 +296,16 @@ impl Emitter<'_> {
         };
         expect_type(actual, expr.ty.clone(), expr.span)?;
         Ok(value)
+    }
+
+    /// Validate a node's concrete type and bound recursive lowering before emitting it.
+    fn validate_expr(&mut self, expr: &Expr, depth: usize) -> Result<(), Diagnostic> {
+        nominal::resolved(&expr.ty, &self.layouts, expr.span, 0)?;
+        self.nodes += 1;
+        if depth > MAX_DEPTH || self.nodes > MAX_NODES {
+            return Err(invalid(expr.span, "lowering complexity limit exceeded"));
+        }
+        Ok(())
     }
 
     /// Resolve a lexical identity without reconstructing source names or types.
@@ -435,6 +452,7 @@ impl Emitter<'_> {
         &mut self,
         target: CallTarget,
         args: &[Expr],
+        result: &Type,
         span: Span,
         locals: &mut Locals,
         depth: usize,
@@ -443,6 +461,9 @@ impl Emitter<'_> {
             return self.runtime_call(id, args, span, locals, depth);
         }
         if let CallTarget::Builtin(builtin) = target {
+            if maps::is_map(builtin) {
+                return self.map_call(builtin, args, result, span, locals, depth);
+            }
             if higher_order::is_higher_order(builtin) {
                 return self.higher_order(builtin, args, span, locals, depth);
             }
@@ -785,7 +806,7 @@ fn concrete(ty: &Type, span: Span, depth: usize) -> Result<(), Diagnostic> {
             Ok(())
         }
         Type::List(item) | Type::Option(item) => concrete(item, span, depth + 1),
-        Type::Result(ok, err) => {
+        Type::Result(ok, err) | Type::Map(ok, err) => {
             concrete(ok, span, depth + 1)?;
             concrete(err, span, depth + 1)
         }

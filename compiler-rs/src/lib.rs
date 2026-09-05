@@ -47,6 +47,7 @@ pub enum Type {
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
     List(Box<Type>),
+    Map(Box<Type>, Box<Type>),
     Option(Box<Type>),
     Result(Box<Type>, Box<Type>),
     Infer(u32),

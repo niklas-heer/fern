@@ -1,0 +1,19 @@
+fn main():
+    let text = %{"🌿 key": 1, "quote\"key": 2, "": 3}
+    let same = String.concat("🌿 ", "key")
+    println(Option.unwrap_or(Map.get(text, same), 0))
+    let changed = Map.put(text, same, 4)
+    println(Map.len(changed))
+    println(Option.unwrap_or(Map.get(changed, "🌿 key"), 0))
+    println(Option.unwrap_or(Map.get(text, same), 0))
+    println(Option.unwrap_or(Map.get(changed, "quote\"key"), 0))
+    println(Option.unwrap_or(Map.get(changed, ""), 0))
+    let integers = %{-9223372036854775808: "min", 9223372036854775807: "max", 4294967296: "wide", 0: "zero"}
+    println(Option.unwrap_or(Map.get(integers, -9223372036854775808), "missing"))
+    println(Option.unwrap_or(Map.get(integers, 9223372036854775807), "missing"))
+    println(Option.unwrap_or(Map.get(integers, 4294967296), "missing"))
+    println(Option.unwrap_or(Map.get(integers, 0), "missing"))
+    let flags = %{true: 4294967296, false: -4294967296}
+    println(Option.unwrap_or(Map.get(flags, true), 0))
+    println(Option.unwrap_or(Map.get(flags, false), 0))
+    println(List.head(Map.keys(flags)))

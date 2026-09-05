@@ -30,6 +30,7 @@ enum Kind {
     Dot,
     Arrow,
     Pipe,
+    Bar,
     Assign,
     Plus,
     Minus,
@@ -634,6 +635,7 @@ fn punctuation(rest: &str, start: usize) -> ParseResult<(Kind, usize)> {
         '*' => Kind::Star,
         '/' => Kind::Slash,
         '%' => Kind::Percent,
+        '|' => Kind::Bar,
         '?' => Kind::Question,
         '<' => Kind::Lt,
         '>' => Kind::Gt,
@@ -1043,7 +1045,7 @@ impl Parser {
         }
         let arity = match name.as_str() {
             "List" | "Option" => Some(1),
-            "Result" => Some(2),
+            "Result" | "Map" => Some(2),
             "Int" | "Float" | "Bool" | "String" | "Unit" => Some(0),
             _ => None,
         };
@@ -1061,9 +1063,14 @@ impl Parser {
             "String" => Type::String,
             "List" => Type::List(Box::new(arguments.remove(0))),
             "Option" => Type::Option(Box::new(arguments.remove(0))),
-            "Result" => {
-                let error = arguments.remove(1);
-                Type::Result(Box::new(arguments.remove(0)), Box::new(error))
+            "Result" | "Map" => {
+                let second = Box::new(arguments.remove(1));
+                let first = Box::new(arguments.remove(0));
+                if name == "Map" {
+                    Type::Map(first, second)
+                } else {
+                    Type::Result(first, second)
+                }
             }
             _ if arguments.is_empty()
                 && !name.contains('.')
@@ -1327,6 +1334,7 @@ impl Parser {
             }
             Kind::Name(name) if !reserved(&name) => self.named(name, token.span),
             Kind::LeftBracket => self.list(token.span),
+            Kind::Percent => self.map_or_update(token.span),
             Kind::Left => self.parenthesized(token.span),
             _ => Err(Diagnostic::new(
                 token.span,
@@ -1490,6 +1498,87 @@ impl Parser {
             }
         }
         expression(ExprKind::Tuple(fields), span, depth)
+    }
+
+    /// Distinguish maps from record updates after their first complete expression.
+    fn map_or_update(&mut self, mut span: Span) -> ParseResult<Parsed> {
+        self.expect(
+            Kind::LeftBrace,
+            "expected '{' after '%' in map or record update",
+        )?;
+        if self.current().kind == Kind::RightBrace {
+            span.end = self.take().span.end;
+            return expression(ExprKind::Map(Vec::new()), span, 1);
+        }
+        let first = self.expr(0)?;
+        if self.eat(&Kind::Bar) {
+            return self.record_update(first, span);
+        }
+        let mut depth = first.depth + 1;
+        let mut pairs = Vec::new();
+        let mut key = first;
+        for _ in 0..self.tokens.len() {
+            self.expect(
+                Kind::Colon,
+                "expected ':' after map key or '|' after record base",
+            )?;
+            let value = self.expr(0)?;
+            depth = depth.max(key.depth.max(value.depth) + 1);
+            pairs.push((key.node, value.node));
+            if !self.eat(&Kind::Comma) || self.current().kind == Kind::RightBrace {
+                span.end = self
+                    .expect(Kind::RightBrace, "expected ',' or '}' after map entry")?
+                    .span
+                    .end;
+                return expression(ExprKind::Map(pairs), span, depth);
+            }
+            key = self.expr(0)?;
+        }
+        Err(Diagnostic::new(span, "unterminated map literal"))
+    }
+
+    /// Preserve written field order and reject ambiguous repeated replacements.
+    fn record_update(&mut self, value: Parsed, mut span: Span) -> ParseResult<Parsed> {
+        let mut fields = Vec::new();
+        let mut names = std::collections::BTreeSet::new();
+        let mut depth = value.depth + 1;
+        for _ in 0..self.tokens.len() {
+            let (name, field_span) = self
+                .name()
+                .map_err(|_| self.error("expected field name in record update"))?;
+            if !names.insert(name.clone()) {
+                return Err(Diagnostic::new(
+                    field_span,
+                    format!("duplicate record update field '{name}'"),
+                ));
+            }
+            self.expect(Kind::Colon, "expected ':' after record field name")?;
+            let field = self.expr(0)?;
+            depth = depth.max(field.depth + 1);
+            fields.push(crate::ast::RecordField {
+                name,
+                value: field.node,
+                span: field_span,
+            });
+            if !self.eat(&Kind::Comma) || self.current().kind == Kind::RightBrace {
+                span.end = self
+                    .expect(
+                        Kind::RightBrace,
+                        "expected ',' or '}' after record update field",
+                    )?
+                    .span
+                    .end;
+                return expression(
+                    ExprKind::RecordUpdate {
+                        value: Box::new(value.node),
+                        fields,
+                    },
+                    span,
+                    depth,
+                );
+            }
+        }
+        Err(Diagnostic::new(span, "unterminated record update"))
     }
 
     /// Parse immutable list literals with optional trailing commas.

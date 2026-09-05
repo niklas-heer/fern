@@ -20,7 +20,7 @@ impl Machine {
                 OptionMap | ResultMap | ResultAndThen | ResultUnwrapOrElse,
                 [value @ Value::Sum(tag, fields), callback],
             ) => self.sum_callback(builtin, value, *tag, fields, callback),
-            _ => Err(fault("unsupported interactive builtin arguments")),
+            _ => self.map_builtin(builtin, args),
         }
     }
     /// Preserve input order and terminate predicates at their first deciding element.

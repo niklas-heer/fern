@@ -127,7 +127,7 @@ impl Registry {
                 }
                 Type::Tuple(args) => pending.extend(args),
                 Type::List(t) | Type::Option(t) => pending.push(t),
-                Type::Result(a, b) => {
+                Type::Result(a, b) | Type::Map(a, b) => {
                     pending.push(a);
                     pending.push(b);
                 }
@@ -231,6 +231,10 @@ impl Registry {
             }
             match ty {
                 Type::Result(..) => return Ok(true),
+                Type::Map(key, value) => {
+                    pending.push(*key);
+                    pending.push(*value);
+                }
                 Type::Tuple(fields) => pending.extend(fields),
                 Type::List(a) | Type::Option(a) => pending.push(*a),
                 Type::Named(..) => pending.extend(
@@ -282,7 +286,7 @@ impl Registry {
                 }
                 Type::Tuple(fields) => pending.extend(fields.iter().cloned()),
                 Type::List(a) | Type::Option(a) => pending.push((**a).clone()),
-                Type::Result(a, b) => {
+                Type::Result(a, b) | Type::Map(a, b) => {
                     pending.push((**a).clone());
                     pending.push((**b).clone());
                 }
@@ -301,6 +305,7 @@ pub(super) fn children(expr: &ir::Expr) -> Vec<&ir::Expr> {
             .map(|c| &c.value)
             .chain(std::iter::once(body.as_ref()))
             .collect(),
+        ir::ExprKind::Map(entries) => entries.iter().flat_map(|(k, v)| [k, v]).collect(),
         ir::ExprKind::Closure { captures, .. } => captures.iter().collect(),
         ir::ExprKind::Invoke { callee, args } => std::iter::once(callee.as_ref())
             .chain(args.iter())
@@ -359,7 +364,7 @@ pub(super) fn generics(types: impl IntoIterator<Item = Type>) -> Vec<String> {
             }
             Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
             Type::List(a) | Type::Option(a) => pending.push(*a),
-            Type::Result(a, b) => {
+            Type::Result(a, b) | Type::Map(a, b) => {
                 pending.push(*a);
                 pending.push(*b);
             }
@@ -426,6 +431,10 @@ fn substitute_inner(
             budget,
             expand,
         )?)),
+        Type::Map(a, b) => Type::Map(
+            Box::new(substitute_inner(a, values, depth + 1, budget, expand)?),
+            Box::new(substitute_inner(b, values, depth + 1, budget, expand)?),
+        ),
         Type::Result(a, b) => Type::Result(
             Box::new(substitute_inner(a, values, depth + 1, budget, expand)?),
             Box::new(substitute_inner(b, values, depth + 1, budget, expand)?),
@@ -477,7 +486,7 @@ pub(super) fn capture(
         (Type::List(a), Type::List(b)) | (Type::Option(a), Type::Option(b)) => {
             capture(a, b, values, depth + 1)?
         }
-        (Type::Result(a, b), Type::Result(c, d)) => {
+        (Type::Result(a, b), Type::Result(c, d)) | (Type::Map(a, b), Type::Map(c, d)) => {
             capture(a, c, values, depth + 1)?;
             capture(b, d, values, depth + 1)?;
         }
@@ -509,7 +518,7 @@ fn validate_layout_type(ty: &Type, span: Span) -> Checked<()> {
                 pending.extend(args.iter().map(|t| (t, depth + 1)))
             }
             Type::List(a) | Type::Option(a) => pending.push((a, depth + 1)),
-            Type::Result(a, b) => {
+            Type::Result(a, b) | Type::Map(a, b) => {
                 pending.push((a, depth + 1));
                 pending.push((b, depth + 1));
             }

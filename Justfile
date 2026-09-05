@@ -447,6 +447,7 @@ rust-check: rust-build
     python3 scripts/test_rust_collections.py
     python3 scripts/test_rust_types.py
     python3 scripts/test_rust_closures.py
+    python3 scripts/test_rust_maps.py
     python3 scripts/test_rust_stdlib.py
     python3 scripts/test_runtime_directory.py
     python3 scripts/test_rust_fuzz.py

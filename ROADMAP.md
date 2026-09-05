@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (287 Rust tests, 4 measurement-harness tests, 87 core native programs, 40 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (314 Rust tests, 4 measurement-harness tests, 93 core native programs, 49 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -75,7 +75,8 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Verify the complete expanded checkpoint and record test counts (Rust/C/docs/fuzz/native style parity).
 - [x] Functions/closures and ten higher-order collection/error operations (287 Rust tests, six new native programs, six negative cases; delayed Result-bearing captures remain restricted).
 - [x] Retain originating compiled code for interactive closures, preserve capture/effect order and bound unique retained programs (interactive closure and storage regressions).
-- [ ] Maps, remaining control flow, multiline strings and complete native-language audit.
+- [x] Immutable maps and record updates with semantic keys, persistent aliases and source-order evaluation (six native programs, nine invalid programs and interactive regressions).
+- [ ] Remaining control flow, multiline strings and complete native-language audit.
 
 ### Rust Migration: Collections and Error Values
 
@@ -173,6 +174,8 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [ ] Execute actor functions with suspension, typed messages/receive/timeouts, and descendant supervision lifecycle.
 - [ ] Complete the JSON value/parser API beyond the compatible string-copy baseline.
 - [ ] Implement HTTP serving and the broader SQL query/resource APIs described in the design.
+- [ ] Complete function clauses/pattern parameters, labeled calls, aliases/newtypes/unions, traits/constraints and inferred generic-body diagnostics through native execution.
+- [ ] Complete Sets and the specified standard modules, including data formats, testing/utilities, IO/system, cryptography and compression.
 - [ ] Audit all specified syntax and stdlib calls for complete typecheck-to-native behavior; reject unsupported execution paths.
 - [ ] Complete compiler bootstrapping workflow parity, ownership analysis, and the planned WASM backend.
 
