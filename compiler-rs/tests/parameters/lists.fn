@@ -1,0 +1,6 @@
+fn total([]) -> 0
+fn total([0, ..tail]) -> total(tail)
+fn total([head, ..tail]) -> head + total(tail)
+fn main():
+    println(total([1, 0, 2, 3]))
+    println(total([]))

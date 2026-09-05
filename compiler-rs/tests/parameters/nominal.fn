@@ -1,0 +1,13 @@
+type Box(a):
+    value: a
+type Shape:
+    Circle(Float)
+    Point
+fn unbox(Box(0)) -> 0
+fn unbox(Box(value)) -> value
+fn area(Circle(radius)) -> radius * radius
+fn area(Point) -> 0.0
+fn main():
+    println(unbox(Box(42)))
+    println(area(Circle(2.5)))
+    println(area(Point))

@@ -9,6 +9,7 @@ mod iteration;
 mod lift;
 mod maps;
 mod nominal;
+mod parameters;
 mod pipes;
 mod preflight;
 mod returns;
@@ -59,11 +60,12 @@ struct Checker<'a> {
 /// No preconditions: caller-created syntax and recursive types are validated too.
 pub fn check(program: &ast::Program) -> Checked<ir::Program> {
     preflight::check(program)?;
-    let normalized = clauses::normalize(program)?;
+    let registry = nominal::Registry::new(program)?;
+    let parameters = parameters::resolve(program, &registry)?;
+    let normalized = clauses::normalize(&parameters)?;
     if !normalized.dispatch.is_empty() {
         preflight::check(&normalized.program)?;
     }
-    let registry = nominal::Registry::new(&normalized.program)?;
     let (program, signatures) =
         returns::resolve(&normalized.program, &registry, &normalized.dispatch)?;
     clauses::validate_templates(&program, &registry, &signatures)?;

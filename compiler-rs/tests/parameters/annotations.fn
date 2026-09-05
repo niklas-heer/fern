@@ -1,0 +1,7 @@
+fn choose(None, fallback) -> fallback
+fn choose(Some(value): Option(a), fallback: a) -> value
+fn main():
+    println(choose(None, "fallback"))
+    println(choose(Some(42), 0))
+    let callback: (Option(Float), Float) -> Float = choose
+    println(callback(Some(2.5), 0.0))

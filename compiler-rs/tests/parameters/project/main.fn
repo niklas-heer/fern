@@ -1,0 +1,2 @@
+import library as values
+fn main(): println(values.result(42))

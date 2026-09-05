@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (541 Rust tests, 4 measurement-harness tests, 147 core native programs, 21 entry/access programs, 9 controlled-fault cases, 111 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (554 Rust tests, 4 measurement-harness tests, 154 core native programs, 21 entry/access programs, 9 controlled-fault cases, 120 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -88,6 +88,7 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Native direct self-tail-call elimination with full-width parameter updates, entry-only scratch storage and preserved cleanup exclusions (million-step native recursion, effects and fault cases).
 - [x] Atomic REPL paste entries for complete function clause groups; unfinished input and rejected definitions preserve prior state.
 - [x] Typed adjacent function clauses, guards and arrow bodies through shared dispatch, generic inference, modules/formatting and 255-parameter coverage (seven native programs and 11 invalid inputs).
+- [x] Private parameter inference from all clause patterns and supplied annotations, including delayed tuple-rest arity and nominal payload evidence; public boundaries and ambiguity diagnostics retained (seven native programs, nine invalid inputs and interactive regressions).
 - [ ] Remaining function/type syntax and complete native-language audit.
 - [ ] Track semantic Result handling beyond local references (for example, inspecting a List(Result) length currently counts as handling its elements).
 

@@ -1,0 +1,13 @@
+fn optional(Some(0)) -> 0
+fn optional(Some(value)) -> value
+fn optional(None) -> -1
+fn decode(Ok(0)) -> 0
+fn decode(Ok(value)) -> value
+fn decode(Err("missing")) -> -1
+fn decode(Err(message)) -> String.len(message)
+fn main():
+    println(optional(Some(4)))
+    println(optional(None))
+    println(decode(Ok(9)))
+    println(decode(Err("bad")))
+    println(decode(Err("missing")))

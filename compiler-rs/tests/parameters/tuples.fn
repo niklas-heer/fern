@@ -1,0 +1,11 @@
+fn select((0, true)) -> 0
+fn select((value, ..rest)) -> if rest.0: value else: -value
+fn reversed((value, ..rest)) if value != 0 -> if rest.0: value else: -value
+fn reversed((0, true)) -> 0
+fn reversed((0, false)) -> -1
+fn reversed(_) -> -2
+fn main():
+    println(select((8, true)))
+    println(select((8, false)))
+    println(reversed((4, false)))
+    println(reversed((0, false)))

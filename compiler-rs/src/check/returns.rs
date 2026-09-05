@@ -221,7 +221,7 @@ pub(super) fn shape_ready(inference: &Inference, ty: &Type, span: Span) -> Check
 }
 
 /// Distinguish unresolved payload variables from valid declared generic names.
-fn has_infer(ty: &Type) -> bool {
+pub(super) fn has_infer(ty: &Type) -> bool {
     let mut pending = vec![ty];
     while let Some(ty) = pending.pop() {
         match ty {

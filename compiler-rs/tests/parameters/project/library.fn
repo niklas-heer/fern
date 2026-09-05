@@ -1,0 +1,5 @@
+pub type Box(a):
+    value: a
+fn unwrap(Box(0)) -> 0
+fn unwrap(Box(value)) -> value
+pub fn result(value: Int) -> Int: unwrap(Box(value))

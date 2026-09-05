@@ -84,7 +84,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
   (`Tui.Panel`, `Tui.Tree`, etc.), keeping ordinary user-defined names available.
 
 Unsupported syntax produces diagnostics. Gaps include actor execution, named
-arguments and inferred named-function parameter types.
+arguments and full private signature generalization.
 Full release parity remains migration work.
 
 `fmt` formats the supported syntax in place, preserves comments, and verifies that
@@ -156,6 +156,26 @@ An unhandled entry error currently prints `fern: main returned Err` to stderr;
 rendering arbitrary error payloads awaits a general display protocol. A runtime
 fault in the body or its cleanup takes precedence over the entry Result.
 
+## Pattern-based parameter inference
+
+Private clauses can infer a shared input type from literals and constructors:
+
+```fern
+fn factorial(0) -> 1
+fn factorial(n) -> n * factorial(n - 1)
+```
+
+This infers `Int -> Int` before considering callers. Nested list, tuple, Option,
+Result and nominal patterns contribute constraints across the complete group.
+An annotation in a later clause can anchor an earlier omission, including a
+shared declared generic type. Tuple-rest patterns wait until another pattern or
+annotation determines the complete tuple arity.
+
+Unconstrained `fn id(x) -> x` and generic `length([])` / `length([_, ..tail])`
+still require annotations in this stage. Full body-based signature inference and
+generalization are separate work. Public function parameter annotations remain
+mandatory even when a literal would make the type apparent.
+
 ## Function clauses and native recursion
 
 Adjacent clauses support typed parameter patterns, guards and arrow bodies:
@@ -168,8 +188,9 @@ fn total([head, ..tail]: List(Int), acc: Int) -> total(tail, acc + head)
 Clauses share parameter types and visibility, and any supplied return annotations
 must agree. Public groups need a return annotation. Guards run in source order;
 missing cases and unreachable clauses are errors. Patterns use the same rules as
-`match`, including Result discard checks. Parameter annotations are still required
-in this checkpoint. Put whole-function `@doc` text before the first clause.
+`match`, including Result discard checks. Private parameter annotations can be omitted when patterns or other clauses
+determine their complete types. Public parameters remain annotated. Put
+whole-function `@doc` text before the first clause.
 
 Native direct self calls in return position reuse the current stack frame when the
 function has no owned `defer`. Arguments finish left-to-right before parameters

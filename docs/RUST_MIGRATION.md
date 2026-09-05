@@ -361,3 +361,21 @@ This checkpoint passes 541 Rust tests, including the backend's independent
 255-parameter coverage checks, and retains 550 passing C tests. New native
 coverage includes seven clause programs, seven successful recursion programs
 and one controlled-fault recursion program, plus 11 invalid inputs.
+
+## Pattern-anchored private parameters — 2026-09-05
+
+Omitted private parameter annotations now collect evidence across the entire
+clause group before normalization. Literals, nested sequence/sum patterns and
+nominal constructor schemas determine types independently of callers. Tuple-rest
+constraints wait for known arity; later annotations can supply declared generics.
+Public omissions, conflicting evidence and still-ambiguous types report diagnostics.
+The pass uses a separate aggregate 400,000-operation inference budget across groups,
+in addition to the existing source/type/depth and return-inference bounds.
+
+Seven native programs cover recursive dispatch, inferred container payloads,
+constructor schemas, tuple-rest ordering, independent generic instantiations and
+an imported private helper. Nine invalid programs and two interactive regressions
+check rejection and session recovery. Whole-signature generalization remains open.
+
+The pattern-inference checkpoint passes 554 Rust tests, 550 C tests and the
+complete native, fuzz and documentation gates on macOS arm64.
