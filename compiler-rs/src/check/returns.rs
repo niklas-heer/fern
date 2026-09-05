@@ -12,7 +12,7 @@ pub(super) struct DeferredCall {
     span: Span,
 }
 
-type Prepared<'a> = (Cow<'a, ast::Program>, HashMap<String, Signature>);
+type Prepared<'a> = (Cow<'a, ast::Program>, HashMap<String, Signature>, usize);
 
 /// Reserve one shared result variable per private definition lacking an annotation.
 pub(super) fn initial_result(function: &ast::Function, inference: &mut Inference) -> Checked<Type> {
@@ -52,7 +52,11 @@ pub(super) fn resolve<'a>(
         .map(|(i, _)| i)
         .collect();
     if missing.is_empty() {
-        return Ok((Cow::Borrowed(program), signatures));
+        return Ok((
+            Cow::Borrowed(program),
+            signatures,
+            inference.probe_work.get(),
+        ));
     }
     solve(program, registry, &mut signatures, &mut inference, &missing)?;
     let mut source = program.clone();
@@ -75,7 +79,7 @@ pub(super) fn resolve<'a>(
             .result = result.clone();
         function.return_type = Some(result);
     }
-    Ok((Cow::Owned(source), signatures))
+    Ok((Cow::Owned(source), signatures, inference.probe_work.get()))
 }
 
 /// Retry only shape-dependent inference, stopping after each definition can succeed once.

@@ -13,28 +13,6 @@ pub(super) fn validate_key(key: &Type, span: Span, generic: bool) -> Checked<()>
     }
 }
 
-/// Validate all concrete map keys, including maps inside callable signatures and layouts.
-pub(super) fn validate_concrete_keys(ty: &Type, span: Span) -> Checked<()> {
-    let mut pending = vec![ty];
-    while let Some(ty) = pending.pop() {
-        match ty {
-            Type::Map(key, value) => {
-                validate_key(key, span, false)?;
-                pending.extend([key.as_ref(), value.as_ref()]);
-            }
-            Type::Result(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
-            Type::List(a) | Type::Option(a) => pending.push(a),
-            Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
-            Type::Function(args, result) => {
-                pending.extend(args);
-                pending.push(result);
-            }
-            _ => {}
-        }
-    }
-    Ok(())
-}
-
 impl Checker<'_> {
     /// Infer homogeneous entries with outer context applied before checking callback values.
     pub(super) fn map(

@@ -201,6 +201,43 @@ impl Registry {
         })
     }
 
+    /// Instantiate requirement fields incrementally, charging input and expanded substitutions.
+    pub(super) fn requirement_fields(
+        &self,
+        ty: &Type,
+        inference: &super::Inference,
+        span: Span,
+    ) -> Checked<Vec<Type>> {
+        validate_layout_type(ty, span)?;
+        let Type::Named(name, args) = ty else {
+            return Err(Diagnostic::new(
+                span,
+                "nominal requirements require a named type",
+            ));
+        };
+        let decl = self
+            .declarations
+            .get(name)
+            .ok_or_else(|| Diagnostic::new(span, "unknown nominal requirement type"))?;
+        if args.len() != decl.parameters.len() {
+            return Err(Diagnostic::new(span, "wrong nominal type argument count"));
+        }
+        let values = decl
+            .parameters
+            .iter()
+            .cloned()
+            .zip(args.iter().cloned())
+            .collect();
+        let mut fields = Vec::new();
+        for field in decl.variants.iter().flat_map(|variant| &variant.fields) {
+            super::returns::charge_output(inference, &field.ty, span)?;
+            let ty = substitute(&field.ty, &values)?;
+            super::returns::charge_output(inference, &ty, span)?;
+            fields.push(ty);
+        }
+        Ok(fields)
+    }
+
     /// Resolve constructor payload types for builtin and nominal sums.
     pub(super) fn variants(&self, ty: &Type, span: Span) -> Checked<Vec<Vec<Type>>> {
         match ty {

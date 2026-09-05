@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (554 Rust tests, 4 measurement-harness tests, 154 core native programs, 21 entry/access programs, 9 controlled-fault cases, 120 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (579 Rust tests, 4 measurement-harness tests, 158 core native programs, 21 entry/access programs, 9 controlled-fault cases, 136 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -89,6 +89,7 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Atomic REPL paste entries for complete function clause groups; unfinished input and rejected definitions preserve prior state.
 - [x] Typed adjacent function clauses, guards and arrow bodies through shared dispatch, generic inference, modules/formatting and 255-parameter coverage (seven native programs and 11 invalid inputs).
 - [x] Private parameter inference from all clause patterns and supplied annotations, including delayed tuple-rest arity and nominal payload evidence; public boundaries and ambiguity diagnostics retained (seven native programs, nine invalid inputs and interactive regressions).
+- [x] Validate every generic body before specialization using rigid type equality and intrinsic capability requirements; propagate requirements through callbacks/recursive helpers and nominal Map fields (four native programs, 16 invalid programs and interactive regressions).
 - [ ] Remaining function/type syntax and complete native-language audit.
 - [ ] Track semantic Result handling beyond local references (for example, inspecting a List(Result) length currently counts as handling its elements).
 
@@ -188,7 +189,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [ ] Execute actor functions with suspension, typed messages/receive/timeouts, and descendant supervision lifecycle.
 - [ ] Complete the JSON value/parser API beyond the compatible string-copy baseline.
 - [ ] Implement HTTP serving and the broader SQL query/resource APIs described in the design.
-- [ ] Complete function clauses/pattern parameters, labeled calls, aliases/newtypes/unions, traits/constraints and inferred generic-body diagnostics through native execution.
+- [ ] Complete function clauses/pattern parameters, labeled calls, aliases/newtypes/unions, traits/constraints and full private signature inference through native execution.
 - [ ] Complete Sets and the specified standard modules, including data formats, testing/utilities, IO/system, cryptography and compression.
 - [ ] Audit all specified syntax and stdlib calls for complete typecheck-to-native behavior; reject unsupported execution paths.
 - [ ] Complete compiler bootstrapping workflow parity, ownership analysis, and the planned WASM backend.

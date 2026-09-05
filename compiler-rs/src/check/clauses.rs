@@ -236,32 +236,3 @@ pub(super) fn validate_dispatch(body: &ir::Expr, registry: &nominal::Registry) -
     }
     reject_unused_results(body, &[], registry)
 }
-
-/// Check generic dispatch coverage even when no concrete instance is requested.
-pub(super) fn validate_templates(
-    program: &ast::Program,
-    registry: &nominal::Registry,
-    signatures: &HashMap<String, Signature>,
-) -> Checked<()> {
-    let mut inference = Inference::default();
-    for function in &program.functions {
-        let signature = &signatures[&function.name];
-        if !signature.dispatch || signature.generics.is_empty() {
-            continue;
-        }
-        let mut body = returns::probe(function, registry, signatures, &mut inference)?;
-        inference.probing = true;
-        let mut pending = vec![&mut body];
-        while let Some(expr) = pending.pop() {
-            expr.ty = inference.resolve(&expr.ty, expr.span)?;
-            pending.extend(lift::children_mut(expr));
-        }
-        inference.probing = false;
-        validate_dispatch(&body, registry)?;
-        let ir::ExprKind::Match { value, arms } = &body.kind else {
-            unreachable!("validated dispatch")
-        };
-        coverage::validate(&value.ty, arms, registry, body.span)?;
-    }
-    Ok(())
-}

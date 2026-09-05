@@ -90,8 +90,9 @@ Full release parity remains migration work.
 `fmt` formats the supported syntax in place, preserves comments, and verifies that
 the complete syntax tree remains equivalent before replacing the file atomically.
 Comments inside multiline arguments may move adjacent to their statement. Invalid
-source remains untouched. Generic bodies are checked at concrete instantiation;
-unused generic bodies currently receive structural/signature validation only.
+source remains untouched. Every generic body is checked before specialization,
+including unused definitions; concrete instantiation supplies a second validation
+boundary.
 
 An expression such as `let empty = []` or `let missing = None` needs enough later
 usage or an annotation to determine its payload type. For example,
@@ -155,6 +156,24 @@ retain their declared type parameters and specialize independently per call.
 An unhandled entry error currently prints `fern: main returned Err` to stderr;
 rendering arbitrary error payloads awaits a general display protocol. A runtime
 fault in the body or its cleanup takes precedence over the entry Result.
+
+## Generic definition checking
+
+Declared generic variables are rigid: `fn identity(x: a) -> a: 1` is an error even
+if the function is never called. The checker also validates nested matches,
+callbacks, return types and known Result obligations in unused definitions.
+
+Generic operations retain their actual requirements. For example,
+`fn square(x: a) -> a: x * x` accepts Int and Float instantiations, while
+`fn describe(x: a) -> String: "value={x}"` supports scalar interpolation.
+These requirements propagate through named calls, function values, closures and
+recursive helpers. Map key restrictions also apply inside nominal field types.
+No arbitrary Int instance is used to validate a generic body.
+
+Intrinsic requirements are internal in this stage; public `where`/trait syntax
+remains future work. Conditional restrictions on generic Result-bearing values
+are still verified when concretely instantiated, and the broader reference-based
+Result handling limitation described below remains.
 
 ## Pattern-based parameter inference
 

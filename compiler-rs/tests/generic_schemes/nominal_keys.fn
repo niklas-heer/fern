@@ -1,0 +1,15 @@
+type Bag(a):
+    values: Map(a, Int)
+type Node(a):
+    End
+    Next(Bag(a), Node(a))
+fn retain(value: Bag(a)) -> Bag(a): value
+fn keep(value: Node(a)) -> Node(a): value
+fn count(value: Node(a)) -> Int:
+    match value:
+        End -> 0
+        Next(bag, tail) -> Map.len(bag.values) + count(tail)
+fn main():
+    let bag = retain(Bag(%{"key": 42}))
+    println(Option.unwrap_or(Map.get(bag.values, "key"), 0))
+    println(count(keep(Next(bag, End))))

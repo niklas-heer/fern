@@ -308,7 +308,7 @@ impl Checker<'_> {
         ty: &Type,
         span: Span,
     ) -> Checked<()> {
-        let Type::Function(params, _) = ty else {
+        let Type::Function(params, result) = ty else {
             return Err(Diagnostic::new(span, "invalid function value type"));
         };
         let args = params
@@ -320,7 +320,8 @@ impl Checker<'_> {
                 span,
             })
             .collect::<Vec<_>>();
-        validate_builtin(target, &args, span)
+        self.named_requirements(target, params, result, span)?;
+        validate_builtin(target, &args, span, &self.inference)
     }
 
     /// Instantiate independent payload, accumulator, and error variables for each combinator.

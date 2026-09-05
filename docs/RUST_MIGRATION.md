@@ -51,9 +51,8 @@ matches the helper's Result; Rust main still returns Int or Unit.
 - Six native applications cover recursive trees, full-width record payloads,
   contextual generic inference, guard evaluation order, and a multi-file project.
 
-Generic signatures and structural bounds are validated eagerly; generic bodies
-are type-checked when concretely instantiated. Checking unused generic bodies
-remains a diagnostic-parity limitation.
+At this historical checkpoint, generic bodies were checked only when concretely
+instantiated. The generic-definition checkpoint below closes that gap.
 
 ## Numeric, application, and interactive expansion — 2026-09-05
 
@@ -379,3 +378,26 @@ check rejection and session recovery. Whole-signature generalization remains ope
 
 The pattern-inference checkpoint passes 554 Rust tests, 550 C tests and the
 complete native, fuzz and documentation gates on macOS arm64.
+
+## Generic definition schemes — 2026-09-05
+
+Every generic body is checked before specialization, including unused functions,
+nested callbacks and pattern coverage. Declared variables obey rigid type equality;
+a literal cannot satisfy an arbitrary promised generic return. Intrinsic operation
+requirements preserve generic arithmetic, scalar display, membership and map keys,
+and propagate through calls, function values and recursive helpers. Nominal field
+requirements prevent invalid Map key types from hiding inside record signatures.
+
+The solver performs one body check per generic definition and closes deduplicated
+requirements under the existing shared 400,000-operation inference budget. Only
+surviving finalized calls contribute requirements, preserving early exits. Concrete
+specialization remains a second validation boundary, including conditional Result
+restrictions. Full source-level traits/constraints and private signature generalization
+remain separate milestones.
+
+Four native programs cover parametric helpers, capabilities, callbacks, closures,
+recursive requirements and nominal fields. Sixteen invalid CLI programs and three
+interactive regressions check early rejection and preserved session state.
+
+Generic scheme checkpoint gates pass: 579 Rust tests, 550 C tests, complete
+native/fuzz checks and documentation checks on macOS arm64.

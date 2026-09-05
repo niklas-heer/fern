@@ -13,6 +13,7 @@ mod parameters;
 mod pipes;
 mod preflight;
 mod returns;
+mod schemes;
 mod sequences;
 mod specialize;
 mod with_flow;
@@ -32,6 +33,7 @@ struct Signature {
     result: Type,
     generics: Vec<String>,
     dispatch: bool,
+    requirements: Vec<schemes::Requirement>,
 }
 #[derive(Default)]
 struct Inference {
@@ -43,6 +45,10 @@ struct Inference {
     probe_work: std::cell::Cell<usize>,
     settling: bool,
     pending_returns: Vec<returns::DeferredCall>,
+    requirements: std::cell::RefCell<Vec<schemes::Requirement>>,
+    scheme_calls: std::cell::RefCell<Vec<schemes::Call>>,
+    call_names: HashMap<usize, String>,
+    checked_nominals: std::cell::RefCell<HashSet<Type>>,
 }
 struct Checker<'a> {
     signatures: &'a HashMap<String, Signature>,
@@ -66,9 +72,9 @@ pub fn check(program: &ast::Program) -> Checked<ir::Program> {
     if !normalized.dispatch.is_empty() {
         preflight::check(&normalized.program)?;
     }
-    let (program, signatures) =
+    let (program, mut signatures, work) =
         returns::resolve(&normalized.program, &registry, &normalized.dispatch)?;
-    clauses::validate_templates(&program, &registry, &signatures)?;
+    schemes::validate(&program, &registry, &mut signatures, work)?;
     specialize::run(&program, &registry, &signatures)
 }
 
@@ -130,6 +136,7 @@ fn signatures(
                 result,
                 generics,
                 dispatch: dispatch.contains(&function.name),
+                requirements: Vec::new(),
             },
         );
     }
@@ -335,13 +342,6 @@ impl Inference {
         if actual == Type::Never || expected == Type::Never || actual == expected {
             return Ok(());
         }
-        if self.template
-            && (matches!(actual, Type::Generic(_)) || matches!(expected, Type::Generic(_)))
-            && !matches!(actual, Type::Infer(_))
-            && !matches!(expected, Type::Infer(_))
-        {
-            return Ok(());
-        }
         match (&actual, &expected) {
             (Type::Infer(id), ty) | (ty, Type::Infer(id)) => self.assign(*id, ty, span),
             (Type::Function(a, result_a), Type::Function(b, result_b)) if a.len() == b.len() => {
@@ -437,6 +437,7 @@ impl Inference {
                         "Never cannot be stored inside a value type",
                     ))
                 }
+                Type::Generic(_) if self.template => {}
                 Type::Infer(_) | Type::Generic(_) => {
                     return Err(Diagnostic::new(
                         span,
@@ -456,7 +457,7 @@ impl Inference {
                 _ => {}
             }
         }
-        maps::validate_concrete_keys(&ty, span)?;
+        self.map_keys(&ty, span)?;
         Ok(ty)
     }
 }
@@ -490,6 +491,10 @@ impl Checker<'_> {
         if !unit_main {
             self.inference
                 .unify(&body.ty, &return_type, body.span, "function return")?;
+        }
+        self.nominal_requirements(&return_type, function.span)?;
+        for param in &params {
+            self.nominal_requirements(&param.ty, function.span)?;
         }
         self.finalize(&mut body)?;
         if signature.dispatch {
@@ -1057,6 +1062,10 @@ impl Checker<'_> {
                 .map(|n| (n.clone(), self.inference.fresh()))
                 .collect();
             let result = returns::call_result(&mut self.inference, signature, &values, span)?;
+            self.inference
+                .call_names
+                .entry(signature.id.0)
+                .or_insert_with(|| name.to_owned());
             Ok((
                 ir::CallTarget::Function(signature.id),
                 signature
@@ -1477,6 +1486,7 @@ impl Checker<'_> {
     /// Normalize all expression types after constraints from the whole function are known.
     fn finalize(&self, expr: &mut ir::Expr) -> Checked<()> {
         expr.ty = self.inference.concrete(&expr.ty, expr.span)?;
+        self.nominal_requirements(&expr.ty, expr.span)?;
         match &mut expr.kind {
             ir::ExprKind::Range { start, end, .. } => {
                 self.finalize(start)?;
@@ -1509,17 +1519,13 @@ impl Checker<'_> {
                     self.finalize(arg)?;
                 }
             }
-            ir::ExprKind::Unary { value, .. }
-            | ir::ExprKind::Try(value)
-            | ir::ExprKind::Field { value, .. } => self.finalize(value)?,
+            ir::ExprKind::Unary { op, value } => self.finalize_unary(*op, value)?,
+            ir::ExprKind::Try(value) | ir::ExprKind::Field { value, .. } => self.finalize(value)?,
             ir::ExprKind::Binary { op, left, right } => {
                 self.finalize_binary(*op, left, right, &expr.ty, expr.span)?
             }
             ir::ExprKind::Call { target, args } => {
-                for arg in args.iter_mut() {
-                    self.finalize(arg)?;
-                }
-                validate_builtin(*target, args, expr.span)?;
+                self.finalize_call(*target, args, &expr.ty, expr.span)?;
             }
             ir::ExprKind::Map(entries) => self.finalize_map(entries)?,
             ir::ExprKind::Interpolate(values) => self.finalize_interpolation(values)?,
@@ -1594,6 +1600,12 @@ impl Checker<'_> {
         if matches!(op, ast::BinaryOp::And | ast::BinaryOp::Or) && right.ty == Type::Never {
             return Ok(());
         }
+        if let Some(capability) = schemes::binary_capability(op) {
+            self.inference.require(capability, &left.ty, span)?;
+            if self.inference.template && matches!(left.ty, Type::Generic(_)) {
+                return Ok(());
+            }
+        }
         if binary_result(op, &left.ty, &right.ty).as_ref() != Some(result) {
             return Err(Diagnostic::new(
                 span,
@@ -1607,15 +1619,8 @@ impl Checker<'_> {
     fn finalize_interpolation(&self, values: &mut [ir::Expr]) -> Checked<()> {
         for value in values {
             self.finalize(value)?;
-            if !matches!(
-                value.ty,
-                Type::Int | Type::Float | Type::Bool | Type::String
-            ) {
-                return Err(Diagnostic::new(
-                    value.span,
-                    "interpolation requires Int, Float, Bool, or String",
-                ));
-            }
+            self.inference
+                .require(schemes::Capability::Display, &value.ty, value.span)?;
         }
         Ok(())
     }
@@ -1660,40 +1665,30 @@ fn reject_discard(expr: &ir::Expr, registry: &nominal::Registry) -> Checked<()> 
 }
 
 /// Validate scalar-only builtin operations after argument inference is complete.
-fn validate_builtin(target: ir::CallTarget, args: &[ir::Expr], span: Span) -> Checked<()> {
-    match target {
+fn validate_builtin(
+    target: ir::CallTarget,
+    args: &[ir::Expr],
+    span: Span,
+    inference: &Inference,
+) -> Checked<()> {
+    use schemes::Capability;
+    let requirement = match target {
         ir::CallTarget::Runtime(id) => {
             let signature = runtime::signature(id)
                 .ok_or_else(|| Diagnostic::new(span, "invalid runtime registry identity"))?;
-            if signature.operation == runtime::Operation::ScalarContains
-                && !scalar(&args[1].ty)
-                && args[1].ty != Type::Float
-            {
-                return Err(Diagnostic::new(
-                    span,
-                    "runtime contains requires scalar Int, Float, Bool, or String elements",
-                ));
-            }
-            Ok(())
+            (signature.operation == runtime::Operation::ScalarContains)
+                .then_some((Capability::Contains, 1))
         }
-        ir::CallTarget::Builtin(ir::Builtin::Print | ir::Builtin::Println)
-            if !scalar(&args[0].ty) && args[0].ty != Type::Float =>
-        {
-            Err(Diagnostic::new(
-                span,
-                "print argument must be Int, Bool, String, or Float",
-            ))
+        ir::CallTarget::Builtin(ir::Builtin::Print | ir::Builtin::Println) => {
+            Some((Capability::Print, 0))
         }
-        ir::CallTarget::Builtin(ir::Builtin::ListContains)
-            if !scalar(&args[1].ty) && args[1].ty != Type::Float =>
-        {
-            Err(Diagnostic::new(
-                span,
-                "List.contains requires scalar Int, Float, Bool, or String elements",
-            ))
-        }
-        _ => Ok(()),
+        ir::CallTarget::Builtin(ir::Builtin::ListContains) => Some((Capability::Contains, 1)),
+        _ => None,
+    };
+    if let Some((capability, index)) = requirement {
+        inference.require(capability, &args[index].ty, span)?;
     }
+    Ok(())
 }
 
 /// Return whether `ty` supports scalar value equality and printing.
