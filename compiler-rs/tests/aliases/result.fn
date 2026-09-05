@@ -1,0 +1,5 @@
+type Outcome(a) = Result(a,String)
+fn answer() -> Outcome(Int): Ok(42)
+fn main() -> Outcome(Unit):
+    println(answer()?)
+    Ok(())

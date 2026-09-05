@@ -1,6 +1,6 @@
 # Fern Roadmap
 
-Last updated: 2026-09-05
+Last updated: 2026-09-06
 
 This file is the only active roadmap. Historical context is in [`docs/HISTORY.md`](docs/HISTORY.md).
 
@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (726 Rust tests, 4 measurement-harness tests, 173 core native programs, 21 entry/access programs, 9 controlled-fault cases, 156 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (752 Rust tests, 4 measurement-harness tests, 180 core native programs, 21 entry/access programs, 9 controlled-fault cases, 168 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -100,6 +100,7 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Typed hover and valid-source record/tuple/member completion from final checked source facts, with instantiated uses, inferred requirements, exact doc ownership and separate type/value namespaces (26 new metadata/editor regressions).
 - [ ] Incomplete-code recovery for typed editor member completion.
 - [ ] Preserve global module reference identity when an unrelated local shadows its canonical module name.
+- [x] Transparent scalar/generic type aliases with bounded capture-free expansion, module privacy, original source tooling and native execution (26 new Rust regressions, seven native programs and 12 invalid inputs).
 - [ ] Remaining function/type syntax and complete native-language audit.
 - [ ] Track semantic Result handling beyond local references (for example, inspecting a List(Result) length currently counts as handling its elements).
 

@@ -1,6 +1,7 @@
 //! Resolve source names and types once, including local compound-type inference.
 use crate::{ast, ir, runtime, Constructor, Diagnostic, Span, Type};
 use std::collections::{HashMap, HashSet};
+mod aliases;
 mod clauses;
 mod closures;
 mod control;
@@ -85,8 +86,11 @@ fn pipeline<T>(
     finish: impl FnOnce(&ast::Program, &nominal::Registry, &HashMap<String, Signature>) -> Checked<T>,
 ) -> Checked<(ir::Program, T)> {
     preflight::check(source)?;
+    let expanded = aliases::expand(source)?;
+    let source = expanded.program.as_ref();
     let registry = nominal::Registry::new(source)?;
-    let graph = dependencies::analyze(source)?;
+    aliases::validate(source, &registry)?;
+    let graph = dependencies::analyze_with_work(source, expanded.work)?;
     let (program, mut signatures, work) = whole::resolve(source, &registry, &graph)?;
     schemes::validate(&program, &registry, &mut signatures, work)?;
     let ir = specialize::run(&program, &registry, &signatures)?;
@@ -254,6 +258,11 @@ fn validate_parameter_names(function: &ast::Function, internal: bool) -> Checked
 
 /// Validate explicit `ty` without recursive cloning; inference variables are private.
 fn validate_type(ty: &Type, span: Span) -> Checked<()> {
+    validate_type_structure(ty, span, false)
+}
+
+/// Bound source types before expansion; only named map-key capabilities wait for resolution.
+fn validate_type_structure(ty: &Type, span: Span, aliases: bool) -> Checked<()> {
     let mut pending = vec![(ty, 0)];
     let mut count = 0;
     while let Some((ty, depth)) = pending.pop() {
@@ -273,7 +282,7 @@ fn validate_type(ty: &Type, span: Span) -> Checked<()> {
             Type::Never => return Err(Diagnostic::new(span, "Never is an internal control-flow type")),
             Type::Infer(_) => return Err(Diagnostic::new(span, "explicit types cannot contain inference variables; generic definitions are unsupported")),
             Type::List(inner) | Type::Option(inner) => pending.push((inner, depth + 1)),
-            Type::Map(key, value) => { maps::validate_key(key, span, true)?; pending.push((key, depth + 1)); pending.push((value, depth + 1)); }
+            Type::Map(key, value) => { if !aliases || !matches!(key.as_ref(), Type::Named(_, _)) { maps::validate_key(key, span, true)?; } pending.push((key, depth + 1)); pending.push((value, depth + 1)); }
             Type::Result(ok, err) => { pending.push((ok, depth + 1)); pending.push((err, depth + 1)); }
             Type::Tuple(args) | Type::Named(_, args) => pending.extend(args.iter().map(|a|(a, depth + 1))),
             Type::Range | Type::Native(_) | Type::Generic(_) | Type::Float | Type::Int | Type::Bool | Type::String | Type::Unit => {}
@@ -763,6 +772,12 @@ impl Checker<'_> {
                 return Ok((value.kind, value.ty));
             }
         }
+        if self.registry.is_alias(name) {
+            return Err(Diagnostic::new(
+                span,
+                "a type alias does not introduce a value or constructor",
+            ));
+        }
         if self.registry.constructor(name).is_some() {
             return self.custom_construct(name, &[], None, span, 0);
         }
@@ -1072,6 +1087,12 @@ impl Checker<'_> {
 
     /// Reject calling local `name` or a module path whose root is locally shadowed.
     fn callable_name(&self, name: &str, span: Span) -> Checked<()> {
+        if self.registry.is_alias(name) {
+            return Err(Diagnostic::new(
+                span,
+                "a type alias does not introduce a value or constructor",
+            ));
+        }
         if self.local(name).is_some() {
             return Err(Diagnostic::new(
                 span,

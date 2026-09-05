@@ -4,6 +4,7 @@ use crate::{ast, ir, Diagnostic, Span, Type};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 pub(super) struct Registry {
+    aliases: HashSet<String>,
     declarations: HashMap<String, ast::TypeDecl>,
     constructors: HashMap<String, (String, usize)>,
 }
@@ -12,6 +13,11 @@ impl Registry {
     /// Validate all forward declarations before checking individual fields.
     pub(super) fn new(program: &ast::Program) -> Checked<Self> {
         let mut result = Self {
+            aliases: program
+                .aliases
+                .iter()
+                .map(|alias| alias.name.clone())
+                .collect(),
             declarations: HashMap::new(),
             constructors: HashMap::new(),
         };
@@ -32,6 +38,11 @@ impl Registry {
             result.declaration(decl)?;
         }
         Ok(result)
+    }
+
+    /// Transparent names exist only in the type namespace and introduce no constructors.
+    pub(super) fn is_alias(&self, name: &str) -> bool {
+        self.aliases.contains(name)
     }
 
     /// Check a declaration's shape, parameters, fields and constructor namespace.

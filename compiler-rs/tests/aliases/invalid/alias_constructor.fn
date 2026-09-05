@@ -1,0 +1,3 @@
+type Value = Int
+fn bad() -> Int: Value(42)
+fn main(): ()

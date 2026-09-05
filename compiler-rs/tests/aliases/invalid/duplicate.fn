@@ -1,0 +1,3 @@
+type Value = Int
+type Value = Bool
+fn main(): ()

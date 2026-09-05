@@ -1,0 +1,5 @@
+module values
+type Hidden:
+    value: Int
+pub type Public = Hidden
+pub fn make() -> Public: Hidden(42)

@@ -1,0 +1,11 @@
+type Pair(a,b) = (a,b)
+type Callback(a) = (a) -> a
+type Key = String
+type Entries(a) = Map(Key,a)
+fn swap(x: b, y: a) -> Pair(a,b): (y,x)
+fn apply(callback: Callback(a), value: a) -> a: callback(value)
+fn main():
+    println(swap(1, "label").0)
+    let entries: Entries(Int) = %{"answer": apply((x) -> x + 1, 41)}
+    println(Map.get(entries, "answer") |> Option.unwrap_or(0))
+    println(apply((x) -> not x, false))

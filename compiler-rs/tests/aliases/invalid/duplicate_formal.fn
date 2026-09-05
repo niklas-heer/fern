@@ -1,0 +1,2 @@
+type Value(a,a) = a
+fn main(): ()

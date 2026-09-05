@@ -466,6 +466,12 @@ impl Loader {
                     qualify_function(function, &visible, &imported_prefixes, module.source.start)?;
                     shift(&mut function.span, module.source.start);
                 }
+                qualify_aliases(
+                    &mut module.syntax.aliases,
+                    &own,
+                    &visible,
+                    module.source.start,
+                )?;
                 qualify_declarations(
                     &mut module.syntax.types,
                     &own,
@@ -478,6 +484,7 @@ impl Loader {
             program.docs.extend(module.syntax.docs);
             program.functions.extend(module.syntax.functions);
             program.types.extend(module.syntax.types);
+            program.aliases.extend(module.syntax.aliases);
             exports.push(public);
             sources.push(module.source);
         }
@@ -536,6 +543,21 @@ fn exported_names(module: &Module, own: &Names) -> Result<Names, Error> {
         }
     }
     Ok(public)
+}
+
+/// Alias targets resolve in their defining module, including private transparent dependencies.
+fn qualify_aliases(
+    aliases: &mut [ast::TypeAlias],
+    own: &Names,
+    visible: &Names,
+    offset: usize,
+) -> Result<(), Error> {
+    for alias in aliases {
+        alias.name = own[&alias.name].clone();
+        qualify_type(&mut alias.target, visible).map_err(|e| at_span(e, alias.span))?;
+        shift(&mut alias.span, offset);
+    }
+    Ok(())
 }
 
 /// Qualify owned type identities and field annotations with the module's visibility map.
@@ -634,6 +656,17 @@ fn own_names(module: &Module, entry: bool) -> Result<Names, Error> {
             }
             names.insert(format!("{}.{}", decl.name, variant.name), value);
         }
+    }
+    for alias in &module.syntax.aliases {
+        if reserved_declaration(&alias.name) {
+            return Err(at_span(failure("alias name is reserved"), alias.span));
+        }
+        insert(
+            &mut names,
+            alias.name.clone(),
+            format!("{}.{}", module.name, alias.name),
+        )
+        .map_err(|e| at_span(e, alias.span))?;
     }
     let aliases: Vec<_> = names
         .iter()

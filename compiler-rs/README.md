@@ -46,6 +46,10 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
   concrete `List(T)`, `Option(T)`, and `Result(T, E)` types.
 - Custom sum and record declarations, concrete generic type applications, record fields,
   and generic functions specialized for their concrete call types.
+- Transparent type aliases, including generic aliases: `type UserId = Int` and
+  `type Maybe(a) = Option(a)`. Aliases preserve their target equality/layout and
+  add no constructors; cycles, invalid arities and excessive expansion are errors.
+  Formatting, docs and navigation retain the declared alias spelling.
 - Module declarations, public functions/types, qualified/aliased/selected imports,
   and public reexports from `module.fn` or `module/mod.fn`.
 - Immutable `let` with inferred or annotated type, lexical scopes, and shadowing.

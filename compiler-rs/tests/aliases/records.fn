@@ -1,0 +1,11 @@
+type Link = Node
+type Maybe(a) = Option(a)
+type Node:
+    value: Int
+    next: Maybe(Link)
+fn read(value: Link) -> Int: value.value
+fn main():
+    let first: Link = Node(42, None)
+    let second = %{ first | value: 43 }
+    println(read(first))
+    println(read(second))

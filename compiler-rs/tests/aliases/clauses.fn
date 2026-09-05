@@ -1,0 +1,6 @@
+type Maybe(a) = Option(a)
+fn value(Some(x): Maybe(a), fallback: a) -> a: x
+fn value(None: Maybe(a), fallback: a) -> a: fallback
+fn main():
+    println(value(Some(42), 0))
+    println(value(None, "fallback"))

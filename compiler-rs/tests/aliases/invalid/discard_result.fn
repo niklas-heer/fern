@@ -1,0 +1,5 @@
+type Outcome = Result(Int,String)
+fn bad() -> Unit:
+    let ignored: Outcome = Ok(42)
+    ()
+fn main(): ()

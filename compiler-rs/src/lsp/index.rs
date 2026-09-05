@@ -20,6 +20,7 @@ pub(super) struct Index<'a> {
     pub visible: BTreeMap<String, String>,
     pub globals: BTreeMap<String, Symbol>,
     types: BTreeMap<String, Symbol>,
+    aliases: std::collections::BTreeSet<String>,
     type_context: bool,
     pub locals: Bindings,
     pub target: Option<Span>,
@@ -61,6 +62,9 @@ impl<'a> Index<'a> {
             .filter(|f| f.span != Span::default())
         {
             visible.insert(function.name.clone(), function.name.clone());
+        }
+        for alias in &program.aliases {
+            visible.insert(alias.name.clone(), alias.name.clone());
         }
         for ty in &program.types {
             visible.insert(ty.name.clone(), ty.name.clone());
@@ -113,6 +117,7 @@ impl<'a> Index<'a> {
             visible,
             globals: BTreeMap::new(),
             types: BTreeMap::new(),
+            aliases: program.aliases.iter().map(|a| a.name.clone()).collect(),
             type_context,
             locals: Bindings::new(),
             target: None,
@@ -181,6 +186,7 @@ impl<'a> Index<'a> {
             .iter()
             .map(|d| d.span.start)
             .chain(program.imports.iter().map(|d| d.span.start))
+            .chain(program.aliases.iter().map(|d| d.span.start))
             .any(|start| start > function.span.start && start <= self.cursor);
         (!separated).then_some(function.span.start)
     }
@@ -198,6 +204,15 @@ impl<'a> Index<'a> {
                     .or_insert(Symbol { span, kind: 3 });
                 if self.contains(span) {
                     self.target = self.globals.get(&function.name).map(|s| s.span);
+                }
+            }
+        }
+        for alias in &program.aliases {
+            if let Some(span) = self.identifier(alias.span, 1) {
+                self.types
+                    .insert(alias.name.clone(), Symbol { span, kind: 7 });
+                if self.contains(span) {
+                    self.target = Some(span);
                 }
             }
         }
@@ -314,16 +329,21 @@ impl<'a> Index<'a> {
         })
     }
     /// Choose completion kinds using the selected syntax namespace, retaining record constructors.
-    pub(super) fn completion_kind(&self, name: &str) -> i64 {
+    pub(super) fn completion_kind(&self, name: &str) -> Option<i64> {
+        if !self.type_context && self.aliases.contains(name) {
+            return None;
+        }
         let first = if self.type_context {
             &self.types
         } else {
             &self.globals
         };
-        first
-            .get(name)
-            .or_else(|| self.types.get(name))
-            .map_or(9, |s| s.kind)
+        Some(
+            first
+                .get(name)
+                .or_else(|| self.types.get(name))
+                .map_or(9, |s| s.kind),
+        )
     }
 
     /// Return a selected declaration's fully qualified resolver identity, never just its leaf.

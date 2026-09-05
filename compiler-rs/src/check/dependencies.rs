@@ -29,9 +29,16 @@ impl Budget {
 }
 
 /// Analyze validated source groups; edges refer to source-order group indices.
+#[cfg(test)]
 pub(super) fn analyze(program: &ast::Program) -> Checked<Graph> {
+    analyze_with_work(program, 0)
+}
+
+/// Alias expansion and dependency analysis spend one aggregate inference budget.
+pub(super) fn analyze_with_work(program: &ast::Program, work: usize) -> Checked<Graph> {
     preflight::check(program)?;
     let mut budget = Budget(MAX_EXPR_COUNT * 4);
+    budget.charge(work, Span::default())?;
     let (mut groups, names) = groups(program, &mut budget)?;
     for group in &mut groups {
         let mut walker = Walker {

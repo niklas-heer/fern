@@ -1,0 +1,3 @@
+type Δείκτης = Int
+fn identity(value: Δείκτης) -> Δείκτης: value
+fn main(): println(identity(42))

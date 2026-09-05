@@ -580,3 +580,25 @@ recovery for incomplete source remains a separate checkpoint.
 Typed-editor checkpoint gates pass: 726 Rust tests, 550 C tests and the full
 native/JSON/fuzz/documentation suites on macOS arm64. An executable LSP protocol
 smoke also confirms hover capability, inferred signatures and documentation.
+
+
+## Transparent type aliases
+
+Rust now expands scalar and generic aliases before nominal registry construction
+and private-signature inference. Substitution is simultaneous and capture-free;
+forward aliases, nested containers, callback annotations and nominal recursive
+records retain their target semantics. Transparent cycles, unknown types, invalid
+arity, conflicting declarations and excessive depth/node/work growth are rejected
+before retaining expanded trees. Unicode capitalized names follow source rules.
+
+Aliases add no constructors or privacy boundary. Module imports/reexports retain
+visibility checks; formatting, documentation, type navigation and checked hover
+retain original declarations. The REPL uses final layout field types when showing
+aliased nominal payloads. Distinct newtypes and unions remain separate work.
+
+The checkpoint adds 26 Rust regressions, seven native output cases and 12 invalid
+programs with output preservation, plus alias inputs in bounded mutation testing.
+
+Alias checkpoint gates pass: 752 Rust tests, 550 C tests, 180 core native
+programs, 168 invalid inputs and the full entry/access, controlled-fault, JSON,
+fuzz and documentation suites on macOS arm64.

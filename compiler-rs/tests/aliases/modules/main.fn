@@ -1,0 +1,5 @@
+module main
+import values.{Public, make}
+type Hidden = Bool
+fn read(value: Public) -> Int: value.value
+fn main(): println(read(make()))

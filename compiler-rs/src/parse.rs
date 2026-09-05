@@ -1173,11 +1173,7 @@ impl Parser {
                 let function = self.function(public)?;
                 self.add_clause(&mut program, &mut groups, function, documented)?;
             } else if self.word("type") {
-                let declaration = self.type_declaration()?;
-                if public {
-                    program.exports.push(declaration.name.clone());
-                }
-                program.types.push(declaration);
+                self.type_declaration(&mut program, public)?;
             } else if self.word("import") {
                 program.imports.push(self.import(public)?);
             } else if self.word("module") && !public {
@@ -1276,7 +1272,7 @@ impl Parser {
     }
 
     /// Parse generic parameter names and either record fields or sum constructors.
-    fn type_declaration(&mut self) -> ParseResult<TypeDecl> {
+    fn type_declaration(&mut self, program: &mut Program, public: bool) -> ParseResult<()> {
         let start = self.take().span.start;
         let (name, _) = self.name()?;
         let mut parameters = Vec::new();
@@ -1292,6 +1288,34 @@ impl Parser {
                 }
             }
         }
+        if public {
+            program.exports.push(name.clone());
+        }
+        if self.eat(&Kind::Assign) {
+            let target = self.ty()?;
+            let end = self.tokens[self.position.saturating_sub(1)].span.end;
+            self.line_end()?;
+            program.aliases.push(crate::ast::TypeAlias {
+                name,
+                parameters,
+                target,
+                span: Span { start, end },
+            });
+        } else {
+            program
+                .types
+                .push(self.nominal_body(start, name, parameters)?);
+        }
+        Ok(())
+    }
+
+    /// Parse the indented payload shared by existing record and sum declarations.
+    fn nominal_body(
+        &mut self,
+        start: usize,
+        name: String,
+        parameters: Vec<String>,
+    ) -> ParseResult<TypeDecl> {
         self.expect(Kind::Colon, "expected ':' before type body")?;
         self.expect(Kind::Newline, "type declarations require an indented body")?;
         self.expect(Kind::Indent, "type declarations require an indented body")?;

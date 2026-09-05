@@ -1,0 +1,2 @@
+type A = List(A)
+fn main(): ()

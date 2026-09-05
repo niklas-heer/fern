@@ -96,6 +96,22 @@ fn declaration(
     symbol: Option<&str>,
     name: &str,
 ) -> Option<(String, Option<Span>)> {
+    if let Some(alias) = program
+        .aliases
+        .iter()
+        .find(|alias| symbol == Some(alias.name.as_str()))
+    {
+        let args = alias
+            .parameters
+            .iter()
+            .cloned()
+            .map(Type::Generic)
+            .collect();
+        let owner =
+            presentation::render_type(&Type::Named(alias.name.clone(), args), limits()).ok()?;
+        let target = presentation::render_type(&alias.target, limits()).ok()?;
+        return Some((format!("type {owner} = {target}"), Some(alias.span)));
+    }
     for decl in &program.types {
         let args: Vec<_> = decl.parameters.iter().cloned().map(Type::Generic).collect();
         let owner = Type::Named(decl.name.clone(), args);
@@ -224,6 +240,7 @@ fn owned_documentation(program: &ast::Program, owner: Span) -> Option<&ast::DocC
         .iter()
         .map(|f| f.span.start)
         .chain(program.types.iter().map(|d| d.span.start))
+        .chain(program.aliases.iter().map(|d| d.span.start))
         .filter(|start| *start < owner.start)
         .max();
     program.docs.iter().find(|doc| {

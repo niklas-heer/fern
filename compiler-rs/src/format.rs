@@ -86,6 +86,24 @@ impl Renderer<'_> {
             }
             declarations.push((import.span.start, vec![line(0, text, import.span.start)]));
         }
+        for alias in &program.aliases {
+            let parameters = if alias.parameters.is_empty() {
+                String::new()
+            } else {
+                format!("({})", alias.parameters.join(", "))
+            };
+            let prefix = if program.exports.contains(&alias.name) {
+                "pub "
+            } else {
+                ""
+            };
+            let text = format!(
+                "{prefix}type {}{parameters} = {}",
+                alias.name,
+                type_text(&alias.target)?
+            );
+            declarations.push((alias.span.start, vec![line(0, text, alias.span.start)]));
+        }
         for declaration in &program.types {
             declarations.push((
                 declaration.span.start,
@@ -122,6 +140,12 @@ impl Renderer<'_> {
                     .types
                     .iter()
                     .map(|declaration| (&declaration.name, declaration.span.start)),
+            )
+            .chain(
+                program
+                    .aliases
+                    .iter()
+                    .map(|alias| (&alias.name, alias.span.start)),
             )
             .collect();
         let indices: std::collections::BTreeMap<_, _> = declarations
@@ -1288,6 +1312,9 @@ fn structural(mut program: ast::Program) -> String {
             clear_expression(guard);
         }
         clear_expression(&mut function.body);
+    }
+    for alias in &mut program.aliases {
+        alias.span = Span::default();
     }
     for declaration in &mut program.types {
         declaration.span = Span::default();

@@ -6,6 +6,7 @@ pub struct Program {
     pub docs: Vec<DocComment>,
     pub functions: Vec<Function>,
     pub types: Vec<TypeDecl>,
+    pub aliases: Vec<TypeAlias>,
     pub module: Option<String>,
     pub imports: Vec<Import>,
     pub exports: Vec<String>,
@@ -25,6 +26,15 @@ pub struct Import {
     pub alias: Option<String>,
     pub items: Option<Vec<String>>,
     pub public: bool,
+    pub span: Span,
+}
+
+/// A transparent source type name; it introduces no value constructor.
+#[derive(Clone, Debug)]
+pub struct TypeAlias {
+    pub name: String,
+    pub parameters: Vec<String>,
+    pub target: Type,
     pub span: Span,
 }
 

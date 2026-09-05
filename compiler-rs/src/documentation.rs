@@ -51,7 +51,7 @@ fn declarations<'a>(
     source: &str,
     program: &'a ast::Program,
 ) -> Result<Vec<Declaration<'a>>, Diagnostic> {
-    if program.functions.len() + program.types.len() > MAX_DECLARATIONS {
+    if program.functions.len() + program.types.len() + program.aliases.len() > MAX_DECLARATIONS {
         return Err(limit("documentation declaration limit exceeded"));
     }
     let mut declarations: Vec<Declaration<'a>> = Vec::new();
@@ -75,15 +75,20 @@ fn declarations<'a>(
             });
         }
     }
-    for ty in &program.types {
+    for (name, span) in program.types.iter().map(|ty| (&ty.name, ty.span)).chain(
+        program
+            .aliases
+            .iter()
+            .map(|alias| (&alias.name, alias.span)),
+    ) {
         let header = source
-            .get(ty.span.start..ty.span.end)
+            .get(span.start..span.end)
             .ok_or_else(|| limit("invalid type declaration span"))?
             .trim_end();
-        let public = program.exports.contains(&ty.name);
+        let public = program.exports.contains(name);
         declarations.push(Declaration {
-            name: &ty.name,
-            span: ty.span,
+            name,
+            span,
             headers: vec![format!("{}{header}", if public { "pub " } else { "" })],
             doc: "",
         });

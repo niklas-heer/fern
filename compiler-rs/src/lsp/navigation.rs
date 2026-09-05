@@ -158,8 +158,9 @@ fn completion(
         }
         if let Some(index) = index {
             for (name, target) in &index.visible {
-                let kind = index.completion_kind(target);
-                add_candidate(&mut candidates, name, kind, &receiver, &prefix);
+                if let Some(kind) = index.completion_kind(target) {
+                    add_candidate(&mut candidates, name, kind, &receiver, &prefix);
+                }
             }
         }
     }

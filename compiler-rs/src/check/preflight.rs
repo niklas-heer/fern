@@ -1,6 +1,6 @@
 //! Bound caller-created syntax before recursive cloning for monomorphization.
 use super::{
-    validate_type, Checked, MAX_EXPR_COUNT, MAX_EXPR_DEPTH, MAX_FUNCTIONS, MAX_PARAMETERS,
+    validate_type_structure, Checked, MAX_EXPR_COUNT, MAX_EXPR_DEPTH, MAX_FUNCTIONS, MAX_PARAMETERS,
 };
 use crate::{ast, Diagnostic, Span, Type};
 
@@ -23,20 +23,21 @@ impl Budget {
     }
     /// Check recursive annotations iteratively and account for their names.
     fn ty(&mut self, ty: &Type, span: Span) -> Checked<()> {
-        validate_type(ty, span)?;
+        validate_type_structure(ty, span, true)?;
         let mut pending = vec![ty];
         while let Some(ty) = pending.pop() {
+            let bytes = match ty {
+                Type::Named(name, _) | Type::Generic(name) => name.len(),
+                _ => 0,
+            };
+            self.charge(bytes, span)?;
             match ty {
-                Type::Named(n, args) => {
-                    self.charge(n.len(), span)?;
-                    pending.extend(args);
-                }
+                Type::Named(_, args) => pending.extend(args),
                 Type::Function(args, result) => {
                     pending.extend(args);
                     pending.push(result);
                 }
                 Type::Tuple(args) => pending.extend(args),
-                Type::Generic(n) => self.charge(n.len(), span)?,
                 Type::List(a) | Type::Option(a) => pending.push(a),
                 Type::Result(a, b) | Type::Map(a, b) => {
                     pending.push(a);
@@ -360,7 +361,9 @@ impl Budget {
 
 /// Bound the entire source AST before registry copies and specialization work begin.
 pub(super) fn check(program: &ast::Program) -> Checked<()> {
-    if program.functions.len() > MAX_FUNCTIONS || program.types.len() > MAX_FUNCTIONS {
+    if program.functions.len() > MAX_FUNCTIONS
+        || program.types.len().saturating_add(program.aliases.len()) > MAX_FUNCTIONS
+    {
         return Err(Diagnostic::new(
             Span::default(),
             "prototype declaration count limit exceeded",
@@ -386,6 +389,7 @@ pub(super) fn check(program: &ast::Program) -> Checked<()> {
         }
         budget.expression(&function.body)?;
     }
+    aliases(program, &mut budget)?;
     for decl in &program.types {
         budget.charge(decl.name.len(), decl.span)?;
         if decl.parameters.len() > MAX_PARAMETERS || decl.variants.len() > MAX_PARAMETERS {
@@ -410,6 +414,24 @@ pub(super) fn check(program: &ast::Program) -> Checked<()> {
                 budget.ty(&field.ty, field.span)?;
             }
         }
+    }
+    Ok(())
+}
+
+/// Account for alias targets and formal names before any source cloning or expansion.
+fn aliases(program: &ast::Program, budget: &mut Budget) -> Checked<()> {
+    for alias in &program.aliases {
+        budget.charge(alias.name.len(), alias.span)?;
+        if alias.parameters.len() > MAX_PARAMETERS {
+            return Err(Diagnostic::new(
+                alias.span,
+                "type alias arity limit exceeded",
+            ));
+        }
+        for name in &alias.parameters {
+            budget.charge(name.len(), alias.span)?;
+        }
+        budget.ty(&alias.target, alias.span)?;
     }
     Ok(())
 }

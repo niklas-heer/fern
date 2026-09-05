@@ -106,7 +106,7 @@ impl Session {
             };
             machine.output.push_str(&format!(
                 "{} : {}\n",
-                display_typed(&value, ty, &syntax, &mut 4096),
+                display_typed(&value, ty, &syntax, &typed.types, &mut 4096),
                 type_name(ty)
             ));
         }
@@ -607,20 +607,26 @@ fn graph_budget<'a>(values: impl Iterator<Item = &'a Value>) -> Result<(), Strin
     Ok(())
 }
 /// Render semantic constructors and bounded previews of compound interactive values.
-fn display_typed(value: &Value, ty: &Type, syntax: &ast::Program, budget: &mut usize) -> String {
+fn display_typed(
+    value: &Value,
+    ty: &Type,
+    syntax: &ast::Program,
+    layouts: &[ir::TypeLayout],
+    budget: &mut usize,
+) -> String {
     if *budget == 0 {
         return "…".into();
     }
     *budget -= 1;
     match (value, ty) {
         (Value::Map(entries), Type::Map(key, value)) => {
-            display_map(entries, key, value, syntax, budget)
+            display_map(entries, key, value, syntax, layouts, budget)
         }
         (Value::List(values), Type::List(ty)) => {
             let mut shown = values
                 .iter()
                 .take(64)
-                .map(|v| display_typed(v, ty, syntax, budget))
+                .map(|v| display_typed(v, ty, syntax, layouts, budget))
                 .collect::<Vec<_>>();
             if values.len() > 64 {
                 shown.push("…".into());
@@ -628,12 +634,12 @@ fn display_typed(value: &Value, ty: &Type, syntax: &ast::Program, budget: &mut u
             format!("[{}]", shown.join(", "))
         }
         (Value::Sum(tag, fields), _) => {
-            let (name, types) = constructor_types(*tag, ty, syntax);
+            let (name, types) = constructor_types(*tag, ty, syntax, layouts);
             let shown = fields
                 .iter()
                 .zip(types)
                 .take(64)
-                .map(|(v, t)| display_typed(v, &t, syntax, budget))
+                .map(|(v, t)| display_typed(v, &t, syntax, layouts, budget))
                 .collect::<Vec<_>>()
                 .join(", ");
             if matches!(ty, Type::Tuple(_)) {
@@ -653,6 +659,7 @@ fn display_map(
     key: &Type,
     value: &Type,
     syntax: &ast::Program,
+    layouts: &[ir::TypeLayout],
     budget: &mut usize,
 ) -> String {
     let mut shown = entries
@@ -661,8 +668,8 @@ fn display_map(
         .map(|(k, v)| {
             format!(
                 "{}: {}",
-                display_typed(k, key, syntax, budget),
-                display_typed(v, value, syntax, budget)
+                display_typed(k, key, syntax, layouts, budget),
+                display_typed(v, value, syntax, layouts, budget)
             )
         })
         .collect::<Vec<_>>();
@@ -671,8 +678,13 @@ fn display_map(
     }
     format!("%{{{}}}", shown.join(", "))
 }
-/// Recover constructor spellings from semantic types and the parsed declaration registry.
-fn constructor_types(tag: usize, ty: &Type, syntax: &ast::Program) -> (String, Vec<Type>) {
+/// Pair original constructor spellings with finalized semantic fields, including expanded aliases.
+fn constructor_types(
+    tag: usize,
+    ty: &Type,
+    syntax: &ast::Program,
+    layouts: &[ir::TypeLayout],
+) -> (String, Vec<Type>) {
     match ty {
         Type::Option(a) => {
             if tag == 0 {
@@ -689,54 +701,22 @@ fn constructor_types(tag: usize, ty: &Type, syntax: &ast::Program) -> (String, V
             }
         }
         Type::Tuple(types) => (String::new(), types.clone()),
-        Type::Named(name, args) => {
-            if let Some(decl) = syntax.types.iter().find(|d| &d.name == name) {
-                if let Some(variant) = decl.variants.get(tag) {
-                    let names: HashMap<_, _> = decl
-                        .parameters
-                        .iter()
-                        .cloned()
-                        .zip(args.iter().cloned())
-                        .collect();
-                    return (
-                        variant.name.clone(),
-                        variant
-                            .fields
-                            .iter()
-                            .map(|f| substitute_type(&f.ty, &names))
-                            .collect(),
-                    );
-                }
+        Type::Named(name, _) => {
+            let variant = syntax
+                .types
+                .iter()
+                .find(|d| &d.name == name)
+                .and_then(|d| d.variants.get(tag));
+            let fields = layouts
+                .iter()
+                .find(|layout| &layout.ty == ty)
+                .and_then(|layout| layout.variants.get(tag));
+            match (variant, fields) {
+                (Some(variant), Some(fields)) => (variant.name.clone(), fields.clone()),
+                _ => (name.clone(), vec![]),
             }
-            (name.clone(), vec![])
         }
         _ => (type_name(ty), vec![]),
-    }
-}
-/// Substitute only source generic parameters when displaying a concrete nominal value.
-fn substitute_type(ty: &Type, names: &HashMap<String, Type>) -> Type {
-    match ty {
-        Type::Generic(name) => names.get(name).cloned().unwrap_or_else(|| ty.clone()),
-        Type::List(a) => Type::List(Box::new(substitute_type(a, names))),
-        Type::Option(a) => Type::Option(Box::new(substitute_type(a, names))),
-        Type::Result(a, b) => Type::Result(
-            Box::new(substitute_type(a, names)),
-            Box::new(substitute_type(b, names)),
-        ),
-        Type::Map(key, value) => Type::Map(
-            Box::new(substitute_type(key, names)),
-            Box::new(substitute_type(value, names)),
-        ),
-        Type::Function(args, result) => Type::Function(
-            args.iter().map(|a| substitute_type(a, names)).collect(),
-            Box::new(substitute_type(result, names)),
-        ),
-        Type::Tuple(args) => Type::Tuple(args.iter().map(|a| substitute_type(a, names)).collect()),
-        Type::Named(name, args) => Type::Named(
-            name.clone(),
-            args.iter().map(|a| substitute_type(a, names)).collect(),
-        ),
-        _ => ty.clone(),
     }
 }
 
