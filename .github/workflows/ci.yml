@@ -22,13 +22,13 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libgc-dev
+          sudo apt-get install -y clang pkg-config libgc-dev libsqlite3-dev libssl-dev
 
       - name: Install dependencies (macOS)
         if: matrix.os == 'macos-latest'
         run: |
           # Xcode command line tools should be pre-installed
-          brew install bdw-gc
+          brew install bdw-gc sqlite openssl pkg-config
           clang --version
 
       - name: Install just
@@ -39,6 +39,12 @@ jobs:
 
       - name: Run tests
         run: just test
+
+      - name: Install uv for checker parity
+        uses: astral-sh/setup-uv@v5
+
+      - name: Validate native checker diagnostics
+        run: just style-parity
 
       - name: Validate examples
         run: just test-examples
@@ -72,7 +78,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang clang-format libgc-dev
+          sudo apt-get install -y clang clang-format pkg-config libgc-dev libsqlite3-dev libssl-dev
 
       - name: Install just
         uses: taiki-e/install-action@just

@@ -232,27 +232,9 @@ style-lenient:
 style-fern: debug
     ./bin/fern run scripts/check_style.fn
 
-# Compare Python checker and Fern checker exit-code parity
+# Compare exact diagnostic records, severities, and exits on fixtures and repository
 style-parity: debug
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "Comparing style checker parity (python vs fern)..."
-
-    py_status=0
-    fern_status=0
-
-    uv run scripts/check_style.py --style-only src lib > /tmp/fern_style_python.out 2>&1 || py_status=$?
-    ./bin/fern run scripts/check_style.fn > /tmp/fern_style_fern.out 2>&1 || fern_status=$?
-
-    echo "  python status: $py_status"
-    echo "  fern status:   $fern_status"
-
-    if [[ "$py_status" -ne "$fern_status" ]]; then
-      echo "  parity mismatch (see /tmp/fern_style_python.out and /tmp/fern_style_fern.out)"
-      exit 1
-    fi
-
-    echo "✓ style checker exit-code parity"
+    uv run scripts/test_style_parity.py
 
 # Pre-commit hook check
 pre-commit:
