@@ -95,7 +95,7 @@ impl Renderer<'_> {
         for function in &program.functions {
             declarations.push((
                 function.span.start,
-                self.function(function, program.exports.contains(&function.name))?,
+                self.function(function, function.public)?,
             ));
         }
         self.documentation(program, &mut declarations);

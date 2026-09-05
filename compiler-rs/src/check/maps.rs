@@ -112,6 +112,7 @@ impl Checker<'_> {
         if base.ty == Type::Never {
             return Ok((base.kind, Type::Never));
         }
+        super::returns::shape_ready(&self.inference, &base.ty, span)?;
         let ty = self.inference.resolve(&base.ty, span)?;
         let layout = self.registry.layout(&ty, span)?;
         if layout.fields.is_empty() {

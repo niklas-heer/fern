@@ -126,6 +126,15 @@ int64_t fern_str_contains(const char* s, const char* substr);
 int64_t fern_str_index_of(const char* s, const char* substr);
 
 /**
+ * Check clamped byte slice endpoints without allocation or termination.
+ * @param s Non-null UTF-8 string.
+ * @param start Start byte index.
+ * @param end Exclusive end byte index.
+ * @return 1 for scalar boundaries, otherwise 0.
+ */
+int64_t fern_str_slice_is_valid(const char* s, int64_t start, int64_t end);
+
+/**
  * Get substring from start to end (exclusive).
  * @param s The string.
  * @param start Start index.
@@ -179,6 +188,14 @@ char* fern_str_to_lower(const char* s);
 char* fern_str_replace(const char* s, const char* old_str, const char* new_str);
 
 /**
+ * Validate scalar input for empty-delimiter splitting without terminating.
+ * @param s Non-null source bytes.
+ * @param delim Non-null delimiter.
+ * @return 0 for malformed UTF-8 with empty delimiter, otherwise 1.
+ */
+int64_t fern_str_split_is_valid(const char* s, const char* delim);
+
+/**
  * Split string by delimiter.
  * @param s The string.
  * @param delim The delimiter.
@@ -206,7 +223,8 @@ char* fern_str_join(struct FernStringList* list, const char* sep);
  * Repeat string n times.
  * @param s The string.
  * @param n Number of repetitions.
- * @return New string with s repeated n times.
+ * @return New string; empty for nonpositive n or empty s. Content is capped at
+ * 16 MiB; larger requests terminate with a diagnostic before allocating.
  */
 char* fern_str_repeat(const char* s, int64_t n);
 
@@ -276,7 +294,7 @@ int64_t fern_list_len(FernList* list);
  * Get element at index.
  * @param list The list.
  * @param index The index (0-based).
- * @return The element value.
+ * @return The element value; invalid indices exit 1 with a diagnostic before access.
  */
 int64_t fern_list_get(FernList* list, int64_t index);
 
@@ -353,7 +371,7 @@ FernList* fern_list_concat(FernList* a, FernList* b);
 /**
  * Get first element of a list.
  * @param list The list.
- * @return Option: Some(first) if non-empty, None otherwise.
+ * @return The first element; empty input exits 1 with a diagnostic before access.
  */
 int64_t fern_list_head(FernList* list);
 

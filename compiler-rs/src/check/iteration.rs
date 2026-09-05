@@ -55,6 +55,7 @@ impl Checker<'_> {
         if iterable.ty == Type::Never {
             return Ok((iterable.kind, Type::Never));
         }
+        returns::shape_ready(&self.inference, &iterable.ty, span)?;
         let item = item_type(&self.inference.resolve(&iterable.ty, span)?, span)?;
         self.scopes.push(HashMap::new());
         let pattern = self.pattern(pattern, &item, &mut HashSet::new(), 0)?;

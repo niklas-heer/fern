@@ -53,6 +53,7 @@ fn bind(n: &str, annotation: Option<Type>, value: Expr) -> Stmt {
 }
 fn function(n: &str, ty: Type, body: Expr) -> Function {
     Function {
+        public: false,
         name: n.into(),
         params: vec![],
         return_type: Some(ty),

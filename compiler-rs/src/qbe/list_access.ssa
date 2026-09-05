@@ -1,0 +1,25 @@
+# Signed bounds are checked before either legacy runtime accessor can assert/read.
+function l $fern_rs_list_access(l %fault, l %list, l %index, w %head) {
+@start
+    %length =l call $fern_list_len(l %list)
+    %nonnegative =w csgel %index, 0
+    %within =w csltl %index, %length
+    %valid =w and %nonnegative, %within
+    jnz %valid, @access, @invalid
+@invalid
+    jnz %head, @empty_head, @bad_index
+@empty_head
+    storel 4, %fault
+    ret 0
+@bad_index
+    storel 3, %fault
+    ret 0
+@access
+    jnz %head, @head, @get
+@head
+    %first =l call $fern_list_head(l %list)
+    ret %first
+@get
+    %value =l call $fern_list_get(l %list, l %index)
+    ret %value
+}

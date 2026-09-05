@@ -36,7 +36,8 @@ impl Checker<'_> {
                 return Err(Diagnostic::new(param.span, "duplicate lambda parameter"));
             }
             if let Some(ty) = &param.annotation {
-                self.registry.validate(ty, &HashSet::new(), param.span)?;
+                self.registry
+                    .validate(ty, &self.inference.template_names, param.span)?;
             }
             types.push(
                 param

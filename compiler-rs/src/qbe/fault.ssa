@@ -1,13 +1,48 @@
 data $fern_rs_fault_1 = { b "fern: runtime error: integer division by zero", b 10 }
 data $fern_rs_fault_2 = { b "fern: runtime error: negative integer exponent", b 10 }
+data $fern_rs_fault_3 = { b "fern: runtime error: list index out of bounds", b 10 }
+data $fern_rs_fault_4 = { b "fern: runtime error: head of empty list", b 10 }
+data $fern_rs_fault_5 = { b "fern: runtime error: string size limit exceeded", b 10 }
+data $fern_rs_fault_6 = { b "fern: runtime error: String.slice indices must be UTF-8 character boundaries", b 10 }
+data $fern_rs_fault_7 = { b "fern: runtime error: String.split requires valid UTF-8 input", b 10 }
 function $fern_rs_report_fault(l %code) {
 @start
-    %division =w ceql %code, 1
-    jnz %division, @division, @exponent
-@division
+    %is_1 =w ceql %code, 1
+    jnz %is_1, @message_1, @check_2
+@message_1
     call $write(w 2, l $fern_rs_fault_1, l 46)
     ret
-@exponent
+@check_2
+    %is_2 =w ceql %code, 2
+    jnz %is_2, @message_2, @check_3
+@message_2
     call $write(w 2, l $fern_rs_fault_2, l 47)
+    ret
+@check_3
+    %is_3 =w ceql %code, 3
+    jnz %is_3, @message_3, @check_4
+@message_3
+    call $write(w 2, l $fern_rs_fault_3, l 46)
+    ret
+@check_4
+    %is_4 =w ceql %code, 4
+    jnz %is_4, @message_4, @check_5
+@message_4
+    call $write(w 2, l $fern_rs_fault_4, l 40)
+    ret
+@check_5
+    %is_5 =w ceql %code, 5
+    jnz %is_5, @message_5, @check_6
+@message_5
+    call $write(w 2, l $fern_rs_fault_5, l 48)
+    ret
+@check_6
+    %is_6 =w ceql %code, 6
+    jnz %is_6, @message_6, @check_7
+@message_6
+    call $write(w 2, l $fern_rs_fault_6, l 77)
+    ret
+@check_7
+    call $write(w 2, l $fern_rs_fault_7, l 61)
     ret
 }

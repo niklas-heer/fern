@@ -77,6 +77,20 @@ impl Emitter<'_> {
             bind_type(template, &arg.ty, &mut bindings, arg.span, 0)?;
         }
         let ty = return_type(&signature.return_type, &bindings, span)?;
+        match signature.symbol {
+            "fern_list_get" | "fern_list_head" => {
+                return self.list_access(
+                    args,
+                    signature.symbol == "fern_list_head",
+                    span,
+                    locals,
+                    depth,
+                )
+            }
+            "fern_str_repeat" => return self.repeat_string(args, span, locals, depth),
+            "fern_str_slice" => return self.slice_string(args, span, locals, depth),
+            _ => {}
+        }
         if signature.operation == Operation::ScalarContains && numeric::float_list(args) {
             return self.float_contains(args, span, locals, depth);
         }
@@ -87,6 +101,9 @@ impl Emitter<'_> {
             values.push(self.runtime_argument(value, &arg.ty, *abi, span, locals)?);
         }
         self.runtime_operation(signature.operation, &mut values, span, locals)?;
+        if symbol == "fern_str_split" {
+            self.split_guard(&values, locals);
+        }
         if signature.return_abi == ValueAbi::PackedOption {
             return Ok((ty, self.packed_option(symbol, &values, span, locals)?));
         }

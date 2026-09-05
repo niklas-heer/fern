@@ -198,6 +198,9 @@ test: debug
     python3 scripts/test_user_workflows.py
     python3 scripts/test_tui.py
     python3 scripts/test_runtime_process.py
+    python3 scripts/test_runtime_repeat.py
+    python3 scripts/test_runtime_access.py
+    python3 scripts/test_runtime_utf8.py
     python3 scripts/test_runtime_directory.py --c-only
     python3 scripts/test_string_codegen.py
     python3 tests/integration/test_print_types.py
@@ -451,6 +454,7 @@ rust-check: rust-build
     python3 scripts/test_rust_control.py
     python3 scripts/test_rust_iteration.py
     python3 scripts/test_rust_numeric.py
+    python3 scripts/test_rust_boundaries.py
     python3 scripts/test_rust_stdlib.py
     python3 scripts/test_runtime_directory.py
     python3 scripts/test_rust_fuzz.py

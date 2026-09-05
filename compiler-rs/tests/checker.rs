@@ -37,6 +37,7 @@ fn bind(n: &str, ty: Option<Type>, value: Expr) -> Stmt {
 }
 fn fun(n: &str, ty: Option<Type>, body: Expr) -> Function {
     Function {
+        public: false,
         name: n.into(),
         params: vec![],
         return_type: ty,
@@ -105,10 +106,9 @@ fn resolves_forward_and_recursive_calls_with_typed_results() {
 fn rejects_invalid_program_signatures() {
     rejects(vec![], "main");
     rejects(vec![main_fn(int()), main_fn(int())], "duplicate function");
-    rejects(
-        vec![main_fn(int()), fun("helper", None, int())],
-        "return type annotation",
-    );
+    let mut public = fun("helper", None, int());
+    public.public = true;
+    rejects(vec![main_fn(int()), public], "return type annotation");
     rejects(vec![fun("main", Some(Type::Bool), boolean())], "main");
     let mut f = main_fn(int());
     f.params.push(Param {

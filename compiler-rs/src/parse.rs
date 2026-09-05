@@ -1057,7 +1057,7 @@ impl Parser {
                     .push(crate::ast::DocComment { target, text, span });
             }
             if self.word("fn") {
-                let function = self.function()?;
+                let function = self.function(public)?;
                 if public {
                     program.exports.push(function.name.clone());
                 }
@@ -1267,7 +1267,7 @@ impl Parser {
     }
 
     /// Parse a function with explicit parameter types and optional return type.
-    fn function(&mut self) -> ParseResult<Function> {
+    fn function(&mut self, public: bool) -> ParseResult<Function> {
         let start = self.take().span.start;
         let (name, _) = self.name()?;
         self.expect(Kind::Left, "expected '(' after function name")?;
@@ -1300,6 +1300,7 @@ impl Parser {
             return Err(self.error("expected end of line after function body"));
         }
         Ok(Function {
+            public,
             name,
             params,
             return_type,

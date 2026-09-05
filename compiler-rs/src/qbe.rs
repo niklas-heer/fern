@@ -5,6 +5,8 @@ use crate::{
     Constructor, Diagnostic, Span, Type,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+#[path = "qbe/boundaries.rs"]
+mod boundaries;
 #[path = "qbe/closures.rs"]
 mod closures;
 #[path = "qbe/control.rs"]
@@ -82,11 +84,11 @@ fn emit_inner(program: &ir::Program) -> Lowering<String> {
             }
             if !function.captures.is_empty()
                 || !function.params.is_empty()
-                || !matches!(function.return_type.clone(), Type::Int | Type::Unit)
+                || !boundaries::main_type(&function.return_type)
             {
                 return Err(invalid(
                     function.body.span,
-                    "main must take no arguments and return Int or Unit",
+                    "main must take no arguments and return Int, Unit, or Result(Unit, E)",
                 ));
             }
         }
@@ -103,6 +105,9 @@ fn emit_inner(program: &ir::Program) -> Lowering<String> {
         enumerate_used: false,
         numeric_used: false,
         float_contains_used: false,
+        list_access_used: false,
+        repeat_used: false,
+        slice_used: false,
     };
     for function in &program.functions {
         emitter.function(function)?;
@@ -164,6 +169,9 @@ struct Emitter<'a> {
     enumerate_used: bool,
     numeric_used: bool,
     float_contains_used: bool,
+    list_access_used: bool,
+    repeat_used: bool,
+    slice_used: bool,
 }
 
 struct Locals {
@@ -218,6 +226,15 @@ impl Emitter<'_> {
         }
         if self.enumerate_used {
             self.output.push_str(include_str!("qbe/iteration.ssa"));
+        }
+        if self.list_access_used {
+            self.output.push_str(include_str!("qbe/list_access.ssa"));
+        }
+        if self.repeat_used {
+            self.output.push_str(include_str!("qbe/repeat.ssa"));
+        }
+        if self.slice_used {
+            self.output.push_str(include_str!("qbe/slice.ssa"));
         }
         self.main_wrapper(main);
         self.float_print_helpers();
@@ -288,6 +305,8 @@ impl Emitter<'_> {
         if main.return_type.clone() == Type::Int {
             self.output
                 .push_str("    %status =w copy %exit\n    ret %status\n}\n");
+        } else if matches!(main.return_type, Type::Result(_, _)) {
+            self.result_main_exit();
         } else {
             self.output.push_str("    ret 0\n}\n");
         }
@@ -587,25 +606,8 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Lowering<(Type, String)> {
-        if target == CallTarget::Builtin(Builtin::ListContains) && numeric::float_list(args) {
-            return self.float_contains(args, span, locals, depth);
-        }
-        if target == CallTarget::Builtin(Builtin::ListEnumerate) {
-            return self.enumerate(args, span, locals, depth);
-        }
-        if let CallTarget::Runtime(id) = target {
-            return self.runtime_call(id, args, span, locals, depth);
-        }
-        if let CallTarget::Builtin(builtin) = target {
-            if maps::is_map(builtin) {
-                return self.map_call(builtin, args, result, span, locals, depth);
-            }
-            if higher_order::is_higher_order(builtin) {
-                return self.higher_order(builtin, args, span, locals, depth);
-            }
-        }
-        if compound_builtin(target) {
-            return self.compound_call(target, args, span, locals, depth);
+        if let Some(outcome) = self.special_call(target, args, result, span, locals, depth) {
+            return outcome;
         }
         let (symbol, params, result) = self.signature(target, args, span)?;
         if args.len() != params.len() {
@@ -644,6 +646,44 @@ impl Emitter<'_> {
             self.guard_fault(locals);
         }
         Ok((result, value))
+    }
+
+    /// Dispatch calls whose checked payloads require a compiler-owned adapter.
+    fn special_call(
+        &mut self,
+        target: CallTarget,
+        args: &[Expr],
+        result: &Type,
+        span: Span,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Option<Lowering<(Type, String)>> {
+        match target {
+            CallTarget::Runtime(id) => Some(self.runtime_call(id, args, span, locals, depth)),
+            CallTarget::Builtin(Builtin::ListGet | Builtin::ListHead) => Some(self.list_access(
+                args,
+                target == CallTarget::Builtin(Builtin::ListHead),
+                span,
+                locals,
+                depth,
+            )),
+            CallTarget::Builtin(Builtin::ListContains) if numeric::float_list(args) => {
+                Some(self.float_contains(args, span, locals, depth))
+            }
+            CallTarget::Builtin(Builtin::ListEnumerate) => {
+                Some(self.enumerate(args, span, locals, depth))
+            }
+            CallTarget::Builtin(builtin) if maps::is_map(builtin) => {
+                Some(self.map_call(builtin, args, result, span, locals, depth))
+            }
+            CallTarget::Builtin(builtin) if higher_order::is_higher_order(builtin) => {
+                Some(self.higher_order(builtin, args, span, locals, depth))
+            }
+            _ if compound_builtin(target) => {
+                Some(self.compound_call(target, args, span, locals, depth))
+            }
+            _ => None,
+        }
     }
 
     /// Resolve backend symbols from `target` IDs or builtin identities, never source text.

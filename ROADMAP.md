@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (431 Rust tests, 4 measurement-harness tests, 123 core native programs, 8 controlled runtime faults, 85 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (463 Rust tests, 4 measurement-harness tests, 123 core native programs, 21 entry/access programs, 8 numeric-fault cases, 85 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -79,6 +79,10 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Early returns, postfix conditionals, condition matches, let-else and function-exit deferred cleanup (nine native programs, ten invalid cases and eight interactive control regressions).
 - [x] With error handling, List/Map/range iteration and loop control (14 native programs, 14 invalid cases and ten interactive regressions).
 - [x] Numeric operators, full-width literal forms, multiline strings/comments/documentation and Unicode identifiers (seven native programs, eight controlled-fault programs, 12 invalid inputs and seven interactive regressions).
+- [x] Bound shared runtime String.repeat allocations before multiplication; empty-input fast path (eight native ABI regressions).
+- [x] Replace shared runtime list access assertions with defined failures before access (six native ABI regressions; preserves full-width successful values).
+- [x] Private return inference with bounded recursive constraints, explicit public return signatures and concrete Result-valued entry points (17 checker regressions, bounded type-work checks and native execution).
+- [x] Guard Rust list access, repetition and UTF-8 slicing/splitting through deferred cleanup, including native malformed-byte input (21 native programs, 26 shared-runtime UTF-8 cases and interactive regressions).
 - [ ] Remaining function/type syntax and complete native-language audit.
 
 ### Rust Migration: Collections and Error Values

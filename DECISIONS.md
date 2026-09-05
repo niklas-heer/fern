@@ -4,6 +4,27 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 59 Infer private return schemes before concrete specialization
+* **Date**: 2026-09-05
+* **Status**: Accepted for Rust migration completion
+* **Decision**: I will infer omitted private function returns with shared, bounded type constraints before the existing concrete specialization pass. Public return signatures remain explicit and omitted main remains Unit.
+* **Context**: DESIGN permits internal inference while requiring annotated APIs. Checking definitions independently loses forward and recursive return constraints; specializing a generic probe as Int would reject valid Float uses or silently change a scheme.
+* **Consequences**: Annotated parameters remain the boundary for this checkpoint. Return evidence from tails, early returns and propagation can establish concrete types or declared generic schemes. Only unresolved shape dependencies are retried; genuine errors remain errors. Unanchored cycles require an annotation. A shared work and inference-storage budget bounds retries across all definitions. Public provenance survives module flattening. This does not claim full parameter inference, function clauses, or complete unused generic-body checking. The unavailable `/decision` skill is replaced by the established decision format.
+
+### 58 Preserve UTF-8 strings at slicing and splitting boundaries
+* **Date**: 2026-09-05
+* **Status**: Accepted for Rust migration completion
+* **Decision**: I will retain byte-indexed String.slice and its existing index clamping, while requiring clamped endpoints to be Unicode scalar boundaries. Splitting on an empty delimiter produces one complete Unicode scalar per String.
+* **Context**: Native byte-by-byte splitting can produce invalid UTF-8, while interactive strings already reject invalid slices. DESIGN defines byte lengths without specifying these non-ASCII corner cases. A String must remain valid UTF-8 across these operations.
+* **Consequences**: Clamping first sets start to at least zero and end to at least start, then bounds both by byte length. Interior-byte endpoints are errors even when the requested slice is empty. Rust guards execute deferred cleanup before reporting `String.slice indices must be UTF-8 character boundaries`; the shared legacy C function rejects the same request independently. Empty input split on an empty delimiter yields an empty list; combining marks remain separate scalars, with no implicit grapheme segmentation or normalization. Nonempty delimiter behavior is preserved. The unavailable `/decision` skill is replaced by the established decision format.
+
+### 57 Define entry errors and guard legacy runtime preconditions
+* **Date**: 2026-09-05
+* **Status**: Accepted for Rust migration completion
+* **Decision**: I will accept `main -> Result((), E)` for every concrete error type, exit zero for Ok and one for Err after deferred cleanup, and report `fern: main returned Err` for an unhandled entry error. Runtime faults take precedence. Existing direct-valued list access keeps its source signature and reports invalid access through the explicit Rust fault context.
+* **Context**: DESIGN specifies Result entry points but does not define a universal Error type or an error-display protocol. The existing List.get/head signatures have incompatible direct-value and recoverable descriptions. Their native assertions are not a safe execution contract. String repetition can overflow its allocation size from a tiny input.
+* **Consequences**: Rust-generated List.get/head failures run cleanup and never load out-of-bounds storage. Shared C helpers independently report the same failures before access in debug and release builds; their legacy callers do not receive the Rust cleanup protocol. General error rendering and recoverable indexing APIs remain separate work. String.repeat permits at most 16,777,216 content bytes, checks before multiplication/allocation, and returns empty immediately for empty input or nonpositive counts. Rust checks before calling C so cleanup executes; the legacy C ABI independently rejects oversized requests with the same diagnostic and exit 1, without Rust's cleanup protocol. The REPL applies this language limit before its stricter interactive storage limit. No arbitrary error payload is printed as an address, and no failure is replaced with an empty string. The unavailable `/decision` skill is replaced by the established decision format.
+
 ### 55 Define numeric domains and unwind runtime faults through cleanup
 * **Date**: 2026-09-05
 * **Status**: Accepted for Rust migration completion

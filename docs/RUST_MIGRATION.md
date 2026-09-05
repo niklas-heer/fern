@@ -280,3 +280,34 @@ limits, and @doc metadata remains associated with declarations. Unicode identifi
 spelling is preserved without normalization. Formatting must retain text contents
 and documentation. Runtime-fault fixtures separately verify cleanup/effect order,
 error messages and exit status, alongside valid and rejected source programs.
+
+
+## Private return inference and runtime boundaries
+
+Private functions with annotated parameters may infer their returns before
+concrete specialization. A bounded shared-constraint pass supports forward
+references and recursive definitions with a type anchor, including generic
+schemes established by their bodies. Unresolved recursive or generic results
+require an annotation. Public signatures retain explicit return types, including
+when definitions are imported; omitted main remains Unit. Retry work and
+inference storage have a shared budget, rather than restarting the full budget
+for every dependency retry. Parameter inference and function clauses remain open.
+
+`main -> Result((), E)` accepts a concrete error type: Ok exits 0, Err exits 1
+with `fern: main returned Err` on stderr, after cleanup. Error payload display
+awaits a general display protocol. Runtime faults take precedence over entry
+Results, and the first fault remains authoritative during cleanup.
+
+List.get/head check bounds before access through direct, registry and first-class
+calls. String.repeat checks its 16 MiB content cap before multiplication or
+allocation and returns empty immediately for nonpositive counts or empty input.
+The shared C helpers independently enforce these limits even in release builds;
+Rust-generated calls additionally unwind deferred cleanup through the fault
+context. These direct-valued APIs are not recoverable Result APIs yet.
+
+String.slice retains clamped byte indexing but rejects endpoints inside Unicode
+scalars. Empty-delimiter String.split produces complete scalars, including
+separate combining marks, and produces no elements for empty input. A preflight
+check also rejects malformed UTF-8 entering through legacy native I/O before
+splitting, preserving cleanup. Nonempty-delimiter behavior remains unchanged;
+consistent UTF-8 validation at all native string ingress is still an audit item.

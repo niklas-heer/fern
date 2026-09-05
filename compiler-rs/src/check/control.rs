@@ -134,7 +134,8 @@ impl Checker<'_> {
                 span,
             } => {
                 if let Some(ty) = annotation {
-                    self.registry.validate(ty, &HashSet::new(), *span)?;
+                    self.registry
+                        .validate(ty, &self.inference.template_names, *span)?;
                 }
                 let value = self
                     .expression_expected(value, annotation.as_ref(), depth)
@@ -201,7 +202,8 @@ impl Checker<'_> {
         statements: &mut Vec<ir::Stmt>,
     ) -> Checked<Type> {
         if let Some(ty) = annotation {
-            self.registry.validate(ty, &HashSet::new(), span)?;
+            self.registry
+                .validate(ty, &self.inference.template_names, span)?;
         }
         let value = self.expression_expected(value, annotation, depth)?;
         if value.ty == Type::Never {

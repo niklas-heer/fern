@@ -128,6 +128,7 @@ fn every_direct_registry_contract_instantiates_into_checked_ir() {
             })
             .collect();
         let probe = ast::Function {
+            public: false,
             name: "probe".into(),
             params,
             return_type: Some(concrete(&signature.return_type)),

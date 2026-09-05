@@ -26,6 +26,7 @@ fn named(n: &str, args: Vec<Type>) -> Type {
 }
 fn function(n: &str, params: Vec<(&str, Type)>, ty: Type, body: Expr) -> Function {
     Function {
+        public: false,
         name: n.into(),
         params: params
             .into_iter()

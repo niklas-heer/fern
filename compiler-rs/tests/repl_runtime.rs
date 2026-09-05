@@ -118,13 +118,13 @@ fn unsupported_operations_and_invalid_utf8_fragments_name_source_api() {
         error.contains("http.get") && !error.contains("fern_http_get"),
         "{error}"
     );
-    for expression in ["String.slice(\"é\", 0, 1)", "String.split(\"é\", \"\")"] {
-        let error = Session::default().evaluate(expression).unwrap_err();
-        assert!(
-            error.contains("UTF-8") && error.contains("String."),
-            "{error}"
-        );
-    }
+    let error = Session::default()
+        .evaluate("String.slice(\"é\", 0, 1)")
+        .unwrap_err();
+    assert!(
+        error.contains("UTF-8") && error.contains("String.slice"),
+        "{error}"
+    );
 }
 
 #[test]

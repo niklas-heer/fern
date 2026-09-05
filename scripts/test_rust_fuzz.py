@@ -5,6 +5,7 @@ from pathlib import Path
 import random
 import subprocess
 import tempfile
+from test_rust_boundaries import CASES as BOUNDARY_CASES
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED = 0xFE12A
@@ -31,6 +32,7 @@ def main():
     corpus += sorted((ROOT / "compiler-rs/tests/literals").glob("*.fn"))
     corpus += sorted((ROOT / "compiler-rs/tests/numeric_faults").glob("*.fn"))
     sources = [path.read_text() for path in corpus]
+    sources.extend(case[0] for case in BOUNDARY_CASES.values())
     tokens = ["(", ")", "[", "]", ":", "\n", "    ", '"', "🌿", "\\", "?", "None", "if", "#"]
     rng = random.Random(SEED)
     accepted = 0

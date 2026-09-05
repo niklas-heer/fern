@@ -52,6 +52,8 @@ pub struct Field {
 }
 #[derive(Clone, Debug)]
 pub struct Function {
+    /// Original declaration visibility, retained when module exports are flattened.
+    pub public: bool,
     pub name: String,
     pub params: Vec<Param>,
     pub return_type: Option<Type>,

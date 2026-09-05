@@ -38,9 +38,10 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
 
 ## Supported language
 
-- Top-level functions, typed parameters, explicit return annotations, forward and
-  recursive calls. Parameterless `main` returns `Int` or `Unit`; omitted `main`
-  return type means `Unit`. Other functions require a return annotation.
+- Top-level functions with typed parameters, private return inference, and forward/recursive calls.
+  Public function signatures require return annotations. Parameterless `main` returns
+  `Int`, `Unit`, or `Result((), E)` with a concrete error type; omitted `main`
+  return type means `Unit`. Unresolved recursive return types require an annotation.
 - Signed 64-bit `Int`, IEEE double `Float`, `Bool`, UTF-8 `String`, `Unit`/`()`, and recursively nested
   concrete `List(T)`, `Option(T)`, and `Result(T, E)` types.
 - Custom sum and record declarations, concrete generic type applications, record fields,
@@ -68,7 +69,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
   Guarded arms do not establish exhaustiveness.
 - Postfix `?` unwraps Ok or immediately returns Err from a Result-returning helper;
   the enclosing error type must agree. Result expressions cannot be silently
-  discarded. Main still returns Int or Unit and must explicitly handle errors.
+  discarded. Result-returning main may propagate errors with `?`.
 - `Option.is_some/is_none/unwrap_or` and `Result.is_ok/is_err/unwrap_or`.
 - Multiline lists, calls, and type arguments with checked delimiters.
 - Nested string interpolation with Int/Float/Bool/String expressions and escaped literal braces.
@@ -83,7 +84,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
   (`Tui.Panel`, `Tui.Tree`, etc.), keeping ordinary user-defined names available.
 
 Unsupported syntax produces diagnostics. Gaps include actor execution, named
-arguments and inferred return types outside `main`.
+arguments, function clauses and inferred named-function parameter types.
 Full release parity remains migration work.
 
 `fmt` formats the supported syntax in place, preserves comments, and verifies that
@@ -95,15 +96,31 @@ unused generic bodies currently receive structural/signature validation only.
 An expression such as `let empty = []` or `let missing = None` needs enough later
 usage or an annotation to determine its payload type. For example,
 `let empty: List(String) = []` is concrete. Unsupported compound equality is
-rejected; it does not silently compare pointers. List indexing and `List.head`
-retain the current runtime's valid-index/nonempty preconditions, so check lengths
-before reading. General safe collection indexing remains future work.
+rejected; it does not silently compare pointers. Invalid `List.get`/`List.head`
+access reports a runtime error after deferred cleanup. Their signatures still
+return direct values; recoverable collection indexing remains future work.
 
 Strings inherit the existing C runtime: embedded NUL is rejected, and `String.len`
-counts UTF-8 bytes. Integer arithmetic uses QBE's native signed operations; total
-arithmetic error handling (including divide by zero) remains future work. A source
+counts UTF-8 bytes. String repetition rejects results larger than 16 MiB before
+allocation; empty strings and nonpositive counts produce an empty string immediately.
+String.slice uses clamped byte offsets and rejects endpoints inside a Unicode scalar.
+Splitting on an empty delimiter returns complete Unicode scalars. Integer domain
+faults are reported after cleanup, as described below. A source
 file is limited to 1 MiB, 65,536 tokens, and a syntax nesting depth of 128. These
 explicit prototype limits prevent unbounded parser recursion/allocation.
+
+## Entry results and return inference
+
+A private function with annotated parameters can omit its return annotation:
+`fn twice(value: Int): value * 2`. Forward calls and recursive definitions with
+sufficient type constraints infer concrete return types; unanchored recursive
+cycles require an annotation. Public signatures remain explicit. Generic helpers
+retain their declared type parameters and specialize independently per call.
+
+`main -> Result((), E)` exits 0 for `Ok(())` and 1 for `Err`, after deferred cleanup.
+An unhandled entry error currently prints `fern: main returned Err` to stderr;
+rendering arbitrary error payloads awaits a general display protocol. A runtime
+fault in the body or its cleanup takes precedence over the entry Result.
 
 ## Functions and callbacks
 

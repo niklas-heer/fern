@@ -209,6 +209,25 @@ int64_t fern_str_index_of(const char* s, const char* substr) {
 }
 
 /**
+ * Validate clamped byte slice endpoints without allocation or runtime termination.
+ * @param s Non-null UTF-8 string.
+ * @param start Start byte index, clamped to the string.
+ * @param end Exclusive end byte index, clamped after start.
+ * @return 1 when both clamped endpoints are scalar boundaries, otherwise 0.
+ */
+int64_t fern_str_slice_is_valid(const char* s, int64_t start, int64_t end) {
+    assert(s != NULL);
+    size_t len = strlen(s);
+    assert(len <= INT64_MAX);
+    if (start < 0) start = 0;
+    if (end < start) end = start;
+    size_t from = (uint64_t)start > len ? len : (size_t)start;
+    size_t to = (uint64_t)end > len ? len : (size_t)end;
+    return ((unsigned char)s[from] & 0xc0) != 0x80 &&
+           ((unsigned char)s[to] & 0xc0) != 0x80;
+}
+
+/**
  * Get substring from start to end (exclusive).
  * @param s The string.
  * @param start Start index.
@@ -217,6 +236,10 @@ int64_t fern_str_index_of(const char* s, const char* substr) {
  */
 char* fern_str_slice(const char* s, int64_t start, int64_t end) {
     assert(s != NULL);
+    if (!fern_str_slice_is_valid(s, start, end)) {
+        fputs("fern: runtime error: String.slice indices must be UTF-8 character boundaries\n", stderr);
+        exit(1);
+    }
     size_t len = strlen(s);
     
     /* Clamp indices */
@@ -399,71 +422,111 @@ char* fern_str_replace(const char* s, const char* old_str, const char* new_str) 
 }
 
 /**
- * Split string by delimiter.
- * @param s The string.
- * @param delim The delimiter.
- * @return List of strings (as FernStringList).
+ * Decode the width of one valid Unicode scalar without reading beyond remaining.
+ * @param text Non-null bytes at a prospective scalar boundary.
+ * @param remaining Positive number of bytes available.
+ * @return Scalar width from 1 to 4, or 0 for malformed UTF-8.
+ */
+static size_t fern_utf8_scalar_width(const unsigned char* text, size_t remaining) {
+    assert(text != NULL);
+    assert(remaining > 0);
+    unsigned char first = text[0];
+    if (first < 0x80) return 1;
+    size_t width = first >= 0xc2 && first <= 0xdf ? 2 :
+                   first >= 0xe0 && first <= 0xef ? 3 :
+                   first >= 0xf0 && first <= 0xf4 ? 4 : 0;
+    if (width == 0 || width > remaining) return 0;
+    for (size_t i = 1; i < width; i++) {
+        if ((text[i] & 0xc0) != 0x80) return 0;
+    }
+    if ((first == 0xe0 && text[1] < 0xa0) ||
+        (first == 0xed && text[1] >= 0xa0) ||
+        (first == 0xf0 && text[1] < 0x90) ||
+        (first == 0xf4 && text[1] >= 0x90)) return 0;
+    return width;
+}
+
+/**
+ * Validate input before empty-delimiter splitting without allocation or termination.
+ * @param s Non-null source bytes.
+ * @param delim Non-null delimiter; nonempty delimiters retain byte splitting.
+ * @return 1 for permitted input, or 0 for malformed scalar input with empty delimiter.
+ */
+int64_t fern_str_split_is_valid(const char* s, const char* delim) {
+    assert(s != NULL);
+    assert(delim != NULL);
+    if (*delim != '\0') return 1;
+    size_t length = strlen(s);
+    for (size_t offset = 0; offset < length;) {
+        size_t width = fern_utf8_scalar_width((const unsigned char*)s + offset, length - offset);
+        if (width == 0) return 0;
+        offset += width;
+    }
+    return 1;
+}
+
+/**
+ * Append a copied byte span to the split result, growing capacity when needed.
+ * @param list Initialized string list with positive capacity.
+ * @param text Non-null source bytes.
+ * @param length Byte count to copy.
+ */
+static void fern_split_append(FernStringList* list, const char* text, size_t length) {
+    assert(list != NULL && list->cap > 0);
+    assert(text != NULL);
+    if (list->len >= list->cap) {
+        if ((uint64_t)list->cap > SIZE_MAX / sizeof(char*) / 2 || list->cap > INT64_MAX / 2) {
+            fputs("fern: runtime error: string list size limit exceeded\n", stderr);
+            exit(1);
+        }
+        list->cap *= 2;
+        list->data = FERN_REALLOC(list->data, (size_t)list->cap * sizeof(char*));
+        assert(list->data != NULL);
+    }
+    char* part = FERN_ALLOC(length + 1);
+    assert(part != NULL);
+    memcpy(part, text, length);
+    part[length] = '\0';
+    list->data[list->len++] = part;
+}
+
+/**
+ * Split string by delimiter, using Unicode scalars for an empty delimiter.
+ * @param s Non-null UTF-8 string.
+ * @param delim Non-null delimiter.
+ * @return New string list; empty input and delimiter produce an empty list.
  */
 FernStringList* fern_str_split(const char* s, const char* delim) {
     assert(s != NULL);
     assert(delim != NULL);
-    
     FernStringList* list = fern_rc_alloc(sizeof(FernStringList), FERN_RC_TYPE_STRING_LIST);
     assert(list != NULL);
     list->cap = 8;
     list->len = 0;
     list->data = FERN_ALLOC((size_t)list->cap * sizeof(char*));
     assert(list->data != NULL);
-    
     size_t delim_len = strlen(delim);
-    
-    /* Empty delimiter: split into characters */
+    size_t length = strlen(s);
     if (delim_len == 0) {
-        size_t s_len = strlen(s);
-        for (size_t i = 0; i < s_len; i++) {
-            if (list->len >= list->cap) {
-                list->cap *= 2;
-                list->data = FERN_REALLOC(list->data, (size_t)list->cap * sizeof(char*));
-                assert(list->data != NULL);
+        for (size_t offset = 0; offset < length;) {
+            size_t width = fern_utf8_scalar_width((const unsigned char*)s + offset, length - offset);
+            if (width == 0) {
+                fputs("fern: runtime error: String.split requires valid UTF-8 input\n", stderr);
+                exit(1);
             }
-            char* ch = FERN_ALLOC(2);
-            assert(ch != NULL);
-            ch[0] = s[i];
-            ch[1] = '\0';
-            list->data[list->len++] = ch;
+            fern_split_append(list, s + offset, width);
+            offset += width;
         }
         return list;
     }
-    
-    /* Split by delimiter */
-    const char* p = s;
-    const char* found;
-    while ((found = strstr(p, delim)) != NULL) {
-        if (list->len >= list->cap) {
-            list->cap *= 2;
-            list->data = FERN_REALLOC(list->data, (size_t)list->cap * sizeof(char*));
-            assert(list->data != NULL);
-        }
-        size_t part_len = (size_t)(found - p);
-        char* part = FERN_ALLOC(part_len + 1);
-        assert(part != NULL);
-        memcpy(part, p, part_len);
-        part[part_len] = '\0';
-        list->data[list->len++] = part;
-        p = found + delim_len;
+    const char* part = s;
+    for (size_t count = 0; count < length; count++) {
+        const char* found = strstr(part, delim);
+        if (found == NULL) break;
+        fern_split_append(list, part, (size_t)(found - part));
+        part = found + delim_len;
     }
-    
-    /* Add remaining part */
-    if (list->len >= list->cap) {
-        list->cap *= 2;
-        list->data = FERN_REALLOC(list->data, (size_t)list->cap * sizeof(char*));
-        assert(list->data != NULL);
-    }
-    char* last = FERN_ALLOC(strlen(p) + 1);
-    assert(last != NULL);
-    strcpy(last, p);
-    list->data[list->len++] = last;
-    
+    fern_split_append(list, part, strlen(part));
     return list;
 }
 
@@ -578,12 +641,14 @@ char* fern_str_join(FernStringList* list, const char* sep) {
  * Repeat string n times.
  * @param s The string.
  * @param n Number of repetitions.
- * @return New string with s repeated n times.
+ * @return New string, with at most 16 MiB of content; nonpositive n yields empty.
+ * Oversized requests terminate with a diagnostic before allocation. Rust-generated
+ * callers validate first so their function-owned deferred cleanup still executes.
  */
 char* fern_str_repeat(const char* s, int64_t n) {
     assert(s != NULL);
     
-    if (n <= 0) {
+    if (n <= 0 || s[0] == '\0') {
         char* result = FERN_ALLOC(1);
         assert(result != NULL);
         result[0] = '\0';
@@ -591,7 +656,13 @@ char* fern_str_repeat(const char* s, int64_t n) {
     }
     
     size_t s_len = strlen(s);
+    const size_t content_limit = 16 * 1024 * 1024;
+    if ((uint64_t)n > content_limit / s_len) {
+        fputs("fern: runtime error: string size limit exceeded\n", stderr);
+        exit(1);
+    }
     size_t total = s_len * (size_t)n;
+    assert(total <= content_limit);
     char* result = FERN_ALLOC(total + 1);
     assert(result != NULL);
     
@@ -690,6 +761,10 @@ int64_t fern_list_len(FernList* list) {
  */
 int64_t fern_list_get(FernList* list, int64_t index) {
     assert(list != NULL);
+    if (index < 0 || index >= list->len) {
+        fputs("fern: runtime error: list index out of bounds\n", stderr);
+        exit(1);
+    }
     assert(index >= 0 && index < list->len);
     return list->data[index];
 }
@@ -887,11 +962,15 @@ FernList* fern_list_concat(FernList* a, FernList* b) {
 /**
  * Get first element of a list.
  * @param list The list.
- * @return The first element (panics if list is empty).
+ * @return The first element; empty input exits 1 with a diagnostic before access.
  */
 int64_t fern_list_head(FernList* list) {
     assert(list != NULL);
-    assert(list->len > 0 && "List.head called on empty list");
+    if (list->len == 0) {
+        fputs("fern: runtime error: head of empty list\n", stderr);
+        exit(1);
+    }
+    assert(list->len > 0);
 
     return list->data[0];
 }

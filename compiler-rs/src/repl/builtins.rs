@@ -220,13 +220,17 @@ fn slice(text: &str, start: i64, end: i64) -> Eval<Value> {
     let end = end.max(start);
     let start = (start as u64).min(text.len() as u64) as usize;
     let end = (end as u64).min(text.len() as u64) as usize;
-    string(text.get(start..end).ok_or_else(|| {
-        fault("String.slice produces invalid UTF-8; interactive strings require UTF-8")
-    })?)
+    string(
+        text.get(start..end)
+            .ok_or_else(|| fault("String.slice indices must be UTF-8 character boundaries"))?,
+    )
 }
 fn repeat(text: &str, count: i64) -> Eval<Value> {
     if count <= 0 || text.is_empty() {
         return string("");
+    }
+    if count as u64 > (16 * 1024 * 1024 / text.len()) as u64 {
+        return Err(fault("string size limit exceeded"));
     }
     let count = usize::try_from(count).map_err(|_| fault("interactive string limit exceeded"))?;
     bounded(text.len().checked_mul(count), MAX_STRING, "string")?;
@@ -249,13 +253,10 @@ fn replace(text: &str, old: &str, new: &str) -> Eval<Value> {
 }
 fn split(text: &str, separator: &str) -> Eval<Value> {
     if separator.is_empty() {
-        if !text.is_ascii() {
-            return Err(fault("String.split with an empty delimiter produces invalid UTF-8 bytes; interactive strings require UTF-8"));
-        }
         return list(
-            text.len(),
-            text.char_indices()
-                .map(|(i, _)| Value::String(Rc::new(text[i..i + 1].into()))),
+            text.chars().count(),
+            text.chars()
+                .map(|character| Value::String(Rc::new(character.to_string()))),
         );
     }
     let parts = text.split(separator);

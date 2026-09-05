@@ -10,6 +10,7 @@ mod maps;
 mod nominal;
 mod pipes;
 mod preflight;
+mod returns;
 mod specialize;
 mod with_flow;
 
@@ -32,6 +33,12 @@ struct Signature {
 struct Inference {
     bindings: Vec<Option<Type>>,
     ranks: Vec<u32>,
+    probing: bool,
+    template: bool,
+    template_names: HashSet<String>,
+    probe_work: std::cell::Cell<usize>,
+    settling: bool,
+    pending_returns: Vec<returns::DeferredCall>,
 }
 struct Checker<'a> {
     signatures: &'a HashMap<String, Signature>,
@@ -50,14 +57,15 @@ struct Checker<'a> {
 pub fn check(program: &ast::Program) -> Checked<ir::Program> {
     preflight::check(program)?;
     let registry = nominal::Registry::new(program)?;
-    let signatures = signatures(program, &registry)?;
-    specialize::run(program, &registry, &signatures)
+    let (program, signatures) = returns::resolve(program, &registry)?;
+    specialize::run(&program, &registry, &signatures)
 }
 
 /// Collect validated concrete signatures from `program` before checking bodies.
 fn signatures(
     program: &ast::Program,
     registry: &nominal::Registry,
+    inference: &mut Inference,
 ) -> Checked<HashMap<String, Signature>> {
     if program.functions.len() > MAX_FUNCTIONS {
         return Err(Diagnostic::new(
@@ -85,8 +93,7 @@ fn signatures(
                 ),
             ));
         }
-        let result = function_result(function)?;
-        validate_type(&result, function.span)?;
+        let result = returns::initial_result(function, inference)?;
         validate_parameters(function)?;
         let generics = nominal::generics(
             function
@@ -96,7 +103,9 @@ fn signatures(
                 .chain(std::iter::once(result.clone())),
         );
         let allowed = generics.iter().cloned().collect();
-        registry.validate(&result, &allowed, function.span)?;
+        if !matches!(result, Type::Infer(_)) {
+            registry.validate(&result, &allowed, function.span)?;
+        }
         for param in &function.params {
             registry.validate(&param.ty, &allowed, param.span)?;
         }
@@ -162,16 +171,20 @@ fn function_result(function: &ast::Function) -> Checked<Type> {
             ));
         }
         let ty = function.return_type.clone().unwrap_or(Type::Unit);
-        if !matches!(ty, Type::Int | Type::Unit) {
+        if !returns::main_result(&ty) {
             return Err(Diagnostic::new(
                 function.span,
-                "prototype main must return Int or Unit",
+                "main must return Int, Unit, or Result(Unit, concrete error type)",
             ));
         }
         Ok(ty)
     } else {
-        function.return_type.clone().ok_or_else(|| Diagnostic::new(function.span,
-            "prototype requires a return type annotation for non-main functions; return type inference is unsupported"))
+        function.return_type.clone().ok_or_else(|| {
+            Diagnostic::new(
+                function.span,
+                "public functions require a return type annotation",
+            )
+        })
     }
 }
 
@@ -249,6 +262,7 @@ impl Inference {
         depth: usize,
         budget: &mut usize,
     ) -> Checked<Type> {
+        returns::charge(self, span)?;
         if depth >= MAX_TYPE_DEPTH || *budget == 0 {
             return Err(Diagnostic::new(
                 span,
@@ -308,6 +322,13 @@ impl Inference {
         let actual = self.resolve(actual, span)?;
         let expected = self.resolve(expected, span)?;
         if actual == Type::Never || expected == Type::Never || actual == expected {
+            return Ok(());
+        }
+        if self.template
+            && (matches!(actual, Type::Generic(_)) || matches!(expected, Type::Generic(_)))
+            && !matches!(actual, Type::Infer(_))
+            && !matches!(expected, Type::Infer(_))
+        {
             return Ok(());
         }
         match (&actual, &expected) {
@@ -500,6 +521,7 @@ impl Checker<'_> {
 
     /// Bound checked expression traversal before allocating typed nodes.
     fn expression_budget(&mut self, span: Span, depth: usize) -> Checked<()> {
+        returns::charge(&self.inference, span)?;
         if depth >= MAX_EXPR_DEPTH {
             return Err(Diagnostic::new(
                 span,
@@ -526,6 +548,7 @@ impl Checker<'_> {
         self.expression_budget(expr.span, depth)?;
         let (kind, ty) = self.expression_kind(expr, expected, depth)?;
         let (kind, ty) = control::strict_divergence(kind, ty);
+        returns::charge_output(&self.inference, &ty, expr.span)?;
         if let Some(expected) = expected {
             self.inference
                 .unify(&ty, expected, expr.span, "expression type")?;
@@ -772,7 +795,8 @@ impl Checker<'_> {
         statements: &mut Vec<ir::Stmt>,
     ) -> Checked<Type> {
         if let Some(ty) = annotation {
-            self.registry.validate(ty, &HashSet::new(), span)?;
+            self.registry
+                .validate(ty, &self.inference.template_names, span)?;
         }
         let value = self.expression_expected(value, annotation, depth)?;
         if let Some(ty) = annotation {
@@ -857,6 +881,7 @@ impl Checker<'_> {
             {
                 Type::Float
             }
+            ast::UnaryOp::Negate if self.inference.probing => value.ty.clone(),
             ast::UnaryOp::Negate | ast::UnaryOp::BitNot => Type::Int,
             ast::UnaryOp::Not => Type::Bool,
         };
@@ -889,13 +914,7 @@ impl Checker<'_> {
             Add => left.ty.clone(),
             Eq | Ne => Type::Bool,
             Power | Subtract | Multiply | Divide | Remainder | Lt | Le | Gt | Ge => {
-                let numeric = if op != Remainder
-                    && self.inference.resolve(&left.ty, left.span)? == Type::Float
-                {
-                    Type::Float
-                } else {
-                    Type::Int
-                };
+                let numeric = self.numeric_domain(op, &left.ty, left.span)?;
                 self.inference
                     .unify(&left.ty, &numeric, left.span, "binary operator")?;
                 if matches!(op, Lt | Le | Gt | Ge) {
@@ -1016,6 +1035,7 @@ impl Checker<'_> {
                 .iter()
                 .map(|n| (n.clone(), self.inference.fresh()))
                 .collect();
+            let result = returns::call_result(&mut self.inference, signature, &values, span)?;
             Ok((
                 ir::CallTarget::Function(signature.id),
                 signature
@@ -1023,7 +1043,7 @@ impl Checker<'_> {
                     .iter()
                     .map(|ty| nominal::substitute(ty, &values))
                     .collect::<Checked<Vec<_>>>()?,
-                nominal::substitute(&signature.result, &values)?,
+                result,
             ))
         } else if let Some(omission) = runtime::omissions()
             .iter()
@@ -1387,6 +1407,7 @@ impl Checker<'_> {
 
     /// Resolve a record field once, retaining its index and instantiated semantic type.
     fn field(&mut self, value: ir::Expr, name: &str, span: Span) -> Checked<TypedKind> {
+        returns::shape_ready(&self.inference, &value.ty, span)?;
         if value.ty == Type::Never {
             return Ok((value.kind, Type::Never));
         }
