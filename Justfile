@@ -442,6 +442,7 @@ rust-check: rust-build
     cargo test --locked --manifest-path compiler-rs/Cargo.toml
     python3 scripts/test_evaluate_rust_frontend.py
     python3 scripts/test_rust_frontend.py
+    python3 scripts/test_rust_collections.py
 
 # Build both frontends with release settings for the opt-in evaluation.
 rust-release: release

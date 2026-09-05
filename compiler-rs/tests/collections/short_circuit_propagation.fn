@@ -1,0 +1,17 @@
+fn probe() -> Result(Bool, String):
+    println("probe")
+    Err("failed")
+
+fn skip() -> Result(Bool, String):
+    Ok(false and probe()?)
+
+fn evaluate() -> Result(Bool, String):
+    Ok(true and probe()?)
+
+fn main():
+    match skip():
+        Ok(value) -> println(value)
+        Err(error) -> println(error)
+    match evaluate():
+        Ok(value) -> println(value)
+        Err(error) -> println(error)

@@ -70,7 +70,7 @@ fn rejects_malformed_and_unsupported_input() {
         ("fn main():\n    0\n  1", "indent"),
         ("fn main(): \"x\\q\"", "escape"),
         ("fn main(): \"hi {name}\"", "interpolation"),
-        ("fn main(): [1, 2]", "unsupported"),
+        ("fn main(): {1, 2}", "unsupported"),
         ("fn main(): foo(label: 1)", "labeled"),
         ("fn main(): 9223372036854775808", "range"),
         ("fn main(): 1.5", "unsupported"),

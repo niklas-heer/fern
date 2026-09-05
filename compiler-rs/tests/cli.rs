@@ -30,6 +30,7 @@ fn help_describes_experimental_boundary() {
         .unwrap();
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("experimental"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("List/Option/Result"));
 }
 
 #[test]

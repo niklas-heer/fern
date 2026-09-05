@@ -1,0 +1,12 @@
+fn collect(remaining: Int, items: List(Option(String))) -> List(Option(String)):
+    if remaining == 0:
+        items
+    else:
+        let value = Some(String.concat("retained ", "🌿"))
+        collect(remaining - 1, List.push(items, value))
+
+fn main():
+    let values = collect(1500, [])
+    println(List.len(values))
+    println(Option.unwrap_or(List.head(values), "missing"))
+    println(Option.unwrap_or(List.get(values, 1499), "missing"))

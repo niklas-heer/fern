@@ -1,7 +1,7 @@
 //! Checked expressions retain semantic types and resolved identities for lowering.
 use crate::{
     ast::{BinaryOp, UnaryOp},
-    Span, Type,
+    Constructor, Span, Type,
 };
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LocalId(pub usize);
@@ -37,6 +37,17 @@ pub enum ExprKind {
     Bool(bool),
     String(String),
     Local(LocalId),
+    Unit,
+    List(Vec<Expr>),
+    Try(Box<Expr>),
+    Construct {
+        constructor: Constructor,
+        value: Option<Box<Expr>>,
+    },
+    Match {
+        value: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
     Unary {
         op: UnaryOp,
         value: Box<Expr>,
@@ -57,6 +68,26 @@ pub enum ExprKind {
     },
     Block(Vec<Stmt>),
 }
+
+#[derive(Clone, Debug)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Expr,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub enum Pattern {
+    Wildcard,
+    Bind(LocalId),
+    Int(i64),
+    Bool(bool),
+    String(String),
+    Constructor {
+        constructor: Constructor,
+        binding: Option<LocalId>,
+    },
+}
 #[derive(Clone, Debug)]
 pub enum Stmt {
     Let { id: LocalId, value: Expr },
@@ -74,4 +105,19 @@ pub enum Builtin {
     StringConcat,
     StringEq,
     StringLen,
+    ListLen,
+    ListGet,
+    ListHead,
+    ListTail,
+    ListIsEmpty,
+    ListPush,
+    ListReverse,
+    ListConcat,
+    ListContains,
+    OptionIsSome,
+    OptionIsNone,
+    OptionUnwrapOr,
+    ResultIsOk,
+    ResultIsErr,
+    ResultUnwrapOr,
 }

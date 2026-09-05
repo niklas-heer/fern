@@ -1,0 +1,13 @@
+fn size(values: List(String)) -> Int:
+    List.len(values)
+
+fn main():
+    let empty = []
+    let values = List.push(empty, "inferred")
+    println(size(empty))
+    println(List.head(values))
+    let optional = if false: None else: Some(["context"])
+    match optional:
+        None -> println("missing")
+        Some(words) -> println(List.head(words))
+    println(size([]))

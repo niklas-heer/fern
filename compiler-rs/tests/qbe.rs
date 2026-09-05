@@ -24,7 +24,7 @@ fn function(id: usize, name: &str, body: Expr) -> Function {
     Function {
         id: FunctionId(id),
         name: name.into(),
-        return_type: body.ty,
+        return_type: body.ty.clone(),
         body,
         params: vec![],
         local_count: 0,

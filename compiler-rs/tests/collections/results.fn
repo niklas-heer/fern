@@ -1,0 +1,14 @@
+fn fetch(success: Bool) -> Result(String, String):
+    if success: Ok("payload") else: Err("unavailable")
+
+fn describe(result: Result(String, String)) -> String:
+    match result:
+        Ok(value) -> String.concat("ok: ", value)
+        Err(error) -> String.concat("error: ", error)
+
+fn main():
+    println(describe(fetch(true)))
+    println(describe(fetch(false)))
+    println(Result.is_ok(fetch(true)))
+    println(Result.is_err(fetch(false)))
+    println(Result.unwrap_or(fetch(false), "fallback"))

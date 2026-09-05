@@ -1,8 +1,8 @@
 //! QBE lowering uses only checked types and resolved symbol identities.
 use crate::{
     ast::{BinaryOp, UnaryOp},
-    ir::{self, Builtin, CallTarget, Expr, ExprKind, Function, Stmt},
-    Diagnostic, Span, Type,
+    ir::{self, Builtin, CallTarget, Expr, ExprKind, Function, MatchArm, Pattern, Stmt},
+    Constructor, Diagnostic, Span, Type,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -16,6 +16,10 @@ pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
     let mut functions = BTreeMap::new();
     let mut main = None;
     for function in &program.functions {
+        concrete(&function.return_type, function.body.span, 0)?;
+        for param in &function.params {
+            concrete(&param.ty, function.body.span, 0)?;
+        }
         if functions.insert(function.id.0, function).is_some() {
             return Err(invalid(function.body.span, "duplicate function identity"));
         }
@@ -24,7 +28,7 @@ pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
                 return Err(invalid(function.body.span, "duplicate main function"));
             }
             if !function.params.is_empty()
-                || !matches!(function.return_type, Type::Int | Type::Unit)
+                || !matches!(function.return_type.clone(), Type::Int | Type::Unit)
             {
                 return Err(invalid(
                     function.body.span,
@@ -57,8 +61,9 @@ fn invalid(span: Span, message: &str) -> Diagnostic {
 /// Map semantic `ty` to QBE scalar width; pointers and integers remain distinct in IR.
 fn width(ty: Type) -> char {
     match ty {
-        Type::Int | Type::String => 'l',
+        Type::Int | Type::String | Type::List(_) | Type::Option(_) | Type::Result(_, _) => 'l',
         Type::Bool | Type::Unit => 'w',
+        Type::Infer(_) => unreachable!("concrete types validated at IR boundary"),
     }
 }
 
@@ -85,6 +90,7 @@ struct Locals {
     values: BTreeMap<usize, (Type, String)>,
     defined: BTreeSet<usize>,
     count: usize,
+    return_type: Type,
     temporary: usize,
     label: usize,
     current: String,
@@ -125,6 +131,7 @@ impl Emitter<'_> {
             values: BTreeMap::new(),
             defined: BTreeSet::new(),
             count: function.local_count,
+            return_type: function.return_type.clone(),
             temporary: 0,
             label: 0,
             current: "@start".into(),
@@ -132,20 +139,29 @@ impl Emitter<'_> {
         let mut params = Vec::new();
         for param in &function.params {
             let value = format!("%v{}", param.id.0);
-            locals.define(param.id.0, param.ty, value.clone(), function.body.span)?;
-            params.push(format!("{} {value}", width(param.ty)));
+            locals.define(
+                param.id.0,
+                param.ty.clone(),
+                value.clone(),
+                function.body.span,
+            )?;
+            params.push(format!("{} {value}", width(param.ty.clone())));
         }
         self.output.push_str(&format!(
             "function {} $f{}({}) {{\n@start\n",
-            width(function.return_type),
+            width(function.return_type.clone()),
             function.id.0,
             params.join(", ")
         ));
         let value = self.expr(&function.body, &mut locals, 0)?;
-        if function.return_type != Type::Unit || function.name != "main" {
-            expect_type(function.body.ty, function.return_type, function.body.span)?;
+        if function.return_type.clone() != Type::Unit || function.name != "main" {
+            expect_type(
+                function.body.ty.clone(),
+                function.return_type.clone(),
+                function.body.span,
+            )?;
         }
-        let result = if function.return_type == Type::Unit {
+        let result = if function.return_type.clone() == Type::Unit {
             "0"
         } else {
             &value
@@ -160,10 +176,10 @@ impl Emitter<'_> {
             .push_str("export function w $fern_main() {\n@start\n");
         self.output.push_str(&format!(
             "    %exit ={} call $f{}()\n",
-            width(main.return_type),
+            width(main.return_type.clone()),
             main.id.0
         ));
-        if main.return_type == Type::Int {
+        if main.return_type.clone() == Type::Int {
             self.output
                 .push_str("    %status =w copy %exit\n    ret %status\n}\n");
         } else {
@@ -178,11 +194,24 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Result<String, Diagnostic> {
+        concrete(&expr.ty, expr.span, 0)?;
         self.nodes += 1;
         if depth > MAX_DEPTH || self.nodes > MAX_NODES {
             return Err(invalid(expr.span, "lowering complexity limit exceeded"));
         }
         let (actual, value) = match &expr.kind {
+            ExprKind::Try(value) => self.attempt(value, locals, depth + 1)?,
+            ExprKind::Unit => (Type::Unit, "0".into()),
+            ExprKind::List(items) => self.list(items, &expr.ty, expr.span, locals, depth + 1)?,
+            ExprKind::Construct { constructor, value } => self.construct(
+                *constructor,
+                value.as_deref(),
+                &expr.ty,
+                expr.span,
+                locals,
+                depth + 1,
+            )?,
+            ExprKind::Match { value, arms } => self.matching(value, arms, locals, depth + 1)?,
             ExprKind::Int(value) => (Type::Int, value.to_string()),
             ExprKind::Bool(value) => (Type::Bool, u8::from(*value).to_string()),
             ExprKind::String(value) => (Type::String, self.string(value, expr.span)?),
@@ -211,7 +240,7 @@ impl Emitter<'_> {
             )?,
             ExprKind::Block(stmts) => self.block(stmts, locals, depth + 1)?,
         };
-        expect_type(actual, expr.ty, expr.span)?;
+        expect_type(actual, expr.ty.clone(), expr.span)?;
         Ok(value)
     }
 
@@ -261,13 +290,16 @@ impl Emitter<'_> {
             UnaryOp::Negate => Type::Int,
             UnaryOp::Not => Type::Bool,
         };
-        expect_type(value.ty, expected, value.span)?;
+        expect_type(value.ty.clone(), expected.clone(), value.span)?;
         let value = self.expr(value, locals, depth)?;
         let instruction = match op {
             UnaryOp::Negate => format!("sub 0, {value}"),
             UnaryOp::Not => format!("ceqw {value}, 0"),
         };
-        Ok((expected, self.assign(locals, expected, &instruction)))
+        Ok((
+            expected.clone(),
+            self.assign(locals, expected, &instruction),
+        ))
     }
 
     /// Emit a scalar instruction `instruction`, assigning a fresh SSA value of `ty`.
@@ -297,11 +329,11 @@ impl Emitter<'_> {
             match stmt {
                 Stmt::Let { id, value } => {
                     let lowered = self.expr(value, locals, depth)?;
-                    locals.define(id.0, value.ty, lowered, value.span)?;
+                    locals.define(id.0, value.ty.clone(), lowered, value.span)?;
                     introduced.push(id.0);
                     result = (Type::Unit, "0".into());
                 }
-                Stmt::Expr(value) => result = (value.ty, self.expr(value, locals, depth)?),
+                Stmt::Expr(value) => result = (value.ty.clone(), self.expr(value, locals, depth)?),
             }
         }
         for id in introduced {
@@ -319,6 +351,9 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Result<(Type, String), Diagnostic> {
+        if compound_builtin(target) {
+            return self.compound_call(target, args, span, locals, depth);
+        }
         let (symbol, params, result) = self.signature(target, args, span)?;
         if args.len() != params.len() {
             return Err(invalid(
@@ -328,9 +363,9 @@ impl Emitter<'_> {
         }
         let mut arguments = Vec::new();
         for (arg, expected) in args.iter().zip(params) {
-            expect_type(arg.ty, expected, arg.span)?;
+            expect_type(arg.ty.clone(), expected.clone(), arg.span)?;
             let mut value = self.expr(arg, locals, depth)?;
-            let mut abi = width(expected);
+            let mut abi = width(expected.clone());
             if matches!(
                 target,
                 CallTarget::Builtin(Builtin::Print | Builtin::Println)
@@ -346,7 +381,7 @@ impl Emitter<'_> {
             self.output.push_str(&format!("    {instruction}\n"));
             "0".into()
         } else {
-            self.assign(locals, result, &instruction)
+            self.assign(locals, result.clone(), &instruction)
         };
         Ok((result, value))
     }
@@ -366,8 +401,8 @@ impl Emitter<'_> {
                     .ok_or_else(|| invalid(span, "unknown function identity"))?;
                 return Ok((
                     format!("f{}", id.0),
-                    function.params.iter().map(|p| p.ty).collect(),
-                    function.return_type,
+                    function.params.iter().map(|p| p.ty.clone()).collect(),
+                    function.return_type.clone(),
                 ));
             }
             CallTarget::Builtin(builtin) => builtin,
@@ -388,19 +423,24 @@ impl Emitter<'_> {
                 let arg = args
                     .first()
                     .ok_or_else(|| invalid(span, "print requires one argument"))?;
-                let suffix = match arg.ty {
+                let suffix = match arg.ty.clone() {
                     Type::Int => "int",
                     Type::Bool => "bool",
                     Type::String => "str",
-                    Type::Unit => return Err(invalid(arg.span, "cannot print Unit")),
+                    _ => return Err(invalid(arg.span, "cannot print compound or Unit value")),
                 };
                 let name = if builtin == Builtin::Print {
                     "print"
                 } else {
                     "println"
                 };
-                (format!("fern_{name}_{suffix}"), vec![arg.ty], Type::Unit)
+                (
+                    format!("fern_{name}_{suffix}"),
+                    vec![arg.ty.clone()],
+                    Type::Unit,
+                )
             }
+            _ => return compound_signature(builtin, args, span),
         };
         Ok((symbol, params, result))
     }
@@ -417,24 +457,27 @@ impl Emitter<'_> {
         if matches!(op, BinaryOp::And | BinaryOp::Or) {
             return self.logical(op, left, right, locals, depth);
         }
-        expect_type(right.ty, left.ty, right.span)?;
+        expect_type(right.ty.clone(), left.ty.clone(), right.span)?;
         let result_type = match op {
-            BinaryOp::Add if left.ty == Type::String => Type::String,
+            BinaryOp::Add if left.ty.clone() == Type::String => Type::String,
             BinaryOp::Add
             | BinaryOp::Subtract
             | BinaryOp::Multiply
             | BinaryOp::Divide
             | BinaryOp::Remainder => {
-                expect_type(left.ty, Type::Int, left.span)?;
+                expect_type(left.ty.clone(), Type::Int, left.span)?;
                 Type::Int
             }
             BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-                expect_type(left.ty, Type::Int, left.span)?;
+                expect_type(left.ty.clone(), Type::Int, left.span)?;
                 Type::Bool
             }
             BinaryOp::Eq | BinaryOp::Ne => {
-                if left.ty == Type::Unit {
-                    return Err(invalid(left.span, "Unit comparison is unsupported"));
+                if !matches!(left.ty, Type::Int | Type::Bool | Type::String) {
+                    return Err(invalid(
+                        left.span,
+                        "comparison requires Int, Bool, or String",
+                    ));
                 }
                 Type::Bool
             }
@@ -443,31 +486,44 @@ impl Emitter<'_> {
         let lhs = self.expr(left, locals, depth)?;
         let rhs = self.expr(right, locals, depth)?;
         if left.ty == Type::String {
-            if op == BinaryOp::Add {
-                let result = self.assign(
-                    locals,
-                    Type::String,
-                    &format!("call $fern_str_concat(l {lhs}, l {rhs})"),
-                );
-                return Ok((Type::String, result));
-            }
-            let result = self.assign(
-                locals,
-                Type::Bool,
-                &format!("call $fern_str_eq(l {lhs}, l {rhs})"),
-            );
-            return Ok((
-                Type::Bool,
-                if op == BinaryOp::Ne {
-                    self.assign(locals, Type::Bool, &format!("ceqw {result}, 0"))
-                } else {
-                    result
-                },
-            ));
+            return Ok(self.string_binary(op, &lhs, &rhs, locals));
         }
-        let instruction = binary_instruction(op, left.ty);
-        let value = self.assign(locals, result_type, &format!("{instruction} {lhs}, {rhs}"));
+        let instruction = binary_instruction(op, left.ty.clone());
+        let value = self.assign(
+            locals,
+            result_type.clone(),
+            &format!("{instruction} {lhs}, {rhs}"),
+        );
         Ok((result_type, value))
+    }
+
+    /// Emit the three checked String operators through content-aware runtime helpers.
+    fn string_binary(
+        &mut self,
+        op: BinaryOp,
+        lhs: &str,
+        rhs: &str,
+        locals: &mut Locals,
+    ) -> (Type, String) {
+        if op == BinaryOp::Add {
+            let value = self.assign(
+                locals,
+                Type::String,
+                &format!("call $fern_str_concat(l {lhs}, l {rhs})"),
+            );
+            return (Type::String, value);
+        }
+        let value = self.assign(
+            locals,
+            Type::Bool,
+            &format!("call $fern_str_eq(l {lhs}, l {rhs})"),
+        );
+        let value = if op == BinaryOp::Ne {
+            self.assign(locals, Type::Bool, &format!("ceqw {value}, 0"))
+        } else {
+            value
+        };
+        (Type::Bool, value)
     }
 
     /// Emit true short-circuit evaluation, evaluating `right` only in its RHS block.
@@ -479,8 +535,8 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Result<(Type, String), Diagnostic> {
-        expect_type(left.ty, Type::Bool, left.span)?;
-        expect_type(right.ty, Type::Bool, right.span)?;
+        expect_type(left.ty.clone(), Type::Bool, left.span)?;
+        expect_type(right.ty.clone(), Type::Bool, right.span)?;
         let lhs = self.expr(left, locals, depth)?;
         let before = locals.current.clone();
         let rhs_label = locals.label();
@@ -514,10 +570,10 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Result<(Type, String), Diagnostic> {
-        expect_type(condition.ty, Type::Bool, condition.span)?;
+        expect_type(condition.ty.clone(), Type::Bool, condition.span)?;
         let result_type = if let Some(other) = else_branch {
-            expect_type(other.ty, then_branch.ty, other.span)?;
-            then_branch.ty
+            expect_type(other.ty.clone(), then_branch.ty.clone(), other.span)?;
+            then_branch.ty.clone()
         } else {
             Type::Unit
         };
@@ -545,7 +601,7 @@ impl Emitter<'_> {
         } else {
             self.assign(
                 locals,
-                result_type,
+                result_type.clone(),
                 &format!("phi {then_end} {then_value}, {else_end} {else_value}"),
             )
         };
@@ -576,5 +632,493 @@ fn binary_instruction(op: BinaryOp, operand: Type) -> String {
         format!("{base}{}", width(operand))
     } else {
         base.into()
+    }
+}
+
+/// Reject unresolved or excessively nested types before choosing any ABI layout.
+fn concrete(ty: &Type, span: Span, depth: usize) -> Result<(), Diagnostic> {
+    if depth > MAX_DEPTH {
+        return Err(invalid(span, "type nesting limit exceeded"));
+    }
+    match ty {
+        Type::Infer(_) => Err(invalid(span, "unresolved inference variable")),
+        Type::List(item) | Type::Option(item) => concrete(item, span, depth + 1),
+        Type::Result(ok, err) => {
+            concrete(ok, span, depth + 1)?;
+            concrete(err, span, depth + 1)
+        }
+        Type::Int | Type::Bool | Type::String | Type::Unit => Ok(()),
+    }
+}
+
+/// Determine the payload type for a constructor, rejecting tags from another sum type.
+fn payload_type(
+    constructor: Constructor,
+    ty: &Type,
+    span: Span,
+) -> Result<Option<&Type>, Diagnostic> {
+    match (constructor, ty) {
+        (Constructor::Some, Type::Option(item)) => Ok(Some(item)),
+        (Constructor::None, Type::Option(_)) => Ok(None),
+        (Constructor::Ok, Type::Result(ok, _)) => Ok(Some(ok)),
+        (Constructor::Err, Type::Result(_, err)) => Ok(Some(err)),
+        _ => Err(invalid(
+            span,
+            "constructor does not belong to the checked sum type",
+        )),
+    }
+}
+
+/// Identify builtins whose C runtime ABI transports every scalar as a full word.
+fn compound_builtin(target: CallTarget) -> bool {
+    matches!(target, CallTarget::Builtin(builtin) if !matches!(builtin,
+        Builtin::Print | Builtin::Println | Builtin::StringConcat | Builtin::StringEq | Builtin::StringLen))
+}
+
+/// Resolve generic runtime operations against the first argument's concrete type.
+fn compound_signature(
+    builtin: Builtin,
+    args: &[Expr],
+    span: Span,
+) -> Result<(String, Vec<Type>, Type), Diagnostic> {
+    let first = args
+        .first()
+        .ok_or_else(|| invalid(span, "builtin requires an argument"))?;
+    match builtin {
+        Builtin::ListLen
+        | Builtin::ListGet
+        | Builtin::ListHead
+        | Builtin::ListTail
+        | Builtin::ListIsEmpty
+        | Builtin::ListPush
+        | Builtin::ListReverse
+        | Builtin::ListConcat
+        | Builtin::ListContains => list_signature(builtin, &first.ty, span),
+        Builtin::OptionIsSome | Builtin::OptionIsNone | Builtin::OptionUnwrapOr => {
+            let Type::Option(item) = &first.ty else {
+                return Err(invalid(span, "Option builtin requires Option"));
+            };
+            sum_signature(builtin, &first.ty, item)
+        }
+        Builtin::ResultIsOk | Builtin::ResultIsErr | Builtin::ResultUnwrapOr => {
+            let Type::Result(ok, _) = &first.ty else {
+                return Err(invalid(span, "Result builtin requires Result"));
+            };
+            sum_signature(builtin, &first.ty, ok)
+        }
+        _ => Err(invalid(span, "expected a compound builtin identity")),
+    }
+}
+
+/// Derive list ABI symbols and semantic signatures, avoiding compound pointer equality.
+fn list_signature(
+    builtin: Builtin,
+    ty: &Type,
+    span: Span,
+) -> Result<(String, Vec<Type>, Type), Diagnostic> {
+    let Type::List(item) = ty else {
+        return Err(invalid(span, "List builtin requires List"));
+    };
+    let mut params = vec![ty.clone()];
+    let (symbol, result) = match builtin {
+        Builtin::ListLen => ("fern_list_len", Type::Int),
+        Builtin::ListIsEmpty => ("fern_list_is_empty", Type::Bool),
+        Builtin::ListHead => ("fern_list_head", *item.clone()),
+        Builtin::ListGet => {
+            params.push(Type::Int);
+            ("fern_list_get", *item.clone())
+        }
+        Builtin::ListTail => ("fern_list_tail", ty.clone()),
+        Builtin::ListReverse => ("fern_list_reverse", ty.clone()),
+        Builtin::ListPush => {
+            params.push(*item.clone());
+            ("fern_list_push", ty.clone())
+        }
+        Builtin::ListConcat => {
+            params.push(ty.clone());
+            ("fern_list_concat", ty.clone())
+        }
+        Builtin::ListContains => {
+            if !matches!(**item, Type::Int | Type::Bool | Type::String) {
+                return Err(invalid(
+                    span,
+                    "List contains requires Int, Bool, or String elements",
+                ));
+            }
+            params.push(*item.clone());
+            (
+                if **item == Type::String {
+                    "fern_list_contains_str"
+                } else {
+                    "fern_list_contains"
+                },
+                Type::Bool,
+            )
+        }
+        _ => return Err(invalid(span, "expected a List builtin identity")),
+    };
+    Ok((symbol.into(), params, result))
+}
+
+/// Use heap Result helpers for both built-in sum types, with eager default arguments.
+fn sum_signature(
+    builtin: Builtin,
+    ty: &Type,
+    payload: &Type,
+) -> Result<(String, Vec<Type>, Type), Diagnostic> {
+    if matches!(builtin, Builtin::OptionUnwrapOr | Builtin::ResultUnwrapOr) {
+        Ok((
+            "fern_result_unwrap_or".into(),
+            vec![ty.clone(), payload.clone()],
+            payload.clone(),
+        ))
+    } else {
+        Ok(("fern_result_is_ok".into(), vec![ty.clone()], Type::Bool))
+    }
+}
+
+impl Emitter<'_> {
+    /// Widen Boolean/Unit values before storing them in runtime payload slots.
+    fn payload(&mut self, locals: &mut Locals, ty: &Type, value: String) -> String {
+        if matches!(ty, Type::Bool | Type::Unit) {
+            self.assign(locals, Type::Int, &format!("extuw {value}"))
+        } else {
+            value
+        }
+    }
+
+    /// Narrow payload loads to the checked scalar width without changing pointer values.
+    fn unpack(&mut self, locals: &mut Locals, ty: &Type, value: String) -> String {
+        if matches!(ty, Type::Bool | Type::Unit) {
+            self.assign(locals, ty.clone(), &format!("copy {value}"))
+        } else {
+            value
+        }
+    }
+
+    /// Allocate a private list and populate it once before exposing its immutable value.
+    fn list(
+        &mut self,
+        items: &[Expr],
+        ty: &Type,
+        span: Span,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Result<(Type, String), Diagnostic> {
+        let Type::List(item_type) = ty else {
+            return Err(invalid(span, "list literal requires List type"));
+        };
+        let list = self.assign(
+            locals,
+            ty.clone(),
+            &format!("call $fern_list_with_capacity(l {})", items.len().max(1)),
+        );
+        for item in items {
+            expect_type(item.ty.clone(), *item_type.clone(), item.span)?;
+            let value = self.expr(item, locals, depth)?;
+            let value = self.payload(locals, &item.ty, value);
+            self.output.push_str(&format!(
+                "    call $fern_list_push_mut(l {list}, l {value})\n"
+            ));
+        }
+        Ok((ty.clone(), list))
+    }
+
+    /// Construct heap-backed Options/Results using the checked payload, including full i64s.
+    fn construct(
+        &mut self,
+        constructor: Constructor,
+        value: Option<&Expr>,
+        ty: &Type,
+        span: Span,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Result<(Type, String), Diagnostic> {
+        let expected = payload_type(constructor, ty, span)?;
+        let payload = match (value, expected) {
+            (Some(value), Some(expected)) => {
+                expect_type(value.ty.clone(), expected.clone(), value.span)?;
+                let lowered = self.expr(value, locals, depth)?;
+                self.payload(locals, expected, lowered)
+            }
+            (None, None) => "0".into(),
+            _ => {
+                return Err(invalid(
+                    span,
+                    "constructor payload presence differs from its signature",
+                ))
+            }
+        };
+        let symbol = if matches!(constructor, Constructor::Some | Constructor::Ok) {
+            "fern_result_ok"
+        } else {
+            "fern_result_err"
+        };
+        Ok((
+            ty.clone(),
+            self.assign(locals, ty.clone(), &format!("call ${symbol}(l {payload})")),
+        ))
+    }
+
+    /// Emit a runtime call with explicit full-width transport and typed result conversion.
+    fn compound_call(
+        &mut self,
+        target: CallTarget,
+        args: &[Expr],
+        span: Span,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Result<(Type, String), Diagnostic> {
+        let (symbol, params, result) = self.signature(target, args, span)?;
+        if args.len() != params.len() {
+            return Err(invalid(
+                span,
+                "builtin argument count differs from signature",
+            ));
+        }
+        let mut arguments = Vec::new();
+        for (arg, expected) in args.iter().zip(params) {
+            expect_type(arg.ty.clone(), expected.clone(), arg.span)?;
+            let value = self.expr(arg, locals, depth)?;
+            let payload = self.payload(locals, &arg.ty, value);
+            arguments.push(format!("l {payload}"));
+        }
+        let raw = self.assign(
+            locals,
+            Type::Int,
+            &format!("call ${symbol}({})", arguments.join(", ")),
+        );
+        let mut value = self.unpack(locals, &result, raw);
+        if matches!(
+            target,
+            CallTarget::Builtin(Builtin::OptionIsNone | Builtin::ResultIsErr)
+        ) {
+            value = self.assign(locals, Type::Bool, &format!("ceqw {value}, 0"));
+        }
+        Ok((result, value))
+    }
+}
+
+/// Validate flat patterns and exhaustiveness before producing any match control flow.
+fn match_type(ty: &Type, arms: &[MatchArm], span: Span) -> Result<Type, Diagnostic> {
+    let result = arms
+        .first()
+        .ok_or_else(|| invalid(span, "match requires arms"))?
+        .body
+        .ty
+        .clone();
+    let mut covered = BTreeSet::new();
+    let mut complete = false;
+    for arm in arms {
+        if complete {
+            return Err(invalid(arm.span, "unreachable match arm"));
+        }
+        expect_type(arm.body.ty.clone(), result.clone(), arm.span)?;
+        match &arm.pattern {
+            Pattern::Wildcard | Pattern::Bind(_) => complete = true,
+            pattern => {
+                let key = pattern_key(pattern, ty, arm.span)?;
+                if !covered.insert(key) {
+                    return Err(invalid(arm.span, "duplicate match pattern"));
+                }
+                complete = match ty {
+                    Type::Bool => covered.contains("true") && covered.contains("false"),
+                    Type::Option(_) => covered.contains("Some") && covered.contains("None"),
+                    Type::Result(_, _) => covered.contains("Ok") && covered.contains("Err"),
+                    _ => false,
+                };
+            }
+        }
+    }
+    if !complete {
+        return Err(invalid(span, "nonexhaustive match"));
+    }
+    Ok(result)
+}
+
+/// Validate a literal or constructor pattern against its checked scrutinee type.
+fn pattern_key(pattern: &Pattern, ty: &Type, span: Span) -> Result<String, Diagnostic> {
+    match pattern {
+        Pattern::Int(value) => {
+            expect_type(ty.clone(), Type::Int, span)?;
+            Ok(value.to_string())
+        }
+        Pattern::Bool(value) => {
+            expect_type(ty.clone(), Type::Bool, span)?;
+            Ok(value.to_string())
+        }
+        Pattern::String(value) => {
+            expect_type(ty.clone(), Type::String, span)?;
+            if value.as_bytes().contains(&0) {
+                return Err(invalid(span, "NUL in string pattern"));
+            }
+            Ok(value.clone())
+        }
+        Pattern::Constructor {
+            constructor,
+            binding,
+        } => {
+            let payload = payload_type(*constructor, ty, span)?;
+            if payload.is_none() && binding.is_some() {
+                return Err(invalid(span, "None pattern cannot bind a payload"));
+            }
+            Ok(format!("{constructor:?}"))
+        }
+        Pattern::Wildcard | Pattern::Bind(_) => {
+            Err(invalid(span, "catchall has no literal identity"))
+        }
+    }
+}
+
+impl Emitter<'_> {
+    /// Match a single scrutinee, merging values from actual final arm blocks.
+    fn matching(
+        &mut self,
+        value: &Expr,
+        arms: &[MatchArm],
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Result<(Type, String), Diagnostic> {
+        let ty = match_type(&value.ty, arms, value.span)?;
+        let scrutinee = self.expr(value, locals, depth)?;
+        let merge = locals.label();
+        let mut incoming = Vec::new();
+        for (index, arm) in arms.iter().enumerate() {
+            let body_label = locals.label();
+            let next = locals.label();
+            if index + 1 == arms.len() {
+                self.output.push_str(&format!("    jmp {body_label}\n"));
+            } else {
+                let test = self.pattern_test(&arm.pattern, &scrutinee, arm.span, locals)?;
+                self.output
+                    .push_str(&format!("    jnz {test}, {body_label}, {next}\n"));
+            }
+            self.start_block(locals, &body_label);
+            let binding =
+                self.pattern_bind(&arm.pattern, &value.ty, &scrutinee, arm.span, locals)?;
+            let result = self.expr(&arm.body, locals, depth)?;
+            if let Some(id) = binding {
+                locals.values.remove(&id);
+            }
+            incoming.push(format!("{} {result}", locals.current));
+            self.output.push_str(&format!("    jmp {merge}\n"));
+            if index + 1 < arms.len() {
+                self.start_block(locals, &next);
+            }
+        }
+        self.start_block(locals, &merge);
+        let result = if ty == Type::Unit {
+            "0".into()
+        } else {
+            self.assign(locals, ty.clone(), &format!("phi {}", incoming.join(", ")))
+        };
+        Ok((ty, result))
+    }
+
+    /// Test a validated flat pattern without reading a sum payload before its tag.
+    fn pattern_test(
+        &mut self,
+        pattern: &Pattern,
+        value: &str,
+        span: Span,
+        locals: &mut Locals,
+    ) -> Result<String, Diagnostic> {
+        let instruction = match pattern {
+            Pattern::Wildcard | Pattern::Bind(_) => return Ok("1".into()),
+            Pattern::Int(integer) => format!("ceql {value}, {integer}"),
+            Pattern::Bool(boolean) => format!("ceqw {value}, {}", u8::from(*boolean)),
+            Pattern::String(text) => {
+                let text = self.string(text, span)?;
+                format!("call $fern_str_eq(l {value}, l {text})")
+            }
+            Pattern::Constructor { constructor, .. } => {
+                let tag = self.assign(
+                    locals,
+                    Type::Int,
+                    &format!("call $fern_result_is_ok(l {value})"),
+                );
+                let tag = self.unpack(locals, &Type::Bool, tag);
+                return Ok(
+                    if matches!(constructor, Constructor::Some | Constructor::Ok) {
+                        tag
+                    } else {
+                        self.assign(locals, Type::Bool, &format!("ceqw {tag}, 0"))
+                    },
+                );
+            }
+        };
+        Ok(self.assign(locals, Type::Bool, &instruction))
+    }
+
+    /// Introduce a pattern binding only within the selected arm's lexical scope.
+    fn pattern_bind(
+        &mut self,
+        pattern: &Pattern,
+        ty: &Type,
+        value: &str,
+        span: Span,
+        locals: &mut Locals,
+    ) -> Result<Option<usize>, Diagnostic> {
+        let (id, ty, value) = match pattern {
+            Pattern::Bind(id) => (id.0, ty.clone(), value.to_owned()),
+            Pattern::Constructor {
+                constructor,
+                binding: Some(id),
+            } => {
+                let payload = payload_type(*constructor, ty, span)?
+                    .ok_or_else(|| invalid(span, "constructor has no payload"))?;
+                let raw = self.assign(
+                    locals,
+                    Type::Int,
+                    &format!("call $fern_result_unwrap(l {value})"),
+                );
+                let value = self.unpack(locals, payload, raw);
+                (id.0, payload.clone(), value)
+            }
+            _ => return Ok(None),
+        };
+        locals.define(id, ty, value, span)?;
+        Ok(Some(id))
+    }
+}
+
+impl Emitter<'_> {
+    /// Propagate Err unchanged, then expose an Ok payload in the continuing block.
+    fn attempt(
+        &mut self,
+        value: &Expr,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Result<(Type, String), Diagnostic> {
+        let Type::Result(ok, error) = &value.ty else {
+            return Err(invalid(value.span, "? requires Result operand"));
+        };
+        let Type::Result(_, returned_error) = &locals.return_type else {
+            return Err(invalid(
+                value.span,
+                "? requires enclosing Result return type",
+            ));
+        };
+        expect_type(*error.clone(), *returned_error.clone(), value.span)?;
+        let result = self.expr(value, locals, depth)?;
+        let tag = self.assign(
+            locals,
+            Type::Bool,
+            &format!("call $fern_result_is_ok(l {result})"),
+        );
+        let success = locals.label();
+        let failure = locals.label();
+        self.output
+            .push_str(&format!("    jnz {tag}, {success}, {failure}\n"));
+        self.start_block(locals, &failure);
+        self.output.push_str(&format!("    ret {result}\n"));
+        self.start_block(locals, &success);
+        let payload = self.assign(
+            locals,
+            Type::Int,
+            &format!("call $fern_result_unwrap(l {result})"),
+        );
+        let value = self.unpack(locals, ok, payload);
+        Ok((*ok.clone(), value))
     }
 }

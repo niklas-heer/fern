@@ -1,5 +1,5 @@
 //! Source syntax for the bounded Rust prototype.
-use crate::{Span, Type};
+use crate::{Constructor, Span, Type};
 
 #[derive(Clone, Debug)]
 pub struct Program {
@@ -30,6 +30,13 @@ pub enum ExprKind {
     Bool(bool),
     String(String),
     Name(String),
+    Unit,
+    List(Vec<Expr>),
+    Try(Box<Expr>),
+    Match {
+        value: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
     Unary {
         op: UnaryOp,
         value: Box<Expr>,
@@ -49,6 +56,32 @@ pub enum ExprKind {
         else_branch: Option<Box<Expr>>,
     },
     Block(Vec<Stmt>),
+}
+
+#[derive(Clone, Debug)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Expr,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct Pattern {
+    pub kind: PatternKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub enum PatternKind {
+    Wildcard,
+    Bind(String),
+    Int(i64),
+    Bool(bool),
+    String(String),
+    Constructor {
+        constructor: Constructor,
+        binding: Option<String>,
+    },
 }
 #[derive(Clone, Debug)]
 pub enum Stmt {

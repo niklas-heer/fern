@@ -1,0 +1,14 @@
+fn value() -> Option(Result(List(String), String)):
+    Some(Ok(["nested", "payload"]))
+
+fn main():
+    match value():
+        Some(result) ->
+            match result:
+                Ok(words) -> println(List.head(words))
+                Err(error) -> println(error)
+        None -> println("empty")
+    let values: List(Option(Bool)) = [Some(true), None, Some(false)]
+    match List.get(values, 2):
+        Some(flag) -> println(flag)
+        None -> println("missing")

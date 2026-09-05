@@ -56,7 +56,7 @@ def main():
             ('fn main():\n    missing\n', "unknown"),
             ('fn main():\n    let n: Int = true\n', "Int"),
             ('fn main():\n    if 1: 2 else: 3\n', "Bool"),
-            ('fn main():\n    [1, 2]\n', ""),
+            ('fn main():\n    [1, true]\n', ""),
             ('fn main():\n    9223372036854775808\n', ""),
         ]
         for index, (text, detail) in enumerate(invalid):

@@ -1,0 +1,22 @@
+fn outer() -> Result(Result(String, String), String):
+    Ok(Err("inner error"))
+
+fn flatten() -> Result(Int, String):
+    let text = outer()??
+    println(text)
+    Ok(100)
+
+fn choose(flag: Bool) -> Result(String, String):
+    let text = if flag: Ok("branch")? else: outer()??
+    Ok(String.concat(text, "!"))
+
+fn main():
+    match flatten():
+        Ok(value) -> println(value)
+        Err(error) -> println(error)
+    match choose(true):
+        Ok(value) -> println(value)
+        Err(error) -> println(error)
+    match choose(false):
+        Ok(value) -> println(value)
+        Err(error) -> println(error)

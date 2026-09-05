@@ -1,0 +1,9 @@
+fn choose() -> Option(String):
+    println("evaluated")
+    Some("selected")
+
+fn main():
+    match choose():
+        None -> println("unselected")
+        Some(value) ->
+            if value == "selected": println("correct") else: println("incorrect")

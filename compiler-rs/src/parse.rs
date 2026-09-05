@@ -1,6 +1,9 @@
 //! Independent, bounded lexer and recursive-descent parser for the prototype.
-use crate::ast::{BinaryOp, Expr, ExprKind, Function, Param, Program, Stmt, UnaryOp};
-use crate::{Diagnostic, Span, Type};
+use crate::ast::{
+    BinaryOp, Expr, ExprKind, Function, MatchArm, Param, Pattern, PatternKind, Program, Stmt,
+    UnaryOp,
+};
+use crate::{Constructor, Diagnostic, Span, Type};
 
 const MAX_SOURCE: usize = 1024 * 1024;
 const MAX_TOKENS: usize = 65_536;
@@ -14,6 +17,8 @@ enum Kind {
     Text(String),
     Left,
     Right,
+    LeftBracket,
+    RightBracket,
     Colon,
     Comma,
     Dot,
@@ -24,6 +29,7 @@ enum Kind {
     Star,
     Slash,
     Percent,
+    Question,
     Eq,
     Ne,
     Lt,
@@ -77,6 +83,7 @@ fn push(tokens: &mut Vec<Token>, kind: Kind, start: usize, end: usize) -> ParseR
 fn lex(source: &str) -> ParseResult<Vec<Token>> {
     let mut tokens = Vec::new();
     let mut levels = vec![0];
+    let mut delimiters = Vec::new();
     let mut offset = 0;
     for line in source.split_inclusive('\n') {
         let line = line.strip_suffix('\n').unwrap_or(line);
@@ -93,22 +100,60 @@ fn lex(source: &str) -> ParseResult<Vec<Token>> {
             ));
         }
         if !rest.is_empty() && !rest.starts_with('#') {
-            layout(&mut tokens, &mut levels, indent, offset)?;
+            if delimiters.is_empty() {
+                layout(&mut tokens, &mut levels, indent, offset)?;
+            }
+            let from = tokens.len();
             lex_line(content, indent, offset, &mut tokens)?;
-            push(
-                &mut tokens,
-                Kind::Newline,
-                offset + content.len(),
-                offset + content.len(),
-            )?;
+            track_delimiters(&tokens[from..], &mut delimiters)?;
+            if delimiters.is_empty() {
+                push(
+                    &mut tokens,
+                    Kind::Newline,
+                    offset + content.len(),
+                    offset + content.len(),
+                )?;
+            }
         }
         offset += line.len() + usize::from(offset + line.len() < source.len());
+    }
+    if let Some(token) = delimiters.last() {
+        return Err(Diagnostic::new(token.span, "unclosed delimiter"));
     }
     for _ in 1..levels.len() {
         push(&mut tokens, Kind::Dedent, source.len(), source.len())?;
     }
     push(&mut tokens, Kind::End, source.len(), source.len())?;
     Ok(tokens)
+}
+
+/// Validate delimiter pairing and suspend layout inside parenthesized/list syntax.
+fn track_delimiters(tokens: &[Token], stack: &mut Vec<Token>) -> ParseResult<()> {
+    for token in tokens {
+        match token.kind {
+            Kind::Left | Kind::LeftBracket => {
+                if stack.len() >= MAX_DEPTH {
+                    return Err(Diagnostic::new(
+                        token.span,
+                        "delimiter depth limit exceeded",
+                    ));
+                }
+                stack.push(token.clone());
+            }
+            Kind::Right | Kind::RightBracket => {
+                let expected = if token.kind == Kind::Right {
+                    Kind::Left
+                } else {
+                    Kind::LeftBracket
+                };
+                if stack.pop().map(|opening| opening.kind) != Some(expected) {
+                    return Err(Diagnostic::new(token.span, "mismatched closing delimiter"));
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// Emit indentation changes, requiring dedents to match an earlier level.
@@ -279,6 +324,8 @@ fn punctuation(rest: &str, start: usize) -> ParseResult<(Kind, usize)> {
     let kind = match c {
         '(' => Kind::Left,
         ')' => Kind::Right,
+        '[' => Kind::LeftBracket,
+        ']' => Kind::RightBracket,
         ':' => Kind::Colon,
         ',' => Kind::Comma,
         '.' => Kind::Dot,
@@ -288,6 +335,7 @@ fn punctuation(rest: &str, start: usize) -> ParseResult<(Kind, usize)> {
         '*' => Kind::Star,
         '/' => Kind::Slash,
         '%' => Kind::Percent,
+        '?' => Kind::Question,
         '<' => Kind::Lt,
         '>' => Kind::Gt,
         _ => {
@@ -446,8 +494,19 @@ impl Parser {
         }
     }
 
-    /// Parse supported primitive type annotations, including Fern's unit ().
+    /// Bound recursive concrete types independently of expression parsing.
     fn ty(&mut self) -> ParseResult<Type> {
+        if self.depth >= MAX_DEPTH {
+            return Err(self.error("type depth limit exceeded"));
+        }
+        self.depth += 1;
+        let result = self.type_value();
+        self.depth -= 1;
+        result
+    }
+
+    /// Parse primitive types, unit (), and List/Option/Result type applications.
+    fn type_value(&mut self) -> ParseResult<Type> {
         if self.eat(&Kind::Left) {
             self.expect(Kind::Right, "only unit () type is supported here")?;
             return Ok(Type::Unit);
@@ -455,13 +514,18 @@ impl Parser {
         let token = self.take();
         match &token.kind {
             Kind::Name(name) => match name.as_str() {
-                "Int" => Ok(Type::Int),
-                "Bool" => Ok(Type::Bool),
-                "String" => Ok(Type::String),
-                _ => Err(Diagnostic::new(
-                    token.span,
-                    "unsupported type; prototype supports Int, Bool, String, ()",
-                )),
+                "Int" => Ok(Type::Int), "Bool" => Ok(Type::Bool), "String" => Ok(Type::String),
+                "List" | "Option" | "Result" => {
+                    self.expect(Kind::Left, "expected '(' before type arguments")?;
+                    let first = Box::new(self.ty()?);
+                    let value = if name == "Result" {
+                        self.expect(Kind::Comma, "expected ',' between Result type arguments")?;
+                        Type::Result(first, Box::new(self.ty()?))
+                    } else if name == "List" { Type::List(first) } else { Type::Option(first) };
+                    self.expect(Kind::Right, "expected ')' after type arguments")?;
+                    Ok(value)
+                }
+                _ => Err(Diagnostic::new(token.span, "unsupported type; supports Int, Bool, String, (), List(T), Option(T), Result(T, E)")),
             },
             _ => Err(Diagnostic::new(token.span, "expected type annotation")),
         }
@@ -548,7 +612,7 @@ impl Parser {
 
     /// Parse left-associative operators with Fern precedence and bounded AST depth.
     fn binary(&mut self, minimum: u8) -> ParseResult<Parsed> {
-        let mut left = self.prefix()?;
+        let mut left = self.postfix()?;
         for _ in 0..self.tokens.len() {
             let Some((op, precedence)) = operator(&self.current().kind) else {
                 break;
@@ -576,10 +640,29 @@ impl Parser {
         Ok(left)
     }
 
+    /// Wrap postfix Result propagation before applying surrounding binary operators.
+    fn postfix(&mut self) -> ParseResult<Parsed> {
+        let mut value = self.prefix()?;
+        for _ in 0..self.tokens.len() {
+            if self.current().kind != Kind::Question {
+                break;
+            }
+            let span = Span {
+                start: value.node.span.start,
+                end: self.take().span.end,
+            };
+            value = expression(ExprKind::Try(Box::new(value.node)), span, value.depth + 1)?;
+        }
+        Ok(value)
+    }
+
     /// Parse unary operators, literals, calls, grouping, and conditionals.
     fn prefix(&mut self) -> ParseResult<Parsed> {
         if self.word("if") {
             return self.conditional();
+        }
+        if self.word("match") {
+            return self.match_expression();
         }
         if self.word("not") || self.current().kind == Kind::Minus {
             return self.unary();
@@ -592,7 +675,19 @@ impl Parser {
                 expression(ExprKind::Bool(name == "true"), token.span, 1)
             }
             Kind::Name(name) if !reserved(&name) => self.named(name, token.span),
+            Kind::LeftBracket => self.list(token.span),
             Kind::Left => {
+                if self.current().kind == Kind::Right {
+                    let end = self.take().span.end;
+                    return expression(
+                        ExprKind::Unit,
+                        Span {
+                            start: token.span.start,
+                            end,
+                        },
+                        1,
+                    );
+                }
                 let value = self.expr(0)?;
                 self.expect(Kind::Right, "expected ')' after grouped expression")?;
                 Ok(value)
@@ -602,6 +697,157 @@ impl Parser {
                 "expected expression; this syntax is unsupported in the Rust prototype",
             )),
         }
+    }
+
+    /// Parse immutable list literals with optional trailing commas.
+    fn list(&mut self, mut span: Span) -> ParseResult<Parsed> {
+        let mut items = Vec::new();
+        let mut depth = 1;
+        for _ in 0..self.tokens.len() {
+            if self.current().kind == Kind::RightBracket {
+                span.end = self.take().span.end;
+                break;
+            }
+            let item = self.expr(0)?;
+            depth = depth.max(item.depth + 1);
+            items.push(item.node);
+            if !self.eat(&Kind::Comma) {
+                span.end = self
+                    .expect(Kind::RightBracket, "expected ',' or ']' after list element")?
+                    .span
+                    .end;
+                break;
+            }
+        }
+        expression(ExprKind::List(items), span, depth)
+    }
+
+    /// Parse an indented sequence of pattern arms and bound its resulting tree.
+    fn match_expression(&mut self) -> ParseResult<Parsed> {
+        let start = self.take().span.start;
+        let value = self.expr(0)?;
+        self.expect(Kind::Colon, "expected ':' after match value")?;
+        self.expect(Kind::Newline, "match requires an indented arm block")?;
+        self.expect(Kind::Indent, "match requires an indented arm block")?;
+        let mut arms = Vec::new();
+        let mut depth = value.depth + 1;
+        let mut end = value.node.span.end;
+        for _ in 0..self.tokens.len() {
+            if self.eat(&Kind::Dedent) {
+                break;
+            }
+            let pattern = self.pattern()?;
+            if self.word("if") {
+                return Err(
+                    self.error("match guards are unsupported; use an if expression inside the arm")
+                );
+            }
+            self.expect(Kind::Arrow, "expected '->' after match pattern")?;
+            let body = self.suite()?;
+            end = body.node.span.end;
+            depth = depth.max(body.depth + 1);
+            let span = Span {
+                start: pattern.span.start,
+                end,
+            };
+            arms.push(MatchArm {
+                pattern,
+                body: body.node,
+                span,
+            });
+            if !self.eat(&Kind::Newline)
+                && self.current().kind != Kind::Dedent
+                && !self.previous_dedent()
+            {
+                return Err(self.error("expected end of line after match arm"));
+            }
+        }
+        if arms.is_empty() {
+            return Err(self.error("match requires at least one arm"));
+        }
+        expression(
+            ExprKind::Match {
+                value: Box::new(value.node),
+                arms,
+            },
+            Span { start, end },
+            depth,
+        )
+    }
+
+    /// Parse scalar/catchall patterns and built-in constructors with simple payloads.
+    fn pattern(&mut self) -> ParseResult<Pattern> {
+        let token = self.take();
+        let mut span = token.span;
+        let kind = match token.kind {
+            Kind::Number(text) => PatternKind::Int(pattern_integer(&text, span)?),
+            Kind::Minus => {
+                let number = self.take();
+                span.end = number.span.end;
+                let Kind::Number(text) = number.kind else {
+                    return Err(Diagnostic::new(span, "expected integer pattern after '-'"));
+                };
+                PatternKind::Int(pattern_integer(&format!("-{text}"), span)?)
+            }
+            Kind::Text(text) => PatternKind::String(text),
+            Kind::Name(name) if name == "true" || name == "false" => {
+                PatternKind::Bool(name == "true")
+            }
+            Kind::Name(name) if name == "_" => PatternKind::Wildcard,
+            Kind::Name(name) if !reserved(&name) => {
+                if let Some(constructor) = builtin_constructor(&name) {
+                    return self.constructor_pattern(constructor, span);
+                }
+                PatternKind::Bind(name)
+            }
+            _ => return Err(Diagnostic::new(
+                span,
+                "unsupported pattern; expected scalar, binding, wildcard or built-in constructor",
+            )),
+        };
+        Ok(Pattern { kind, span })
+    }
+
+    /// Restrict constructor payloads to bindings/wildcards until nested matching is checked.
+    fn constructor_pattern(
+        &mut self,
+        constructor: Constructor,
+        mut span: Span,
+    ) -> ParseResult<Pattern> {
+        let binding = if constructor == Constructor::None {
+            if self.current().kind == Kind::Left {
+                return Err(self.error("None patterns do not accept a payload"));
+            }
+            None
+        } else {
+            self.expect(
+                Kind::Left,
+                "constructor pattern requires a payload binding or wildcard",
+            )?;
+            let (name, _) = self.name().map_err(|_| self.error("constructor payload pattern must be a binding or wildcard; nested patterns are unsupported"))?;
+            if self.current().kind == Kind::Left || builtin_constructor(&name).is_some() {
+                return Err(self.error("nested constructor patterns are unsupported"));
+            }
+            span.end = self
+                .expect(
+                    Kind::Right,
+                    "constructor payload pattern must be a single binding or wildcard",
+                )?
+                .span
+                .end;
+            if name == "_" {
+                None
+            } else {
+                Some(name)
+            }
+        };
+        Ok(Pattern {
+            kind: PatternKind::Constructor {
+                constructor,
+                binding,
+            },
+            span,
+        })
     }
 
     /// Parse unary operands, accepting the Int minimum without positive overflow.
@@ -715,6 +961,23 @@ impl Parser {
             depth,
         )
     }
+}
+
+/// Recognize only the built-in Option/Result constructors.
+fn builtin_constructor(name: &str) -> Option<Constructor> {
+    match name {
+        "Some" => Some(Constructor::Some),
+        "None" => Some(Constructor::None),
+        "Ok" => Some(Constructor::Ok),
+        "Err" => Some(Constructor::Err),
+        _ => None,
+    }
+}
+
+/// Parse a literal pattern with the same signed 64-bit range as expressions.
+fn pattern_integer(text: &str, span: Span) -> ParseResult<i64> {
+    text.parse::<i64>()
+        .map_err(|_| Diagnostic::new(span, "integer pattern is outside Int range"))
 }
 
 /// Convert a decimal token to Fern's signed 64-bit Int with a stable diagnostic.

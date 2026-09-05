@@ -30,11 +30,24 @@ impl Diagnostic {
     }
 }
 
-/// Primitive types implemented by the migration experiment.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Semantic types; inference variables are eliminated before QBE lowering.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     Int,
     Bool,
     String,
     Unit,
+    List(Box<Type>),
+    Option(Box<Type>),
+    Result(Box<Type>, Box<Type>),
+    Infer(u32),
+}
+
+/// Built-in sum constructors, independent of runtime representation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Constructor {
+    Some,
+    None,
+    Ok,
+    Err,
 }

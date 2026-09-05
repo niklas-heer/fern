@@ -1,0 +1,10 @@
+fn save(success: Bool) -> Result((), String):
+    if success: Ok(()) else: Err("failed")
+
+fn main():
+    match save(true):
+        Ok(_) -> println("saved")
+        Err(error) -> println(error)
+    match save(false):
+        Ok(_) -> println("saved")
+        Err(error) -> println(error)

@@ -1,0 +1,11 @@
+fn sum(values: List(Int)) -> Int:
+    if List.is_empty(values): 0 else: List.head(values) + sum(List.tail(values))
+
+fn main():
+    let original = [10, 20, 30]
+    let extended = List.push(original, 40)
+    println(sum(extended))
+    println(List.len(original))
+    println(List.get(List.reverse(extended), 0))
+    println(sum(List.concat(original, [5])))
+    println(List.contains(original, 20))

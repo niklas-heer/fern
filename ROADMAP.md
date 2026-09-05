@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust experiment: `just rust-check` passing (51 Rust tests, 4 measurement-harness tests, 32 native programs, 5 invalid inputs); measured prototype remains opt-in
+- Rust migration: `just rust-check` passing (94 Rust tests, 4 measurement-harness tests, 63 native programs, 27 invalid inputs); collections/error-value frontend remains opt-in
 
 ## Canonical Documents
 
@@ -44,6 +44,18 @@ Status: Complete for the bounded prototype; `just check`, `just rust-check`, and
 - [x] Record evidence, gaps, and a migration recommendation before expanding scope ([evaluation](docs/RUST_FRONTEND_EVALUATION.md)): continue Rust incrementally; require parity before switching defaults.
 
 ## Active Priorities
+
+### Rust Migration: Collections and Error Values
+
+Status: Complete for the collections/error-value milestone; shipping compiler remains C (decisions 45–46). See [migration progress](docs/RUST_MIGRATION.md).
+
+- [x] Parse recursive List/Option/Result types, list literals, and match expressions (24 isolated parser tests, including all native fixtures).
+- [x] Infer constructor/empty-list types and resolve compound values to concrete typed IR.
+- [x] Enforce exhaustive matches and consistent payload/branch types.
+- [x] Propagate Result errors with postfix `?`, preserving the enclosing error type.
+- [x] Lower immutable lists and full-width Option/Result values through the existing runtime.
+- [x] Verify native collections, errors, nested payloads, scoped patterns, and invalid programs (31 native programs, 22 negative cases; includes retained pointers across 1,500 allocations).
+- [x] Update the supported-feature guide and pass Rust/C/documentation gates (94 Rust tests, 542 C tests, clippy/format, exact native output, docs).
 
 ### Priority 1: Repository Hygiene and Release Flow
 
@@ -133,6 +145,11 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [ ] Complete compiler bootstrapping workflow parity, ownership analysis, and the planned WASM backend.
 
 ## Next Session Start Here
+
+For the active Rust migration, next implement user-defined algebraic types and
+generic functions through the typed pipeline, followed by modules and tooling
+parity. Preserve the concrete type/ABI and native-output gates in
+[migration progress](docs/RUST_MIGRATION.md).
 
 1. Implement real actor execution and descendant lifecycle; preserve the deterministic contracts.
 2. Complete the native checker's build/git/CLI workflow parity before making it the default.

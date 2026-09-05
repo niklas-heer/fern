@@ -1,0 +1,6 @@
+fn main():
+    let flags = [true, false]
+    println(List.head(flags))
+    println(List.get(flags, 1))
+    println(List.contains(List.push(flags, true), false))
+    println(List.len(flags))

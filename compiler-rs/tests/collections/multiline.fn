@@ -1,0 +1,10 @@
+fn main():
+    let names: List(
+        String
+    ) = [
+        "first",
+        "second",
+    ]
+    println(
+        List.head(names)
+    )

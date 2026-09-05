@@ -1,5 +1,9 @@
 # Rust frontend evaluation — 2026-09-05
 
+This report records the initial scalar prototype. See
+[migration progress](RUST_MIGRATION.md) for the subsequent collections and
+error-value milestone; the measurements below remain specific to the original artifacts.
+
 ## Recommendation
 
 Continue with Rust for the next frontend milestone, while keeping C as the

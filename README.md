@@ -9,7 +9,10 @@ for the executable feature boundary and [ROADMAP.md](ROADMAP.md) for remaining w
 
 An independent [Rust frontend prototype](compiler-rs/README.md) evaluates a typed
 compiler pipeline with the existing QBE backend and C runtime. See the
-[evaluation results](docs/RUST_FRONTEND_EVALUATION.md); C remains the default.
+[evaluation results](docs/RUST_FRONTEND_EVALUATION.md) and
+[migration progress](docs/RUST_MIGRATION.md). Lists, Option/Result, exhaustive
+matching, and Result propagation now work through the Rust native pipeline;
+C remains the default.
 
 ```fern
 fn greet(name: String) -> String:

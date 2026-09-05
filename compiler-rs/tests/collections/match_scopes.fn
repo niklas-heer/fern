@@ -1,0 +1,12 @@
+fn choose(present: Bool) -> String:
+    let value = "outside"
+    let selected = match if present: Some("inside") else: None:
+        Some(value) ->
+            let suffix = "!"
+            String.concat(value, suffix)
+        None -> value
+    String.concat(value, String.concat("/", selected))
+
+fn main():
+    println(choose(true))
+    println(choose(false))

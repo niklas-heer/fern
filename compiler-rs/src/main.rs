@@ -26,7 +26,7 @@ fn options(arguments: Vec<OsString>) -> Result<Option<Options>, String> {
             "fern-rs: experimental Rust frontend (C remains the default)\n\
 Usage: fern-rs <check|emit|build|run> <source.fn> [-o output]\n\
 Run arguments: fern-rs run source.fn -- [arguments]\n\
-Subset: typed functions, Int/Bool/String, let, if, calls, basic string/print operations.\n\
+Subset: typed functions, Int/Bool/String, List/Option/Result, let, if, match, and Result ?.\n\
 Native builds: run just rust-build; FERN_QBE and FERN_RUNTIME_LIB override backend paths."
         );
         return Ok(None);
