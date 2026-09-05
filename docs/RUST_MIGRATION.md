@@ -137,7 +137,7 @@ collection-heavy compilation separately.
 
 ## Remaining migration work
 
-Maps, closures/higher-order calls, `with`, full actor execution, multiline strings,
+Maps, `with`, delayed Result ownership, full actor execution, multiline strings,
 block comments, and diagnostic/tooling parity remain open. Main Result exit semantics, safe
 collection indexing, and packed Option interoperability also need follow-up.
 REPL/native semantic coverage, additional LSP features, packaging, and full release
@@ -161,3 +161,28 @@ The native bootstrap gate also exposed multiline match arms being parsed as sing
 expressions. C now retains their statement blocks, consumes only owned indentation
 boundaries and stops after parse errors. Seven regressions cover mixed branch layouts, nested arms,
 condition-only matches, following declarations and malformed-input termination.
+
+## Functions and higher-order execution — 2026-09-05
+
+The typed pipeline now infers anonymous functions, specializes named function
+values and lifts escaping closures into explicit environments. Native generated
+functions share one hidden-environment convention; runtime/builtin function values
+use concrete wrappers. List map/fold/filter/find/any/all and Option/Result callbacks
+execute typed calls, preserving Float payloads, short-circuiting and source order.
+Empty list output uses a valid runtime allocation capacity.
+
+Interactive closures retain their originating immutable program so later entries
+cannot change function identities. Unique code and captured graphs share an
+aggregate storage budget. The REPL accepts open calls and commented closure headers.
+The formatter and module loader support block callbacks and nested function types.
+Result-bearing captures currently receive an explicit diagnostic pending delayed
+ownership tracking; callbacks may return and propagate Results normally.
+
+Six native programs cover escaping/independent/nested captures, 512 retained closures,
+full-width and Float callbacks, records and all ten higher-order operations. Six
+invalid programs exercise type and obligation diagnostics. Additional checker,
+parser, emitter, formatter, module and interactive regressions protect the pipeline.
+
+Closure checkpoint gates pass locally: 287 Rust tests, 550 C tests, 87 core
+native programs, 40 invalid programs, dual-frontend directory/Result contracts,
+192 seeded mutations, formatting/clippy and documentation checks.

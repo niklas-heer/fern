@@ -58,6 +58,7 @@ pub(super) fn run(
         functions.push(checked);
         index += 1;
     }
+    super::lift::run(&mut functions)?;
     let types = registry.layouts(&functions)?;
     Ok(ir::Program { functions, types })
 }
@@ -91,11 +92,24 @@ impl Driver<'_> {
         args: &[ir::Expr],
         result: &Type,
     ) -> Checked<ir::FunctionId> {
+        self.target_types(
+            template,
+            &args.iter().map(|a| a.ty.clone()).collect::<Vec<_>>(),
+            result,
+        )
+    }
+
+    fn target_types(
+        &mut self,
+        template: usize,
+        args: &[Type],
+        result: &Type,
+    ) -> Checked<ir::FunctionId> {
         let function = &self.source.functions[template];
         let signature = &self.signatures[&function.name];
         let mut values = HashMap::new();
         for (parameter, arg) in signature.params.iter().zip(args) {
-            nominal::capture(parameter, &arg.ty, &mut values, 0)?;
+            nominal::capture(parameter, arg, &mut values, 0)?;
         }
         nominal::capture(&signature.result, result, &mut values, 0)?;
         let arguments = signature
@@ -112,61 +126,21 @@ impl Driver<'_> {
 
     /// Replace source-template call IDs and recursively queue all reachable instances.
     fn rewrite(&mut self, expr: &mut ir::Expr) -> Checked<()> {
+        for child in super::lift::children_mut(expr) {
+            self.rewrite(child)?;
+        }
         match &mut expr.kind {
-            ir::ExprKind::Call { target, args } => {
-                for arg in args.iter_mut() {
-                    self.rewrite(arg)?;
-                }
-                if let ir::CallTarget::Function(id) = target {
-                    *id = self.target(id.0, args, &expr.ty)?;
-                }
-            }
-            ir::ExprKind::Unary { value, .. }
-            | ir::ExprKind::Try(value)
-            | ir::ExprKind::Field { value, .. } => self.rewrite(value)?,
-            ir::ExprKind::Binary { left, right, .. } => {
-                self.rewrite(left)?;
-                self.rewrite(right)?;
-            }
-            ir::ExprKind::Construct {
-                value: Some(value), ..
-            } => self.rewrite(value)?,
-            ir::ExprKind::Interpolate(values)
-            | ir::ExprKind::Tuple(values)
-            | ir::ExprKind::List(values)
-            | ir::ExprKind::CustomConstruct { fields: values, .. } => {
-                for value in values {
-                    self.rewrite(value)?;
-                }
-            }
-            ir::ExprKind::If {
-                condition,
-                then_branch,
-                else_branch,
+            ir::ExprKind::Call {
+                target: ir::CallTarget::Function(id),
+                args,
+            } => *id = self.target(id.0, args, &expr.ty)?,
+            ir::ExprKind::FunctionValue {
+                target: ir::CallTarget::Function(id),
             } => {
-                self.rewrite(condition)?;
-                self.rewrite(then_branch)?;
-                if let Some(value) = else_branch {
-                    self.rewrite(value)?;
-                }
-            }
-            ir::ExprKind::Match { value, arms } => {
-                self.rewrite(value)?;
-                for arm in arms {
-                    if let Some(guard) = &mut arm.guard {
-                        self.rewrite(guard)?;
-                    }
-                    self.rewrite(&mut arm.body)?;
-                }
-            }
-            ir::ExprKind::Block(stmts) => {
-                for stmt in stmts {
-                    match stmt {
-                        ir::Stmt::Let { value, .. } | ir::Stmt::Expr(value) => {
-                            self.rewrite(value)?
-                        }
-                    }
-                }
+                let Type::Function(params, result) = &expr.ty else {
+                    return Err(Diagnostic::new(expr.span, "invalid function value type"));
+                };
+                *id = self.target_types(id.0, params, result)?;
             }
             _ => {}
         }
@@ -195,6 +169,22 @@ fn source_instance(
 /// Substitute the bounded expression tree's explicit local annotations and guards.
 fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Type>) -> Checked<()> {
     match &mut expr.kind {
+        ast::ExprKind::Lambda { params, body } => {
+            for param in params {
+                param.annotation = param
+                    .annotation
+                    .as_ref()
+                    .map(|ty| nominal::substitute(ty, values))
+                    .transpose()?;
+            }
+            substitute_expr(body, values)?;
+        }
+        ast::ExprKind::Apply { callee, args } => {
+            substitute_expr(callee, values)?;
+            for arg in args {
+                substitute_expr(arg, values)?;
+            }
+        }
         ast::ExprKind::Unary { value, .. }
         | ast::ExprKind::Try(value)
         | ast::ExprKind::Field { value, .. } => substitute_expr(value, values)?,

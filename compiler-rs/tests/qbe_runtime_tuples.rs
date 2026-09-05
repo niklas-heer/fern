@@ -21,6 +21,7 @@ fn emit(name: &str, arguments: Vec<&str>) -> String {
     qbe::emit(&ir::Program {
         types: vec![],
         functions: vec![ir::Function {
+            captures: vec![],
             id: ir::FunctionId(0),
             name: "main".into(),
             params: vec![],

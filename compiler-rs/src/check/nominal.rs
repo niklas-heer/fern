@@ -121,6 +121,10 @@ impl Registry {
                         format!("undeclared generic type '{name}'"),
                     ))
                 }
+                Type::Function(args, result) => {
+                    pending.extend(args);
+                    pending.push(result);
+                }
                 Type::Tuple(args) => pending.extend(args),
                 Type::List(t) | Type::Option(t) => pending.push(t),
                 Type::Result(a, b) => {
@@ -272,6 +276,10 @@ impl Registry {
                     pending.extend(layout.variants.iter().flatten().cloned());
                     layouts.push(layout);
                 }
+                Type::Function(args, result) => {
+                    pending.extend(args.iter().cloned());
+                    pending.push((**result).clone());
+                }
                 Type::Tuple(fields) => pending.extend(fields.iter().cloned()),
                 Type::List(a) | Type::Option(a) => pending.push((**a).clone()),
                 Type::Result(a, b) => {
@@ -288,6 +296,15 @@ impl Registry {
 /// List child expressions, including guards, without traversing type layouts.
 pub(super) fn children(expr: &ir::Expr) -> Vec<&ir::Expr> {
     match &expr.kind {
+        ir::ExprKind::Lambda { captures, body, .. } => captures
+            .iter()
+            .map(|c| &c.value)
+            .chain(std::iter::once(body.as_ref()))
+            .collect(),
+        ir::ExprKind::Closure { captures, .. } => captures.iter().collect(),
+        ir::ExprKind::Invoke { callee, args } => std::iter::once(callee.as_ref())
+            .chain(args.iter())
+            .collect(),
         ir::ExprKind::Unary { value, .. }
         | ir::ExprKind::Try(value)
         | ir::ExprKind::Field { value, .. } => vec![value],
@@ -336,6 +353,10 @@ pub(super) fn generics(types: impl IntoIterator<Item = Type>) -> Vec<String> {
             Type::Generic(n) => {
                 names.insert(n);
             }
+            Type::Function(args, result) => {
+                pending.extend(args);
+                pending.push(*result);
+            }
             Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
             Type::List(a) | Type::Option(a) => pending.push(*a),
             Type::Result(a, b) => {
@@ -374,6 +395,12 @@ fn substitute_inner(
             Some(value) => substitute_inner(value, values, depth, budget, false)?,
             None => ty.clone(),
         },
+        Type::Function(args, result) => Type::Function(
+            args.iter()
+                .map(|a| substitute_inner(a, values, depth + 1, budget, expand))
+                .collect::<Checked<Vec<_>>>()?,
+            Box::new(substitute_inner(result, values, depth + 1, budget, expand)?),
+        ),
         Type::Tuple(args) => Type::Tuple(
             args.iter()
                 .map(|a| substitute_inner(a, values, depth + 1, budget, expand))
@@ -440,6 +467,12 @@ pub(super) fn capture(
             for (a, b) in a.iter().zip(b) {
                 capture(a, b, values, depth + 1)?;
             }
+        }
+        (Type::Function(a, ar), Type::Function(b, br)) if a.len() == b.len() => {
+            for (a, b) in a.iter().zip(b) {
+                capture(a, b, values, depth + 1)?;
+            }
+            capture(ar, br, values, depth + 1)?;
         }
         (Type::List(a), Type::List(b)) | (Type::Option(a), Type::Option(b)) => {
             capture(a, b, values, depth + 1)?

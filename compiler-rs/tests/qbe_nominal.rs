@@ -56,6 +56,7 @@ fn emit(body: Expr, types: Vec<TypeLayout>) -> Result<String, fern_prototype::Di
     qbe::emit(&Program {
         types,
         functions: vec![Function {
+            captures: vec![],
             id: FunctionId(0),
             name: "main".into(),
             params: vec![],

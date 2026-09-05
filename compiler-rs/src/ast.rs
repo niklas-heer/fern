@@ -55,6 +55,13 @@ pub struct Param {
     pub ty: Type,
     pub span: Span,
 }
+/// Anonymous parameter with optional context-inferred type annotation.
+#[derive(Clone, Debug)]
+pub struct LambdaParam {
+    pub name: String,
+    pub annotation: Option<Type>,
+    pub span: Span,
+}
 #[derive(Clone, Debug)]
 pub struct Expr {
     pub kind: ExprKind,
@@ -94,6 +101,14 @@ pub enum ExprKind {
         op: BinaryOp,
         left: Box<Expr>,
         right: Box<Expr>,
+    },
+    Lambda {
+        params: Vec<LambdaParam>,
+        body: Box<Expr>,
+    },
+    Apply {
+        callee: Box<Expr>,
+        args: Vec<Expr>,
     },
     Call {
         name: String,

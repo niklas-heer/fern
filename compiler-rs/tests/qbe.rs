@@ -22,6 +22,7 @@ fn string(value: &str) -> Expr {
 }
 fn function(id: usize, name: &str, body: Expr) -> Function {
     Function {
+        captures: vec![],
         id: FunctionId(id),
         name: name.into(),
         return_type: body.ty.clone(),
@@ -78,8 +79,8 @@ fn typed_function_calls_use_pointer_returns_and_mangled_ids() {
         functions: vec![main, target],
     })
     .unwrap();
-    assert!(il.contains("function l $f7()"), "{il}");
-    assert!(il.contains("=l call $f7()"), "{il}");
+    assert!(il.contains("function l $f7(l %env)"), "{il}");
+    assert!(il.contains("=l call $f7(l 0)"), "{il}");
     assert!(il.contains("call $fern_println_str(l %"), "{il}");
     assert!(!il.contains("unsafe$name"));
 }
@@ -248,7 +249,7 @@ fn locals_parameters_and_final_block_value_are_preserved() {
         ],
     };
     let il = qbe::emit(&p).unwrap();
-    assert!(il.contains("function l $f1(l %v0)"), "{il}");
+    assert!(il.contains("function l $f1(l %env, l %v0)"), "{il}");
     assert!(il.contains("sub %v0, 3"), "{il}");
 }
 
@@ -354,7 +355,7 @@ fn full_width_int_math_comparison_and_main_exit_wrapper() {
         il.contains("=l sub 9223372036854775807, -9223372036854775808"),
         "{il}"
     );
-    assert!(il.contains("function l $f0()"), "{il}");
+    assert!(il.contains("function l $f0(l %env)"), "{il}");
     assert!(il.contains("export function w $fern_main()"), "{il}");
     assert!(il.contains("=w copy %exit"), "{il}");
     let cmp = binary(BinaryOp::Lt, int(-1), int(1), Type::Bool);
@@ -378,7 +379,7 @@ fn only_unit_main_discards_a_nonunit_body() {
     })
     .unwrap();
     assert!(
-        il.contains("function w $f0()\n") || il.contains("function w $f0() {"),
+        il.contains("function w $f0(l %env)\n") || il.contains("function w $f0(l %env) {"),
         "{il}"
     );
     assert!(!il.contains("ret 99"), "{il}");
@@ -421,8 +422,8 @@ fn unit_parameters_and_if_without_else_evaluate_effects() {
         functions: vec![function(0, "main", body), helper],
     })
     .unwrap();
-    assert!(il.contains("function w $f1(w %v0)"), "{il}");
-    assert!(il.contains("call $f1(w 0)"), "{il}");
+    assert!(il.contains("function w $f1(l %env, w %v0)"), "{il}");
+    assert!(il.contains("call $f1(l 0, w 0)"), "{il}");
     assert!(
         il.find("call $fern_println_str").unwrap() < il.find("call $f1").unwrap(),
         "{il}"

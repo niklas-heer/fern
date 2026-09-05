@@ -28,6 +28,7 @@ fn emit(body: Expr) -> Result<String, fern_prototype::Diagnostic> {
     qbe::emit(&Program {
         types: vec![],
         functions: vec![Function {
+            captures: vec![],
             id: FunctionId(0),
             name: "main".into(),
             params: vec![],

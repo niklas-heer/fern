@@ -55,6 +55,7 @@ fn emit(body: Expr) -> Result<String, fern_prototype::Diagnostic> {
     qbe::emit(&Program {
         types: vec![],
         functions: vec![Function {
+            captures: vec![],
             id: FunctionId(0),
             name: "main".into(),
             params: vec![],
@@ -422,6 +423,7 @@ fn result_try_returns_original_error_and_unpacks_full_width_success() {
         types: vec![],
         functions: vec![
             Function {
+                captures: vec![],
                 id: FunctionId(0),
                 name: "main".into(),
                 params: vec![],
@@ -430,6 +432,7 @@ fn result_try_returns_original_error_and_unpacks_full_width_success() {
                 local_count: 0,
             },
             Function {
+                captures: vec![],
                 id: FunctionId(1),
                 name: "helper".into(),
                 params: vec![],

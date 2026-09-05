@@ -1,0 +1,27 @@
+fn probe(value: Int) -> Bool:
+    println(value)
+    value == 2
+fn positive(value: Int) -> Bool:
+    println(value)
+    value > 0
+fn main():
+    let original = [1, 2, 3]
+    let mapped = List.map(original, (x) -> x + 4294967296)
+    println(List.get(mapped, 2))
+    println(List.get(original, 2))
+    println(List.fold([1, 2, 3], 0, (total, x) -> total * 10 + x))
+    println(List.fold([1.25, 2.5], 0.5, (total, x) -> total + x))
+    println(List.fold(["a", "b"], "prefix:", (total, x) -> total + x))
+    println(List.len(List.filter(original, (x) -> x > 1)))
+    println(Option.unwrap_or(List.find(original, probe), 0))
+    println(List.any(original, probe))
+    println(List.all([1, 0, 3], positive))
+    println(List.head(List.map([true], (flag) -> not flag)))
+    println(Option.unwrap_or(List.find([9223372036854775807], (x) -> true), 0))
+    let empty: List(Int) = []
+    println(List.len(List.map(empty, (x) -> x + 1)))
+    println(List.fold(empty, 42, (total, x) -> total + x))
+    println(List.len(List.filter(empty, probe)))
+    println(Option.is_none(List.find(empty, probe)))
+    println(List.any(empty, probe))
+    println(List.all(empty, probe))

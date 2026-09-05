@@ -5,12 +5,16 @@ use crate::{
     Constructor, Diagnostic, Span, Type,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+#[path = "qbe/closures.rs"]
+mod closures;
+#[path = "qbe/higher_order.rs"]
+mod higher_order;
 #[path = "qbe/nominal.rs"]
 mod nominal;
 #[path = "qbe/runtime_calls.rs"]
 mod runtime_calls;
 
-const MAX_DEPTH: usize = 256;
+const MAX_DEPTH: usize = 128;
 const MAX_NODES: usize = 200_000;
 const STRING_RUN: usize = 512;
 
@@ -21,8 +25,16 @@ pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
     let mut functions = BTreeMap::new();
     let mut main = None;
     for function in &program.functions {
+        if function.params.len() > MAX_NODES
+            || function.captures.len() > MAX_NODES.saturating_sub(function.params.len())
+        {
+            return Err(invalid(
+                function.body.span,
+                "function signature limit exceeded",
+            ));
+        }
         nominal::resolved(&function.return_type, &layouts, function.body.span, 0)?;
-        for param in &function.params {
+        for param in function.params.iter().chain(&function.captures) {
             nominal::resolved(&param.ty, &layouts, function.body.span, 0)?;
         }
         if functions.insert(function.id.0, function).is_some() {
@@ -32,7 +44,8 @@ pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
             if main.replace(function).is_some() {
                 return Err(invalid(function.body.span, "duplicate main function"));
             }
-            if !function.params.is_empty()
+            if !function.captures.is_empty()
+                || !function.params.is_empty()
                 || !matches!(function.return_type.clone(), Type::Int | Type::Unit)
             {
                 return Err(invalid(
@@ -75,7 +88,8 @@ fn width(ty: Type) -> char {
         | Type::Result(_, _)
         | Type::Tuple(_)
         | Type::Native(_)
-        | Type::Named(_, _) => 'l',
+        | Type::Named(_, _)
+        | Type::Function(_, _) => 'l',
         Type::Bool | Type::Unit => 'w',
         Type::Float => 'd',
         Type::Infer(_) | Type::Generic(_) => {
@@ -154,7 +168,7 @@ impl Emitter<'_> {
             label: 0,
             current: "@start".into(),
         };
-        let mut params = Vec::new();
+        let mut params = vec!["l %env".to_owned()];
         for param in &function.params {
             let value = format!("%v{}", param.id.0);
             locals.define(
@@ -171,6 +185,7 @@ impl Emitter<'_> {
             function.id.0,
             params.join(", ")
         ));
+        self.load_captures(function, &mut locals)?;
         let value = self.expr(&function.body, &mut locals, 0)?;
         if function.return_type.clone() != Type::Unit || function.name != "main" {
             expect_type(
@@ -193,7 +208,7 @@ impl Emitter<'_> {
         self.output
             .push_str("export function w $fern_main() {\n@start\n");
         self.output.push_str(&format!(
-            "    %exit ={} call $f{}()\n",
+            "    %exit ={} call $f{}(l 0)\n",
             width(main.return_type.clone()),
             main.id.0
         ));
@@ -218,6 +233,15 @@ impl Emitter<'_> {
             return Err(invalid(expr.span, "lowering complexity limit exceeded"));
         }
         let (actual, value) = match &expr.kind {
+            ExprKind::Lambda { .. } | ExprKind::FunctionValue { .. } => {
+                return Err(invalid(expr.span, "unlifted callable expression"));
+            }
+            ExprKind::Closure { function, captures } => {
+                self.closure(*function, captures, expr.span, locals, depth + 1)?
+            }
+            ExprKind::Invoke { callee, args } => {
+                self.invoke(callee, args, expr.span, locals, depth + 1)?
+            }
             ExprKind::CustomConstruct { tag, fields } => {
                 self.custom_construct(*tag, fields, &expr.ty, expr.span, locals, depth + 1)?
             }
@@ -242,11 +266,7 @@ impl Emitter<'_> {
             ExprKind::Float(value) => self.float_literal(*value, locals),
             ExprKind::Bool(value) => (Type::Bool, u8::from(*value).to_string()),
             ExprKind::String(value) => (Type::String, self.string(value, expr.span)?),
-            ExprKind::Local(id) => locals
-                .values
-                .get(&id.0)
-                .cloned()
-                .ok_or_else(|| invalid(expr.span, "unknown or out-of-scope local identity"))?,
+            ExprKind::Local(id) => Self::local(*id, expr.span, locals)?,
             ExprKind::Unary { op, value } => self.unary(*op, value, locals, depth + 1)?,
             ExprKind::Binary { op, left, right } => {
                 self.binary(*op, left, right, locals, depth + 1)?
@@ -269,6 +289,15 @@ impl Emitter<'_> {
         };
         expect_type(actual, expr.ty.clone(), expr.span)?;
         Ok(value)
+    }
+
+    /// Resolve a lexical identity without reconstructing source names or types.
+    fn local(id: ir::LocalId, span: Span, locals: &Locals) -> Result<(Type, String), Diagnostic> {
+        locals
+            .values
+            .get(&id.0)
+            .cloned()
+            .ok_or_else(|| invalid(span, "unknown or out-of-scope local identity"))
     }
 
     /// Validate structural tuple shape before allocating its tag and typed fields.
@@ -413,6 +442,11 @@ impl Emitter<'_> {
         if let CallTarget::Runtime(id) = target {
             return self.runtime_call(id, args, span, locals, depth);
         }
+        if let CallTarget::Builtin(builtin) = target {
+            if higher_order::is_higher_order(builtin) {
+                return self.higher_order(builtin, args, span, locals, depth);
+            }
+        }
         if compound_builtin(target) {
             return self.compound_call(target, args, span, locals, depth);
         }
@@ -423,7 +457,11 @@ impl Emitter<'_> {
                 "call argument count differs from resolved signature",
             ));
         }
-        let mut arguments = Vec::new();
+        let mut arguments = if matches!(target, CallTarget::Function(_)) {
+            vec!["l 0".into()]
+        } else {
+            Vec::new()
+        };
         for (arg, expected) in args.iter().zip(params) {
             expect_type(arg.ty.clone(), expected.clone(), arg.span)?;
             let mut value = self.expr(arg, locals, depth)?;
@@ -464,6 +502,12 @@ impl Emitter<'_> {
                     .functions
                     .get(&id.0)
                     .ok_or_else(|| invalid(span, "unknown function identity"))?;
+                if !function.captures.is_empty() {
+                    return Err(invalid(
+                        span,
+                        "direct call cannot supply captured environment",
+                    ));
+                }
                 return Ok((
                     format!("f{}", id.0),
                     function.params.iter().map(|p| p.ty.clone()).collect(),
@@ -728,6 +772,12 @@ fn concrete(ty: &Type, span: Span, depth: usize) -> Result<(), Diagnostic> {
             span,
             "unresolved inference variable or generic type",
         )),
+        Type::Function(args, result) => {
+            for arg in args {
+                concrete(arg, span, depth + 1)?;
+            }
+            concrete(result, span, depth + 1)
+        }
         Type::Tuple(args) | Type::Named(_, args) => {
             for arg in args {
                 concrete(arg, span, depth + 1)?;

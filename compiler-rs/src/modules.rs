@@ -625,6 +625,12 @@ fn qualify_type(ty: &mut Type, names: &Names) -> Result<(), Error> {
                 qualify_type(arg, names)?;
             }
         }
+        Type::Function(params, result) => {
+            for param in params {
+                qualify_type(param, names)?;
+            }
+            qualify_type(result, names)?;
+        }
         Type::Tuple(fields) => {
             for field in fields {
                 qualify_type(field, names)?;
@@ -698,9 +704,14 @@ fn rewrite(
         } => {
             rewrite(value, names, prefixes, scopes, offset)?;
             resolve_name(name, names, prefixes, scopes).map_err(|e| at_span(e, original))?;
-            for arg in args {
-                rewrite(arg, names, prefixes, scopes, offset)?;
-            }
+            rewrite_values(args, names, prefixes, scopes, offset)?;
+        }
+        ast::ExprKind::Lambda { params, body } => {
+            rewrite_lambda(params, body, names, prefixes, scopes, offset)?
+        }
+        ast::ExprKind::Apply { callee, args } => {
+            rewrite(callee, names, prefixes, scopes, offset)?;
+            rewrite_values(args, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Interpolate(parts) => {
             for part in parts {
@@ -711,14 +722,10 @@ fn rewrite(
         }
         ast::ExprKind::Call { name, args } => {
             resolve_name(name, names, prefixes, scopes).map_err(|e| at_span(e, original))?;
-            for arg in args {
-                rewrite(arg, names, prefixes, scopes, offset)?;
-            }
+            rewrite_values(args, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Tuple(values) | ast::ExprKind::List(values) => {
-            for value in values {
-                rewrite(value, names, prefixes, scopes, offset)?;
-            }
+            rewrite_values(values, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Try(value)
         | ast::ExprKind::Unary { value, .. }
@@ -740,12 +747,23 @@ fn rewrite(
         }
         ast::ExprKind::Block(stmts) => rewrite_block(stmts, names, prefixes, scopes, offset)?,
         ast::ExprKind::Match { value, arms } => {
-            rewrite(value, names, prefixes, scopes, offset)?;
-            for arm in arms {
-                rewrite_arm(arm, names, prefixes, scopes, offset)?;
-            }
+            rewrite_match(value, arms, names, prefixes, scopes, offset)?
         }
         _ => {}
+    }
+    Ok(())
+}
+
+/// Rewrite ordered expression children without changing their lexical scope.
+fn rewrite_values(
+    values: &mut [ast::Expr],
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    for value in values {
+        rewrite(value, names, prefixes, scopes, offset)?;
     }
     Ok(())
 }
@@ -766,6 +784,45 @@ fn rewrite_arm(
     rewrite(&mut arm.body, names, prefixes, scopes, offset)?;
     shift(&mut arm.span, offset);
     scopes.pop();
+    Ok(())
+}
+
+/// Resolve callback annotations before introducing its parameter scope for the body.
+fn rewrite_lambda(
+    params: &mut [ast::LambdaParam],
+    body: &mut ast::Expr,
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    let mut bound = BTreeSet::new();
+    for param in params {
+        if let Some(ty) = &mut param.annotation {
+            qualify_type(ty, names).map_err(|e| at_span(e, param.span))?;
+        }
+        shift(&mut param.span, offset);
+        bound.insert(param.name.clone());
+    }
+    scopes.push(bound);
+    let result = rewrite(body, names, prefixes, scopes, offset);
+    scopes.pop();
+    result
+}
+
+/// Scope match bindings independently while preserving each guard and arm location.
+fn rewrite_match(
+    value: &mut ast::Expr,
+    arms: &mut [ast::MatchArm],
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    rewrite(value, names, prefixes, scopes, offset)?;
+    for arm in arms {
+        rewrite_arm(arm, names, prefixes, scopes, offset)?;
+    }
     Ok(())
 }
 

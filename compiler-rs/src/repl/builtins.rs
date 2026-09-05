@@ -3,7 +3,7 @@ use super::*;
 const MAX_STRING: usize = 1024 * 1024;
 const MAX_LIST: usize = 65_536;
 
-impl Machine<'_> {
+impl Machine {
     /// Apply checked builtins to immutable shared values, bounding allocations first.
     pub(super) fn builtin(&mut self, builtin: ir::Builtin, args: Vec<Value>) -> Eval<Value> {
         use ir::Builtin::*;
@@ -66,7 +66,7 @@ impl Machine<'_> {
                     fallback.clone()
                 })
             }
-            _ => Err(fault("unsupported interactive builtin arguments")),
+            _ => self.higher_order(builtin, &args),
         }
     }
     /// Dispatch stable registry identities and name unsupported operations by their source API.

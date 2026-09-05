@@ -68,13 +68,14 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
 - `Option.is_some/is_none/unwrap_or` and `Result.is_ok/is_err/unwrap_or`.
 - Multiline lists, calls, and type arguments with checked delimiters.
 - Nested string interpolation with Int/Float/Bool/String expressions and escaped literal braces.
+- First-class named/anonymous functions, contextual callback inference, escaping captures
+  and typed higher-order List/Option/Result operations.
 - Line comments, string escapes, and source-located diagnostics.
 - Audited runtime bindings for files, strings, regex, arguments/processes, SQLite,
   HTTP clients, explicit mailboxes and terminal UI. Opaque annotations are qualified
   (`Tui.Panel`, `Tui.Tree`, etc.), keeping ordinary user-defined names available.
 
-Unsupported syntax produces diagnostics. Gaps include maps, closures/higher-order
-calls, actor execution, triple-quoted multiline strings, block comments, named
+Unsupported syntax produces diagnostics. Gaps include maps, actor execution, triple-quoted multiline strings, block comments, named
 arguments, non-ASCII identifiers, and inferred return types outside `main`.
 `with`, general early returns and full release parity remain migration work.
 
@@ -89,8 +90,7 @@ usage or an annotation to determine its payload type. For example,
 `let empty: List(String) = []` is concrete. Unsupported compound equality is
 rejected; it does not silently compare pointers. List indexing and `List.head`
 retain the current runtime's valid-index/nonempty preconditions, so check lengths
-before reading. General safe collection indexing and higher-order operations
-remain future work.
+before reading. General safe collection indexing remains future work.
 
 Strings inherit the existing C runtime: embedded NUL is rejected, and `String.len`
 counts UTF-8 bytes. Integer arithmetic uses QBE's native signed operations; total
@@ -98,15 +98,44 @@ arithmetic error handling (including divide by zero) remains future work. A sour
 file is limited to 1 MiB, 65,536 tokens, and a syntax nesting depth of 128. These
 explicit prototype limits prevent unbounded parser recursion/allocation.
 
+## Functions and callbacks
+
+```fern
+fn make_adder(base: Int) -> (Int) -> Int:
+    (value: Int) -> base + value
+
+fn main():
+    let add = make_adder(40)
+    println(add(2))
+    let numbers = List.map([1, 2, 3], (value) -> value + 1)
+    println(List.fold(numbers, 0, (total, value) -> total + value))
+```
+
+Both `(value) -> expression` and `fn(value) -> expression` support indented
+bodies, including callbacks inside argument lists. Function types use
+`(Int) -> Int` or `fn(Int) -> Int`. Context infers omitted lambda parameter types;
+local function bindings remain monomorphic. Named generic and builtin/runtime
+functions specialize from their concrete expected function types.
+
+Captures evaluate once and survive their defining scope. Higher-order operations
+preserve input order; `List.find`, `List.any` and `List.all` stop as soon as the
+result is known. Empty collections and absent/error sums skip their callbacks.
+Each callback has its own `?` propagation boundary. Capturing an already-produced
+Result-bearing value currently gives an explicit diagnostic; delayed ownership
+tracking is still required to lift that restriction. Returning a Result from a
+function is supported. Function equality is not defined.
+
 ## Interactive and editor tools
 
 `fern-rs repl` evaluates expressions, successful `let` bindings and typed function
-or type definitions. Submit an indented block with a blank line. `:help`, `:reset`
+or type definitions. Submit indented blocks and continued calls with a blank line. `:help`, `:reset`
 and `:quit` control the session. It checks typed IR and retains values without
 replaying earlier effects. Core values, matching, tuples, generics, common string
 and list APIs, and local file operations execute interactively. Unsupported native
 APIs produce a source-facing diagnostic; use `run` for those programs. Evaluation,
-input, allocations and value previews are bounded. Session errors preserve prior
+input, allocations and value previews are bounded. Closures retain their original
+compiled code across later entries; unique retained programs count toward the
+interactive storage budget. Session errors preserve prior
 bindings; already completed filesystem effects cannot be rolled back.
 
 `fern-rs lsp` serves JSON-RPC on standard input/output. It supports lifecycle,

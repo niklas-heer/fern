@@ -70,6 +70,7 @@ pub fn parse(source: &str) -> ParseResult<Program> {
         tokens,
         position: 0,
         depth: 0,
+        guard_arrow: None,
     }
     .program()
 }
@@ -86,61 +87,146 @@ fn push(tokens: &mut Vec<Token>, kind: Kind, start: usize, end: usize) -> ParseR
     Ok(())
 }
 
-/// Tokenize lines with explicit indentation; blank/comment lines have no layout.
+struct CallbackLayout {
+    delimiters: usize,
+    indent: usize,
+    levels: usize,
+}
+
+struct LayoutLexer {
+    tokens: Vec<Token>,
+    levels: Vec<usize>,
+    delimiters: Vec<Token>,
+    callbacks: Vec<CallbackLayout>,
+}
+
+/// Tokenize physical lines while preserving layout inside bounded callback bodies.
 fn lex(source: &str) -> ParseResult<Vec<Token>> {
-    let mut tokens: Vec<Token> = Vec::new();
-    let mut levels = vec![0];
-    let mut delimiters = Vec::new();
+    let mut lexer = LayoutLexer {
+        tokens: Vec::new(),
+        levels: vec![0],
+        delimiters: Vec::new(),
+        callbacks: Vec::new(),
+    };
     let mut offset = 0;
     for line in source.split_inclusive('\n') {
-        let line = line.strip_suffix('\n').unwrap_or(line);
-        let content = line.strip_suffix('\r').unwrap_or(line);
+        let content = line.strip_suffix('\n').unwrap_or(line);
+        let content = content.strip_suffix('\r').unwrap_or(content);
+        lexer.line(content, offset)?;
+        offset += line.len();
+    }
+    if let Some(token) = lexer.delimiters.last() {
+        return Err(Diagnostic::new(token.span, "unclosed delimiter"));
+    }
+    for _ in 1..lexer.levels.len() {
+        push(&mut lexer.tokens, Kind::Dedent, source.len(), source.len())?;
+    }
+    push(&mut lexer.tokens, Kind::End, source.len(), source.len())?;
+    Ok(lexer.tokens)
+}
+
+impl LayoutLexer {
+    /// Select significant layout for one physical line; nested ordinary delimiters suspend it.
+    fn line(&mut self, content: &str, offset: usize) -> ParseResult<()> {
         let indent = content.bytes().take_while(|b| *b == b' ').count();
         let rest = &content[indent..];
+        let span = Span {
+            start: offset + indent,
+            end: offset + content.len(),
+        };
         if rest.starts_with('\t') {
             return Err(Diagnostic::new(
-                Span {
-                    start: offset + indent,
-                    end: offset + indent + 1,
-                },
+                span,
                 "tabs are not allowed for indentation; use spaces",
             ));
         }
-        if !rest.is_empty() && !rest.starts_with('#') {
-            if delimiters.is_empty() {
-                if rest.starts_with("|>") && indent >= *levels.last().unwrap() {
-                    if tokens
-                        .last()
-                        .is_some_and(|token| token.kind == Kind::Newline)
-                    {
-                        tokens.pop();
-                    }
-                } else {
-                    layout(&mut tokens, &mut levels, indent, offset)?;
-                }
+        if rest.is_empty() || rest.starts_with('#') {
+            return Ok(());
+        }
+        self.prepare_layout(rest, indent, offset)?;
+        let from = self.tokens.len();
+        lex_line(content, indent, offset, &mut self.tokens)?;
+        track_delimiters(&self.tokens[from..], &mut self.delimiters)?;
+        if self
+            .callbacks
+            .last()
+            .is_some_and(|frame| self.delimiters.len() < frame.delimiters)
+        {
+            return Err(Diagnostic::new(
+                span,
+                "close callback argument delimiters on a dedented line",
+            ));
+        }
+        if !self.delimiters.is_empty()
+            && self
+                .tokens
+                .last()
+                .is_some_and(|token| token.kind == Kind::Arrow)
+        {
+            if self.callbacks.len() >= MAX_DEPTH {
+                return Err(Diagnostic::new(
+                    span,
+                    "callback layout depth limit exceeded",
+                ));
             }
-            let from = tokens.len();
-            lex_line(content, indent, offset, &mut tokens)?;
-            track_delimiters(&tokens[from..], &mut delimiters)?;
-            if delimiters.is_empty() {
-                push(
-                    &mut tokens,
-                    Kind::Newline,
-                    offset + content.len(),
-                    offset + content.len(),
-                )?;
+            self.callbacks.push(CallbackLayout {
+                delimiters: self.delimiters.len(),
+                indent,
+                levels: self.levels.len(),
+            });
+        }
+        if self.layout_active() {
+            push(
+                &mut self.tokens,
+                Kind::Newline,
+                offset + content.len(),
+                offset + content.len(),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// End callback frames before their parent's separators without consuming outer layout.
+    fn prepare_layout(&mut self, rest: &str, indent: usize, offset: usize) -> ParseResult<()> {
+        while let Some(frame) = self.callbacks.last() {
+            if self.delimiters.len() != frame.delimiters || indent > frame.indent {
+                break;
+            }
+            if self.levels.len() == frame.levels {
+                return Err(Diagnostic::new(
+                    Span {
+                        start: offset,
+                        end: offset + indent,
+                    },
+                    "expected indented callback body",
+                ));
+            }
+            while self.levels.len() > frame.levels {
+                self.levels.pop();
+                push(&mut self.tokens, Kind::Dedent, offset, offset + indent)?;
+            }
+            self.callbacks.pop();
+        }
+        if self.layout_active() {
+            if rest.starts_with("|>") && indent >= *self.levels.last().unwrap() {
+                if self.tokens.last().is_some_and(|t| t.kind == Kind::Newline) {
+                    self.tokens.pop();
+                }
+            } else {
+                layout(&mut self.tokens, &mut self.levels, indent, offset)?;
             }
         }
-        offset += line.len() + usize::from(offset + line.len() < source.len());
+        Ok(())
     }
-    if let Some(token) = delimiters.last() {
-        return Err(Diagnostic::new(token.span, "unclosed delimiter"));
+
+    /// A callback restores layout only at its own surrounding delimiter depth.
+    fn layout_active(&self) -> bool {
+        self.delimiters.is_empty()
+            || self
+                .callbacks
+                .last()
+                .is_some_and(|frame| frame.delimiters == self.delimiters.len())
     }
-    for _ in 1..levels.len() {
-        push(&mut tokens, Kind::Dedent, source.len(), source.len())?;
-    }
-    push(&mut tokens, Kind::End, source.len(), source.len())?;
-    Ok(tokens)
 }
 
 /// Validate delimiter pairing and suspend layout inside parenthesized/list syntax.
@@ -491,6 +577,31 @@ pub(crate) fn comment_offset(line: &str) -> Option<usize> {
     line.get(end..)?.find('#').map(|at| at + end)
 }
 
+/// Detect an unfinished interactive delimiter or suite using the source lexer.
+/// Malformed tokens and mismatched closes return false for immediate diagnostics.
+pub(crate) fn line_continues(source: &str) -> bool {
+    if source.len() > MAX_SOURCE {
+        return false;
+    }
+    let mut tokens = Vec::new();
+    let mut delimiters = Vec::new();
+    let mut offset = 0;
+    for line in source.split_inclusive('\n') {
+        let content = line.trim_end_matches(['\n', '\r']);
+        let from = tokens.len();
+        if lex_line(content, 0, offset, &mut tokens).is_err()
+            || track_delimiters(&tokens[from..], &mut delimiters).is_err()
+        {
+            return false;
+        }
+        offset += line.len();
+    }
+    !delimiters.is_empty()
+        || tokens
+            .last()
+            .is_some_and(|token| matches!(token.kind, Kind::Colon | Kind::Arrow))
+}
+
 /// Recognize punctuation or report unsupported characters at a UTF-8 boundary.
 fn punctuation(rest: &str, start: usize) -> ParseResult<(Kind, usize)> {
     let pairs = [
@@ -559,6 +670,7 @@ struct Parser {
     tokens: Vec<Token>,
     position: usize,
     depth: usize,
+    guard_arrow: Option<usize>,
 }
 
 impl Parser {
@@ -903,6 +1015,13 @@ impl Parser {
 
     /// Parse primitive, nominal, and generic types without resolving declarations.
     fn type_value(&mut self) -> ParseResult<Type> {
+        if self.word("fn") {
+            self.take();
+            self.expect(Kind::Left, "expected '(' in function type")?;
+            let (params, _) = self.parenthesized_types()?;
+            self.expect(Kind::Arrow, "expected '->' in function type")?;
+            return Ok(Type::Function(params, Box::new(self.ty()?)));
+        }
         if self.eat(&Kind::Left) {
             return self.tuple_type();
         }
@@ -959,28 +1078,37 @@ impl Parser {
         })
     }
 
-    /// Parse Unit and comma-separated structural types after their opening delimiter.
+    /// Distinguish structural tuple/group types from right-associative function signatures.
     fn tuple_type(&mut self) -> ParseResult<Type> {
-        if self.eat(&Kind::Right) {
-            return Ok(Type::Unit);
+        let (mut fields, comma) = self.parenthesized_types()?;
+        if self.eat(&Kind::Arrow) {
+            return Ok(Type::Function(fields, Box::new(self.ty()?)));
         }
-        let first = self.ty()?;
-        if !self.eat(&Kind::Comma) {
-            self.expect(Kind::Right, "expected ',' or ')' after type")?;
-            return Ok(first);
-        }
-        let mut fields = vec![first];
+        Ok(if fields.is_empty() {
+            Type::Unit
+        } else if fields.len() == 1 && !comma {
+            fields.remove(0)
+        } else {
+            Type::Tuple(fields)
+        })
+    }
+
+    /// Parse a bounded parenthesized type sequence, retaining a singleton comma.
+    fn parenthesized_types(&mut self) -> ParseResult<(Vec<Type>, bool)> {
+        let mut fields = Vec::new();
+        let mut comma = false;
         for _ in 0..self.tokens.len() {
             if self.eat(&Kind::Right) {
                 break;
             }
             fields.push(self.ty()?);
             if !self.eat(&Kind::Comma) {
-                self.expect(Kind::Right, "expected ',' or ')' after tuple type")?;
+                self.expect(Kind::Right, "expected ',' or ')' after type")?;
                 break;
             }
+            comma = true;
         }
-        Ok(Type::Tuple(fields))
+        Ok((fields, comma))
     }
 
     /// Parse one inline expression or an indented block of bindings/expressions.
@@ -1129,6 +1257,20 @@ impl Parser {
                     end: self.take().span.end,
                 };
                 value = expression(ExprKind::Try(Box::new(value.node)), span, value.depth + 1)?;
+            } else if self.eat(&Kind::Left) {
+                let (args, end, depth) = self.arguments()?;
+                let span = Span {
+                    start: value.node.span.start,
+                    end,
+                };
+                value = expression(
+                    ExprKind::Apply {
+                        callee: Box::new(value.node),
+                        args,
+                    },
+                    span,
+                    value.depth.max(depth) + 1,
+                )?;
             } else if self.eat(&Kind::Dot) {
                 let (name, end) = if let Kind::Number(number) = self.current().kind.clone() {
                     let token = self.take();
@@ -1163,6 +1305,9 @@ impl Parser {
 
     /// Parse unary operators, literals, calls, grouping, and conditionals.
     fn prefix(&mut self) -> ParseResult<Parsed> {
+        if self.word("fn") || (self.current().kind == Kind::Left && self.lambda_ahead()) {
+            return self.lambda();
+        }
         if self.word("if") {
             return self.conditional();
         }
@@ -1188,6 +1333,99 @@ impl Parser {
                 "expected expression; this syntax is unsupported in the Rust prototype",
             )),
         }
+    }
+
+    /// Recognize a lambda only when the matching parameter delimiter is followed by an arrow.
+    fn lambda_ahead(&self) -> bool {
+        let mut depth = 0;
+        for (index, token) in self.tokens.iter().enumerate().skip(self.position) {
+            match token.kind {
+                Kind::Left => depth += 1,
+                Kind::Right => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return self.guard_arrow != Some(index + 1)
+                            && self
+                                .tokens
+                                .get(index + 1)
+                                .is_some_and(|t| t.kind == Kind::Arrow);
+                    }
+                }
+                Kind::End => break,
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Parse optionally annotated anonymous parameters and their inline or indented body.
+    fn lambda(&mut self) -> ParseResult<Parsed> {
+        let start = self.current().span.start;
+        if self.word("fn") {
+            self.take();
+        }
+        self.expect(Kind::Left, "expected '(' before lambda parameters")?;
+        let mut params = Vec::new();
+        for _ in 0..self.tokens.len() {
+            if self.eat(&Kind::Right) {
+                break;
+            }
+            let (name, mut span) = self.name()?;
+            let annotation = if self.eat(&Kind::Colon) {
+                Some(self.ty()?)
+            } else {
+                None
+            };
+            span.end = self.tokens[self.position - 1].span.end;
+            params.push(crate::ast::LambdaParam {
+                name,
+                annotation,
+                span,
+            });
+            if !self.eat(&Kind::Comma) {
+                self.expect(Kind::Right, "expected ',' or ')' after lambda parameter")?;
+                break;
+            }
+        }
+        self.expect(Kind::Arrow, "expected '->' before lambda body")?;
+        let body = self.suite()?;
+        let span = Span {
+            start,
+            end: body.node.span.end,
+        };
+        expression(
+            ExprKind::Lambda {
+                params,
+                body: Box::new(body.node),
+            },
+            span,
+            body.depth + 1,
+        )
+    }
+
+    /// Parse positional call arguments after their opening delimiter.
+    fn arguments(&mut self) -> ParseResult<(Vec<Expr>, usize, usize)> {
+        let mut args = Vec::new();
+        let mut depth = 1;
+        for _ in 0..self.tokens.len() {
+            if self.current().kind == Kind::Right {
+                return Ok((args, self.take().span.end, depth));
+            }
+            let arg = self.expr(0)?;
+            depth = depth.max(arg.depth);
+            args.push(arg.node);
+            if self.current().kind == Kind::Colon {
+                return Err(self.error("labeled arguments are unsupported in the Rust prototype"));
+            }
+            if !self.eat(&Kind::Comma) {
+                let end = self
+                    .expect(Kind::Right, "expected ',' or ')' after argument")?
+                    .span
+                    .end;
+                return Ok((args, end, depth));
+            }
+        }
+        Err(self.error("unterminated call arguments"))
     }
 
     /// Parse embedded expressions using the ordinary grammar and one shared depth bound.
@@ -1294,7 +1532,7 @@ impl Parser {
             let pattern = self.pattern()?;
             let guard = if self.word("if") {
                 self.take();
-                Some(self.expr(0)?)
+                Some(self.guard_expression()?)
             } else {
                 None
             };
@@ -1333,6 +1571,29 @@ impl Parser {
             Span { start, end },
             depth,
         )
+    }
+
+    /// Keep the arm separator out of lambda lookahead while allowing callback guards.
+    fn guard_expression(&mut self) -> ParseResult<Parsed> {
+        let mut nesting = 0;
+        let mut separator = None;
+        for (index, token) in self.tokens.iter().enumerate().skip(self.position) {
+            match token.kind {
+                Kind::Left | Kind::LeftBracket | Kind::LeftBrace => nesting += 1,
+                Kind::Right | Kind::RightBracket | Kind::RightBrace => nesting -= 1,
+                Kind::Arrow if nesting == 0 => {
+                    separator = Some(index);
+                    break;
+                }
+                Kind::End => break,
+                _ => {}
+            }
+        }
+        let previous = self.guard_arrow;
+        self.guard_arrow = separator;
+        let result = self.expr(0);
+        self.guard_arrow = previous;
+        result
     }
 
     /// Bound recursive patterns before parsing constructor payloads.
@@ -1536,28 +1797,9 @@ impl Parser {
         if !self.eat(&Kind::Left) {
             return expression(ExprKind::Name(name), span, 1);
         }
-        let mut args = Vec::new();
-        let mut depth = 1;
-        for _ in 0..self.tokens.len() {
-            if self.current().kind == Kind::Right {
-                span.end = self.take().span.end;
-                break;
-            }
-            let arg = self.expr(0)?;
-            depth = depth.max(arg.depth + 1);
-            args.push(arg.node);
-            if self.current().kind == Kind::Colon {
-                return Err(self.error("labeled arguments are unsupported in the Rust prototype"));
-            }
-            if !self.eat(&Kind::Comma) {
-                span.end = self
-                    .expect(Kind::Right, "expected ',' or ')' after argument")?
-                    .span
-                    .end;
-                break;
-            }
-        }
-        expression(ExprKind::Call { name, args }, span, depth)
+        let (args, end, depth) = self.arguments()?;
+        span.end = end;
+        expression(ExprKind::Call { name, args }, span, depth + 1)
     }
 
     /// Parse inline or indented if/else expressions, including else: if chains.
@@ -1800,4 +2042,30 @@ fn pipe(left: Parsed, right: Parsed) -> ParseResult<Parsed> {
         span,
         depth,
     )
+}
+
+#[cfg(test)]
+mod continuation_tests {
+    #[test]
+    fn continuation_uses_tokens_and_rejects_mismatched_delimiters() {
+        for source in [
+            "fn main(): # block",
+            "(x) -> # callback",
+            "println(",
+            "[1,",
+            "apply(\n    [1, 2]\n",
+        ] {
+            assert!(super::line_continues(source), "{source}");
+        }
+        for source in [
+            "println(42)",
+            "\"colon: arrow -> bracket (\"",
+            "\"{(42)}\"",
+            "[1)",
+            "# comment:",
+            "\"unterminated",
+        ] {
+            assert!(!super::line_continues(source), "{source}");
+        }
+    }
 }

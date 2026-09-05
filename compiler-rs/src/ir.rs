@@ -24,6 +24,7 @@ pub struct Function {
     pub id: FunctionId,
     pub name: String,
     pub params: Vec<Param>,
+    pub captures: Vec<Param>,
     pub return_type: Type,
     pub body: Expr,
     pub local_count: usize,
@@ -34,6 +35,11 @@ pub struct Param {
     pub ty: Type,
 }
 #[derive(Clone, Debug)]
+pub struct Capture {
+    pub param: Param,
+    pub value: Expr,
+}
+#[derive(Clone, Debug)]
 pub struct Expr {
     pub kind: ExprKind,
     pub ty: Type,
@@ -41,6 +47,25 @@ pub struct Expr {
 }
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    /// Temporary checked lambda; eliminated by specialization/lifting before lowering.
+    Lambda {
+        params: Vec<Param>,
+        captures: Vec<Capture>,
+        body: Box<Expr>,
+        local_count: usize,
+    },
+    /// Temporary callable reference; its complete function type determines specialization.
+    FunctionValue {
+        target: CallTarget,
+    },
+    Closure {
+        function: FunctionId,
+        captures: Vec<Expr>,
+    },
+    Invoke {
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+    },
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -126,6 +151,16 @@ pub enum CallTarget {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Builtin {
+    ListMap,
+    ListFold,
+    ListFilter,
+    ListFind,
+    ListAny,
+    ListAll,
+    OptionMap,
+    ResultMap,
+    ResultAndThen,
+    ResultUnwrapOrElse,
     Print,
     Println,
     StringConcat,

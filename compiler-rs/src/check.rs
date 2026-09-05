@@ -1,7 +1,9 @@
 //! Resolve source names and types once, including local compound-type inference.
 use crate::{ast, ir, runtime, Constructor, Diagnostic, Span, Type};
 use std::collections::{HashMap, HashSet};
+mod closures;
 mod coverage;
+mod lift;
 mod nominal;
 mod pipes;
 mod preflight;
@@ -192,6 +194,11 @@ fn validate_type(ty: &Type, span: Span) -> Checked<()> {
             ));
         }
         match ty {
+            Type::Function(args, result) => {
+                if args.len() > MAX_PARAMETERS { return Err(Diagnostic::new(span, "function parameter limit exceeded")); }
+                pending.extend(args.iter().map(|a| (a, depth + 1)));
+                pending.push((result, depth + 1));
+            }
             Type::Infer(_) => return Err(Diagnostic::new(span, "explicit types cannot contain inference variables; generic definitions are unsupported")),
             Type::List(inner) | Type::Option(inner) => pending.push((inner, depth + 1)),
             Type::Result(ok, err) => { pending.push((ok, depth + 1)); pending.push((err, depth + 1)); }
@@ -238,6 +245,12 @@ impl Inference {
                 Some(None) => ty.clone(),
                 None => return Err(Diagnostic::new(span, "invalid inference variable")),
             },
+            Type::Function(args, result) => Type::Function(
+                args.iter()
+                    .map(|a| self.resolve_inner(a, span, depth + 1, budget))
+                    .collect::<Checked<Vec<_>>>()?,
+                Box::new(self.resolve_inner(result, span, depth + 1, budget)?),
+            ),
             Type::Tuple(args) => Type::Tuple(
                 args.iter()
                     .map(|a| self.resolve_inner(a, span, depth + 1, budget))
@@ -278,6 +291,12 @@ impl Inference {
         }
         match (&actual, &expected) {
             (Type::Infer(id), ty) | (ty, Type::Infer(id)) => self.assign(*id, ty, span),
+            (Type::Function(a, result_a), Type::Function(b, result_b)) if a.len() == b.len() => {
+                for (a, b) in a.iter().zip(b) {
+                    self.unify(a, b, span, context)?;
+                }
+                self.unify(result_a, result_b, span, context)
+            }
             (Type::List(a), Type::List(b)) | (Type::Option(a), Type::Option(b)) => {
                 self.unify(a, b, span, context)
             }
@@ -324,6 +343,10 @@ impl Inference {
                     pending.push(ok);
                     pending.push(err);
                 }
+                Type::Function(args, result) => {
+                    pending.extend(args);
+                    pending.push(result);
+                }
                 Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
                 _ => {}
             }
@@ -363,6 +386,10 @@ impl Inference {
                     pending.push(ok);
                     pending.push(err);
                 }
+                Type::Function(args, result) => {
+                    pending.extend(args);
+                    pending.push(result);
+                }
                 Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
                 _ => {}
             }
@@ -386,8 +413,14 @@ impl Checker<'_> {
                 ty: param.ty.clone(),
             })
             .collect();
-        let mut body = self.expression(&function.body, 0)?;
         let unit_main = function.name == "main" && return_type == Type::Unit;
+        let mut body = self
+            .expression_expected(
+                &function.body,
+                if unit_main { None } else { Some(&return_type) },
+                0,
+            )
+            .map_err(|e| closures::context(e, "function return"))?;
         if !unit_main {
             self.inference
                 .unify(&body.ty, &return_type, body.span, "function return")?;
@@ -401,6 +434,7 @@ impl Checker<'_> {
             id,
             name: function.name.clone(),
             params,
+            captures: Vec::new(),
             return_type,
             body,
             local_count: self.local_count,
@@ -430,20 +464,42 @@ impl Checker<'_> {
 
     /// Resolve `expr` at bounded `depth` into an expression retaining its type.
     fn expression(&mut self, expr: &ast::Expr, depth: usize) -> Checked<ir::Expr> {
+        self.expression_expected(expr, None, depth)
+    }
+
+    /// Bound checked expression traversal before allocating typed nodes.
+    fn expression_budget(&mut self, span: Span, depth: usize) -> Checked<()> {
         if depth >= MAX_EXPR_DEPTH {
             return Err(Diagnostic::new(
-                expr.span,
+                span,
                 "prototype expression nesting limit exceeded (128)",
             ));
         }
         self.expr_count += 1;
         if self.expr_count > MAX_EXPR_COUNT {
             return Err(Diagnostic::new(
-                expr.span,
+                span,
                 "prototype expression count limit exceeded",
             ));
         }
+        Ok(())
+    }
+
+    /// Propagate contextual types before checking lambda bodies and nested result expressions.
+    fn expression_expected(
+        &mut self,
+        expr: &ast::Expr,
+        expected: Option<&Type>,
+        depth: usize,
+    ) -> Checked<ir::Expr> {
+        self.expression_budget(expr.span, depth)?;
         let (kind, ty) = match &expr.kind {
+            ast::ExprKind::Lambda { params, body } => {
+                self.lambda(params, body, expected, expr.span, depth + 1)?
+            }
+            ast::ExprKind::Apply { callee, args } => {
+                self.apply(callee, args, expected, expr.span, depth + 1)?
+            }
             ast::ExprKind::Int(n) => (ir::ExprKind::Int(*n), Type::Int),
             ast::ExprKind::Float(n) => (ir::ExprKind::Float(*n), Type::Float),
             ast::ExprKind::Bool(b) => (ir::ExprKind::Bool(*b), Type::Bool),
@@ -462,30 +518,35 @@ impl Checker<'_> {
                 self.field(value, name, expr.span)?
             }
             ast::ExprKind::Name(name) => self.name(name, expr.span)?,
-            ast::ExprKind::Tuple(values) => {
-                let values = values
-                    .iter()
-                    .map(|v| self.expression(v, depth + 1))
-                    .collect::<Checked<Vec<_>>>()?;
-                let ty = Type::Tuple(values.iter().map(|v| v.ty.clone()).collect());
-                (ir::ExprKind::Tuple(values), ty)
-            }
-            ast::ExprKind::List(values) => self.list(values, depth + 1)?,
+            ast::ExprKind::Tuple(values) => self.tuple(values, expected, expr.span, depth + 1)?,
+            ast::ExprKind::List(values) => self.list(values, expected, expr.span, depth + 1)?,
             ast::ExprKind::Match { value, arms } => {
-                self.matching(value, arms, expr.span, depth + 1)?
+                self.matching(value, arms, expected, expr.span, depth + 1)?
             }
             ast::ExprKind::Unary { op, value } => self.unary(*op, value, depth + 1)?,
             ast::ExprKind::Binary { op, left, right } => {
                 self.binary(*op, left, right, depth + 1)?
             }
-            ast::ExprKind::Call { name, args } => self.call(name, args, expr.span, depth + 1)?,
+            ast::ExprKind::Call { name, args } => {
+                self.call_expected(name, args, expected, expr.span, depth + 1)?
+            }
             ast::ExprKind::If {
                 condition,
                 then_branch,
                 else_branch,
-            } => self.conditional(condition, then_branch, else_branch.as_deref(), depth + 1)?,
-            ast::ExprKind::Block(stmts) => self.block(stmts, depth + 1)?,
+            } => self.conditional(
+                condition,
+                then_branch,
+                else_branch.as_deref(),
+                expected,
+                depth + 1,
+            )?,
+            ast::ExprKind::Block(stmts) => self.block(stmts, expected, depth + 1)?,
         };
+        if let Some(expected) = expected {
+            self.inference
+                .unify(&ty, expected, expr.span, "expression type")?;
+        }
         Ok(ir::Expr {
             kind,
             ty,
@@ -516,7 +577,19 @@ impl Checker<'_> {
 
     /// Propagate an error from `value` only within a compatible Result-returning function.
     fn propagate(&mut self, value: &ast::Expr, span: Span, depth: usize) -> Checked<TypedKind> {
-        let Type::Result(_, error) = self.function_return.clone() else {
+        let returning = self.inference.resolve(&self.function_return, span)?;
+        let returning = if matches!(returning, Type::Infer(_)) {
+            let result = Type::Result(
+                Box::new(self.inference.fresh()),
+                Box::new(self.inference.fresh()),
+            );
+            self.inference
+                .unify(&returning, &result, span, "lambda return")?;
+            result
+        } else {
+            returning
+        };
+        let Type::Result(_, error) = returning else {
             return Err(Diagnostic::new(
                 span,
                 "? requires a function returning Result",
@@ -553,7 +626,7 @@ impl Checker<'_> {
             }
         }
         if self.registry.constructor(name).is_some() {
-            return self.custom_construct(name, &[], span, 0);
+            return self.custom_construct(name, &[], None, span, 0);
         }
         if name == "None" {
             return Ok((
@@ -564,18 +637,41 @@ impl Checker<'_> {
                 Type::Option(Box::new(self.inference.fresh())),
             ));
         }
-        Err(Diagnostic::new(
-            span,
-            format!("unknown name '{name}' (function values are unsupported in the prototype)"),
-        ))
+        if builtin(name).is_some()
+            || self.signatures.contains_key(name)
+            || runtime::lookup(name).is_some()
+        {
+            let (target, params, result) = self.resolve_callable(name, span)?;
+            return Ok((
+                ir::ExprKind::FunctionValue { target },
+                Type::Function(params, Box::new(result)),
+            ));
+        }
+        Err(Diagnostic::new(span, format!("unknown name '{name}'")))
     }
 
     /// Check homogeneous `values` at `depth`, leaving an empty list contextually inferable.
-    fn list(&mut self, values: &[ast::Expr], depth: usize) -> Checked<TypedKind> {
+    fn list(
+        &mut self,
+        values: &[ast::Expr],
+        expected: Option<&Type>,
+        span: Span,
+        depth: usize,
+    ) -> Checked<TypedKind> {
         let element = self.inference.fresh();
+        if let Some(expected) = expected {
+            self.inference.unify(
+                &Type::List(Box::new(element.clone())),
+                expected,
+                span,
+                "list type",
+            )?;
+        }
         let mut checked = Vec::new();
         for value in values {
-            let value = self.expression(value, depth)?;
+            let value = self
+                .expression_expected(value, Some(&element), depth)
+                .map_err(|e| closures::context(e, "list element"))?;
             self.inference
                 .unify(&value.ty, &element, value.span, "list element")?;
             checked.push(value);
@@ -584,11 +680,16 @@ impl Checker<'_> {
     }
 
     /// Resolve `stmts` in a lexical scope, checking initializers before shadowing.
-    fn block(&mut self, stmts: &[ast::Stmt], depth: usize) -> Checked<TypedKind> {
+    fn block(
+        &mut self,
+        stmts: &[ast::Stmt],
+        expected: Option<&Type>,
+        depth: usize,
+    ) -> Checked<TypedKind> {
         self.scopes.push(HashMap::new());
         let mut checked = Vec::new();
         let mut ty = Type::Unit;
-        for stmt in stmts {
+        for (index, stmt) in stmts.iter().enumerate() {
             match stmt {
                 ast::Stmt::Let {
                     name,
@@ -599,7 +700,9 @@ impl Checker<'_> {
                     if let Some(expected) = annotation {
                         self.registry.validate(expected, &HashSet::new(), *span)?;
                     }
-                    let value = self.expression(value, depth)?;
+                    let value = self
+                        .expression_expected(value, annotation.as_ref(), depth)
+                        .map_err(|e| closures::context(e, "let annotation"))?;
                     if let Some(expected) = annotation {
                         self.inference
                             .unify(&value.ty, expected, *span, "let annotation")?;
@@ -625,7 +728,15 @@ impl Checker<'_> {
                     ty = Type::Unit;
                 }
                 ast::Stmt::Expr(value) => {
-                    let value = self.expression(value, depth)?;
+                    let value = self.expression_expected(
+                        value,
+                        if index + 1 == stmts.len() {
+                            expected
+                        } else {
+                            None
+                        },
+                        depth,
+                    )?;
                     ty = value.ty.clone();
                     checked.push(ir::Stmt::Expr(value));
                 }
@@ -648,7 +759,7 @@ impl Checker<'_> {
         if let Some(ty) = annotation {
             self.registry.validate(ty, &HashSet::new(), span)?;
         }
-        let value = self.expression(value, depth)?;
+        let value = self.expression_expected(value, annotation, depth)?;
         if let Some(ty) = annotation {
             self.inference
                 .unify(&value.ty, ty, span, "let annotation")?;
@@ -795,14 +906,25 @@ impl Checker<'_> {
         condition: &ast::Expr,
         then_branch: &ast::Expr,
         else_branch: Option<&ast::Expr>,
+        expected: Option<&Type>,
         depth: usize,
     ) -> Checked<TypedKind> {
         let condition = self.expression(condition, depth)?;
         self.inference
             .unify(&condition.ty, &Type::Bool, condition.span, "if condition")?;
-        let then_branch = self.expression(then_branch, depth)?;
+        let expected = if else_branch.is_some() {
+            expected
+        } else {
+            None
+        };
+        let then_branch = self
+            .expression_expected(then_branch, expected, depth)
+            .map_err(|e| closures::context(e, "if branch"))?;
         let else_branch = else_branch
-            .map(|branch| self.expression(branch, depth))
+            .map(|branch| {
+                self.expression_expected(branch, expected.or(Some(&then_branch.ty)), depth)
+                    .map_err(|e| closures::context(e, "if branch"))
+            })
             .transpose()?;
         let ty = if let Some(other) = &else_branch {
             self.inference
@@ -927,38 +1049,7 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
-        self.callable_name(name, span)?;
-        if self.registry.constructor(name).is_some() {
-            return self.custom_construct(name, args, span, depth);
-        }
-        if let Some(constructor) = constructor(name) {
-            return self.construct(constructor, args, span, depth);
-        }
-        let (target, expected, result) = self.resolve_callable(name, span)?;
-        if args.len() != expected.len() {
-            return Err(Diagnostic::new(
-                span,
-                format!(
-                    "'{name}' expects {} argument(s), found {}",
-                    expected.len(),
-                    args.len()
-                ),
-            ));
-        }
-        let args = args
-            .iter()
-            .map(|arg| self.expression(arg, depth))
-            .collect::<Checked<Vec<_>>>()?;
-        for (arg, expected) in args.iter().zip(expected) {
-            if !matches!(
-                target,
-                ir::CallTarget::Builtin(ir::Builtin::Print | ir::Builtin::Println)
-            ) {
-                self.inference
-                    .unify(&arg.ty, &expected, arg.span, "call argument")?;
-            }
-        }
-        Ok((ir::ExprKind::Call { target, args }, result))
+        self.call_expected(name, args, None, span, depth)
     }
 
     /// Check a one-payload sum constructor; absent variants receive fresh variables.
@@ -966,18 +1057,19 @@ impl Checker<'_> {
         &mut self,
         constructor: Constructor,
         args: &[ast::Expr],
+        expected: Option<&Type>,
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
         if args.len() != 1 {
             return Err(Diagnostic::new(span, "constructor expects one argument"));
         }
-        let value = self.expression(&args[0], depth)?;
+        let payload = self.inference.fresh();
         let other = self.inference.fresh();
         let ty = match constructor {
-            Constructor::Some => Type::Option(Box::new(value.ty.clone())),
-            Constructor::Ok => Type::Result(Box::new(value.ty.clone()), Box::new(other)),
-            Constructor::Err => Type::Result(Box::new(other), Box::new(value.ty.clone())),
+            Constructor::Some => Type::Option(Box::new(payload.clone())),
+            Constructor::Ok => Type::Result(Box::new(payload.clone()), Box::new(other)),
+            Constructor::Err => Type::Result(Box::new(other), Box::new(payload.clone())),
             Constructor::None => {
                 return Err(Diagnostic::new(
                     span,
@@ -985,6 +1077,11 @@ impl Checker<'_> {
                 ))
             }
         };
+        if let Some(expected) = expected {
+            self.inference
+                .unify(&ty, expected, span, "constructor result")?;
+        }
+        let value = self.expression_expected(&args[0], Some(&payload), depth)?;
         Ok((
             ir::ExprKind::Construct {
                 constructor,
@@ -1002,7 +1099,7 @@ impl Checker<'_> {
         let option = Type::Option(Box::new(item.clone()));
         let result = Type::Result(Box::new(item.clone()), Box::new(self.inference.fresh()));
         match builtin {
-            Print | Println => (vec![Type::Int], Type::Unit),
+            Print | Println => (vec![item], Type::Unit),
             StringConcat => (vec![Type::String, Type::String], Type::String),
             StringEq => (vec![Type::String, Type::String], Type::Bool),
             StringLen => (vec![Type::String], Type::Int),
@@ -1018,6 +1115,7 @@ impl Checker<'_> {
             OptionUnwrapOr => (vec![option, item.clone()], item),
             ResultIsOk | ResultIsErr => (vec![result], Type::Bool),
             ResultUnwrapOr => (vec![result, item.clone()], item),
+            other => self.higher_order_signature(other),
         }
     }
 
@@ -1026,6 +1124,7 @@ impl Checker<'_> {
         &mut self,
         value: &ast::Expr,
         arms: &[ast::MatchArm],
+        expected: Option<&Type>,
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
@@ -1033,7 +1132,7 @@ impl Checker<'_> {
             return Err(Diagnostic::new(span, "match must be exhaustive"));
         }
         let value = self.expression(value, depth)?;
-        let ty = self.inference.fresh();
+        let ty = expected.cloned().unwrap_or_else(|| self.inference.fresh());
         let mut checked = Vec::new();
         for arm in arms {
             self.scopes.push(HashMap::new());
@@ -1047,7 +1146,9 @@ impl Checker<'_> {
                 self.inference
                     .unify(&guard.ty, &Type::Bool, guard.span, "match guard")?;
             }
-            let body = self.expression(&arm.body, depth)?;
+            let body = self
+                .expression_expected(&arm.body, Some(&ty), depth)
+                .map_err(|e| closures::context(e, "match branch"))?;
             self.scopes.pop();
             self.inference
                 .unify(&body.ty, &ty, body.span, "match branch")?;
@@ -1202,10 +1303,15 @@ impl Checker<'_> {
         &mut self,
         name: &str,
         args: &[ast::Expr],
+        expected: Option<&Type>,
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
         let (ty, tag, fields) = self.pattern_signature(name, span)?;
+        if let Some(expected) = expected {
+            self.inference
+                .unify(&ty, expected, span, "constructor result")?;
+        }
         if args.len() != fields.len() {
             return Err(Diagnostic::new(
                 span,
@@ -1214,7 +1320,7 @@ impl Checker<'_> {
         }
         let mut checked = Vec::new();
         for (arg, field) in args.iter().zip(fields) {
-            let arg = self.expression(arg, depth)?;
+            let arg = self.expression_expected(arg, Some(&field), depth)?;
             self.inference
                 .unify(&arg.ty, &field, arg.span, "constructor argument")?;
             checked.push(arg);
@@ -1293,18 +1399,26 @@ impl Checker<'_> {
     fn finalize(&self, expr: &mut ir::Expr) -> Checked<()> {
         expr.ty = self.inference.concrete(&expr.ty, expr.span)?;
         match &mut expr.kind {
+            ir::ExprKind::Lambda {
+                params,
+                captures,
+                body,
+                ..
+            } => self.finalize_lambda(params, captures, body)?,
+            ir::ExprKind::FunctionValue { target } => {
+                self.validate_function_value(*target, &expr.ty, expr.span)?
+            }
+            ir::ExprKind::Invoke { callee, args } => {
+                self.finalize(callee)?;
+                for arg in args {
+                    self.finalize(arg)?;
+                }
+            }
             ir::ExprKind::Unary { value, .. }
             | ir::ExprKind::Try(value)
             | ir::ExprKind::Field { value, .. } => self.finalize(value)?,
             ir::ExprKind::Binary { op, left, right } => {
-                self.finalize(left)?;
-                self.finalize(right)?;
-                if binary_result(*op, &left.ty, &right.ty).as_ref() != Some(&expr.ty) {
-                    return Err(Diagnostic::new(
-                        expr.span,
-                        "binary operator does not support these operand types",
-                    ));
-                }
+                self.finalize_binary(*op, left, right, &expr.ty, expr.span)?
             }
             ir::ExprKind::Call { target, args } => {
                 for arg in args.iter_mut() {
@@ -1348,6 +1462,26 @@ impl Checker<'_> {
             }
             ir::ExprKind::Block(stmts) => self.finalize_block(stmts)?,
             _ => {}
+        }
+        Ok(())
+    }
+
+    /// Validate overloaded scalar operators only after both operands have concrete types.
+    fn finalize_binary(
+        &self,
+        op: ast::BinaryOp,
+        left: &mut ir::Expr,
+        right: &mut ir::Expr,
+        result: &Type,
+        span: Span,
+    ) -> Checked<()> {
+        self.finalize(left)?;
+        self.finalize(right)?;
+        if binary_result(op, &left.ty, &right.ty).as_ref() != Some(result) {
+            return Err(Diagnostic::new(
+                span,
+                "binary operator does not support these operand types",
+            ));
         }
         Ok(())
     }
@@ -1455,6 +1589,16 @@ fn builtin(name: &str) -> Option<ir::Builtin> {
         "String.concat" => StringConcat,
         "String.eq" => StringEq,
         "String.len" => StringLen,
+        "List.map" => ListMap,
+        "List.fold" => ListFold,
+        "List.filter" => ListFilter,
+        "List.find" => ListFind,
+        "List.any" => ListAny,
+        "List.all" => ListAll,
+        "Option.map" => OptionMap,
+        "Result.map" => ResultMap,
+        "Result.and_then" => ResultAndThen,
+        "Result.unwrap_or_else" => ResultUnwrapOrElse,
         "List.len" => ListLen,
         "List.get" => ListGet,
         "List.head" => ListHead,
@@ -1523,7 +1667,11 @@ fn reject_unused_results(
                 fallible_bindings(&arm.pattern, &value.ty, arm.span, registry, &mut fallible)?;
             }
         }
-        pending.extend(nominal::children(expr));
+        if let ir::ExprKind::Lambda { captures, .. } = &expr.kind {
+            pending.extend(captures.iter().map(|capture| &capture.value));
+        } else {
+            pending.extend(nominal::children(expr));
+        }
     }
     for (id, span) in fallible {
         if !referenced.contains(&id) {

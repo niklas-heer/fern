@@ -261,33 +261,19 @@ impl Renderer<'_> {
             ExprKind::Unit => "()".into(),
             ExprKind::Tuple(items) => tuple_text(self.arguments(items, indent)?, items.len()),
             ExprKind::List(items) => format!("[{}]", self.arguments(items, indent)?),
-            ExprKind::Call { name, args } => format!("{name}({})", self.arguments(args, indent)?),
+            ExprKind::Call { name, args } => return self.call(name, args, indent, expression.span),
+            ExprKind::Apply { callee, args } => {
+                return self.apply(callee, args, indent, expression.span)
+            }
+            ExprKind::Lambda { params, body } => {
+                return self.lambda(params, body, indent, expression.span)
+            }
             ExprKind::Pipe {
                 value,
                 name,
                 args,
                 position,
-            } => {
-                let mut args = args.clone();
-                if *position > args.len() {
-                    return Err(Diagnostic::new(
-                        expression.span,
-                        "invalid pipe placeholder position",
-                    ));
-                }
-                args.insert(
-                    *position,
-                    Expr {
-                        kind: ExprKind::Name("_".into()),
-                        span: expression.span,
-                    },
-                );
-                format!(
-                    "({} |> {name}({}))",
-                    self.inline(value, indent)?,
-                    self.arguments(&args, indent)?
-                )
-            }
+            } => return self.pipe(value, name, args, *position, indent, expression.span),
             ExprKind::Unary { op, value } => {
                 return self.unary(*op, value, indent, expression.span)
             }
@@ -333,6 +319,98 @@ impl Renderer<'_> {
             .next()
             .map(|line| line.text)
             .unwrap_or_default())
+    }
+
+    /// Canonicalize both lambda spellings while preserving optional parameter annotations.
+    fn lambda(
+        &self,
+        params: &[ast::LambdaParam],
+        body: &Expr,
+        indent: usize,
+        span: Span,
+    ) -> Result<Vec<Line>> {
+        let params = params
+            .iter()
+            .map(|p| {
+                Ok(match &p.annotation {
+                    Some(ty) => format!("{}: {}", p.name, type_text(ty)?),
+                    None => p.name.clone(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?
+            .join(", ");
+        self.suite(format!("({params}) ->"), span.start, body, indent)
+    }
+
+    /// Render pipe placeholders through ordinary call layout, including callback blocks.
+    fn pipe(
+        &self,
+        value: &Expr,
+        name: &str,
+        args: &[Expr],
+        position: usize,
+        indent: usize,
+        span: Span,
+    ) -> Result<Vec<Line>> {
+        let mut args = args.to_vec();
+        if position > args.len() {
+            return Err(Diagnostic::new(span, "invalid pipe placeholder position"));
+        }
+        args.insert(
+            position,
+            Expr {
+                kind: ExprKind::Name("_".into()),
+                span,
+            },
+        );
+        let callee = format!("({} |> {name}", self.inline(value, indent)?);
+        let mut lines = self.call(&callee, &args, indent, span)?;
+        if let Some(last) = lines.last_mut() {
+            last.text.push(')');
+        }
+        Ok(lines)
+    }
+
+    /// Keep compact calls inline and place callback blocks within their own argument layout.
+    fn call(&self, callee: &str, args: &[Expr], indent: usize, span: Span) -> Result<Vec<Line>> {
+        let arguments = args
+            .iter()
+            .map(|arg| self.expression(arg, indent + 1))
+            .collect::<Result<Vec<_>>>()?;
+        if arguments.iter().all(|lines| lines.len() == 1) {
+            let text = arguments
+                .iter()
+                .map(|lines| lines[0].text.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Ok(vec![line(indent, format!("{callee}({text})"), span.start)]);
+        }
+        let mut lines = vec![line(indent, format!("{callee}("), span.start)];
+        let count = arguments.len();
+        for (index, mut argument) in arguments.into_iter().enumerate() {
+            if index + 1 < count {
+                if argument.len() == 1 {
+                    argument[0].text.push(',');
+                } else {
+                    argument.push(line(indent + 1, ",", args[index].span.end));
+                }
+            }
+            lines.extend(argument);
+        }
+        lines.push(line(indent, ")", span.end));
+        Ok(lines)
+    }
+
+    /// Parenthesize arbitrary callees so lambda bodies cannot capture the invocation suffix.
+    fn apply(&self, callee: &Expr, args: &[Expr], indent: usize, span: Span) -> Result<Vec<Line>> {
+        let callee = self.expression(callee, indent + 1)?;
+        if callee.len() == 1 {
+            return self.call(&format!("({})", callee[0].text), args, indent, span);
+        }
+        let mut lines = vec![line(indent, "(", span.start)];
+        lines.extend(callee);
+        lines.extend(self.call(")", args, indent, span)?);
+        Ok(lines)
     }
 
     /// Render comma-separated positional values from their checked source syntax.
@@ -492,6 +570,15 @@ fn type_text(ty: &Type) -> Result<String> {
         Type::String => "String".into(),
         Type::Unit => "()".into(),
         Type::Native(ty) => ty.name().into(),
+        Type::Function(params, result) => format!(
+            "({}) -> {}",
+            params
+                .iter()
+                .map(type_text)
+                .collect::<Result<Vec<_>>>()?
+                .join(", "),
+            type_text(result)?
+        ),
         Type::Tuple(fields) => tuple_text(
             fields
                 .iter()
@@ -775,6 +862,18 @@ fn clear_expression(expression: &mut Expr) {
                 clear_expression(arg);
             }
         }
+        ExprKind::Lambda { params, body } => {
+            for param in params {
+                param.span = Span::default();
+            }
+            clear_expression(body);
+        }
+        ExprKind::Apply { callee, args } => {
+            clear_expression(callee);
+            for arg in args {
+                clear_expression(arg);
+            }
+        }
         ExprKind::Interpolate(parts) => {
             for part in parts {
                 if let ast::StringPart::Value(value) = part {
@@ -798,17 +897,7 @@ fn clear_expression(expression: &mut Expr) {
                 clear_expression(otherwise);
             }
         }
-        ExprKind::Match { value, arms } => {
-            clear_expression(value);
-            for arm in arms {
-                arm.span = Span::default();
-                clear_pattern(&mut arm.pattern);
-                if let Some(guard) = &mut arm.guard {
-                    clear_expression(guard);
-                }
-                clear_expression(&mut arm.body);
-            }
-        }
+        ExprKind::Match { value, arms } => clear_match(value, arms),
         ExprKind::Block(statements) => clear_statements(statements),
         ExprKind::Int(_)
         | ExprKind::Float(_)
@@ -816,6 +905,19 @@ fn clear_expression(expression: &mut Expr) {
         | ExprKind::String(_)
         | ExprKind::Name(_)
         | ExprKind::Unit => {}
+    }
+}
+
+/// Clear match locations and its nested guards, patterns and values together.
+fn clear_match(value: &mut Expr, arms: &mut [ast::MatchArm]) {
+    clear_expression(value);
+    for arm in arms {
+        arm.span = Span::default();
+        clear_pattern(&mut arm.pattern);
+        if let Some(guard) = &mut arm.guard {
+            clear_expression(guard);
+        }
+        clear_expression(&mut arm.body);
     }
 }
 

@@ -11,6 +11,19 @@ enum Value {
     Unit,
     List(Rc<Vec<Value>>),
     Sum(usize, Rc<Vec<Value>>),
+    Closure(Rc<ClosureValue>),
+}
+/// Closures retain their originating program because later entries can renumber functions.
+#[derive(Clone, Debug)]
+struct ClosureValue {
+    program: Rc<ir::Program>,
+    function: ir::FunctionId,
+    captures: Vec<Value>,
+}
+impl PartialEq for ClosureValue {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
 }
 #[derive(Debug)]
 enum Failure {
@@ -57,7 +70,7 @@ impl Session {
         }
         let program = format!("{definitions}\nfn main():\n{indented}");
         let syntax = parse::parse(&program).map_err(|e| e.message)?;
-        let typed = check::check(&syntax).map_err(|e| e.message)?;
+        let typed = Rc::new(check::check(&syntax).map_err(|e| e.message)?);
         let main = typed
             .functions
             .iter()
@@ -71,7 +84,7 @@ impl Session {
             return Ok(String::new());
         }
         let mut machine = Machine {
-            program: &typed,
+            program: typed.clone(),
             locals: self.values.clone(),
             output: String::new(),
             steps: 0,
@@ -102,14 +115,14 @@ impl Session {
         Ok(machine.output)
     }
 }
-struct Machine<'a> {
-    program: &'a ir::Program,
+struct Machine {
+    program: Rc<ir::Program>,
     locals: HashMap<usize, Value>,
     output: String,
     steps: usize,
     depth: usize,
 }
-impl Machine<'_> {
+impl Machine {
     /// Bound evaluator recursion and work independently of compiler syntax limits.
     fn expression(&mut self, expr: &ir::Expr) -> Eval<Value> {
         self.steps += 1;
@@ -125,6 +138,13 @@ impl Machine<'_> {
     fn node(&mut self, expr: &ir::Expr) -> Eval<Value> {
         use ir::ExprKind::*;
         match &expr.kind {
+            Closure { function, captures } => self.closure(*function, captures),
+            Invoke { callee, args } => {
+                let callee = self.expression(callee)?;
+                let args = self.arguments(args)?;
+                self.invoke(&callee, args)
+            }
+            Lambda { .. } | FunctionValue { .. } => Err(fault("unfinalized interactive closure")),
             Interpolate(parts) => self.interpolate(parts),
             Int(n) => Ok(Value::Int(*n)),
             Float(n) => Ok(Value::Float(*n)),
@@ -141,26 +161,8 @@ impl Machine<'_> {
             CustomConstruct { tag, fields } => {
                 Ok(Value::Sum(*tag, Rc::new(self.arguments(fields)?)))
             }
-            Field { value, index } => match self.expression(value)? {
-                Value::Sum(_, fields) => fields
-                    .get(*index)
-                    .cloned()
-                    .ok_or_else(|| fault("invalid field")),
-                _ => Err(fault("invalid record")),
-            },
-            Construct { constructor, value } => {
-                let tag = usize::from(matches!(
-                    constructor,
-                    crate::Constructor::None | crate::Constructor::Err
-                ));
-                Ok(Value::Sum(
-                    tag,
-                    Rc::new(match value {
-                        Some(value) => vec![self.expression(value)?],
-                        None => Vec::new(),
-                    }),
-                ))
-            }
+            Field { value, index } => self.field(value, *index),
+            Construct { constructor, value } => self.construct(*constructor, value.as_deref()),
             Try(value) => match self.expression(value)? {
                 Value::Sum(0, fields) if fields.len() == 1 => Ok(fields[0].clone()),
                 value @ Value::Sum(1, _) => Err(Failure::Return(value)),
@@ -188,6 +190,41 @@ impl Machine<'_> {
                 result
             }
         }
+    }
+    /// Evaluate each capture once and retain the code that assigned its function identity.
+    fn closure(&mut self, function: ir::FunctionId, captures: &[ir::Expr]) -> Eval<Value> {
+        let captures = self.arguments(captures)?;
+        Ok(Value::Closure(Rc::new(ClosureValue {
+            program: self.program.clone(),
+            function,
+            captures,
+        })))
+    }
+    /// Read a checked structural or nominal field from immutable storage.
+    fn field(&mut self, value: &ir::Expr, index: usize) -> Eval<Value> {
+        match self.expression(value)? {
+            Value::Sum(_, fields) => fields
+                .get(index)
+                .cloned()
+                .ok_or_else(|| fault("invalid field")),
+            _ => Err(fault("invalid record")),
+        }
+    }
+    /// Preserve semantic sum tags without depending on the native transport encoding.
+    fn construct(
+        &mut self,
+        constructor: crate::Constructor,
+        value: Option<&ir::Expr>,
+    ) -> Eval<Value> {
+        let tag = usize::from(matches!(
+            constructor,
+            crate::Constructor::None | crate::Constructor::Err
+        ));
+        let fields = match value {
+            Some(value) => vec![self.expression(value)?],
+            None => Vec::new(),
+        };
+        Ok(Value::Sum(tag, Rc::new(fields)))
     }
     /// Convert scalar interpolation parts in order while bounding the resulting string.
     fn interpolate(&mut self, parts: &[ir::Expr]) -> Eval<Value> {
@@ -255,23 +292,54 @@ impl Machine<'_> {
         match target {
             ir::CallTarget::Builtin(builtin) => self.builtin(builtin, args),
             ir::CallTarget::Runtime(id) => self.runtime(id, args),
-            ir::CallTarget::Function(id) => {
-                let function = self
-                    .program
-                    .functions
-                    .iter()
-                    .find(|f| f.id == id)
-                    .ok_or_else(|| fault("unknown function"))?;
-                let previous = std::mem::take(&mut self.locals);
-                self.locals
-                    .extend(function.params.iter().zip(args).map(|(p, v)| (p.id.0, v)));
-                let result = self.expression(&function.body);
-                self.locals = previous;
-                match result {
-                    Err(Failure::Return(value)) => Ok(value),
-                    other => other,
-                }
-            }
+            ir::CallTarget::Function(id) => self.function(self.program.clone(), id, &[], args),
+        }
+    }
+    /// Invoke captured code from its immutable originating program, never a rebuilt ID table.
+    fn invoke(&mut self, value: &Value, args: Vec<Value>) -> Eval<Value> {
+        let Value::Closure(closure) = value else {
+            return Err(fault("value is not callable"));
+        };
+        self.function(
+            closure.program.clone(),
+            closure.function,
+            &closure.captures,
+            args,
+        )
+    }
+    /// Restore caller code and locals on success, error, or Result propagation.
+    fn function(
+        &mut self,
+        program: Rc<ir::Program>,
+        id: ir::FunctionId,
+        captures: &[Value],
+        args: Vec<Value>,
+    ) -> Eval<Value> {
+        let function = program
+            .functions
+            .iter()
+            .find(|f| f.id == id)
+            .ok_or_else(|| fault("unknown function"))?;
+        if function.params.len() != args.len() || function.captures.len() != captures.len() {
+            return Err(fault("invalid function environment or argument count"));
+        }
+        let previous_program = std::mem::replace(&mut self.program, program.clone());
+        let previous = std::mem::take(&mut self.locals);
+        self.locals
+            .extend(function.params.iter().zip(args).map(|(p, v)| (p.id.0, v)));
+        self.locals.extend(
+            function
+                .captures
+                .iter()
+                .zip(captures)
+                .map(|(p, v)| (p.id.0, v.clone())),
+        );
+        let result = self.expression(&function.body);
+        self.locals = previous;
+        self.program = previous_program;
+        match result {
+            Err(Failure::Return(value)) => Ok(value),
+            other => other,
         }
     }
     /// Match nested tags before binding their fields; failed guards restore the arm scope.
@@ -411,6 +479,7 @@ fn display(value: &Value) -> String {
         Value::Bool(v) => v.to_string(),
         Value::String(s) => format!("{s:?}"),
         Value::Unit => "()".into(),
+        Value::Closure(_) => "<function>".into(),
         Value::List(values) => format!(
             "[{}]",
             values.iter().map(display).collect::<Vec<_>>().join(", ")
@@ -424,6 +493,11 @@ fn display(value: &Value) -> String {
 /// Spell common semantic types for interactive results.
 fn type_name(ty: &Type) -> String {
     match ty {
+        Type::Function(args, result) => format!(
+            "({}) -> {}",
+            args.iter().map(type_name).collect::<Vec<_>>().join(", "),
+            type_name(result)
+        ),
         Type::List(a) => format!("List({})", type_name(a)),
         Type::Option(a) => format!("Option({})", type_name(a)),
         Type::Result(a, b) => format!("Result({}, {})", type_name(a), type_name(b)),
@@ -448,11 +522,16 @@ fn type_name(ty: &Type) -> String {
 
 #[path = "repl/builtins.rs"]
 mod builtins;
+#[path = "repl/functions.rs"]
+mod functions;
+#[path = "repl/storage.rs"]
+mod storage;
 
 /// Bound retained immutable graphs using unique Rc identities, including shared subtrees.
 fn graph_budget<'a>(values: impl Iterator<Item = &'a Value>) -> Result<(), String> {
     let mut pending: Vec<_> = values.collect();
     let mut seen = std::collections::HashSet::new();
+    let mut programs = std::collections::HashSet::new();
     let mut bytes = 0usize;
     let mut count = 0usize;
     while let Some(value) = pending.pop() {
@@ -467,6 +546,18 @@ fn graph_budget<'a>(values: impl Iterator<Item = &'a Value>) -> Result<(), Strin
                 if seen.insert(Rc::as_ptr(xs) as usize) {
                     bytes = bytes.saturating_add(xs.len() * std::mem::size_of::<Value>());
                     pending.extend(xs.iter());
+                }
+            }
+            Value::Closure(closure) => {
+                if seen.insert(Rc::as_ptr(closure) as usize) {
+                    bytes =
+                        bytes.saturating_add(closure.captures.len() * std::mem::size_of::<Value>());
+                    pending.extend(closure.captures.iter());
+                }
+                if programs.insert(Rc::as_ptr(&closure.program) as usize) {
+                    let (code_bytes, code_nodes) = storage::program_size(&closure.program)?;
+                    bytes = bytes.saturating_add(code_bytes);
+                    count = count.saturating_add(code_nodes);
                 }
             }
             _ => {}
@@ -567,6 +658,10 @@ fn substitute_type(ty: &Type, names: &HashMap<String, Type>) -> Type {
             Box::new(substitute_type(a, names)),
             Box::new(substitute_type(b, names)),
         ),
+        Type::Function(args, result) => Type::Function(
+            args.iter().map(|a| substitute_type(a, names)).collect(),
+            Box::new(substitute_type(result, names)),
+        ),
         Type::Tuple(args) => Type::Tuple(args.iter().map(|a| substitute_type(a, names)).collect()),
         Type::Named(name, args) => Type::Named(
             name.clone(),
@@ -656,7 +751,7 @@ pub fn serve(
             }
             continue;
         }
-        if !pending.is_empty() || entry.ends_with(':') {
+        if !pending.is_empty() || parse::line_continues(entry) {
             if !entry.trim().is_empty() {
                 pending.push_str(entry);
                 pending.push('\n');

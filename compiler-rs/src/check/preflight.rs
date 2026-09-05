@@ -31,6 +31,10 @@ impl Budget {
                     self.charge(n.len(), span)?;
                     pending.extend(args);
                 }
+                Type::Function(args, result) => {
+                    pending.extend(args);
+                    pending.push(result);
+                }
                 Type::Tuple(args) => pending.extend(args),
                 Type::Generic(n) => self.charge(n.len(), span)?,
                 Type::List(a) | Type::Option(a) => pending.push(a),
@@ -128,20 +132,68 @@ impl Budget {
         Ok(())
     }
 
+    /// Check lambda annotations and duplicate names even in uninstantiated generic templates.
+    fn lambda_params(&mut self, params: &[ast::LambdaParam], span: Span) -> Checked<()> {
+        if params.len() > MAX_PARAMETERS {
+            return Err(Diagnostic::new(span, "lambda parameter limit exceeded"));
+        }
+        let mut names = std::collections::HashSet::new();
+        for param in params {
+            if !names.insert(&param.name) {
+                return Err(Diagnostic::new(param.span, "duplicate lambda parameter"));
+            }
+            self.charge(param.name.len(), param.span)?;
+            if let Some(ty) = &param.annotation {
+                self.ty(ty, param.span)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Check patterns before enqueueing each arm body and guard at its inherited depth.
+    fn match_arms<'a>(
+        &mut self,
+        arms: &'a [ast::MatchArm],
+        pending: &mut Vec<(&'a ast::Expr, usize)>,
+        depth: usize,
+    ) -> Checked<()> {
+        for arm in arms {
+            self.pattern(&arm.pattern)?;
+            pending.push((&arm.body, depth + 1));
+            if let Some(guard) = &arm.guard {
+                pending.push((guard, depth + 1));
+            }
+        }
+        Ok(())
+    }
+
+    /// Charge expression nodes only after checking their current traversal depth.
+    fn expression_node(&mut self, span: Span, depth: usize) -> Checked<()> {
+        if depth >= MAX_EXPR_DEPTH {
+            return Err(Diagnostic::new(
+                span,
+                "prototype expression nesting limit exceeded (128)",
+            ));
+        }
+        self.charge(0, span)
+    }
+
     /// Validate expression depth and annotations before source-instance cloning.
     fn expression(&mut self, expr: &ast::Expr) -> Checked<()> {
         let mut pending = vec![(expr, 0)];
         while let Some((expr, depth)) = pending.pop() {
-            if depth >= MAX_EXPR_DEPTH {
-                return Err(Diagnostic::new(
-                    expr.span,
-                    "prototype expression nesting limit exceeded (128)",
-                ));
-            }
-            self.charge(0, expr.span)?;
+            self.expression_node(expr.span, depth)?;
             match &expr.kind {
                 ast::ExprKind::Interpolate(parts) => {
                     self.interpolation(parts, &mut pending, depth, expr.span)?
+                }
+                ast::ExprKind::Lambda { params, body } => {
+                    self.lambda_params(params, expr.span)?;
+                    pending.push((body, depth + 1));
+                }
+                ast::ExprKind::Apply { callee, args } => {
+                    pending.push((callee, depth + 1));
+                    pending.extend(args.iter().map(|a| (a, depth + 1)));
                 }
                 ast::ExprKind::Name(n) | ast::ExprKind::String(n) => {
                     self.charge(n.len(), expr.span)?
@@ -184,13 +236,7 @@ impl Budget {
                 }
                 ast::ExprKind::Match { value, arms } => {
                     pending.push((value, depth + 1));
-                    for arm in arms {
-                        self.pattern(&arm.pattern)?;
-                        pending.push((&arm.body, depth + 1));
-                        if let Some(guard) = &arm.guard {
-                            pending.push((guard, depth + 1));
-                        }
-                    }
+                    self.match_arms(arms, &mut pending, depth)?;
                 }
                 ast::ExprKind::Block(stmts) => self.block(stmts, &mut pending, depth)?,
                 _ => {}

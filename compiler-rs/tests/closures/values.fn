@@ -1,0 +1,24 @@
+type Box:
+    value: Float
+type Action:
+    run: (Int) -> Int
+fn identity(value: a) -> a: value
+fn apply(callback: (a) -> b, value: a) -> b: callback(value)
+fn factory(value: Int) -> Action: Action((n) -> n + value)
+fn main():
+    let integer: (Int) -> Int = identity
+    let string: (String) -> String = identity
+    let upper: (String) -> String = str_to_upper
+    let length: (List(String)) -> Int = List.len
+    println(integer(9223372036854775807))
+    println(string(upper("hello")))
+    println(length(["a", "b"]))
+    println(factory(40).run(2))
+    println(apply((item) -> item.value * 2.0, Box(1.5)))
+    let boxed = Box(3.25)
+    let read = () -> boxed.value
+    println(read())
+    let callbacks = [(x: Int) -> x + 1, (x: Int) -> x * 2]
+    println(List.get(callbacks, 1)(21))
+    let tuple = ((x: Int) -> x - 1, true)
+    println(tuple.0(43))

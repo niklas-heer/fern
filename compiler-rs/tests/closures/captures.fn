@@ -1,0 +1,21 @@
+fn make(value: Int) -> (Int) -> Int: (extra) -> value + extra
+fn float_make(value: Float) -> (Float) -> Float: (extra) -> value + extra
+fn nested(x: Int) -> (Int) -> (Int) -> Int: (y) -> (z) -> x + y + z
+fn retain(value: a) -> () -> a: () -> value
+fn main():
+    let first = make(4294967296)
+    let second = make(-4294967296)
+    println(first(7))
+    println(second(7))
+    println(first(8))
+    println(float_make(1.25)(2.5))
+    println(nested(10)(20)(30))
+    let text = retain("escaping 🌿")
+    println(text())
+    let enabled = retain(true)
+    println(enabled())
+    let changed = 11
+    let lexical = () -> changed
+    let changed = 99
+    println(lexical())
+    println(changed)

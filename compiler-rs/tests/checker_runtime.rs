@@ -82,7 +82,7 @@ fn runtime_aliases_and_namespaces_cannot_be_redeclared_or_silently_shadowed() {
 fn fallible_directory_and_process_tuple_contracts_are_explicit() {
     assert!(checked("fn listing() -> Result(List(String), Int): File.list_dir(\".\")\nfn process() -> (Int, String, String): System.exec(\"/usr/bin/printf safe\")\nfn main(): 0\n").is_ok());
     assert!(checked("fn listing() -> List(String): fs.list_dir(\".\")\nfn main(): 0\n").is_err());
-    rejects("fn main(): List.map([1], 1)\n", "unsupported");
+    rejects("fn main(): List.map([1], 1)\n", "Function");
 }
 
 /// Replace registry scheme variables with deterministic concrete payloads.

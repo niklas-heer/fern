@@ -1,0 +1,27 @@
+fn success() -> Result(Int, String): Ok(4294967296)
+fn failure() -> Result(Int, String): Err("failure")
+fn increment(value: Int) -> Int:
+    println("mapped")
+    value + 1
+fn next(value: Int) -> Result(Int, String):
+    println("chained")
+    Ok(value + 2)
+fn fallback(error: String) -> Int:
+    println(error)
+    -4294967296
+fn main():
+    println(Option.unwrap_or(Option.map(Some(1), increment), 0))
+    let missing: Option(Int) = None
+    println(Option.unwrap_or(Option.map(missing, increment), 0))
+    println(Result.unwrap_or(Result.map(success(), increment), 0))
+    println(Result.unwrap_or(Result.map(failure(), increment), 0))
+    println(Result.unwrap_or(Result.and_then(success(), next), 0))
+    println(Result.unwrap_or(Result.and_then(failure(), next), 0))
+    println(Result.unwrap_or_else(success(), fallback))
+    println(Result.unwrap_or_else(failure(), fallback))
+    let propagate: () -> Result(Int, String) = () ->
+        let value = failure()?
+        println("unreachable")
+        Ok(value)
+    println(Result.is_err(propagate()))
+    println(Option.unwrap_or(Option.map(Some(1.25), (x) -> x * 2.0), 0.0))

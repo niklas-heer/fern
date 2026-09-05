@@ -158,7 +158,7 @@ pub fn names() -> Vec<&'static str> {
         .collect()
 }
 
-/// Inventory remaining ABI boundaries and source APIs without claiming they execute in Rust.
+/// Inventory runtime symbols handled outside this registry or awaiting an explicit ABI.
 pub fn omissions() -> &'static [Omission] {
     OMISSIONS
 }
@@ -1137,7 +1137,7 @@ const ENTRIES: &[Entry] = &[
 
 const OMISSIONS: &[Omission] = &[
     Omission { names: &["print", "println", "Some", "None", "Ok", "Err", "fern_bool_to_str", "fern_int_to_str", "fern_print_bool", "fern_print_int", "fern_print_str", "fern_println_bool", "fern_println_int", "fern_println_str", "fern_result_err", "fern_result_ok", "fern_result_unwrap"], reason: "Type-directed compiler intrinsics or interpolation helpers; no single source signature/runtime symbol. Conversion helper names are not public source APIs." },
-    Omission { names: &["List.any", "List.all", "List.map", "List.fold", "List.filter", "List.find", "Result.map", "Result.and_then", "Result.unwrap_or_else", "Option.map", "fern_list_all", "fern_list_any", "fern_list_filter", "fern_list_find", "fern_list_fold", "fern_list_map", "fern_option_map", "fern_result_and_then", "fern_result_map", "fern_result_unwrap_or_else"], reason: "Requires callable/function types and callback ABI support; not representable in this registry's primitive/container type vocabulary." },
+    Omission { names: &["List.any", "List.all", "List.map", "List.fold", "List.filter", "List.find", "Result.map", "Result.and_then", "Result.unwrap_or_else", "Option.map", "fern_list_all", "fern_list_any", "fern_list_filter", "fern_list_find", "fern_list_fold", "fern_list_map", "fern_option_map", "fern_result_and_then", "fern_result_map", "fern_result_unwrap_or_else"], reason: "Source calls use compiler-owned typed closure lowering. The legacy C callback ABI lacks closure environments and is deliberately not invoked." },
     Omission { names: &["fern_regex_captures_free", "fern_regex_match_free"], reason: "Internal native regex allocation lifecycle; source results are translated into managed tuples and lists." },
     Omission { names: &["fern_option_is_some", "fern_option_none", "fern_option_some", "fern_option_unwrap", "fern_option_unwrap_or"], reason: "Legacy packed Option helper truncates payloads; Rust Options use heap Result helpers instead. No direct calls are safe." },
     Omission { names: &["spawn", "spawn_link", "receive", "fern_actor_clock_advance", "fern_actor_clock_now", "fern_actor_clock_set", "fern_actor_exit", "fern_actor_mailbox_len", "fern_actor_receive", "fern_actor_scheduler_next", "fern_actor_self", "fern_actor_send", "fern_actor_set_current", "fern_actor_spawn", "fern_actor_spawn_link"], reason: "Internal actor/scheduler entry points or actor execution syntax; registry mailbox APIs do not implement autonomous actor execution." },

@@ -68,6 +68,12 @@ pub(super) fn resolved(
                 resolved(arg, layouts, span, depth + 1)?;
             }
         }
+        Type::Function(args, result) => {
+            for arg in args {
+                resolved(arg, layouts, span, depth + 1)?;
+            }
+            resolved(result, layouts, span, depth + 1)?;
+        }
         Type::Tuple(fields) => {
             for field in fields {
                 resolved(field, layouts, span, depth + 1)?;

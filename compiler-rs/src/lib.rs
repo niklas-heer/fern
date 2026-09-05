@@ -45,6 +45,7 @@ pub enum Type {
     Unit,
     Native(crate::runtime::NativeType),
     Tuple(Vec<Type>),
+    Function(Vec<Type>, Box<Type>),
     List(Box<Type>),
     Option(Box<Type>),
     Result(Box<Type>, Box<Type>),

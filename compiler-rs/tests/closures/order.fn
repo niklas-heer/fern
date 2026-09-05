@@ -1,0 +1,26 @@
+fn callback() -> (Int) -> Int:
+    println("callee")
+    (value) ->
+        println("invoked")
+        value
+fn argument() -> Int:
+    println("argument")
+    42
+fn items() -> List(Int):
+    println("items")
+    [1, 2]
+fn mapper() -> (Int) -> Int:
+    println("mapper")
+    (value) ->
+        println(value)
+        value + 1
+fn initial() -> Int:
+    println("initial")
+    0
+fn folder() -> (Int, Int) -> Int:
+    println("folder")
+    (total, value) -> total + value
+fn main():
+    println(callback()(argument()))
+    println(List.len(List.map(items(), mapper())))
+    println(List.fold(items(), initial(), folder()))

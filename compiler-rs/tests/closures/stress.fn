@@ -1,0 +1,18 @@
+fn collect(n: Int) -> List(() -> Int):
+    if n == 0:
+        []
+    else:
+        List.push(collect(n - 1), () -> n + 4294967296)
+fn main():
+    let closures = collect(512)
+    println(List.head(closures)())
+    println(List.get(closures, 255)())
+    println(List.get(closures, 511)())
+    println(List.fold(closures, 0, (sum, callback) -> sum + callback()))
+    let generated = List.map([10, 20, 30], (value) -> () -> value)
+    println(List.get(generated, 0)())
+    println(List.get(generated, 2)())
+    let results = List.map([1, 2], (value) -> println(value))
+    println(List.len(results))
+    let mapped = Option.map(Some(()), (value) -> println("unit"))
+    println(Option.is_some(mapped))
