@@ -13,11 +13,14 @@ pub(super) struct Source<'a> {
     pub text: &'a str,
     pub start: usize,
     pub tokens: parse::IdentifierIndex,
+    annotations: Vec<Span>,
 }
 pub(super) struct Index<'a> {
     pub sources: Vec<Source<'a>>,
     pub visible: BTreeMap<String, String>,
     pub globals: BTreeMap<String, Symbol>,
+    types: BTreeMap<String, Symbol>,
+    type_context: bool,
     pub locals: Bindings,
     pub target: Option<Span>,
     cursor: usize,
@@ -52,7 +55,11 @@ impl<'a> Index<'a> {
     ) -> Option<Self> {
         let sources = vec![Self::source(path, source, 0)?];
         let mut visible = BTreeMap::new();
-        for function in &program.functions {
+        for function in program
+            .functions
+            .iter()
+            .filter(|f| f.span != Span::default())
+        {
             visible.insert(function.name.clone(), function.name.clone());
         }
         for ty in &program.types {
@@ -72,6 +79,7 @@ impl<'a> Index<'a> {
             text,
             start,
             tokens: parse::identifier_index(text).ok()?,
+            annotations: parse::annotation_spans(text).ok()?,
         })
     }
     /// Collect declaration identities once; inspect only scopes containing this request's cursor.
@@ -81,7 +89,10 @@ impl<'a> Index<'a> {
         visible: BTreeMap<String, String>,
         cursor: usize,
     ) -> Option<Self> {
-        let count: usize = sources.iter().map(|s| s.tokens.identifiers.len()).sum();
+        let count: usize = sources
+            .iter()
+            .map(|s| s.tokens.identifiers.len() + s.tokens.numbers.len())
+            .sum();
         if count > 100_000 || visible.len() > 100_000 {
             return None;
         }
@@ -89,16 +100,20 @@ impl<'a> Index<'a> {
             s.tokens
                 .identifiers
                 .iter()
+                .chain(s.tokens.numbers.iter())
                 .find(|span| span.start + s.start <= cursor && cursor <= span.end + s.start)
                 .map(|span| Span {
                     start: span.start + s.start,
                     end: span.end + s.start,
                 })
         });
+        let type_context = type_context(&sources, token);
         let mut index = Self {
             sources,
             visible,
             globals: BTreeMap::new(),
+            types: BTreeMap::new(),
+            type_context,
             locals: Bindings::new(),
             target: None,
             cursor,
@@ -108,7 +123,11 @@ impl<'a> Index<'a> {
         };
         index.declarations(program);
         let extended = index.extended_function(program);
-        for function in &program.functions {
+        for function in program
+            .functions
+            .iter()
+            .filter(|f| f.span != Span::default())
+        {
             if !index.contains(function.span) && extended != Some(function.span.start) {
                 continue;
             }
@@ -145,7 +164,11 @@ impl<'a> Index<'a> {
         let function = program
             .functions
             .iter()
-            .filter(|f| f.span.start >= source.start && f.span.start <= self.cursor)
+            .filter(|f| {
+                f.span != Span::default()
+                    && f.span.start >= source.start
+                    && f.span.start <= self.cursor
+            })
             .max_by_key(|f| f.span.start)?;
         if self.cursor <= function.span.end
             || !matches!(function.body.kind, ast::ExprKind::Block(_))
@@ -164,17 +187,26 @@ impl<'a> Index<'a> {
 
     /// Source declarations retain their first clause and exact selected identifier range.
     fn declarations(&mut self, program: &ast::Program) {
-        for function in &program.functions {
+        for function in program
+            .functions
+            .iter()
+            .filter(|f| f.span != Span::default())
+        {
             if let Some(span) = self.identifier(function.span, 1) {
                 self.globals
                     .entry(function.name.clone())
                     .or_insert(Symbol { span, kind: 3 });
+                if self.contains(span) {
+                    self.target = self.globals.get(&function.name).map(|s| s.span);
+                }
             }
         }
         for ty in &program.types {
             if let Some(span) = self.identifier(ty.span, 1) {
-                self.globals
-                    .insert(ty.name.clone(), Symbol { span, kind: 7 });
+                self.types.insert(ty.name.clone(), Symbol { span, kind: 7 });
+                if self.contains(span) {
+                    self.target = Some(span);
+                }
             }
             for variant in &ty.variants {
                 for field in &variant.fields {
@@ -192,6 +224,9 @@ impl<'a> Index<'a> {
                 if let Some(span) = self.identifier(variant.span, 0) {
                     self.globals
                         .insert(variant.name.clone(), Symbol { span, kind: 4 });
+                    if self.contains(span) {
+                        self.target = Some(span);
+                    }
                 }
             }
         }
@@ -210,6 +245,14 @@ impl<'a> Index<'a> {
         let Some(text) = self.text(word) else {
             return;
         };
+        if self.type_context {
+            self.target = self
+                .visible
+                .get(text)
+                .and_then(|name| self.types.get(name))
+                .map(|s| s.span);
+            return;
+        }
         let root = text.split('.').next().unwrap_or(text);
         if let Some(binding) = self.locals.get(root) {
             if word == token {
@@ -221,7 +264,11 @@ impl<'a> Index<'a> {
             return;
         }
         if let Some(name) = self.visible.get(text) {
-            self.target = self.globals.get(name).map(|s| s.span);
+            self.target = self
+                .globals
+                .get(name)
+                .or_else(|| self.types.get(name))
+                .map(|s| s.span);
         }
     }
 
@@ -236,6 +283,9 @@ impl<'a> Index<'a> {
             .tokens
             .identifiers
             .partition_point(|s| s.start < local.start);
+        if index.tokens.identifiers.get(first) != Some(&local) {
+            return None;
+        }
         let mut last = first;
         for _ in 0..128 {
             if first == 0 {
@@ -263,6 +313,52 @@ impl<'a> Index<'a> {
             end: index.tokens.identifiers[last].end + index.start,
         })
     }
+    /// Choose completion kinds using the selected syntax namespace, retaining record constructors.
+    pub(super) fn completion_kind(&self, name: &str) -> i64 {
+        let first = if self.type_context {
+            &self.types
+        } else {
+            &self.globals
+        };
+        first
+            .get(name)
+            .or_else(|| self.types.get(name))
+            .map_or(9, |s| s.kind)
+    }
+
+    /// Return a selected declaration's fully qualified resolver identity, never just its leaf.
+    pub(super) fn symbol_name(&self) -> Option<&str> {
+        let target = self.target?;
+        self.globals
+            .iter()
+            .chain(self.types.iter())
+            .find(|(_, symbol)| symbol.span == target)
+            .map(|(name, _)| name.as_str())
+    }
+
+    /// Select exact current-source identities for optional finalized checker metadata.
+    pub(super) fn query(&self) -> Option<crate::check::editor::Query> {
+        let occurrence = self.token?;
+        let function = self.target.and_then(|target| {
+            self.globals
+                .iter()
+                .find(|(_, symbol)| symbol.span == target && symbol.kind == 3)
+                .map(|(name, _)| name.clone())
+        });
+        let binding = self.target.filter(|target| {
+            !self
+                .globals
+                .values()
+                .chain(self.types.values())
+                .any(|s| s.span == *target)
+        });
+        Some(crate::check::editor::Query {
+            occurrence,
+            binding,
+            function,
+        })
+    }
+
     /// Locate a globally shifted span while borrowing its original source bytes.
     pub fn location(&self, span: Span) -> Option<(&Path, &str, Span)> {
         self.sources
@@ -285,7 +381,7 @@ impl<'a> Index<'a> {
         source.get(span.start..span.end)
     }
     /// Select an identifier by token identity, never by searching comments or literal text.
-    fn identifier(&self, span: Span, skip: usize) -> Option<Span> {
+    pub(super) fn identifier(&self, span: Span, skip: usize) -> Option<Span> {
         let source = self
             .sources
             .iter()
@@ -806,4 +902,15 @@ pub(super) fn builtins() -> Vec<String> {
             .map(|s| (*s).to_owned()),
     );
     names
+}
+
+/// Identify annotation roles from committed parser ranges across the current source graph.
+fn type_context(sources: &[Source<'_>], token: Option<Span>) -> bool {
+    token.is_some_and(|token| {
+        sources.iter().any(|source| {
+            source.annotations.iter().any(|span| {
+                source.start + span.start <= token.start && token.end <= source.start + span.end
+            })
+        })
+    })
 }

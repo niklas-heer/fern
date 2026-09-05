@@ -75,6 +75,19 @@ struct Token {
 /// Returns a source-located diagnostic for unsupported/malformed syntax or limits.
 /// Input has no preconditions; source is limited to 1 MiB and 65,536 tokens.
 pub fn parse(source: &str) -> ParseResult<Program> {
+    source_parser(source, false)?.program()
+}
+
+/// Return exact parsed type-syntax ranges for a valid bounded current source snapshot.
+/// Failed speculative arrow-header parses are excluded; no lexical guesses are published.
+pub fn annotation_spans(source: &str) -> ParseResult<Vec<Span>> {
+    let mut parser = source_parser(source, true)?;
+    parser.program()?;
+    Ok(parser.type_spans.unwrap_or_default())
+}
+
+/// Create the same bounded parser, optionally recording type ranges for source tooling.
+fn source_parser(source: &str, record: bool) -> ParseResult<Parser> {
     if source.len() > MAX_SOURCE {
         return Err(Diagnostic::new(
             Span::default(),
@@ -82,13 +95,13 @@ pub fn parse(source: &str) -> ParseResult<Program> {
         ));
     }
     let tokens = lex(source)?;
-    Parser {
+    Ok(Parser {
         tokens,
         position: 0,
         depth: 0,
         guard_arrow: None,
-    }
-    .program()
+        type_spans: record.then(Vec::new),
+    })
 }
 
 /// Append a located token, rejecting excessive input before allocation grows.
@@ -954,6 +967,8 @@ pub(crate) fn line_continues(source: &str) -> bool {
 #[derive(Clone, Debug, Default)]
 pub struct IdentifierIndex {
     pub identifiers: Vec<Span>,
+    /// Numeric tokens permit precise tuple-slot and scalar hover without rescanning text.
+    pub numbers: Vec<Span>,
     pub excluded: Vec<Span>,
 }
 
@@ -974,6 +989,7 @@ pub fn identifier_index(source: &str) -> Result<IdentifierIndex, Diagnostic> {
     for token in tokens {
         match token.kind {
             Kind::Name(_) => index.identifiers.push(token.span),
+            Kind::Number(_) => index.numbers.push(token.span),
             Kind::Text(_)
             | Kind::Comment
             | Kind::Doc(_)
@@ -1075,6 +1091,7 @@ struct Parser {
     position: usize,
     depth: usize,
     guard_arrow: Option<usize>,
+    type_spans: Option<Vec<Span>>,
 }
 
 impl Parser {
@@ -1490,6 +1507,7 @@ impl Parser {
         }
         let position = self.position;
         let depth = self.depth;
+        let spans = self.type_spans.as_ref().map_or(0, Vec::len);
         if let Ok(ty) = self.ty() {
             if self.eat(&Kind::Colon) {
                 return Ok((Some(ty), FunctionSyntax::Colon));
@@ -1497,6 +1515,9 @@ impl Parser {
         }
         self.position = position;
         self.depth = depth;
+        if let Some(recorded) = &mut self.type_spans {
+            recorded.truncate(spans);
+        }
         Ok((None, FunctionSyntax::Arrow))
     }
 
@@ -1520,8 +1541,17 @@ impl Parser {
             return Err(self.error("type depth limit exceeded"));
         }
         self.depth += 1;
+        let start = self.current().span.start;
         let result = self.type_value();
         self.depth -= 1;
+        if result.is_ok() {
+            if let Some(spans) = &mut self.type_spans {
+                spans.push(Span {
+                    start,
+                    end: self.tokens[self.position.saturating_sub(1)].span.end,
+                });
+            }
+        }
         result
     }
 

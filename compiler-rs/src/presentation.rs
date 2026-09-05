@@ -42,6 +42,24 @@ pub fn render_type_with_names(ty: &Type, generated: &[String], limits: Limits) -
     Ok(writer.output)
 }
 
+/// Render a selected type using its enclosing scheme's inferred display-name assignment.
+/// Explicit variables in both types are reserved first. All work shares one render budget.
+/// The enclosing text is discarded; only the selected type is returned as plain text.
+pub fn render_type_in_context(
+    ty: &Type,
+    context: &Type,
+    generated: &[String],
+    limits: Limits,
+) -> Result<String> {
+    let mut writer = Writer::new(limits, generated)?;
+    writer.collect(context, 0)?;
+    writer.collect(ty, 0)?;
+    writer.ty(context, 0)?;
+    writer.output.clear();
+    writer.ty(ty, 0)?;
+    Ok(writer.output)
+}
+
 /// Extract a current source header at its exact `fn` byte anchor after parsing.
 /// Includes `pub` and the body separator, preserving omissions, patterns and guards.
 /// Trailing comments/layout before the body are preserved; no body is included.

@@ -124,9 +124,15 @@ fn navigation_respects_match_loop_with_and_let_else_scope_boundaries() {
 #[test]
 fn definition_does_not_confuse_record_members_with_same_named_functions() {
     let result=query("fn member() -> Int: 9\ntype Box:\n    member: Int\nfn make() -> Box: Box(1)\nfn main(): println(make().member§)\n","definition");
-    assert!(result.contains("\"result\":null"), "{result}");
+    assert!(
+        result.contains("\"start\":{\"character\":4,\"line\":2}"),
+        "{result}"
+    );
     let result=query("fn member() -> Int: 9\ntype Box:\n    member: Int\nfn main():\n    let value=Box(1)\n    println(value.member§)\n","definition");
-    assert!(result.contains("\"result\":null"), "{result}");
+    assert!(
+        result.contains("\"start\":{\"character\":4,\"line\":2}"),
+        "{result}"
+    );
     definition(
         "fn main():\n    let value=1\n    let callback=()->value§\n    println(callback())\n",
         1,

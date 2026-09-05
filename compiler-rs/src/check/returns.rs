@@ -127,6 +127,7 @@ pub(super) fn probe(
 ) -> Checked<ir::Expr> {
     let signature = &signatures[&function.name];
     let mut checker = Checker {
+        editor: None,
         signatures,
         registry,
         scopes: vec![HashMap::new()],

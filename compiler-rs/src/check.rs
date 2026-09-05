@@ -7,6 +7,7 @@ mod control;
 mod coverage;
 mod dependencies;
 mod diagnostics;
+pub mod editor;
 mod iteration;
 mod lift;
 mod maps;
@@ -60,6 +61,7 @@ struct Inference {
     checked_nominals: std::cell::RefCell<HashSet<Type>>,
 }
 struct Checker<'a> {
+    editor: Option<editor::Recorder>,
     signatures: &'a HashMap<String, Signature>,
     registry: &'a nominal::Registry,
     scopes: Vec<HashMap<String, (ir::LocalId, Type)>>,
@@ -74,14 +76,23 @@ struct Checker<'a> {
 /// Resolve `program` into fully concrete IR or its first source diagnostic.
 /// No preconditions: caller-created syntax and recursive types are validated too.
 pub fn check(program: &ast::Program) -> Checked<ir::Program> {
-    preflight::check(program)?;
-    let registry = nominal::Registry::new(program)?;
-    let graph = dependencies::analyze(program)?;
-    let (program, mut signatures, work) = whole::resolve(program, &registry, &graph)?;
+    pipeline(program, |_, _, _| Ok(())).map(|(ir, _)| ir)
+}
+
+/// Run optional source analysis only after the complete ordinary checker succeeds.
+fn pipeline<T>(
+    source: &ast::Program,
+    finish: impl FnOnce(&ast::Program, &nominal::Registry, &HashMap<String, Signature>) -> Checked<T>,
+) -> Checked<(ir::Program, T)> {
+    preflight::check(source)?;
+    let registry = nominal::Registry::new(source)?;
+    let graph = dependencies::analyze(source)?;
+    let (program, mut signatures, work) = whole::resolve(source, &registry, &graph)?;
     schemes::validate(&program, &registry, &mut signatures, work)?;
-    let program = specialize::run(&program, &registry, &signatures)?;
-    ir::reject_probes(&program)?;
-    Ok(program)
+    let ir = specialize::run(&program, &registry, &signatures)?;
+    ir::reject_probes(&ir)?;
+    let facts = finish(&program, &registry, &signatures)?;
+    Ok((ir, facts))
 }
 
 /// Collect validated concrete signatures from `program` before checking bodies.
@@ -490,9 +501,10 @@ impl Checker<'_> {
             .params
             .iter()
             .map(|param| ir::Param {
-                id: self.bind(
+                id: self.bind_source(
                     clauses::parameter_name(param),
                     clauses::parameter_type(param).clone(),
+                    param.span,
                 ),
                 ty: clauses::parameter_type(param).clone(),
             })
@@ -592,6 +604,7 @@ impl Checker<'_> {
             self.inference
                 .unify(&ty, expected, expr.span, "expression type")?;
         }
+        self.observe_source(expr, &kind, &ty);
         Ok(ir::Expr {
             kind,
             ty,
@@ -1327,7 +1340,11 @@ impl Checker<'_> {
             Wildcard => return Ok(ir::Pattern::Wildcard),
             Bind(name) => {
                 self.pattern_name(name, names, pattern.span)?;
-                return Ok(ir::Pattern::Bind(self.bind(name, ty.clone())));
+                return Ok(ir::Pattern::Bind(self.bind_source(
+                    name,
+                    ty.clone(),
+                    pattern.span,
+                )));
             }
             Int(n) => (ir::Pattern::Int(*n), Type::Int),
             Bool(b) => (ir::Pattern::Bool(*b), Type::Bool),
@@ -1521,7 +1538,7 @@ impl Checker<'_> {
         };
         self.inference
             .unify(ty, &expected, span, "constructor pattern")?;
-        let binding = binding.map(|name| self.bind(name, payload));
+        let binding = binding.map(|name| self.bind_source(name, payload, span));
         Ok(ir::Pattern::Constructor {
             constructor,
             binding,

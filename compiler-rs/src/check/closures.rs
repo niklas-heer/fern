@@ -57,7 +57,7 @@ impl Checker<'_> {
             .iter()
             .zip(types)
             .map(|(param, ty)| ir::Param {
-                id: self.bind(&param.name, ty.clone()),
+                id: self.bind_source(&param.name, ty.clone(), param.span),
                 ty,
             })
             .collect();

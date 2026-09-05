@@ -284,6 +284,7 @@ fn check_scheme(
         ..Inference::default()
     };
     let mut checker = Checker {
+        editor: None,
         signatures,
         registry,
         scopes: vec![HashMap::new()],
@@ -379,6 +380,13 @@ fn retain_requirement(
     returns::charge(inference, requirement.span)?;
     requirements.push(requirement);
     Ok(true)
+}
+
+impl Requirement {
+    /// Expose bounded semantic wording without publishing internal capability identities.
+    pub(super) fn editor_view(&self) -> (&Type, &'static str) {
+        (&self.ty, self.capability.message())
+    }
 }
 
 #[cfg(test)]

@@ -415,8 +415,14 @@ Navigation rebuilds its bounded source index from current accepted buffers on
 each request; it never falls back to stale locations from a previous valid edit.
 It requires a parsable source graph but can work before type errors are fixed.
 Completion returns at most 256 items and 1 MiB of output; retained editor symbol
-names are capped at 8 MiB. Hover, typed record
-members, rename and code actions remain subsequent tooling checkpoints.
+names are capped at 8 MiB. Hover shows checked generic signatures, instantiated
+uses, intrinsic requirements and literal documentation from the selected declaration.
+Valid-source member completion shows record fields, tuple slots and supported
+receiver methods with concrete types. Type annotations and value expressions use
+separate namespaces even when a type and function share a name. These semantic
+facts require the entire current program to check successfully; invalid edits do
+not reuse old types. Incomplete member recovery, rename and code actions remain
+subsequent tooling checkpoints.
 
 ## Source documentation
 

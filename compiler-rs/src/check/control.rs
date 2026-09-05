@@ -144,7 +144,7 @@ impl Checker<'_> {
                     checked.push(ir::Stmt::Expr(value));
                     return Ok(Type::Never);
                 }
-                let id = self.bind(name, value.ty.clone());
+                let id = self.bind_source(name, value.ty.clone(), *span);
                 checked.push(ir::Stmt::Let { id, value });
             }
             ast::Stmt::LetPattern {

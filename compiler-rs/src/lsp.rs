@@ -1,6 +1,8 @@
 //! Bounded JSON-RPC transport and UTF-16 editor diagnostics.
 //! Lifecycle and sync follow https://microsoft.github.io/language-server-protocol/.
 use crate::{ast, check, modules, parse, runtime, Span, Type};
+#[path = "lsp/hover.rs"]
+mod hover;
 #[path = "lsp/index.rs"]
 mod index;
 #[path = "lsp/navigation.rs"]
@@ -608,6 +610,7 @@ impl Server {
                             object([
                                 ("positionEncoding", string("utf-16")),
                                 ("definitionProvider", Json::Bool(true)),
+                                ("hoverProvider", Json::Bool(true)),
                                 (
                                     "completionProvider",
                                     object([
@@ -634,7 +637,7 @@ impl Server {
                     ]),
                 )
             }
-            "textDocument/definition" | "textDocument/completion" => {
+            "textDocument/definition" | "textDocument/completion" | "textDocument/hover" => {
                 match self.navigation(method, params) {
                     Ok(result) => respond(output, id, result),
                     Err(error) => send_error(output, id, -32602, &error),

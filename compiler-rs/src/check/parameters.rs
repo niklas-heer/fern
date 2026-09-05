@@ -19,6 +19,7 @@ pub(super) fn resolve<'a>(
     let mut prepared = program.clone();
     let signatures = HashMap::new();
     let mut checker = Checker {
+        editor: None,
         signatures: &signatures,
         registry,
         scopes: Vec::new(),

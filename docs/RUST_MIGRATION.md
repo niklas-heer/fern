@@ -554,3 +554,29 @@ a filter. Executable doc tests and inferred documentation remain open.
 
 Directory-documentation gates pass: 700 Rust tests, 550 C tests and the full
 native, JSON, fuzz and documentation suites on macOS arm64.
+
+## Checked editor facts and typed hover
+
+Optional source fact recording now publishes only after ordinary checking,
+specialization and probe rejection succeed for the current overlay graph. A
+selected source function is revalidated with its closed scheme; generic declaration
+signatures remain distinct from instantiated uses and local binding types. Source
+anchors preserve clause binders, captures, destructuring and actual field origins.
+Ordinary compilation allocates no recorder.
+
+Hover provides plaintext signatures, intrinsic requirements and literal @doc
+excerpts. Valid-source completion adds checked record/tuple fields and supported
+receiver methods, including arbitrary checked receiver expressions. Separate type
+and value indexes use actual parsed annotation spans, preserving same-named
+function/type identities; doc ownership follows declaration position. Inference
+variables and generated backend names never define public hover text.
+
+Metadata has independent node/name bounds; rendered fragments, documentation
+excerpts, JSON escape expansion and completion output are separately bounded.
+Twenty-six new metadata/editor regressions cover current overlays, UTF-16,
+requirements, bindings, namespaces, escaping and resource limits. Typed member
+recovery for incomplete source remains a separate checkpoint.
+
+Typed-editor checkpoint gates pass: 726 Rust tests, 550 C tests and the full
+native/JSON/fuzz/documentation suites on macOS arm64. An executable LSP protocol
+smoke also confirms hover capability, inferred signatures and documentation.

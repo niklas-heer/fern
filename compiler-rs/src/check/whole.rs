@@ -67,6 +67,7 @@ fn prepare(
         rename_group(&mut program.functions[group.clauses.clone()], index)?;
         let signatures = HashMap::new();
         let mut checker = Checker {
+            editor: None,
             signatures: &signatures,
             registry,
             scopes: Vec::new(),
