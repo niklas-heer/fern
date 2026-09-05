@@ -15,6 +15,9 @@ impl Checker<'_> {
             return Err(Diagnostic::new(span, "invalid pipe argument position"));
         }
         let value = self.expression(value, depth)?;
+        if value.ty == Type::Never {
+            return Ok((value.kind, Type::Never));
+        }
         self.scopes.push(HashMap::new());
         // '$' cannot occur in a source identifier, so this binding cannot capture user names.
         let temporary = format!("$pipe{}", self.local_count);
@@ -30,6 +33,7 @@ impl Checker<'_> {
         let result = self.call(name, &arguments, span, depth);
         self.scopes.pop();
         let (kind, ty) = result?;
+        let (kind, ty) = control::strict_divergence(kind, ty);
         Ok((
             ir::ExprKind::Block(vec![
                 ir::Stmt::Let { id, value },

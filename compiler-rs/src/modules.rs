@@ -726,12 +726,41 @@ fn rewrite(
             rewrite_values(values, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Try(value)
+        | ast::ExprKind::Return(value)
+        | ast::ExprKind::Defer(value)
         | ast::ExprKind::Unary { value, .. }
         | ast::ExprKind::Field { value, .. } => rewrite(value, names, prefixes, scopes, offset)?,
         ast::ExprKind::Binary { left, right, .. } => {
             rewrite(left, names, prefixes, scopes, offset)?;
             rewrite(right, names, prefixes, scopes, offset)?;
         }
+        kind @ (ast::ExprKind::If { .. }
+        | ast::ExprKind::PostfixIf { .. }
+        | ast::ExprKind::ConditionMatch(_)) => {
+            rewrite_control(kind, names, prefixes, scopes, offset)?
+        }
+        ast::ExprKind::Block(stmts) => rewrite_block(stmts, names, prefixes, scopes, offset)?,
+        ast::ExprKind::Match { value, arms } => {
+            rewrite_match(value, arms, names, prefixes, scopes, offset)?
+        }
+        ast::ExprKind::Map(pairs) => rewrite_pairs(pairs, names, prefixes, scopes, offset)?,
+        ast::ExprKind::RecordUpdate { value, fields } => {
+            rewrite_update(value, fields, names, prefixes, scopes, offset)?
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Resolve conditions and branch expressions without exposing branch-local bindings.
+fn rewrite_control(
+    kind: &mut ast::ExprKind,
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    match kind {
         ast::ExprKind::If {
             condition,
             then_branch,
@@ -743,13 +772,18 @@ fn rewrite(
                 rewrite(value, names, prefixes, scopes, offset)?;
             }
         }
-        ast::ExprKind::Block(stmts) => rewrite_block(stmts, names, prefixes, scopes, offset)?,
-        ast::ExprKind::Match { value, arms } => {
-            rewrite_match(value, arms, names, prefixes, scopes, offset)?
+        ast::ExprKind::PostfixIf { value, condition } => {
+            rewrite(condition, names, prefixes, scopes, offset)?;
+            rewrite(value, names, prefixes, scopes, offset)?;
         }
-        ast::ExprKind::Map(pairs) => rewrite_pairs(pairs, names, prefixes, scopes, offset)?,
-        ast::ExprKind::RecordUpdate { value, fields } => {
-            rewrite_update(value, fields, names, prefixes, scopes, offset)?
+        ast::ExprKind::ConditionMatch(arms) => {
+            for arm in arms {
+                shift(&mut arm.span, offset);
+                if let Some(condition) = &mut arm.condition {
+                    rewrite(condition, names, prefixes, scopes, offset)?;
+                }
+                rewrite(&mut arm.body, names, prefixes, scopes, offset)?;
+            }
         }
         _ => {}
     }
@@ -887,6 +921,7 @@ fn rewrite_block(
     scopes.push(BTreeSet::new());
     for stmt in stmts {
         match stmt {
+            ast::Stmt::LetElse { .. } => rewrite_let_else(stmt, names, prefixes, scopes, offset)?,
             ast::Stmt::Let {
                 name,
                 annotation,
@@ -918,6 +953,33 @@ fn rewrite_block(
     }
     scopes.pop();
 
+    Ok(())
+}
+
+/// The failure branch sees the outer scope; successful bindings begin after its initializer.
+fn rewrite_let_else(
+    stmt: &mut ast::Stmt,
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    if let ast::Stmt::LetElse {
+        pattern: binding,
+        annotation,
+        value,
+        else_branch,
+        span,
+    } = stmt
+    {
+        rewrite(value, names, prefixes, scopes, offset)?;
+        rewrite(else_branch, names, prefixes, scopes, offset)?;
+        if let Some(ty) = annotation {
+            qualify_type(ty, names).map_err(|e| at_span(e, *span))?;
+        }
+        pattern(binding, names, scopes.last_mut().unwrap(), offset)?;
+        shift(span, offset);
+    }
     Ok(())
 }
 

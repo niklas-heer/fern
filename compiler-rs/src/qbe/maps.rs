@@ -18,7 +18,7 @@ pub(super) fn is_map(builtin: Builtin) -> bool {
 }
 
 /// Require a concrete map and key types with defined semantic equality.
-pub(super) fn types(ty: &Type, span: Span) -> Result<(&Type, &Type), Diagnostic> {
+pub(super) fn types(ty: &Type, span: Span) -> Lowering<(&Type, &Type)> {
     let Type::Map(key, value) = ty else {
         return Err(invalid(span, "Map operation requires Map type"));
     };
@@ -29,12 +29,7 @@ pub(super) fn types(ty: &Type, span: Span) -> Result<(&Type, &Type), Diagnostic>
 }
 
 /// Derive all source signatures independently from the public typed IR.
-fn signature(
-    builtin: Builtin,
-    args: &[Expr],
-    result: &Type,
-    span: Span,
-) -> Result<Type, Diagnostic> {
+fn signature(builtin: Builtin, args: &[Expr], result: &Type, span: Span) -> Lowering<Type> {
     if builtin == Builtin::MapNew {
         types(result, span)?;
         if !args.is_empty() {
@@ -89,7 +84,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let (key_type, value_type) = types(ty, span)?;
         if entries.len() > MAX_NODES {
             return Err(invalid(span, "Map literal limit exceeded"));
@@ -124,7 +119,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let output = signature(builtin, args, result, span)?;
         self.maps_used = true;
         if builtin == Builtin::MapNew {

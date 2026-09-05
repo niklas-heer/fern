@@ -7,6 +7,8 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[path = "qbe/closures.rs"]
 mod closures;
+#[path = "qbe/control.rs"]
+mod control;
 #[path = "qbe/higher_order.rs"]
 mod higher_order;
 #[path = "qbe/maps.rs"]
@@ -23,6 +25,30 @@ const STRING_RUN: usize = 512;
 /// Lower `program` to native-backend IL, rejecting inconsistent public IR.
 /// No source-name or AST type inference occurs here. Requires exactly one main.
 pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
+    emit_inner(program).map_err(|exit| match exit {
+        Exit::Diagnostic(error) => error,
+        Exit::Terminated => Diagnostic::new(
+            Span::default(),
+            "invalid typed IR: unhandled control termination",
+        ),
+    })
+}
+
+/// Termination travels separately from diagnostics and never creates a usable operand.
+#[derive(Debug)]
+enum Exit {
+    Diagnostic(Diagnostic),
+    Terminated,
+}
+type Lowering<T> = Result<T, Exit>;
+impl From<Diagnostic> for Exit {
+    fn from(error: Diagnostic) -> Self {
+        Self::Diagnostic(error)
+    }
+}
+
+/// Validate signatures and lower complete function bodies through their exit handlers.
+fn emit_inner(program: &ir::Program) -> Lowering<String> {
     let layouts = nominal::layouts(&program.types)?;
     let mut functions = BTreeMap::new();
     let mut main = None;
@@ -70,6 +96,7 @@ pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
     for function in &program.functions {
         emitter.function(function)?;
     }
+    emitter.output.push_str(include_str!("qbe/control.ssa"));
     emitter.main_wrapper(main);
     emitter.float_print_helpers();
     if emitter.maps_used {
@@ -80,8 +107,11 @@ pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
 }
 
 /// Build an IR-boundary diagnostic at `span`; `message` describes the invariant.
-fn invalid(span: Span, message: &str) -> Diagnostic {
-    Diagnostic::new(span, format!("invalid typed IR: {message}"))
+fn invalid(span: Span, message: &str) -> Exit {
+    Exit::Diagnostic(Diagnostic::new(
+        span,
+        format!("invalid typed IR: {message}"),
+    ))
 }
 
 /// Map semantic `ty` to QBE scalar width; pointers and integers remain distinct in IR.
@@ -99,15 +129,15 @@ fn width(ty: Type) -> char {
         | Type::Function(_, _) => 'l',
         Type::Bool | Type::Unit => 'w',
         Type::Float => 'd',
-        Type::Infer(_) | Type::Generic(_) => {
+        Type::Never | Type::Infer(_) | Type::Generic(_) => {
             unreachable!("concrete types validated at IR boundary")
         }
     }
 }
 
 /// Check `actual` against `expected`, retaining the malformed node's source span.
-fn expect_type(actual: Type, expected: Type, span: Span) -> Result<(), Diagnostic> {
-    if actual != expected {
+fn expect_type(actual: Type, expected: Type, span: Span) -> Lowering<()> {
+    if actual != Type::Never && actual != expected {
         return Err(invalid(
             span,
             &format!("expected {expected:?}, found {actual:?}"),
@@ -152,7 +182,7 @@ impl Locals {
     }
 
     /// Define `id` once within its owning function, with checked type and SSA value.
-    fn define(&mut self, id: usize, ty: Type, value: String, span: Span) -> Result<(), Diagnostic> {
+    fn define(&mut self, id: usize, ty: Type, value: String, span: Span) -> Lowering<()> {
         if id >= self.count || !self.defined.insert(id) {
             return Err(invalid(
                 span,
@@ -166,7 +196,7 @@ impl Locals {
 
 impl Emitter<'_> {
     /// Emit `function` using only its resolved signature and typed body.
-    fn function(&mut self, function: &Function) -> Result<(), Diagnostic> {
+    fn function(&mut self, function: &Function) -> Lowering<()> {
         let mut locals = Locals {
             values: BTreeMap::new(),
             defined: BTreeSet::new(),
@@ -194,20 +224,22 @@ impl Emitter<'_> {
             params.join(", ")
         ));
         self.load_captures(function, &mut locals)?;
-        let value = self.expr(&function.body, &mut locals, 0)?;
-        if function.return_type.clone() != Type::Unit || function.name != "main" {
+        self.output.push_str("    %return_slot =l alloc8 8\n    %defer_head =l alloc8 8\n    storel 0, %defer_head\n");
+        if function.body.ty != Type::Never
+            && (function.return_type != Type::Unit || function.name != "main")
+        {
             expect_type(
                 function.body.ty.clone(),
                 function.return_type.clone(),
                 function.body.span,
             )?;
         }
-        let result = if function.return_type.clone() == Type::Unit {
-            "0"
-        } else {
-            &value
-        };
-        self.output.push_str(&format!("    ret {result}\n}}\n\n"));
+        match self.expr(&function.body, &mut locals, 0) {
+            Ok(value) => self.save_return(&value, &mut locals),
+            Err(Exit::Terminated) => {}
+            Err(error) => return Err(error),
+        }
+        self.finish_function(&mut locals);
         Ok(())
     }
 
@@ -229,14 +261,12 @@ impl Emitter<'_> {
     }
 
     /// Emit `expr` within lexical `locals`, with bounded recursive descent.
-    fn expr(
-        &mut self,
-        expr: &Expr,
-        locals: &mut Locals,
-        depth: usize,
-    ) -> Result<String, Diagnostic> {
+    fn expr(&mut self, expr: &Expr, locals: &mut Locals, depth: usize) -> Lowering<String> {
         self.validate_expr(expr, depth)?;
+        self.strict_termination(expr, locals, depth + 1)?;
         let (actual, value) = match &expr.kind {
+            ExprKind::Return(value) => self.returned(value, locals, depth + 1)?,
+            ExprKind::Defer(value) => self.defer(value, locals, depth + 1)?,
             ExprKind::Lambda { .. } | ExprKind::FunctionValue { .. } => {
                 return Err(invalid(expr.span, "unlifted callable expression"));
             }
@@ -299,8 +329,13 @@ impl Emitter<'_> {
     }
 
     /// Validate a node's concrete type and bound recursive lowering before emitting it.
-    fn validate_expr(&mut self, expr: &Expr, depth: usize) -> Result<(), Diagnostic> {
-        nominal::resolved(&expr.ty, &self.layouts, expr.span, 0)?;
+    fn validate_expr(&mut self, expr: &Expr, depth: usize) -> Lowering<()> {
+        if matches!(expr.kind, ExprKind::Return(_)) && expr.ty != Type::Never {
+            return Err(invalid(expr.span, "return expression requires Never type"));
+        }
+        if expr.ty != Type::Never {
+            nominal::resolved(&expr.ty, &self.layouts, expr.span, 0)?;
+        }
         self.nodes += 1;
         if depth > MAX_DEPTH || self.nodes > MAX_NODES {
             return Err(invalid(expr.span, "lowering complexity limit exceeded"));
@@ -309,7 +344,7 @@ impl Emitter<'_> {
     }
 
     /// Resolve a lexical identity without reconstructing source names or types.
-    fn local(id: ir::LocalId, span: Span, locals: &Locals) -> Result<(Type, String), Diagnostic> {
+    fn local(id: ir::LocalId, span: Span, locals: &Locals) -> Lowering<(Type, String)> {
         locals
             .values
             .get(&id.0)
@@ -325,7 +360,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         if !matches!(ty, Type::Tuple(fields) if !fields.is_empty()) {
             return Err(invalid(
                 span,
@@ -348,7 +383,7 @@ impl Emitter<'_> {
     }
 
     /// Emit UTF-8 `value` as bounded ASCII runs and exact numeric bytes.
-    fn string(&mut self, value: &str, span: Span) -> Result<String, Diagnostic> {
+    fn string(&mut self, value: &str, span: Span) -> Lowering<String> {
         if value.as_bytes().contains(&0) {
             return Err(invalid(
                 span,
@@ -388,7 +423,7 @@ impl Emitter<'_> {
         value: &Expr,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let expected = match op {
             UnaryOp::Negate if value.ty == Type::Float => Type::Float,
             UnaryOp::Negate => Type::Int,
@@ -427,22 +462,38 @@ impl Emitter<'_> {
         stmts: &[Stmt],
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
-        let mut introduced = Vec::new();
+    ) -> Lowering<(Type, String)> {
+        let outer = locals.values.clone();
+        let result = self.block_statements(stmts, locals, depth);
+        locals.values = outer;
+        result
+    }
+
+    /// Evaluate a block's statements until normal completion or a propagated exit.
+    fn block_statements(
+        &mut self,
+        stmts: &[Stmt],
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Lowering<(Type, String)> {
         let mut result = (Type::Unit, "0".into());
         for stmt in stmts {
             match stmt {
                 Stmt::Let { id, value } => {
                     let lowered = self.expr(value, locals, depth)?;
                     locals.define(id.0, value.ty.clone(), lowered, value.span)?;
-                    introduced.push(id.0);
+                    result = (Type::Unit, "0".into());
+                }
+                Stmt::LetElse {
+                    pattern,
+                    value,
+                    else_branch,
+                } => {
+                    self.let_else(pattern, value, else_branch, locals, depth)?;
                     result = (Type::Unit, "0".into());
                 }
                 Stmt::Expr(value) => result = (value.ty.clone(), self.expr(value, locals, depth)?),
             }
-        }
-        for id in introduced {
-            locals.values.remove(&id);
         }
         Ok(result)
     }
@@ -456,7 +507,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         if let CallTarget::Runtime(id) = target {
             return self.runtime_call(id, args, span, locals, depth);
         }
@@ -513,7 +564,7 @@ impl Emitter<'_> {
         target: CallTarget,
         args: &[Expr],
         span: Span,
-    ) -> Result<(String, Vec<Type>, Type), Diagnostic> {
+    ) -> Lowering<(String, Vec<Type>, Type)> {
         let builtin = match target {
             CallTarget::Runtime(_) => {
                 return Err(invalid(span, "runtime call requires registry lowering"))
@@ -584,7 +635,7 @@ impl Emitter<'_> {
         right: &Expr,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         if matches!(op, BinaryOp::And | BinaryOp::Or) {
             return self.logical(op, left, right, locals, depth);
         }
@@ -677,7 +728,7 @@ impl Emitter<'_> {
         right: &Expr,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         expect_type(left.ty.clone(), Type::Bool, left.span)?;
         expect_type(right.ty.clone(), Type::Bool, right.span)?;
         let lhs = self.expr(left, locals, depth)?;
@@ -692,16 +743,10 @@ impl Emitter<'_> {
         self.output
             .push_str(&format!("    jnz {lhs}, {on_true}, {on_false}\n"));
         self.start_block(locals, &rhs_label);
-        let rhs = self.expr(right, locals, depth)?;
-        let rhs_end = locals.current.clone();
-        self.output.push_str(&format!("    jmp {merge}\n"));
-        self.start_block(locals, &merge);
-        let value = self.assign(
-            locals,
-            Type::Bool,
-            &format!("phi {before} {shortcut}, {rhs_end} {rhs}"),
-        );
-        Ok((Type::Bool, value))
+        let mut incoming = vec![(before, shortcut.to_string())];
+        let rhs = self.expr(right, locals, depth);
+        self.incoming(rhs, &mut incoming, &merge, locals)?;
+        self.join(Type::Bool, incoming, &merge, locals)
     }
 
     /// Emit `if` with phi incoming labels captured after nested branch expressions.
@@ -712,11 +757,10 @@ impl Emitter<'_> {
         else_branch: Option<&Expr>,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         expect_type(condition.ty.clone(), Type::Bool, condition.span)?;
         let result_type = if let Some(other) = else_branch {
-            expect_type(other.ty.clone(), then_branch.ty.clone(), other.span)?;
-            then_branch.ty.clone()
+            control::joined(&then_branch.ty, &other.ty, other.span)?
         } else {
             Type::Unit
         };
@@ -724,31 +768,20 @@ impl Emitter<'_> {
         let then_label = locals.label();
         let else_label = locals.label();
         let merge = locals.label();
+        let mut incoming = Vec::new();
         self.output
             .push_str(&format!("    jnz {test}, {then_label}, {else_label}\n"));
         self.start_block(locals, &then_label);
-        let then_value = self.expr(then_branch, locals, depth)?;
-        let then_end = locals.current.clone();
-        self.output.push_str(&format!("    jmp {merge}\n"));
+        let then_value = self.expr(then_branch, locals, depth);
+        self.incoming(then_value, &mut incoming, &merge, locals)?;
         self.start_block(locals, &else_label);
         let else_value = if let Some(other) = else_branch {
-            self.expr(other, locals, depth)?
+            self.expr(other, locals, depth)
         } else {
-            "0".into()
+            Ok("0".into())
         };
-        let else_end = locals.current.clone();
-        self.output.push_str(&format!("    jmp {merge}\n"));
-        self.start_block(locals, &merge);
-        let value = if result_type == Type::Unit {
-            "0".into()
-        } else {
-            self.assign(
-                locals,
-                result_type.clone(),
-                &format!("phi {then_end} {then_value}, {else_end} {else_value}"),
-            )
-        };
-        Ok((result_type, value))
+        self.incoming(else_value, &mut incoming, &merge, locals)?;
+        self.join(result_type, incoming, &merge, locals)
     }
 }
 
@@ -784,12 +817,12 @@ fn binary_instruction(op: BinaryOp, operand: Type) -> String {
 }
 
 /// Reject unresolved or excessively nested types before choosing any ABI layout.
-fn concrete(ty: &Type, span: Span, depth: usize) -> Result<(), Diagnostic> {
+fn concrete(ty: &Type, span: Span, depth: usize) -> Lowering<()> {
     if depth > MAX_DEPTH {
         return Err(invalid(span, "type nesting limit exceeded"));
     }
     match ty {
-        Type::Infer(_) | Type::Generic(_) => Err(invalid(
+        Type::Never | Type::Infer(_) | Type::Generic(_) => Err(invalid(
             span,
             "unresolved inference variable or generic type",
         )),
@@ -817,11 +850,7 @@ fn concrete(ty: &Type, span: Span, depth: usize) -> Result<(), Diagnostic> {
 }
 
 /// Determine the payload type for a constructor, rejecting tags from another sum type.
-fn payload_type(
-    constructor: Constructor,
-    ty: &Type,
-    span: Span,
-) -> Result<Option<&Type>, Diagnostic> {
+fn payload_type(constructor: Constructor, ty: &Type, span: Span) -> Lowering<Option<&Type>> {
     match (constructor, ty) {
         (Constructor::Some, Type::Option(item)) => Ok(Some(item)),
         (Constructor::None, Type::Option(_)) => Ok(None),
@@ -845,7 +874,7 @@ fn compound_signature(
     builtin: Builtin,
     args: &[Expr],
     span: Span,
-) -> Result<(String, Vec<Type>, Type), Diagnostic> {
+) -> Lowering<(String, Vec<Type>, Type)> {
     let first = args
         .first()
         .ok_or_else(|| invalid(span, "builtin requires an argument"))?;
@@ -876,11 +905,7 @@ fn compound_signature(
 }
 
 /// Derive list ABI symbols and semantic signatures, avoiding compound pointer equality.
-fn list_signature(
-    builtin: Builtin,
-    ty: &Type,
-    span: Span,
-) -> Result<(String, Vec<Type>, Type), Diagnostic> {
+fn list_signature(builtin: Builtin, ty: &Type, span: Span) -> Lowering<(String, Vec<Type>, Type)> {
     let Type::List(item) = ty else {
         return Err(invalid(span, "List builtin requires List"));
     };
@@ -930,7 +955,7 @@ fn sum_signature(
     builtin: Builtin,
     ty: &Type,
     payload: &Type,
-) -> Result<(String, Vec<Type>, Type), Diagnostic> {
+) -> Lowering<(String, Vec<Type>, Type)> {
     if matches!(builtin, Builtin::OptionUnwrapOr | Builtin::ResultUnwrapOr) {
         Ok((
             "fern_result_unwrap_or".into(),
@@ -973,7 +998,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let Type::List(item_type) = ty else {
             return Err(invalid(span, "list literal requires List type"));
         };
@@ -1002,7 +1027,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let expected = payload_type(constructor, ty, span)?;
         let payload = match (value, expected) {
             (Some(value), Some(expected)) => {
@@ -1037,7 +1062,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let (symbol, params, result) = self.signature(target, args, span)?;
         if args.len() != params.len() {
             return Err(invalid(
@@ -1075,7 +1100,7 @@ impl Emitter<'_> {
         value: &Expr,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let Type::Result(ok, error) = &value.ty else {
             return Err(invalid(value.span, "? requires Result operand"));
         };
@@ -1097,7 +1122,7 @@ impl Emitter<'_> {
         self.output
             .push_str(&format!("    jnz {tag}, {success}, {failure}\n"));
         self.start_block(locals, &failure);
-        self.output.push_str(&format!("    ret {result}\n"));
+        self.save_return(&result, locals);
         self.start_block(locals, &success);
         let payload = self.assign(
             locals,
@@ -1137,7 +1162,7 @@ impl Emitter<'_> {
         parts: &[Expr],
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let mut text = self.string("", Span::default())?;
         for part in parts {
             if !matches!(part.ty, Type::Int | Type::Float | Type::Bool | Type::String) {
@@ -1172,12 +1197,7 @@ impl Emitter<'_> {
     }
 
     /// Format an IEEE double into a bounded GC allocation with round-trip precision.
-    fn float_string(
-        &mut self,
-        value: String,
-        locals: &mut Locals,
-        span: Span,
-    ) -> Result<String, Diagnostic> {
+    fn float_string(&mut self, value: String, locals: &mut Locals, span: Span) -> Lowering<String> {
         let format = self.string("%.17g", span)?;
         let buffer = self.assign(locals, Type::String, "call $fern_alloc(l 32)");
         self.output.push_str(&format!(

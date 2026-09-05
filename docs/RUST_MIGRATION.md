@@ -207,3 +207,30 @@ The design document's old milestone checkmarks have been replaced by acceptance
 criteria with links to the active roadmap, where remaining type-system and
 standard-library work is explicit. C remains the shipping default while the
 remaining language and migration milestones are completed.
+
+
+## Early exits and deferred cleanup — 2026-09-05
+
+The Rust frontend now supports explicit returns, postfix conditionals,
+condition-only matches, let-else unwrapping and dynamic function-exit cleanup.
+An internal bottom type identifies paths that do not produce values. Native
+branches join only continuing paths; strict argument evaluation stops at the
+first executed return, including inside otherwise polymorphic calls.
+
+Deferred code is lifted into a captured Unit function. A GC-visible function
+stack records registrations, and one epilogue preserves the full-width return
+value before invoking cleanup in reverse order. Nested blocks retain their
+registrations until the enclosing function exits. Early returns and propagated
+Result errors use the same exit path. User lambdas retain independent boundaries.
+
+Interactive evaluation preserves the same ordering and additionally attempts
+cleanup after evaluator failures. An entry-wide 10,000-step cleanup budget is
+separate from the 100,000 ordinary evaluation steps; each function permits at most
+4,096 pending cleanups. The original evaluation error is preserved if cleanup also
+fails. Retained code accounting includes cleanup and let-else branches.
+
+Nine native programs and ten invalid cases cover skipped operands, Float/Int64
+returns, conditional registrations, lexical snapshots, failure propagation,
+let-else scopes, lambda boundaries and recursive captures. Interactive tests also
+verify cleanup after division and work-budget failures. With blocks and collection
+iteration remain the next control-flow requirements; C remains the default.

@@ -310,7 +310,9 @@ pub(super) fn children(expr: &ir::Expr) -> Vec<&ir::Expr> {
         ir::ExprKind::Invoke { callee, args } => std::iter::once(callee.as_ref())
             .chain(args.iter())
             .collect(),
-        ir::ExprKind::Unary { value, .. }
+        ir::ExprKind::Return(value)
+        | ir::ExprKind::Defer(value)
+        | ir::ExprKind::Unary { value, .. }
         | ir::ExprKind::Try(value)
         | ir::ExprKind::Field { value, .. } => vec![value],
         ir::ExprKind::Binary { left, right, .. } => vec![left, right],
@@ -341,8 +343,11 @@ pub(super) fn children(expr: &ir::Expr) -> Vec<&ir::Expr> {
         }
         ir::ExprKind::Block(stmts) => stmts
             .iter()
-            .map(|s| match s {
-                ir::Stmt::Let { value, .. } | ir::Stmt::Expr(value) => value,
+            .flat_map(|s| match s {
+                ir::Stmt::LetElse {
+                    value, else_branch, ..
+                } => vec![value, else_branch],
+                ir::Stmt::Let { value, .. } | ir::Stmt::Expr(value) => vec![value],
             })
             .collect(),
         _ => Vec::new(),

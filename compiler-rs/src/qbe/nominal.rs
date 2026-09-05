@@ -2,9 +2,7 @@
 use super::*;
 
 /// Index concrete named layouts, validating record metadata and referenced field types.
-pub(super) fn layouts(
-    types: &[ir::TypeLayout],
-) -> Result<HashMap<Type, &ir::TypeLayout>, Diagnostic> {
+pub(super) fn layouts(types: &[ir::TypeLayout]) -> Lowering<HashMap<Type, &ir::TypeLayout>> {
     let mut layouts = HashMap::new();
     for layout in types {
         concrete(&layout.ty, Span::default(), 0)?;
@@ -50,11 +48,11 @@ pub(super) fn resolved(
     layouts: &HashMap<Type, &ir::TypeLayout>,
     span: Span,
     depth: usize,
-) -> Result<(), Diagnostic> {
+) -> Lowering<()> {
     // Validate structural depth before hashing a recursively structured nominal key.
     concrete(ty, span, depth)?;
     match ty {
-        Type::Infer(_) | Type::Generic(_) => {
+        Type::Never | Type::Infer(_) | Type::Generic(_) => {
             return Err(invalid(
                 span,
                 "unresolved inference variable or generic type",
@@ -104,7 +102,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let expected = self.variant_fields(ty, tag, span)?;
         if !matches!(ty, Type::Named(_, _) | Type::Tuple(_)) || expected.len() != fields.len() {
             return Err(invalid(
@@ -140,7 +138,7 @@ impl Emitter<'_> {
         index: usize,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         if let Type::Tuple(fields) = &value.ty {
             let ty = fields
                 .get(index)
@@ -181,7 +179,7 @@ impl Emitter<'_> {
     }
 
     /// Return a concrete variant's field types for builtin or nominal sums.
-    fn variant_fields(&self, ty: &Type, tag: usize, span: Span) -> Result<Vec<Type>, Diagnostic> {
+    fn variant_fields(&self, ty: &Type, tag: usize, span: Span) -> Lowering<Vec<Type>> {
         match (ty, tag) {
             (Type::Tuple(fields), 0) => Ok(fields.clone()),
             (Type::Option(item), 0) => Ok(vec![*item.clone()]),
@@ -208,7 +206,7 @@ impl Emitter<'_> {
         ty: &Type,
         span: Span,
         depth: usize,
-    ) -> Result<Pattern, Diagnostic> {
+    ) -> Lowering<Pattern> {
         if fields.is_empty() {
             expect_type(ty.clone(), Type::Unit, span)?;
             return Ok(Pattern::Wildcard);
@@ -234,7 +232,7 @@ impl Emitter<'_> {
         ty: &Type,
         span: Span,
         depth: usize,
-    ) -> Result<Pattern, Diagnostic> {
+    ) -> Lowering<Pattern> {
         if depth > MAX_DEPTH {
             return Err(invalid(span, "pattern nesting limit exceeded"));
         }
@@ -301,22 +299,18 @@ struct PatternState<'a> {
 
 impl Emitter<'_> {
     /// Normalize match patterns and prove coverage using only unguarded arms.
-    fn checked_match(
-        &self,
-        value: &Expr,
-        arms: &[MatchArm],
-    ) -> Result<(Type, Vec<Pattern>), Diagnostic> {
-        let first = arms
-            .first()
+    fn checked_match(&self, value: &Expr, arms: &[MatchArm]) -> Lowering<(Type, Vec<Pattern>)> {
+        arms.first()
             .ok_or_else(|| invalid(value.span, "match requires arms"))?;
-        resolved(&first.body.ty, &self.layouts, first.span, 0)?;
-        let result = first.body.ty.clone();
+        let mut result = Type::Never;
         let mut patterns = Vec::new();
         let mut covering = Vec::new();
         let mut budget = 8192;
         for arm in arms {
-            resolved(&arm.body.ty, &self.layouts, arm.span, 0)?;
-            expect_type(arm.body.ty.clone(), result.clone(), arm.span)?;
+            if arm.body.ty != Type::Never {
+                resolved(&arm.body.ty, &self.layouts, arm.span, 0)?;
+            }
+            result = control::joined(&result, &arm.body.ty, arm.span)?;
             if self.exhaustive(std::slice::from_ref(&value.ty), &covering, &mut budget, 0)? {
                 return Err(invalid(arm.span, "unreachable match arm"));
             }
@@ -347,7 +341,7 @@ impl Emitter<'_> {
         rows: &[Vec<Pattern>],
         budget: &mut usize,
         depth: usize,
-    ) -> Result<bool, Diagnostic> {
+    ) -> Lowering<bool> {
         if *budget == 0 || depth > MAX_DEPTH {
             return Err(invalid(Span::default(), "match coverage limit exceeded"));
         }
@@ -404,7 +398,7 @@ impl Emitter<'_> {
         arms: &[MatchArm],
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let (ty, patterns) = self.checked_match(value, arms)?;
         let scrutinee = self.expr(value, locals, depth)?;
         let merge = locals.label();
@@ -418,27 +412,69 @@ impl Emitter<'_> {
                 depth,
             };
             self.pattern_branch(&pattern, &value.ty, &scrutinee, &mut state, locals)?;
-            if let Some(guard) = &arm.guard {
-                let test = self.expr(guard, locals, depth)?;
-                self.require_pattern(&test, &failure, locals);
-            }
-            let result = self.expr(&arm.body, locals, depth)?;
+            let result = self.match_arm(arm, &failure, locals, depth);
             for id in state.bindings {
                 locals.values.remove(&id);
             }
-            incoming.push(format!("{} {result}", locals.current));
-            self.output.push_str(&format!("    jmp {merge}\n"));
+            self.incoming(result, &mut incoming, &merge, locals)?;
             self.start_block(locals, &failure);
         }
         // The validated pattern matrix proves this last failure block unreachable.
         self.output.push_str("    hlt\n");
-        self.start_block(locals, &merge);
-        let result = if ty == Type::Unit {
-            "0".into()
-        } else {
-            self.assign(locals, ty.clone(), &format!("phi {}", incoming.join(", ")))
+        self.join(ty, incoming, &merge, locals)
+    }
+
+    /// Guard/body termination ends only this arm, preserving later pattern-failure paths.
+    fn match_arm(
+        &mut self,
+        arm: &MatchArm,
+        failure: &str,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Lowering<String> {
+        if let Some(guard) = &arm.guard {
+            let test = self.expr(guard, locals, depth)?;
+            self.require_pattern(&test, failure, locals);
+        }
+        self.expr(&arm.body, locals, depth)
+    }
+
+    /// Bind a successful pattern in the surrounding block; failure must leave the function.
+    pub(super) fn let_else(
+        &mut self,
+        pattern: &Pattern,
+        value: &Expr,
+        otherwise: &Expr,
+        locals: &mut Locals,
+        depth: usize,
+    ) -> Lowering<()> {
+        if otherwise.ty != Type::Never {
+            return Err(invalid(otherwise.span, "let-else failure must terminate"));
+        }
+        let scrutinee = self.expr(value, locals, depth)?;
+        let pattern = self.checked_pattern(pattern, &value.ty, value.span, 0)?;
+        let outer = locals.values.clone();
+        let failure = locals.label();
+        let success = locals.label();
+        let mut state = PatternState {
+            failure: &failure,
+            bindings: vec![],
+            span: value.span,
+            depth,
         };
-        Ok((ty, result))
+        self.pattern_branch(&pattern, &value.ty, &scrutinee, &mut state, locals)?;
+        let bound = locals.values.clone();
+        self.output.push_str(&format!("    jmp {success}\n"));
+        locals.values = outer;
+        self.start_block(locals, &failure);
+        match self.expr(otherwise, locals, depth) {
+            Err(Exit::Terminated) => {}
+            Err(error) => return Err(error),
+            Ok(_) => return Err(invalid(otherwise.span, "let-else failure continued")),
+        }
+        locals.values = bound;
+        self.start_block(locals, &success);
+        Ok(())
     }
 
     /// Branch to the next arm on failure, preserving a fresh successful predecessor.
@@ -457,7 +493,7 @@ impl Emitter<'_> {
         value: &str,
         state: &mut PatternState<'_>,
         locals: &mut Locals,
-    ) -> Result<(), Diagnostic> {
+    ) -> Lowering<()> {
         self.nodes += 1;
         if self.nodes > MAX_NODES || state.depth > MAX_DEPTH {
             return Err(invalid(state.span, "pattern lowering limit exceeded"));
@@ -537,7 +573,7 @@ impl Emitter<'_> {
         value: &str,
         span: Span,
         locals: &mut Locals,
-    ) -> Result<String, Diagnostic> {
+    ) -> Lowering<String> {
         let instruction = match pattern {
             Pattern::Int(integer) => format!("ceql {value}, {integer}"),
             Pattern::Bool(boolean) => format!("ceqw {value}, {}", u8::from(*boolean)),

@@ -84,6 +84,9 @@ impl Budget {
         depth: usize,
     ) -> Checked<()> {
         for stmt in stmts {
+            if let ast::Stmt::LetElse { else_branch, .. } = stmt {
+                pending.push((else_branch, depth + 1));
+            }
             match stmt {
                 ast::Stmt::Let {
                     name,
@@ -97,7 +100,14 @@ impl Budget {
                     }
                     pending.push((value, depth + 1));
                 }
-                ast::Stmt::LetPattern {
+                ast::Stmt::LetElse {
+                    pattern,
+                    annotation,
+                    value,
+                    span,
+                    ..
+                }
+                | ast::Stmt::LetPattern {
                     pattern,
                     annotation,
                     value,
@@ -198,6 +208,7 @@ impl Budget {
         while let Some((expr, depth)) = pending.pop() {
             self.expression_node(expr.span, depth)?;
             match &expr.kind {
+                ast::ExprKind::ConditionMatch(arms) => queue_conditions(arms, &mut pending, depth),
                 ast::ExprKind::Interpolate(parts) => {
                     self.interpolation(parts, &mut pending, depth, expr.span)?
                 }
@@ -217,14 +228,19 @@ impl Budget {
                 ast::ExprKind::Name(n) | ast::ExprKind::String(n) => {
                     self.charge(n.len(), expr.span)?
                 }
-                ast::ExprKind::Unary { value, .. } | ast::ExprKind::Try(value) => {
-                    pending.push((value, depth + 1))
-                }
+                ast::ExprKind::Return(value)
+                | ast::ExprKind::Defer(value)
+                | ast::ExprKind::Unary { value, .. }
+                | ast::ExprKind::Try(value) => pending.push((value, depth + 1)),
                 ast::ExprKind::Field { value, name } => {
                     self.charge(name.len(), expr.span)?;
                     pending.push((value, depth + 1));
                 }
-                ast::ExprKind::Binary { left, right, .. } => {
+                ast::ExprKind::PostfixIf {
+                    value: left,
+                    condition: right,
+                }
+                | ast::ExprKind::Binary { left, right, .. } => {
                     pending.push((left, depth + 1));
                     pending.push((right, depth + 1));
                 }
@@ -242,17 +258,7 @@ impl Budget {
                 ast::ExprKind::Tuple(args) | ast::ExprKind::List(args) => {
                     pending.extend(args.iter().map(|e| (e, depth + 1)))
                 }
-                ast::ExprKind::If {
-                    condition,
-                    then_branch,
-                    else_branch,
-                } => {
-                    pending.push((condition, depth + 1));
-                    pending.push((then_branch, depth + 1));
-                    if let Some(value) = else_branch {
-                        pending.push((value, depth + 1));
-                    }
-                }
+                ast::ExprKind::If { .. } => queue_if(expr, &mut pending, depth),
                 ast::ExprKind::Match { value, arms } => {
                     pending.push((value, depth + 1));
                     self.match_arms(arms, &mut pending, depth)?;
@@ -324,4 +330,29 @@ fn queue_map<'a>(
             .iter()
             .flat_map(|(key, value)| [(key, depth + 1), (value, depth + 1)]),
     );
+}
+
+/// Queue lazy condition branches without increasing source nesting for sibling arms.
+fn queue_conditions<'a>(
+    arms: &'a [ast::ConditionArm],
+    pending: &mut Vec<(&'a ast::Expr, usize)>,
+    depth: usize,
+) {
+    for arm in arms {
+        pending.extend(arm.condition.iter().map(|c| (c, depth + 1)));
+        pending.push((&arm.body, depth + 1));
+    }
+}
+/// Queue each branch at its bounded lexical child depth.
+fn queue_if<'a>(expr: &'a ast::Expr, pending: &mut Vec<(&'a ast::Expr, usize)>, depth: usize) {
+    if let ast::ExprKind::If {
+        condition,
+        then_branch,
+        else_branch,
+    } = &expr.kind
+    {
+        pending.push((condition, depth + 1));
+        pending.push((then_branch, depth + 1));
+        pending.extend(else_branch.as_deref().map(|n| (n, depth + 1)));
+    }
 }

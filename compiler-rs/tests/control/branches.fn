@@ -1,0 +1,21 @@
+fn floating(flag: Bool) -> Float:
+    if flag: return 1.25
+    2.5
+fn both(flag: Bool) -> Int:
+    if flag: return 4294967296 else: return -4294967296
+fn matching(flag: Bool) -> String:
+    match flag:
+        true -> return "yes"
+        false -> return "no"
+fn short(flag: Bool) -> Int:
+    flag and (return 8)
+    9
+fn main():
+    println(floating(true))
+    println(floating(false))
+    println(both(true))
+    println(both(false))
+    println(matching(true))
+    println(matching(false))
+    println(short(true))
+    println(short(false))

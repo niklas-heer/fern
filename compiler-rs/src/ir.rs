@@ -47,6 +47,8 @@ pub struct Expr {
 }
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    Return(Box<Expr>),
+    Defer(Box<Expr>),
     /// Temporary checked lambda; eliminated by specialization/lifting before lowering.
     Lambda {
         params: Vec<Param>,
@@ -141,7 +143,15 @@ pub enum Pattern {
 }
 #[derive(Clone, Debug)]
 pub enum Stmt {
-    Let { id: LocalId, value: Expr },
+    LetElse {
+        pattern: Pattern,
+        value: Expr,
+        else_branch: Expr,
+    },
+    Let {
+        id: LocalId,
+        value: Expr,
+    },
     Expr(Expr),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

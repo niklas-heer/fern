@@ -1,0 +1,19 @@
+# Every generated Fern function owns its defer stack and saved return payload.
+function $fern_rs_run_defers(l %headslot) {
+@start
+    jmp @loop
+@loop
+    %node =l loadl %headslot
+    %present =w cnel %node, 0
+    jnz %present, @run, @done
+@run
+    %closure =l loadl %node
+    %previous_slot =l add %node, 8
+    %previous =l loadl %previous_slot
+    storel %previous, %headslot
+    %code =l loadl %closure
+    call %code(l %closure)
+    jmp @loop
+@done
+    ret
+}

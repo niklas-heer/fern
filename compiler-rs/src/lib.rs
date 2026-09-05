@@ -38,6 +38,8 @@ impl Diagnostic {
 /// Semantic types; inference variables are eliminated before QBE lowering.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Type {
+    /// Internal bottom type of control flow that never produces a value.
+    Never,
     Int,
     Float,
     Bool,

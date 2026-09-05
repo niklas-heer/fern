@@ -54,6 +54,8 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
   with short-circuit evaluation, and unary `-`/`not`.
 - Inline and indented `if`/`else`, including value-producing branches. An `if`
   without `else` has type `Unit`.
+- Early returns, postfix conditionals, condition-only matches and `let-else` unwrapping.
+- Dynamic `defer` cleanup runs at function exit, including early return and `?` propagation.
 - `print`, `println`, `String.concat`, `String.eq`, and `String.len`.
 - Immutable list literals, `List.len/get/head/tail/is_empty/push/reverse/concat`,
   and scalar `List.contains` (Int, Bool, or String elements).
@@ -79,7 +81,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
 
 Unsupported syntax produces diagnostics. Gaps include actor execution, triple-quoted multiline strings, block comments, named
 arguments, non-ASCII identifiers, and inferred return types outside `main`.
-`with`, general early returns and full release parity remain migration work.
+`with`, collection/range iteration and full release parity remain migration work.
 
 `fmt` formats the supported syntax in place, preserves comments, and verifies that
 the complete syntax tree remains equivalent before replacing the file atomically.
@@ -126,6 +128,31 @@ Each callback has its own `?` propagation boundary. Capturing an already-produce
 Result-bearing value currently gives an explicit diagnostic; delayed ownership
 tracking is still required to lift that restriction. Returning a Result from a
 function is supported. Function equality is not defined.
+
+## Returns and cleanup
+
+```fern
+fn describe(value: Option(Int)) -> String:
+    defer println("finished")
+    let Some(number) = value else:
+        return "missing"
+    return "negative" if number < 0
+    "present"
+```
+
+A return exits its nearest function, including an anonymous function. Expressions
+and arguments after an executed return do not run. A `let-else` failure branch
+must leave the function; successful bindings remain available below the statement.
+Condition-only `match:` arms test their Boolean conditions in order and require a
+final `_` fallback.
+
+Deferred expressions run in reverse registration order when the function exits.
+A defer registered inside an `if` runs only if that branch executes, and waits
+until the whole function exits. Immutable values are captured when registered;
+the expression and its call arguments execute during cleanup. Return values are
+evaluated first. Cleanup must return Unit and cannot use return or `?` to leave its
+caller. Each called function and lambda has its own cleanup stack. The REPL also
+attempts cleanup after evaluation faults, with a separate bounded work budget.
 
 ## Maps and record updates
 

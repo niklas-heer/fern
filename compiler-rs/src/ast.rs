@@ -84,6 +84,13 @@ pub enum ExprKind {
     },
     Tuple(Vec<Expr>),
     Try(Box<Expr>),
+    Return(Box<Expr>),
+    Defer(Box<Expr>),
+    PostfixIf {
+        value: Box<Expr>,
+        condition: Box<Expr>,
+    },
+    ConditionMatch(Vec<ConditionArm>),
     Pipe {
         value: Box<Expr>,
         name: String,
@@ -150,6 +157,14 @@ pub struct MatchArm {
     pub span: Span,
 }
 
+/// A condition branch retains its expression; None denotes the final wildcard arm.
+#[derive(Clone, Debug)]
+pub struct ConditionArm {
+    pub condition: Option<Expr>,
+    pub body: Expr,
+    pub span: Span,
+}
+
 #[derive(Clone, Debug)]
 pub struct Pattern {
     pub kind: PatternKind,
@@ -175,6 +190,13 @@ pub enum PatternKind {
 }
 #[derive(Clone, Debug)]
 pub enum Stmt {
+    LetElse {
+        pattern: Pattern,
+        annotation: Option<Type>,
+        value: Expr,
+        else_branch: Expr,
+        span: Span,
+    },
     LetPattern {
         pattern: Pattern,
         annotation: Option<Type>,

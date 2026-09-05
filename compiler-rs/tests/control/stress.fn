@@ -1,0 +1,7 @@
+fn retain(depth: Int) -> String:
+    let value = "saved {depth}"
+    defer println(value) if depth == 0 or depth == 256
+    if depth == 0: return value
+    let nested = retain(depth - 1)
+    value
+fn main(): println(retain(256))

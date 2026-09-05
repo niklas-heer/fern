@@ -209,6 +209,22 @@ impl Renderer<'_> {
         let mut lines = Vec::new();
         for statement in statements {
             match statement {
+                Stmt::LetElse {
+                    pattern,
+                    annotation,
+                    value,
+                    else_branch,
+                    span,
+                } => {
+                    lines.extend(self.let_else(
+                        pattern,
+                        annotation.as_ref(),
+                        value,
+                        else_branch,
+                        *span,
+                        indent,
+                    )?);
+                }
                 Stmt::LetPattern {
                     pattern,
                     annotation,
@@ -252,6 +268,18 @@ impl Renderer<'_> {
     /// Render expressions with explicit grouping where it does not interfere with layout.
     fn expression(&self, expression: &Expr, indent: usize) -> Result<Vec<Line>> {
         let text = match &expression.kind {
+            ExprKind::Return(value) => {
+                return self.control_prefix("return", value, indent, expression.span)
+            }
+            ExprKind::Defer(value) => {
+                return self.control_prefix("defer", value, indent, expression.span)
+            }
+            ExprKind::PostfixIf { value, condition } => {
+                return self.postfix_if(value, condition, indent, expression.span)
+            }
+            ExprKind::ConditionMatch(arms) => {
+                return self.condition_match(arms, indent, expression.span)
+            }
             ExprKind::Int(value) => value.to_string(),
             ExprKind::Float(value) => format!("{value:?}"),
             ExprKind::Bool(value) => value.to_string(),
@@ -323,6 +351,100 @@ impl Renderer<'_> {
             .next()
             .map(|line| line.text)
             .unwrap_or_default())
+    }
+
+    /// Keep return and defer spelling separate from their complete operand expressions.
+    fn control_prefix(
+        &self,
+        keyword: &str,
+        value: &Expr,
+        indent: usize,
+        span: Span,
+    ) -> Result<Vec<Line>> {
+        let mut lines = self.expression(value, indent)?;
+        if let Some(first) = lines.first_mut() {
+            first.text = format!("{keyword} {}", first.text);
+            first.anchor = span.start;
+        }
+        Ok(lines)
+    }
+
+    /// Retain a postfix condition after the whole action, rather than moving it into return.
+    fn postfix_if(
+        &self,
+        value: &Expr,
+        condition: &Expr,
+        indent: usize,
+        span: Span,
+    ) -> Result<Vec<Line>> {
+        let mut lines = self.expression(value, indent)?;
+        if let Some(last) = lines.last_mut() {
+            last.text
+                .push_str(&format!(" if {}", self.inline(condition, indent)?));
+        }
+        if let Some(first) = lines.first_mut() {
+            first.anchor = span.start;
+        }
+        Ok(lines)
+    }
+
+    /// Keep condition matches recognizable instead of expanding them into if chains.
+    fn condition_match(
+        &self,
+        arms: &[ast::ConditionArm],
+        indent: usize,
+        span: Span,
+    ) -> Result<Vec<Line>> {
+        let mut lines = vec![line(indent, "match:", span.start)];
+        for arm in arms {
+            let condition = match &arm.condition {
+                Some(value) => self.inline(value, indent + 1)?,
+                None => "_".into(),
+            };
+            lines.extend(self.suite(
+                format!("{condition} ->"),
+                arm.span.start,
+                &arm.body,
+                indent + 1,
+            )?);
+        }
+        Ok(lines)
+    }
+
+    /// Format the failure suite without changing the initializer or binding pattern.
+    fn let_else(
+        &self,
+        pattern: &Pattern,
+        annotation: Option<&Type>,
+        value: &Expr,
+        otherwise: &Expr,
+        span: Span,
+        indent: usize,
+    ) -> Result<Vec<Line>> {
+        let mut prefix = format!("let {}", pattern_text(pattern));
+        if let Some(ty) = annotation {
+            prefix.push_str(&format!(": {}", type_text(ty)?));
+        }
+        let mut lines = self.expression(value, indent)?;
+        if let Some(first) = lines.first_mut() {
+            first.text = format!("{prefix} = {}", first.text);
+            first.anchor = span.start;
+        }
+        let mut failure = self.suite(
+            "else:".into(),
+            self.else_anchor(value.span.end, otherwise.span.start),
+            otherwise,
+            indent,
+        )?;
+        if lines.len() == 1 {
+            if let Some(first) = failure.first() {
+                lines[0].text.push_str(&format!(" {}", first.text));
+            }
+            lines.extend(failure.drain(1..));
+        } else {
+            lines.extend(failure);
+        }
+        Ok(lines)
     }
 
     /// Keep map pairs ordered and permit indented callback values inside their braces.
@@ -710,7 +832,7 @@ fn type_text(ty: &Type) -> Result<String> {
                 )
             }
         }
-        Type::Infer(_) => {
+        Type::Infer(_) | Type::Never => {
             return Err(Diagnostic::new(
                 Span::default(),
                 "cannot format an unresolved internal type",
@@ -952,13 +1074,20 @@ fn structural(mut program: ast::Program) -> String {
 fn clear_expression(expression: &mut Expr) {
     expression.span = Span::default();
     match &mut expression.kind {
-        ExprKind::Unary { value, .. } | ExprKind::Try(value) | ExprKind::Field { value, .. } => {
-            clear_expression(value)
-        }
+        ExprKind::Unary { value, .. }
+        | ExprKind::Try(value)
+        | ExprKind::Return(value)
+        | ExprKind::Defer(value)
+        | ExprKind::Field { value, .. } => clear_expression(value),
         ExprKind::Binary { left, right, .. } => {
             clear_expression(left);
             clear_expression(right);
         }
+        ExprKind::PostfixIf { value, condition } => {
+            clear_expression(value);
+            clear_expression(condition);
+        }
+        ExprKind::ConditionMatch(arms) => clear_conditions(arms),
         ExprKind::Pipe { value, args, .. } => {
             clear_expression(value);
             for arg in args {
@@ -1013,6 +1142,17 @@ fn clear_expression(expression: &mut Expr) {
     }
 }
 
+/// Clear condition-arm locations and both expression children in place.
+fn clear_conditions(arms: &mut [ast::ConditionArm]) {
+    for arm in arms {
+        arm.span = Span::default();
+        if let Some(condition) = &mut arm.condition {
+            clear_expression(condition);
+        }
+        clear_expression(&mut arm.body);
+    }
+}
+
 /// Clear both map children without reordering keys or values.
 fn clear_pairs(pairs: &mut [(Expr, Expr)]) {
     for (key, value) in pairs {
@@ -1047,6 +1187,18 @@ fn clear_match(value: &mut Expr, arms: &mut [ast::MatchArm]) {
 fn clear_statements(statements: &mut [Stmt]) {
     for statement in statements {
         match statement {
+            Stmt::LetElse {
+                pattern,
+                value,
+                else_branch,
+                span,
+                ..
+            } => {
+                *span = Span::default();
+                clear_pattern(pattern);
+                clear_expression(value);
+                clear_expression(else_branch);
+            }
             Stmt::Expr(value) => clear_expression(value),
             Stmt::LetPattern {
                 pattern,

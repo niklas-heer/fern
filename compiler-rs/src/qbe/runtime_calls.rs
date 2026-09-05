@@ -9,7 +9,7 @@ fn bind_type(
     bindings: &mut HashMap<String, Type>,
     span: Span,
     depth: usize,
-) -> Result<(), Diagnostic> {
+) -> Lowering<()> {
     if depth > MAX_DEPTH {
         return Err(invalid(span, "runtime signature nesting limit exceeded"));
     }
@@ -34,11 +34,7 @@ fn bind_type(
 }
 
 /// Resolve the return scheme solely from argument substitutions and checked types.
-fn return_type(
-    template: &Type,
-    bindings: &HashMap<String, Type>,
-    span: Span,
-) -> Result<Type, Diagnostic> {
+fn return_type(template: &Type, bindings: &HashMap<String, Type>, span: Span) -> Lowering<Type> {
     match template {
         Type::Generic(name) => bindings
             .get(name)
@@ -63,7 +59,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let signature =
             runtime::signature(id).ok_or_else(|| invalid(span, "unknown runtime identity"))?;
         if signature.parameters.len() != args.len() {
@@ -114,7 +110,7 @@ impl Emitter<'_> {
         values: &mut Vec<String>,
         span: Span,
         locals: &mut Locals,
-    ) -> Result<(), Diagnostic> {
+    ) -> Lowering<()> {
         match operation {
             Operation::UniformPadding => values.push(values[1].clone()),
             Operation::TableBorder => {
@@ -129,12 +125,7 @@ impl Emitter<'_> {
     }
 
     /// Map known style names to C enum values; -1 preserves the object's existing style.
-    fn border_style(
-        &mut self,
-        name: &str,
-        span: Span,
-        locals: &mut Locals,
-    ) -> Result<String, Diagnostic> {
+    fn border_style(&mut self, name: &str, span: Span, locals: &mut Locals) -> Lowering<String> {
         let merge = locals.label();
         let mut incoming = Vec::new();
         for (index, style) in ["rounded", "square", "double", "heavy", "ascii", "none"]
@@ -170,7 +161,7 @@ impl Emitter<'_> {
         abi: ValueAbi,
         span: Span,
         locals: &mut Locals,
-    ) -> Result<String, Diagnostic> {
+    ) -> Lowering<String> {
         match abi {
             ValueAbi::StringList => Ok(format!(
                 "l {}",
@@ -191,7 +182,7 @@ impl Emitter<'_> {
         ty: &Type,
         abi: ValueAbi,
         locals: &mut Locals,
-    ) -> Result<String, Diagnostic> {
+    ) -> Lowering<String> {
         Ok(match abi {
             ValueAbi::Void => "0".into(),
             ValueAbi::Word32 if *ty == Type::Int => {
@@ -218,11 +209,7 @@ impl Emitter<'_> {
 }
 
 /// Select equality specialization only after the generic element type is known.
-fn runtime_symbol(
-    signature: &Signature,
-    args: &[Expr],
-    span: Span,
-) -> Result<&'static str, Diagnostic> {
+fn runtime_symbol(signature: &Signature, args: &[Expr], span: Span) -> Lowering<&'static str> {
     if signature.operation == Operation::ScalarContains {
         match args.get(1).map(|arg| &arg.ty) {
             Some(Type::String) => Ok("fern_list_contains_str"),
@@ -245,7 +232,7 @@ impl Emitter<'_> {
         arguments: &[String],
         span: Span,
         locals: &mut Locals,
-    ) -> Result<String, Diagnostic> {
+    ) -> Lowering<String> {
         let joined = arguments.join(", ");
         match symbol {
             "fern_str_index_of" => {

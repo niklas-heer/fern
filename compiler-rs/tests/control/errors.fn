@@ -1,0 +1,18 @@
+fn fail() -> Result(Int, Float): Err(1.25)
+fn inner() -> Result(Int, Float):
+    defer println("inner")
+    let value = fail()?
+    Ok(value)
+fn outer() -> Result(Int, Float):
+    defer println("outer")
+    let value = inner()?
+    Ok(value)
+fn captured() -> Int:
+    let result: Result(Int, String) = Ok(4294967296)
+    defer println(Result.unwrap_or(result, 0))
+    3
+fn main():
+    match outer():
+        Ok(value) -> println(value)
+        Err(error) -> println(error)
+    println(captured())

@@ -1,0 +1,12 @@
+fn cleanup() -> ():
+    defer println("cleanup's cleanup")
+    println("cleanup body")
+fn outer() -> Int:
+    defer println("outer")
+    let callback = () ->
+        defer cleanup()
+        return 3
+    let value = callback()
+    println("after callback")
+    value + 10
+fn main(): println(outer())

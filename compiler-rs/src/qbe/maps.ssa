@@ -1,0 +1,171 @@
+# Compiler-owned Map storage: a FernList of immutable (key64, value64) pairs.
+function l $fern_rs_map_index_word(l %map, l %key) {
+@start
+    %len =l call $fern_list_len(l %map)
+    jmp @loop
+@loop
+    %i =l phi @start 0, @step %next
+    %more =w csltl %i, %len
+    jnz %more, @read, @absent
+@read
+    %pair =l call $fern_list_get(l %map, l %i)
+    %stored =l loadl %pair
+    %equal =w ceql %key, %stored
+    jnz %equal, @found, @step
+@step
+    %next =l add %i, 1
+    jmp @loop
+@found
+    ret %i
+@absent
+    ret -1
+}
+
+function l $fern_rs_map_index_string(l %map, l %key) {
+@start
+    %len =l call $fern_list_len(l %map)
+    jmp @loop
+@loop
+    %i =l phi @start 0, @step %next
+    %more =w csltl %i, %len
+    jnz %more, @read, @absent
+@read
+    %pair =l call $fern_list_get(l %map, l %i)
+    %stored =l loadl %pair
+    %equal =w call $fern_str_eq(l %key, l %stored)
+    jnz %equal, @found, @step
+@step
+    %next =l add %i, 1
+    jmp @loop
+@found
+    ret %i
+@absent
+    ret -1
+}
+
+function l $fern_rs_map_pair(l %key, l %value) {
+@start
+    %pair =l call $fern_alloc(l 16)
+    storel %key, %pair
+    %slot =l add %pair, 8
+    storel %value, %slot
+    ret %pair
+}
+
+# This mutation is private to literal construction, before any map alias exists.
+function $fern_rs_map_literal_put(l %map, l %key, l %value, l %index) {
+@start
+    %found =w csgel %index, 0
+    jnz %found, @replace, @append
+@replace
+    %existing =l call $fern_list_get(l %map, l %index)
+    %slot =l add %existing, 8
+    storel %value, %slot
+    ret
+@append
+    %pair =l call $fern_rs_map_pair(l %key, l %value)
+    call $fern_list_push_mut(l %map, l %pair)
+    ret
+}
+
+function l $fern_rs_map_get(l %map, l %index) {
+@start
+    %found =w csgel %index, 0
+    jnz %found, @present, @absent
+@present
+    %pair =l call $fern_list_get(l %map, l %index)
+    %slot =l add %pair, 8
+    %payload =l loadl %slot
+    %some =l call $fern_result_ok(l %payload)
+    ret %some
+@absent
+    %none =l call $fern_result_err(l 0)
+    ret %none
+}
+
+function l $fern_rs_map_put(l %map, l %key, l %value, l %index) {
+@start
+    %len =l call $fern_list_len(l %map)
+    %capacity =l add %len, 1
+    %output =l call $fern_list_with_capacity(l %capacity)
+    %new =l call $fern_rs_map_pair(l %key, l %value)
+    jmp @loop
+@loop
+    %i =l phi @start 0, @step %next
+    %more =w csltl %i, %len
+    jnz %more, @choose, @end
+@choose
+    %replace =w ceql %i, %index
+    jnz %replace, @replacement, @original
+@replacement
+    jmp @copy
+@original
+    %old =l call $fern_list_get(l %map, l %i)
+    jmp @copy
+@copy
+    %pair =l phi @replacement %new, @original %old
+    call $fern_list_push_mut(l %output, l %pair)
+    jmp @step
+@step
+    %next =l add %i, 1
+    jmp @loop
+@end
+    %absent =w csltl %index, 0
+    jnz %absent, @append, @done
+@append
+    call $fern_list_push_mut(l %output, l %new)
+    jmp @done
+@done
+    ret %output
+}
+
+function l $fern_rs_map_delete(l %map, l %index) {
+@start
+    %absent =w csltl %index, 0
+    jnz %absent, @unchanged, @allocate
+@unchanged
+    ret %map
+@allocate
+    %len =l call $fern_list_len(l %map)
+    %output =l call $fern_list_with_capacity(l %len)
+    jmp @loop
+@loop
+    %i =l phi @allocate 0, @step %next
+    %more =w csltl %i, %len
+    jnz %more, @choose, @done
+@choose
+    %skip =w ceql %i, %index
+    jnz %skip, @step, @copy
+@copy
+    %pair =l call $fern_list_get(l %map, l %i)
+    call $fern_list_push_mut(l %output, l %pair)
+    jmp @step
+@step
+    %next =l add %i, 1
+    jmp @loop
+@done
+    ret %output
+}
+
+function l $fern_rs_map_project(l %map, l %offset) {
+@start
+    %len =l call $fern_list_len(l %map)
+    %capacity =l add %len, 1
+    %output =l call $fern_list_with_capacity(l %capacity)
+    jmp @loop
+@loop
+    %i =l phi @start 0, @step %next
+    %more =w csltl %i, %len
+    jnz %more, @copy, @done
+@copy
+    %pair =l call $fern_list_get(l %map, l %i)
+    %slot =l add %pair, %offset
+    %value =l loadl %slot
+    call $fern_list_push_mut(l %output, l %value)
+    jmp @step
+@step
+    %next =l add %i, 1
+    jmp @loop
+@done
+    ret %output
+}

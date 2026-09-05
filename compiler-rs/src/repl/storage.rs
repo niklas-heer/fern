@@ -74,9 +74,11 @@ impl<'a> CodeBudget<'a> {
                 self.pending.push(Part::Expr(callee));
                 self.expressions(args);
             }
-            Try(value) | Field { value, .. } | Unary { value, .. } => {
-                self.pending.push(Part::Expr(value))
-            }
+            Return(value)
+            | Defer(value)
+            | Try(value)
+            | Field { value, .. }
+            | Unary { value, .. } => self.pending.push(Part::Expr(value)),
             Construct { value, .. } => self.pending.extend(value.iter().map(|v| Part::Expr(v))),
             Binary { left, right, .. } => {
                 self.pending.extend([Part::Expr(left), Part::Expr(right)]);
@@ -99,21 +101,32 @@ impl<'a> CodeBudget<'a> {
                     self.pending.extend(arm.guard.iter().map(Part::Expr));
                 }
             }
-            Block(statements) => {
-                self.bytes += statements.len() * std::mem::size_of::<ir::Stmt>();
-                for stmt in statements {
-                    let value = match stmt {
-                        ir::Stmt::Let { value, .. } | ir::Stmt::Expr(value) => value,
-                    };
-                    self.pending.push(Part::Expr(value));
-                }
-            }
+            Block(statements) => self.statements(statements),
             Lambda { .. } | FunctionValue { .. } => {
                 return Err("unfinalized interactive closure".into())
             }
             Int(_) | Float(_) | Bool(_) | Local(_) | Unit => {}
         }
         Ok(())
+    }
+    /// Charge every statement and all scopes retained by a let-else fallback.
+    fn statements(&mut self, statements: &'a [ir::Stmt]) {
+        self.bytes += std::mem::size_of_val(statements);
+        for stmt in statements {
+            let value = match stmt {
+                ir::Stmt::Let { value, .. } | ir::Stmt::Expr(value) => value,
+                ir::Stmt::LetElse {
+                    pattern,
+                    value,
+                    else_branch,
+                } => {
+                    self.pending
+                        .extend([Part::Pattern(pattern), Part::Expr(else_branch)]);
+                    value
+                }
+            };
+            self.pending.push(Part::Expr(value));
+        }
     }
     fn expressions(&mut self, values: &'a [ir::Expr]) {
         self.pending.extend(values.iter().map(Part::Expr));

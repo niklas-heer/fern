@@ -84,14 +84,9 @@ impl Session {
             self.definitions = definitions;
             return Ok(String::new());
         }
-        let mut machine = Machine {
-            program: typed.clone(),
-            locals: self.values.clone(),
-            output: String::new(),
-            steps: 0,
-            depth: 0,
-        };
+        let mut machine = Machine::new(typed.clone(), self.values.clone());
         let result = machine.statements(&statements[self.statements..]);
+        let result = machine.finish(result);
         let value = match result {
             Ok(value) => value,
             Err(Failure::Message(message)) => return Err(message),
@@ -122,14 +117,27 @@ struct Machine {
     output: String,
     steps: usize,
     depth: usize,
+    defers: Vec<Value>,
+    cleanup_depth: usize,
+    cleanup_steps: usize,
 }
 impl Machine {
+    /// Initialize one evaluation entry with fresh work and cleanup budgets.
+    fn new(program: Rc<ir::Program>, locals: HashMap<usize, Value>) -> Self {
+        Self {
+            program,
+            locals,
+            output: String::new(),
+            steps: 0,
+            depth: 0,
+            defers: Vec::new(),
+            cleanup_depth: 0,
+            cleanup_steps: 0,
+        }
+    }
     /// Bound evaluator recursion and work independently of compiler syntax limits.
     fn expression(&mut self, expr: &ir::Expr) -> Eval<Value> {
-        self.steps += 1;
-        if self.steps > 100_000 || self.depth >= 128 {
-            return Err(fault("interactive evaluation limit exceeded"));
-        }
+        self.charge_step()?;
         self.depth += 1;
         let result = self.node(expr);
         self.depth -= 1;
@@ -139,6 +147,8 @@ impl Machine {
     fn node(&mut self, expr: &ir::Expr) -> Eval<Value> {
         use ir::ExprKind::*;
         match &expr.kind {
+            Return(value) => Err(Failure::Return(self.expression(value)?)),
+            Defer(value) => self.defer(value),
             Closure { function, captures } => self.closure(*function, captures),
             Invoke { callee, args } => {
                 let callee = self.expression(callee)?;
@@ -274,6 +284,11 @@ impl Machine {
                     self.locals.insert(id.0, value);
                     Value::Unit
                 }
+                ir::Stmt::LetElse {
+                    pattern,
+                    value,
+                    else_branch,
+                } => self.let_else(pattern, value, else_branch)?,
                 ir::Stmt::Expr(value) => self.expression(value)?,
             };
         }
@@ -327,6 +342,7 @@ impl Machine {
         }
         let previous_program = std::mem::replace(&mut self.program, program.clone());
         let previous = std::mem::take(&mut self.locals);
+        let previous_defers = std::mem::take(&mut self.defers);
         self.locals
             .extend(function.params.iter().zip(args).map(|(p, v)| (p.id.0, v)));
         self.locals.extend(
@@ -337,6 +353,8 @@ impl Machine {
                 .map(|(p, v)| (p.id.0, v.clone())),
         );
         let result = self.expression(&function.body);
+        let result = self.finish(result);
+        self.defers = previous_defers;
         self.locals = previous;
         self.program = previous_program;
         match result {
@@ -526,6 +544,8 @@ fn type_name(ty: &Type) -> String {
 
 #[path = "repl/builtins.rs"]
 mod builtins;
+#[path = "repl/control.rs"]
+mod control;
 #[path = "repl/functions.rs"]
 mod functions;
 #[path = "repl/maps.rs"]

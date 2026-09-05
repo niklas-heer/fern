@@ -51,6 +51,7 @@ pub(super) fn run(
             expr_count: 0,
             inference: Inference::default(),
             function_return: Type::Unit,
+            deferred: false,
         }
         .function(&function)?;
         checked.id = ir::FunctionId(index);
@@ -183,10 +184,16 @@ fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Type>) -> Chec
                 substitute_expr(arg, values)?;
             }
         }
-        ast::ExprKind::Unary { value, .. }
+        ast::ExprKind::Return(value)
+        | ast::ExprKind::Defer(value)
+        | ast::ExprKind::Unary { value, .. }
         | ast::ExprKind::Try(value)
         | ast::ExprKind::Field { value, .. } => substitute_expr(value, values)?,
-        ast::ExprKind::Binary { left, right, .. } => {
+        ast::ExprKind::PostfixIf {
+            value: left,
+            condition: right,
+        }
+        | ast::ExprKind::Binary { left, right, .. } => {
             substitute_expr(left, values)?;
             substitute_expr(right, values)?;
         }
@@ -221,15 +228,8 @@ fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Type>) -> Chec
                 substitute_expr(value, values)?;
             }
         }
-        ast::ExprKind::Match { value, arms } => {
-            substitute_expr(value, values)?;
-            for arm in arms {
-                if let Some(guard) = &mut arm.guard {
-                    substitute_expr(guard, values)?;
-                }
-                substitute_expr(&mut arm.body, values)?;
-            }
-        }
+        ast::ExprKind::Match { value, arms } => substitute_match(value, arms, values)?,
+        ast::ExprKind::ConditionMatch(arms) => substitute_conditions(arms, values)?,
         ast::ExprKind::Block(stmts) => substitute_block(stmts, values)?,
         _ => {}
     }
@@ -239,8 +239,14 @@ fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Type>) -> Chec
 /// Substitute block annotations while preserving initializer and statement traversal order.
 fn substitute_block(stmts: &mut [ast::Stmt], values: &HashMap<String, Type>) -> Checked<()> {
     for stmt in stmts {
+        if let ast::Stmt::LetElse { else_branch, .. } = stmt {
+            substitute_expr(else_branch, values)?;
+        }
         match stmt {
-            ast::Stmt::Let {
+            ast::Stmt::LetElse {
+                annotation, value, ..
+            }
+            | ast::Stmt::Let {
                 annotation, value, ..
             }
             | ast::Stmt::LetPattern {
@@ -283,6 +289,35 @@ fn substitute_update(
     substitute_expr(base, values)?;
     for field in fields {
         substitute_expr(&mut field.value, values)?;
+    }
+    Ok(())
+}
+
+/// Substitute match guards and bodies without conflating their lexical patterns.
+fn substitute_match(
+    value: &mut ast::Expr,
+    arms: &mut [ast::MatchArm],
+    values: &HashMap<String, Type>,
+) -> Checked<()> {
+    substitute_expr(value, values)?;
+    for arm in arms {
+        if let Some(guard) = &mut arm.guard {
+            substitute_expr(guard, values)?;
+        }
+        substitute_expr(&mut arm.body, values)?;
+    }
+    Ok(())
+}
+/// Substitute source conditional arms before their bounded lazy lowering.
+fn substitute_conditions(
+    arms: &mut [ast::ConditionArm],
+    values: &HashMap<String, Type>,
+) -> Checked<()> {
+    for arm in arms {
+        if let Some(condition) = &mut arm.condition {
+            substitute_expr(condition, values)?;
+        }
+        substitute_expr(&mut arm.body, values)?;
     }
     Ok(())
 }

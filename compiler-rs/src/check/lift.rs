@@ -149,7 +149,9 @@ pub(super) fn children_mut(expr: &mut ir::Expr) -> Vec<&mut ir::Expr> {
         Invoke { callee, args } => std::iter::once(callee.as_mut())
             .chain(args.iter_mut())
             .collect(),
-        Unary { value, .. } | Try(value) | Field { value, .. } => vec![value],
+        Return(value) | Defer(value) | Unary { value, .. } | Try(value) | Field { value, .. } => {
+            vec![value]
+        }
         Binary { left, right, .. } => vec![left, right],
         Call { args, .. }
         | Tuple(args)
@@ -178,8 +180,11 @@ pub(super) fn children_mut(expr: &mut ir::Expr) -> Vec<&mut ir::Expr> {
         }
         Block(stmts) => stmts
             .iter_mut()
-            .map(|s| match s {
-                ir::Stmt::Let { value, .. } | ir::Stmt::Expr(value) => value,
+            .flat_map(|s| match s {
+                ir::Stmt::LetElse {
+                    value, else_branch, ..
+                } => vec![value, else_branch],
+                ir::Stmt::Let { value, .. } | ir::Stmt::Expr(value) => vec![value],
             })
             .collect(),
         _ => Vec::new(),

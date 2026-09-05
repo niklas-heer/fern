@@ -1,0 +1,11 @@
+fn mark(value: String) -> String:
+    println(value)
+    value
+fn saved(early: Bool) -> String:
+    let text = "cleanup"
+    defer println(mark(text))
+    return mark("early") if early
+    mark("implicit")
+fn main():
+    println(saved(true))
+    println(saved(false))

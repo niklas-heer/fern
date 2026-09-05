@@ -58,7 +58,7 @@ fn binary(op: BinaryOp, left: Expr, right: Expr, ty: Type) -> Expr {
 fn literal_and_main_symbol() {
     let il = qbe::emit(&program(int(42))).unwrap();
     assert!(il.contains("export function w $fern_main()"), "{il}");
-    assert!(il.contains("ret 42"), "{il}");
+    assert!(il.contains("storel 42, %return_slot"), "{il}");
 }
 
 #[test]
@@ -441,7 +441,13 @@ fn string_inequality_compares_contents_not_pointers() {
     .unwrap();
     assert!(il.contains("call $fern_str_eq(l $str0, l $str1)"), "{il}");
     assert!(il.contains("ceqw %t0, 0"), "{il}");
-    assert!(!il.contains("cnel"), "{il}");
+    assert!(
+        !il.split("function $fern_rs_run_defers")
+            .next()
+            .unwrap()
+            .contains("cnel"),
+        "{il}"
+    );
 }
 
 #[test]

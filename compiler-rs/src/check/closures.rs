@@ -11,6 +11,21 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
+        let previous = std::mem::replace(&mut self.deferred, false);
+        let result = self.lambda_body(params, body, expected, span, depth);
+        self.deferred = previous;
+        result
+    }
+
+    /// Share lambda construction while allowing the synthetic defer thunk its restricted context.
+    pub(super) fn lambda_body(
+        &mut self,
+        params: &[ast::LambdaParam],
+        body: &ast::Expr,
+        expected: Option<&Type>,
+        span: Span,
+        depth: usize,
+    ) -> Checked<TypedKind> {
         let mut names = HashSet::new();
         if params.len() > MAX_PARAMETERS {
             return Err(Diagnostic::new(span, "lambda parameter limit exceeded"));
@@ -75,9 +90,7 @@ impl Checker<'_> {
             .map(|_| self.inference.fresh())
             .collect::<Vec<_>>();
         let ty = Type::Tuple(fields.clone());
-        if let Some(expected) = expected {
-            self.inference.unify(&ty, expected, span, "tuple type")?;
-        }
+        self.constrain_result(&ty, expected, span)?;
         let values = values
             .iter()
             .zip(fields)
@@ -107,6 +120,9 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
+        if callee.ty == Type::Never {
+            return Ok((callee.kind, Type::Never));
+        }
         let ty = self.inference.resolve(&callee.ty, span)?;
         let (params, result) = match ty {
             Type::Function(params, result) => (params, *result),
@@ -171,13 +187,16 @@ impl Checker<'_> {
     }
 
     /// Feed compatible result context into arguments; report outer shape errors after argument errors.
-    fn constrain_result(
+    pub(super) fn constrain_result(
         &mut self,
         result: &Type,
         expected: Option<&Type>,
         span: Span,
     ) -> Checked<()> {
         if let Some(expected) = expected {
+            if matches!(self.inference.resolve(expected, span)?, Type::Infer(_)) {
+                return Ok(());
+            }
             let actual = self.inference.resolve(result, span)?;
             let expected = self.inference.resolve(expected, span)?;
             if matches!(actual, Type::Infer(_))
@@ -366,10 +385,16 @@ fn contains_lambda(expr: &ast::Expr) -> bool {
         ast::ExprKind::Pipe { value, args, .. } => {
             contains_lambda(value) || args.iter().any(contains_lambda)
         }
-        ast::ExprKind::Try(value)
+        ast::ExprKind::Return(value)
+        | ast::ExprKind::Defer(value)
+        | ast::ExprKind::Try(value)
         | ast::ExprKind::Unary { value, .. }
         | ast::ExprKind::Field { value, .. } => contains_lambda(value),
-        ast::ExprKind::Binary { left, right, .. } => {
+        ast::ExprKind::PostfixIf {
+            value: left,
+            condition: right,
+        }
+        | ast::ExprKind::Binary { left, right, .. } => {
             contains_lambda(left) || contains_lambda(right)
         }
         ast::ExprKind::If {
@@ -390,7 +415,13 @@ fn contains_lambda(expr: &ast::Expr) -> bool {
                     a.guard.as_ref().is_some_and(contains_lambda) || contains_lambda(&a.body)
                 })
         }
+        ast::ExprKind::ConditionMatch(arms) => arms
+            .iter()
+            .any(|a| a.condition.as_ref().is_some_and(contains_lambda) || contains_lambda(&a.body)),
         ast::ExprKind::Block(stmts) => stmts.iter().any(|s| match s {
+            ast::Stmt::LetElse {
+                value, else_branch, ..
+            } => contains_lambda(value) || contains_lambda(else_branch),
             ast::Stmt::Let { value, .. }
             | ast::Stmt::LetPattern { value, .. }
             | ast::Stmt::Expr(value) => contains_lambda(value),

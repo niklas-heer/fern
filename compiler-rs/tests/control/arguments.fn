@@ -1,0 +1,17 @@
+fn mark(n: Int) -> Int:
+    println(n)
+    n
+fn combine(a: Int, b: Int, c: Int) -> Int:
+    println("called")
+    a + b + c
+fn early() -> Int:
+    defer println("cleanup")
+    combine(mark(1), return 7, mark(3))
+fn literal() -> Int:
+    [mark(4), return 8, mark(6)]
+fn id(value: a) -> a: value
+fn generic() -> Int: id(return 9)
+fn main():
+    println(early())
+    println(literal())
+    println(generic())

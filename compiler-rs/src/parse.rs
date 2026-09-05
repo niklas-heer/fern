@@ -1120,8 +1120,19 @@ impl Parser {
 
     /// Parse one inline expression or an indented block of bindings/expressions.
     fn suite(&mut self) -> ParseResult<Parsed> {
+        if self.depth >= MAX_DEPTH {
+            return Err(self.error("parser depth limit exceeded"));
+        }
+        self.depth += 1;
+        let result = self.suite_value();
+        self.depth -= 1;
+        result
+    }
+
+    /// Parse suite contents after reserving recursive layout work against the shared bound.
+    fn suite_value(&mut self) -> ParseResult<Parsed> {
         if !self.eat(&Kind::Newline) {
-            return self.expr(0);
+            return self.statement_expression();
         }
         let start = self
             .expect(Kind::Indent, "expected indented block")?
@@ -1159,53 +1170,128 @@ impl Parser {
     /// Parse an immutable binding or value statement and retain its tree depth.
     fn statement(&mut self) -> ParseResult<(Stmt, usize, usize)> {
         if self.word("let") {
-            let start = self.take().span.start;
-            let pattern = if self.current().kind == Kind::Left {
-                self.pattern()?
-            } else {
-                let (name, span) = self.name()?;
-                Pattern {
-                    kind: PatternKind::Bind(name),
-                    span,
-                }
-            };
-            let annotation = if self.eat(&Kind::Colon) {
-                Some(self.ty()?)
-            } else {
-                None
-            };
-            self.expect(Kind::Assign, "expected '=' in let binding")?;
-            let value = self.expr(0)?;
-            let end = value.node.span.end;
-            Ok((
-                match pattern.kind {
-                    PatternKind::Bind(name) => Stmt::Let {
-                        name,
-                        annotation,
-                        value: value.node,
-                        span: Span { start, end },
-                    },
-                    PatternKind::Wildcard => Stmt::Let {
-                        name: "_".into(),
-                        annotation,
-                        value: value.node,
-                        span: Span { start, end },
-                    },
-                    _ => Stmt::LetPattern {
-                        pattern,
-                        annotation,
-                        value: value.node,
-                        span: Span { start, end },
-                    },
-                },
-                value.depth,
-                end,
-            ))
-        } else {
-            let value = self.expr(0)?;
-            let end = value.node.span.end;
-            Ok((Stmt::Expr(value.node), value.depth, end))
+            return self.let_statement();
         }
+        let value = self.statement_expression()?;
+        let end = value.node.span.end;
+        Ok((Stmt::Expr(value.node), value.depth, end))
+    }
+
+    /// Parse binding patterns before introducing optional failure-only else suites.
+    fn let_statement(&mut self) -> ParseResult<(Stmt, usize, usize)> {
+        let start = self.take().span.start;
+        let binding = self.plain_binding();
+        let mut pattern = self.pattern()?;
+        let annotation = if self.eat(&Kind::Colon) {
+            Some(self.ty()?)
+        } else {
+            None
+        };
+        self.expect(Kind::Assign, "expected '=' in let binding")?;
+        let value = self.expr(0)?;
+        if self.word("else") {
+            self.take();
+            self.expect(Kind::Colon, "expected ':' after let-else")?;
+            let otherwise = self.suite()?;
+            let end = otherwise.node.span.end;
+            return Ok((
+                Stmt::LetElse {
+                    pattern,
+                    annotation,
+                    value: value.node,
+                    else_branch: otherwise.node,
+                    span: Span { start, end },
+                },
+                value.depth.max(otherwise.depth),
+                end,
+            ));
+        }
+        if let Some(name) = binding {
+            pattern.kind = PatternKind::Bind(name);
+        }
+        let end = value.node.span.end;
+        let span = Span { start, end };
+        let statement = match pattern.kind {
+            PatternKind::Bool(_) | PatternKind::Int(_) | PatternKind::String(_) => {
+                return Err(Diagnostic::new(
+                    pattern.span,
+                    "literal let patterns require an else branch",
+                ));
+            }
+            PatternKind::Bind(name) => Stmt::Let {
+                name,
+                annotation,
+                value: value.node,
+                span,
+            },
+            PatternKind::Wildcard => Stmt::Let {
+                name: "_".into(),
+                annotation,
+                value: value.node,
+                span,
+            },
+            _ => Stmt::LetPattern {
+                pattern,
+                annotation,
+                value: value.node,
+                span,
+            },
+        };
+        Ok((statement, value.depth, end))
+    }
+
+    /// Ordinary let names may be uppercase; explicit calls and let-else still use patterns.
+    fn plain_binding(&self) -> Option<String> {
+        let Kind::Name(name) = &self.current().kind else {
+            return None;
+        };
+        if !reserved(name)
+            && self
+                .tokens
+                .get(self.position + 1)
+                .is_some_and(|token| matches!(token.kind, Kind::Assign | Kind::Colon))
+        {
+            Some(name.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Apply a postfix condition to the whole statement, including an early return.
+    fn statement_expression(&mut self) -> ParseResult<Parsed> {
+        let mut value = if self.word("defer") {
+            let start = self.take().span.start;
+            let deferred = self.expr(0)?;
+            let span = Span {
+                start,
+                end: deferred.node.span.end,
+            };
+            expression(
+                ExprKind::Defer(Box::new(deferred.node)),
+                span,
+                deferred.depth + 1,
+            )?
+        } else {
+            self.expr(0)?
+        };
+        if self.word("if") && !self.previous_dedent() {
+            self.take();
+            let condition = self.expr(0)?;
+            let span = Span {
+                start: value.node.span.start,
+                end: condition.node.span.end,
+            };
+            let depth = value.depth.max(condition.depth) + 1;
+            value = expression(
+                ExprKind::PostfixIf {
+                    value: Box::new(value.node),
+                    condition: Box::new(condition.node),
+                },
+                span,
+                depth,
+            )?;
+        }
+        Ok(value)
     }
 
     /// Guard recursive parser entry before processing precedence or nested syntax.
@@ -1312,6 +1398,19 @@ impl Parser {
 
     /// Parse unary operators, literals, calls, grouping, and conditionals.
     fn prefix(&mut self) -> ParseResult<Parsed> {
+        if self.word("return") {
+            let start = self.take().span.start;
+            let value = self.expr(0)?;
+            let span = Span {
+                start,
+                end: value.node.span.end,
+            };
+            return expression(
+                ExprKind::Return(Box::new(value.node)),
+                span,
+                value.depth + 1,
+            );
+        }
         if self.word("fn") || (self.current().kind == Kind::Left && self.lambda_ahead()) {
             return self.lambda();
         }
@@ -1607,6 +1706,9 @@ impl Parser {
     /// Parse an indented sequence of pattern arms and bound its resulting tree.
     fn match_expression(&mut self) -> ParseResult<Parsed> {
         let start = self.take().span.start;
+        if self.eat(&Kind::Colon) {
+            return self.condition_match(start);
+        }
         let value = self.expr(0)?;
         self.expect(Kind::Colon, "expected ':' after match value")?;
         self.expect(Kind::Newline, "match requires an indented arm block")?;
@@ -1660,6 +1762,63 @@ impl Parser {
             Span { start, end },
             depth,
         )
+    }
+
+    /// Parse condition branches separately from pattern matches, retaining wildcard syntax.
+    fn condition_match(&mut self, start: usize) -> ParseResult<Parsed> {
+        self.expect(
+            Kind::Newline,
+            "condition match requires an indented arm block",
+        )?;
+        self.expect(
+            Kind::Indent,
+            "condition match requires an indented arm block",
+        )?;
+        let mut arms = Vec::new();
+        let mut depth = 1;
+        let mut end = start;
+        let mut wildcard = false;
+        for _ in 0..self.tokens.len() {
+            if self.eat(&Kind::Dedent) {
+                break;
+            }
+            if wildcard {
+                return Err(self.error("wildcard must be the final condition match arm"));
+            }
+            let arm_start = self.current().span.start;
+            let condition = if self.word("_") {
+                self.take();
+                wildcard = true;
+                None
+            } else {
+                Some(self.guard_expression()?)
+            };
+            if let Some(value) = &condition {
+                depth = depth.max(value.depth + 1);
+            }
+            self.expect(Kind::Arrow, "expected '->' after match condition")?;
+            let body = self.suite()?;
+            end = body.node.span.end;
+            depth = depth.max(body.depth + 1);
+            arms.push(crate::ast::ConditionArm {
+                condition: condition.map(|v| v.node),
+                body: body.node,
+                span: Span {
+                    start: arm_start,
+                    end,
+                },
+            });
+            if !self.eat(&Kind::Newline)
+                && self.current().kind != Kind::Dedent
+                && !self.previous_dedent()
+            {
+                return Err(self.error("expected end of line after condition match arm"));
+            }
+        }
+        if arms.is_empty() {
+            return Err(self.error("condition match requires at least one arm"));
+        }
+        expression(ExprKind::ConditionMatch(arms), Span { start, end }, depth)
     }
 
     /// Keep the arm separator out of lambda lookahead while allowing callback guards.

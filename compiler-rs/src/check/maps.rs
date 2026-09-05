@@ -47,9 +47,7 @@ impl Checker<'_> {
         let key = self.inference.fresh();
         let value = self.inference.fresh();
         let ty = Type::Map(Box::new(key.clone()), Box::new(value.clone()));
-        if let Some(expected) = expected {
-            self.inference.unify(&ty, expected, span, "map type")?;
-        }
+        self.constrain_result(&ty, expected, span)?;
         let mut checked = Vec::with_capacity(entries.len());
         for (k, v) in entries {
             let k = self
@@ -101,7 +99,19 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
-        let base = self.expression_expected(base, expected, depth)?;
+        let base_context = expected
+            .map(|ty| self.inference.resolve(ty, span))
+            .transpose()?;
+        let base = self.expression_expected(
+            base,
+            base_context
+                .as_ref()
+                .filter(|ty| matches!(ty, Type::Named(..))),
+            depth,
+        )?;
+        if base.ty == Type::Never {
+            return Ok((base.kind, Type::Never));
+        }
         let ty = self.inference.resolve(&base.ty, span)?;
         let layout = self.registry.layout(&ty, span)?;
         if layout.fields.is_empty() {
@@ -115,6 +125,10 @@ impl Checker<'_> {
             let value = self
                 .expression_expected(&field.value, Some(&layout.variants[0][index]), depth)
                 .map_err(|e| super::closures::context(e, "record field"))?;
+            if value.ty == Type::Never {
+                statements.push(ir::Stmt::Expr(value));
+                return Ok((ir::ExprKind::Block(statements), Type::Never));
+            }
             let (statement, local) = self.update_local(value);
             statements.push(statement);
             replacements.insert(index, local);

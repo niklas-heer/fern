@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
-- Rust migration: `just rust-check` passing (314 Rust tests, 4 measurement-harness tests, 93 core native programs, 49 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (352 Rust tests, 4 measurement-harness tests, 102 core native programs, 59 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -52,7 +52,7 @@ for approval between milestones. C remains the default until the parity gates pa
 
 - [x] Custom algebraic/record types, generic functions, nested patterns and guards (41 checker and 36 emitter tests; native recursive values and guarded matching).
 - [x] Modules/imports/visibility and a realistic application spanning multiple files (13 loader tests including visibility bypass regressions, native project execution).
-- [ ] Remaining executable language parity: maps, remaining function/numeric/string operations, control flow and complete error handling.
+- [ ] Remaining executable language parity: remaining function/numeric/string operations, control flow and complete error handling.
 - [ ] Standard-library/native ABI compatibility and executable application coverage.
 - [ ] Diagnostics, formatting, REPL/LSP, documentation and developer-command parity.
 - [ ] Linux/macOS verification, fuzz/performance/packaging gates and default migration.
@@ -76,7 +76,8 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Functions/closures and ten higher-order collection/error operations (287 Rust tests, six new native programs, six negative cases; delayed Result-bearing captures remain restricted).
 - [x] Retain originating compiled code for interactive closures, preserve capture/effect order and bound unique retained programs (interactive closure and storage regressions).
 - [x] Immutable maps and record updates with semantic keys, persistent aliases and source-order evaluation (six native programs, nine invalid programs and interactive regressions).
-- [ ] Remaining control flow, multiline strings and complete native-language audit.
+- [x] Early returns, postfix conditionals, condition matches, let-else and function-exit deferred cleanup (nine native programs, ten invalid cases and eight interactive control regressions).
+- [ ] With error handling, iteration, multiline strings and complete native-language audit.
 
 ### Rust Migration: Collections and Error Values
 
@@ -181,8 +182,10 @@ Do not interpret the historical Gate A–D labels as language completion.
 
 ## Next Session Start Here
 
-For the active Rust migration, next implement closures and higher-order
-operations, then maps, remaining control flow and full native/tooling parity. Preserve the concrete type/ABI and native-output gates in
+For the active Rust migration, finish control flow and error handling, then
+remaining specified syntax and full native/tooling parity. Closures, higher-order
+operations, maps and record updates have verified checkpoints. Preserve the
+concrete type/ABI and native-output gates in
 [migration progress](docs/RUST_MIGRATION.md).
 
 1. Implement real actor execution and descendant lifecycle; preserve the deterministic contracts.

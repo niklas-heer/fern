@@ -7,7 +7,7 @@ impl Emitter<'_> {
         &mut self,
         function: &Function,
         locals: &mut Locals,
-    ) -> Result<(), Diagnostic> {
+    ) -> Lowering<()> {
         for (index, capture) in function.captures.iter().enumerate() {
             let address = self.assign(locals, Type::Int, &format!("add %env, {}", 8 * (index + 1)));
             let raw = self.assign(locals, Type::Int, &format!("loadl {address}"));
@@ -25,7 +25,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let function = self
             .functions
             .get(&id.0)
@@ -74,7 +74,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let Type::Function(params, result) = &callee.ty else {
             return Err(invalid(span, "invocation requires function value"));
         };

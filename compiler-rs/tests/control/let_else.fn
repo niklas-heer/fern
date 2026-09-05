@@ -1,0 +1,9 @@
+fn unwrap(value: Option((Int, Bool))) -> Int:
+    defer println("unwrapped")
+    let Some((number, true)) = value else:
+        return -1
+    number + 1
+fn main():
+    println(unwrap(Some((41, true))))
+    println(unwrap(Some((41, false))))
+    println(unwrap(None))

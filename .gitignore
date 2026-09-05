@@ -27,6 +27,8 @@ vgcore.*
 # Test outputs
 *.log
 *.ssa
+# Compiler-owned QBE helpers are source, not generated output.
+!compiler-rs/src/qbe/*.ssa
 
 # Compiled test binaries (created during benchmarks/testing)
 hello

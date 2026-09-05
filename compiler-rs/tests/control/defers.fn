@@ -1,0 +1,14 @@
+fn work(early: Bool) -> Int:
+    let snapshot = 1
+    defer println(snapshot)
+    let snapshot = 2
+    defer println(snapshot)
+    if early:
+        defer println("conditional")
+        println("body")
+    println("after block")
+    return 7 if early
+    9
+fn main():
+    println(work(true))
+    println(work(false))

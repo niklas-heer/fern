@@ -24,6 +24,7 @@ def main():
     corpus += sorted((ROOT / "compiler-rs/tests/types").glob("*.fn"))
     corpus += sorted((ROOT / "compiler-rs/tests/closures").glob("*.fn"))
     corpus += sorted((ROOT / "compiler-rs/tests/maps").glob("*.fn"))
+    corpus += sorted((ROOT / "compiler-rs/tests/control").glob("*.fn"))
     sources = [path.read_text() for path in corpus]
     tokens = ["(", ")", "[", "]", ":", "\n", "    ", '"', "🌿", "\\", "?", "None", "if", "#"]
     rng = random.Random(SEED)

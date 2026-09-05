@@ -19,7 +19,7 @@ pub(super) fn is_higher_order(builtin: Builtin) -> bool {
 }
 
 /// Validate generic callback signatures independently of the source checker.
-fn signature(builtin: Builtin, args: &[Expr], span: Span) -> Result<Type, Diagnostic> {
+fn signature(builtin: Builtin, args: &[Expr], span: Span) -> Lowering<Type> {
     let arity = if builtin == Builtin::ListFold { 3 } else { 2 };
     if args.len() != arity {
         return Err(invalid(
@@ -127,7 +127,7 @@ impl Emitter<'_> {
         span: Span,
         locals: &mut Locals,
         depth: usize,
-    ) -> Result<(Type, String), Diagnostic> {
+    ) -> Lowering<(Type, String)> {
         let result = signature(builtin, args, span)?;
         let mut values = Vec::new();
         for arg in args {
