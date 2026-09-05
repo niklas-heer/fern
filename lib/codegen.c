@@ -26,6 +26,7 @@
 
 struct Codegen {
     Arena* arena;
+    StmtVec* program_stmts; /* Signatures retain semantic types for output dispatch. */
     String* output;      /* Accumulated QBE IR (functions) */
     String* data_section;/* Accumulated data section (strings, etc.) */
     int temp_counter;    /* For generating unique temporaries %t0, %t1, ... */
@@ -370,6 +371,38 @@ typedef enum {
 } PrintType;
 
 /**
+ * Look up the declared semantic return type of a user function.
+ * @param cg Code generator containing the program declarations.
+ * @param name Function name at a direct call site.
+ * @return String/Bool output kind, or integer output for other return types.
+ */
+static PrintType function_print_type(Codegen* cg, String* name) {
+    assert(cg != NULL);
+    assert(name != NULL);
+    if (!cg->program_stmts) {
+        return PRINT_INT;
+    }
+    for (size_t i = 0; i < cg->program_stmts->len; i++) {
+        Stmt* stmt = cg->program_stmts->data[i];
+        if (stmt->type != STMT_FN || !string_equal(stmt->data.fn.name, name)) {
+            continue;
+        }
+        TypeExpr* type = stmt->data.fn.return_type;
+        if (type && type->kind == TYPEEXPR_NAMED) {
+            const char* type_name = string_cstr(type->data.named.name);
+            if (strcmp(type_name, "String") == 0) {
+                return PRINT_STRING;
+            }
+            if (strcmp(type_name, "Bool") == 0) {
+                return PRINT_BOOL;
+            }
+        }
+        return PRINT_INT;
+    }
+    return PRINT_INT;
+}
+
+/**
  * Determine the print type for an expression.
  * Used to select the correct runtime print function.
  * @param cg The codegen context.
@@ -417,6 +450,9 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
                 if (module_path != NULL) {
                     const char* module = string_cstr(module_path);
                     const char* func = string_cstr(dot->field);
+                    if (strcmp(module, "Regex") == 0 && strcmp(func, "is_match") == 0) {
+                        return PRINT_BOOL;
+                    }
                     /* String module functions that return String */
                     if (strcmp(module, "String") == 0) {
                         if (strcmp(func, "concat") == 0 ||
@@ -468,6 +504,7 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
                 if (strncmp(fn_name, "str_", 4) == 0) {
                     return PRINT_STRING;
                 }
+                return function_print_type(cg, call->func->data.ident.name);
             }
             return PRINT_INT;
         }
@@ -475,6 +512,15 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
         case EXPR_BINARY: {
             /* Binary expressions: check if string concatenation */
             BinaryExpr* bin = &expr->data.binary;
+            if ((bin->op >= BINOP_EQ && bin->op <= BINOP_OR)) {
+                return PRINT_BOOL;
+            }
+            if (bin->op == BINOP_PIPE && bin->right->type == EXPR_IDENT) {
+                return function_print_type(cg, bin->right->data.ident.name);
+            }
+            if (bin->op == BINOP_PIPE && bin->right->type == EXPR_CALL) {
+                return get_print_type(cg, bin->right);
+            }
             if (bin->op == BINOP_ADD) {
                 /* If either operand is a string, result is string */
                 PrintType left_type = get_print_type(cg, bin->left);
@@ -486,6 +532,17 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
             return PRINT_INT;
         }
         
+        case EXPR_IF:
+            return get_print_type(cg, expr->data.if_expr.then_branch);
+        case EXPR_BLOCK: {
+            BlockExpr* block = &expr->data.block;
+            return get_print_type(cg, block->final_expr);
+        }
+        case EXPR_MATCH:
+            if (expr->data.match_expr.arms && expr->data.match_expr.arms->len > 0) {
+                return get_print_type(cg, expr->data.match_expr.arms->data[0].body);
+            }
+            return PRINT_INT;
         default:
             return PRINT_INT;
     }
@@ -771,6 +828,7 @@ Codegen* codegen_new(Arena* arena) {
     Codegen* cg = arena_alloc(arena, sizeof(Codegen));
     assert(cg != NULL);
     cg->arena = arena;
+    cg->program_stmts = NULL;
     cg->output = string_new(arena, "");
     cg->data_section = string_new(arena, "");
     cg->temp_counter = 0;
@@ -839,6 +897,37 @@ static void emit_data(Codegen* cg, const char* fmt, ...) {
 }
 
 /**
+ * Emit decoded string bytes without exposing escapes to QBE or the assembler.
+ * @param cg The codegen context.
+ * @param label The data symbol for the string.
+ * @param value The decoded, length-tracked string value.
+ */
+static void emit_string_data(Codegen* cg, String* label, String* value) {
+    assert(cg != NULL);
+    assert(label != NULL);
+    assert(value != NULL);
+    const unsigned char* bytes = (const unsigned char*)string_cstr(value);
+    size_t length = string_len(value);
+    emit_data(cg, "data %s = { ", string_cstr(label));
+    for (size_t i = 0; i < length;) {
+        size_t start = i;
+        /* Bound text runs below emit_data's formatting buffer size. */
+        while (i < length && i - start < 256 && bytes[i] >= 32 && bytes[i] <= 126 &&
+               bytes[i] != '"' && bytes[i] != '\\') {
+            i++;
+        }
+        if (i > start) {
+            emit_data(cg, "b \"%.*s\", ", (int)(i - start), bytes + start);
+        } else {
+            /* Numeric bytes also preserve Unicode and embedded control characters. */
+            emit_data(cg, "b %u, ", (unsigned)bytes[i]);
+            i++;
+        }
+    }
+    emit_data(cg, "b 0 }\n");
+}
+
+/**
  * Generate a fresh string label.
  * @param cg The codegen context.
  * @return The new string label.
@@ -888,9 +977,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             String* label = fresh_string_label(cg);
             String* tmp = fresh_temp(cg);
             
-            /* Emit data section: data $str0 = { b "hello", b 0 } */
-            emit_data(cg, "data %s = { b \"%s\", b 0 }\n", 
-                string_cstr(label), string_cstr(expr->data.string_lit.value));
+            emit_string_data(cg, label, expr->data.string_lit.value);
             
             /* Load pointer to string */
             emit(cg, "    %s =l copy %s\n", string_cstr(tmp), string_cstr(label));
@@ -3728,6 +3815,7 @@ void codegen_program(Codegen* cg, StmtVec* stmts) {
     assert(cg->arena != NULL);
     
     if (!stmts) return;
+    cg->program_stmts = stmts;
     
     /* First pass: register all functions that return pointers so call sites know the return type */
     for (size_t i = 0; i < stmts->len; i++) {
