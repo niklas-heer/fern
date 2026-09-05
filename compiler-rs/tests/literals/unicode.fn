@@ -1,0 +1,9 @@
+/* Outer comment /* nested block */ ends here. */
+@doc """Return the next number. Literal {braces}."""
+fn 🌿(数字: Int) -> Int:
+    /* a comment */
+    数字 + 1
+fn main():
+    let é = 40
+    let é = 1
+    println(🌿(é + é))

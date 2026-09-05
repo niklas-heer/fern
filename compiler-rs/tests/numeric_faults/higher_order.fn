@@ -1,0 +1,7 @@
+fn callback(value: Int) -> Int:
+    defer println(value)
+    return 1 / 0 if value == 2
+    value
+fn main():
+    defer println(99)
+    println(List.len(List.map([1, 2, 3], callback)))

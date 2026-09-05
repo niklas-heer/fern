@@ -3,11 +3,20 @@ use crate::{Constructor, Span, Type};
 
 #[derive(Clone, Debug, Default)]
 pub struct Program {
+    pub docs: Vec<DocComment>,
     pub functions: Vec<Function>,
     pub types: Vec<TypeDecl>,
     pub module: Option<String>,
     pub imports: Vec<Import>,
     pub exports: Vec<String>,
+}
+
+/// Literal documentation associated with one immediately following declaration.
+#[derive(Clone, Debug)]
+pub struct DocComment {
+    pub target: String,
+    pub text: String,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +83,7 @@ pub enum ExprKind {
     Bool(bool),
     String(String),
     Interpolate(Vec<StringPart>),
+    MultilineString(Vec<StringPart>),
     Name(String),
     Unit,
     List(Vec<Expr>),
@@ -238,11 +248,18 @@ pub enum Stmt {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnaryOp {
+    BitNot,
     Negate,
     Not,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BinaryOp {
+    Power,
+    BitAnd,
+    BitOr,
+    BitXor,
+    ShiftLeft,
+    ShiftRight,
     Add,
     Subtract,
     Multiply,

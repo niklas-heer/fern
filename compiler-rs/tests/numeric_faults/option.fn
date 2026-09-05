@@ -1,0 +1,4 @@
+fn main():
+    defer println("cleanup")
+    let value = Option.map(Some(2), (n) -> n / 0)
+    println(Option.unwrap_or(value, 0))

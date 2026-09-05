@@ -1,0 +1,12 @@
+fn mark(value: Int) -> Int:
+    println(value)
+    value
+fn fail() -> Int:
+    defer println("fail")
+    2 ** -1
+fn combine(a: Int, b: Int, c: Int) -> Int:
+    println("wrong")
+    a + b + c
+fn main():
+    defer println("main")
+    println(combine(mark(1), fail(), mark(3)))

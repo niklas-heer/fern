@@ -50,7 +50,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
 - Immutable `let` with inferred or annotated type, lexical scopes, and shadowing.
 - Structural tuple types/literals, nested tuple patterns/destructuring, and `.0` field access.
 - Standard and placeholder pipes evaluate their input exactly once before other arguments.
-- Integer/Float arithmetic and comparisons, string addition/equality, boolean operators
+- Integer/Float arithmetic, powers and comparisons, Int bitwise operations, string addition/equality, boolean operators
   with short-circuit evaluation, and unary `-`/`not`.
 - Inline and indented `if`/`else`, including value-producing branches. An `if`
   without `else` has type `Unit`.
@@ -60,7 +60,7 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
 - Dynamic `defer` cleanup runs at function exit, including early return and `?` propagation.
 - `print`, `println`, `String.concat`, `String.eq`, and `String.len`.
 - Immutable list literals, `List.len/get/head/tail/is_empty/push/reverse/concat`,
-  and scalar `List.contains` (Int, Bool, or String elements).
+  and scalar `List.contains` (Int, Float, Bool, or String elements).
 - `Some`, `None`, `Ok`, and `Err`, with payload types inferred from bindings,
   function signatures, calls, and branches. Empty lists also use this context.
 - Exhaustive `match` on scalar literals, Bool, Option, or Result, with wildcard
@@ -76,13 +76,14 @@ literal arguments, available through `System.arg`, `System.args`, and `System.ar
   record updates that evaluate their base and fields once.
 - First-class named/anonymous functions, contextual callback inference, escaping captures
   and typed higher-order List/Option/Result operations.
-- Line comments, string escapes, and source-located diagnostics.
+- Line and nested block comments, triple-quoted strings, declaration documentation,
+  Unicode identifiers, validated base-prefixed integers and source-located diagnostics.
 - Audited runtime bindings for files, strings, regex, arguments/processes, SQLite,
   HTTP clients, explicit mailboxes and terminal UI. Opaque annotations are qualified
   (`Tui.Panel`, `Tui.Tree`, etc.), keeping ordinary user-defined names available.
 
-Unsupported syntax produces diagnostics. Gaps include actor execution, triple-quoted multiline strings, block comments, named
-arguments, non-ASCII identifiers, and inferred return types outside `main`.
+Unsupported syntax produces diagnostics. Gaps include actor execution, named
+arguments and inferred return types outside `main`.
 Full release parity remains migration work.
 
 `fmt` formats the supported syntax in place, preserves comments, and verifies that
@@ -130,6 +131,32 @@ Each callback has its own `?` propagation boundary. Capturing an already-produce
 Result-bearing value currently gives an explicit diagnostic; delayed ownership
 tracking is still required to lift that restriction. Returning a Result from a
 function is supported. Function equality is not defined.
+
+## Numeric values and literal text
+
+Integers have signed 64-bit values with wrapping arithmetic in every build.
+Decimal, `0x`, `0b` and `0o` literals accept checked digit separators and reject
+out-of-range magnitudes. Power `**` is right-associative: `2 ** 3 ** 2` is 512.
+Unary operators retain the existing precedence, so `-2 ** 2` is 4. Integer powers
+require nonnegative exponents and define `0 ** 0` as 1. Float power uses IEEE/libm
+behavior without implicit Int conversion.
+
+Bitwise operators are `&&&`, `|||`, `^^^`, `~~~`, `<<<` and `>>>`. Shifts normalize
+counts modulo 64; right shifts preserve the sign. Float list membership compares
+values: signed zeros compare equal, while NaN never equals another NaN.
+
+Integer division/remainder by zero and negative integer exponents produce a
+runtime diagnostic. Called functions and callbacks unwind through deferred
+cleanup; the first error is retained if cleanup also fails. Compiled main reports
+one error on stderr and exits 1. The REPL reports the same error and retains prior
+successful bindings. Runtime faults are distinct from explicitly handled Results.
+
+Triple-quoted strings preserve newline and indentation bytes exactly and support
+ordinary escapes and interpolation. Nested `/* ... */` comments are bounded and
+must close. `@doc """..."""` attaches literal documentation to the immediately
+following function or type. Formatting preserves that metadata; Rust document
+and doc-test commands remain part of the tooling work. Non-ASCII identifier
+spelling is retained exactly, without Unicode normalization.
 
 ## Iteration and grouped error handling
 

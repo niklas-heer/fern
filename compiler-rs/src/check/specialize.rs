@@ -207,7 +207,7 @@ fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Type>) -> Chec
                 substitute_expr(arg, values)?;
             }
         }
-        ast::ExprKind::Interpolate(parts) => {
+        ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {
             for part in parts {
                 if let ast::StringPart::Value(value) = part {
                     substitute_expr(value, values)?;

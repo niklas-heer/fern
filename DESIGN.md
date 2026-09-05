@@ -570,7 +570,7 @@ Option(a)  # Optional value (Some(a) or None)
 
 **Int (64-bit signed integer):**
 - Range: -2^63 to 2^63-1
-- Overflow behavior: Wrapping (in release mode) / Panic (in debug mode)
+- Overflow behavior: Wrapping in all builds (Decision 55). Invalid integer division/remainder by zero and negative integer exponents produce a runtime diagnostic after deferred cleanup.
 - Integer division: Truncates toward zero (`7 / 2 == 3`)
 - Operations: `+`, `-`, `*`, `/`, `%`, `**` (power), bitwise ops
 

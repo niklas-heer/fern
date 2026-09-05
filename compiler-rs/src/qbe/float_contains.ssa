@@ -1,0 +1,22 @@
+# Compare IEEE values, preserving signed-zero equality and NaN inequality.
+function w $fern_rs_list_contains_float(l %list, d %needle) {
+@start
+    %length =l call $fern_list_len(l %list)
+    jmp @loop
+@loop
+    %index =l phi @start 0, @next %incremented
+    %available =w csltl %index, %length
+    jnz %available, @item, @missing
+@item
+    %raw =l call $fern_list_get(l %list, l %index)
+    %value =d cast %raw
+    %equal =w ceqd %value, %needle
+    jnz %equal, @found, @next
+@next
+    %incremented =l add %index, 1
+    jmp @loop
+@found
+    ret 1
+@missing
+    ret 0
+}

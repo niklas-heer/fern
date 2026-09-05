@@ -1,0 +1,6 @@
+fn main():
+    let text = """first
+  second {1 + 2}
+last"""
+    println(text)
+    println("""a "quoted" word""")

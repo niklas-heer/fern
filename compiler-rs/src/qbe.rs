@@ -9,6 +9,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 mod closures;
 #[path = "qbe/control.rs"]
 mod control;
+#[path = "qbe/fault.rs"]
+mod fault;
 #[path = "qbe/higher_order.rs"]
 mod higher_order;
 #[path = "qbe/iteration.rs"]
@@ -17,6 +19,8 @@ mod iteration;
 mod maps;
 #[path = "qbe/nominal.rs"]
 mod nominal;
+#[path = "qbe/numeric.rs"]
+mod numeric;
 #[path = "qbe/runtime_calls.rs"]
 mod runtime_calls;
 #[path = "qbe/with.rs"]
@@ -97,19 +101,13 @@ fn emit_inner(program: &ir::Program) -> Lowering<String> {
         nodes: 0,
         maps_used: false,
         enumerate_used: false,
+        numeric_used: false,
+        float_contains_used: false,
     };
     for function in &program.functions {
         emitter.function(function)?;
     }
-    emitter.output.push_str(include_str!("qbe/control.ssa"));
-    if emitter.enumerate_used {
-        emitter.output.push_str(include_str!("qbe/iteration.ssa"));
-    }
-    emitter.main_wrapper(main);
-    emitter.float_print_helpers();
-    if emitter.maps_used {
-        emitter.output.push_str(include_str!("qbe/maps.ssa"));
-    }
+    emitter.support_helpers(main);
     emitter.data.push_str(&emitter.output);
     Ok(emitter.data)
 }
@@ -164,6 +162,8 @@ struct Emitter<'a> {
     nodes: usize,
     maps_used: bool,
     enumerate_used: bool,
+    numeric_used: bool,
+    float_contains_used: bool,
 }
 
 struct Locals {
@@ -206,6 +206,26 @@ impl Locals {
 }
 
 impl Emitter<'_> {
+    /// Append compiler-owned helper definitions once, including only used numeric adapters.
+    fn support_helpers(&mut self, main: &Function) {
+        self.output.push_str(include_str!("qbe/control.ssa"));
+        self.output.push_str(include_str!("qbe/fault.ssa"));
+        if self.numeric_used {
+            self.output.push_str(include_str!("qbe/numeric.ssa"));
+        }
+        if self.float_contains_used {
+            self.output.push_str(include_str!("qbe/float_contains.ssa"));
+        }
+        if self.enumerate_used {
+            self.output.push_str(include_str!("qbe/iteration.ssa"));
+        }
+        self.main_wrapper(main);
+        self.float_print_helpers();
+        if self.maps_used {
+            self.output.push_str(include_str!("qbe/maps.ssa"));
+        }
+    }
+
     /// Emit `function` using only its resolved signature and typed body.
     fn function(&mut self, function: &Function) -> Lowering<()> {
         let mut locals = Locals {
@@ -218,7 +238,7 @@ impl Emitter<'_> {
             label: 0,
             current: "@start".into(),
         };
-        let mut params = vec!["l %env".to_owned()];
+        let mut params = vec!["l %env".to_owned(), "l %fault".to_owned()];
         for param in &function.params {
             let value = format!("%v{}", param.id.0);
             locals.define(
@@ -258,12 +278,13 @@ impl Emitter<'_> {
     /// Bridge the C runtime's 32-bit entry ABI to the resolved Fern main signature.
     fn main_wrapper(&mut self, main: &Function) {
         self.output
-            .push_str("export function w $fern_main() {\n@start\n");
+            .push_str("export function w $fern_main() {\n@start\n    %fault =l alloc8 8\n    storel 0, %fault\n");
         self.output.push_str(&format!(
-            "    %exit ={} call $f{}(l 0)\n",
+            "    %exit ={} call $f{}(l 0, l %fault)\n",
             width(main.return_type.clone()),
             main.id.0
         ));
+        self.output.push_str("    %code =l loadl %fault\n    %failed =w cnel %code, 0\n    jnz %failed, @failed, @success\n@failed\n    call $fern_rs_report_fault(l %code)\n    ret 1\n@success\n");
         if main.return_type.clone() == Type::Int {
             self.output
                 .push_str("    %status =w copy %exit\n    ret %status\n}\n");
@@ -483,7 +504,7 @@ impl Emitter<'_> {
     ) -> Lowering<(Type, String)> {
         let expected = match op {
             UnaryOp::Negate if value.ty == Type::Float => Type::Float,
-            UnaryOp::Negate => Type::Int,
+            UnaryOp::Negate | UnaryOp::BitNot => Type::Int,
             UnaryOp::Not => Type::Bool,
         };
         expect_type(value.ty.clone(), expected.clone(), value.span)?;
@@ -492,6 +513,7 @@ impl Emitter<'_> {
             UnaryOp::Negate if expected == Type::Float => format!("neg {value}"),
             UnaryOp::Negate => format!("sub 0, {value}"),
             UnaryOp::Not => format!("ceqw {value}, 0"),
+            UnaryOp::BitNot => format!("xor {value}, -1"),
         };
         Ok((
             expected.clone(),
@@ -565,6 +587,9 @@ impl Emitter<'_> {
         locals: &mut Locals,
         depth: usize,
     ) -> Lowering<(Type, String)> {
+        if target == CallTarget::Builtin(Builtin::ListContains) && numeric::float_list(args) {
+            return self.float_contains(args, span, locals, depth);
+        }
         if target == CallTarget::Builtin(Builtin::ListEnumerate) {
             return self.enumerate(args, span, locals, depth);
         }
@@ -590,7 +615,7 @@ impl Emitter<'_> {
             ));
         }
         let mut arguments = if matches!(target, CallTarget::Function(_)) {
-            vec!["l 0".into()]
+            vec!["l 0".into(), "l %fault".into()]
         } else {
             Vec::new()
         };
@@ -615,6 +640,9 @@ impl Emitter<'_> {
         } else {
             self.assign(locals, result.clone(), &instruction)
         };
+        if matches!(target, CallTarget::Function(_)) {
+            self.guard_fault(locals);
+        }
         Ok((result, value))
     }
 
@@ -700,54 +728,13 @@ impl Emitter<'_> {
             return self.logical(op, left, right, locals, depth);
         }
         expect_type(right.ty.clone(), left.ty.clone(), right.span)?;
-        let result_type = match op {
-            BinaryOp::Add if left.ty.clone() == Type::String => Type::String,
-            BinaryOp::Add
-            | BinaryOp::Subtract
-            | BinaryOp::Multiply
-            | BinaryOp::Divide
-            | BinaryOp::Remainder => {
-                if !matches!(left.ty, Type::Int | Type::Float)
-                    || (op == BinaryOp::Remainder && left.ty == Type::Float)
-                {
-                    return Err(invalid(
-                        left.span,
-                        "numeric operator requires matching numeric types",
-                    ));
-                }
-                left.ty.clone()
-            }
-            BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-                if !matches!(left.ty, Type::Int | Type::Float) {
-                    return Err(invalid(
-                        left.span,
-                        "ordered comparison requires numeric types",
-                    ));
-                }
-                Type::Bool
-            }
-            BinaryOp::Eq | BinaryOp::Ne => {
-                if !matches!(left.ty, Type::Int | Type::Float | Type::Bool | Type::String) {
-                    return Err(invalid(
-                        left.span,
-                        "comparison requires Int, Bool, or String",
-                    ));
-                }
-                Type::Bool
-            }
-            BinaryOp::And | BinaryOp::Or => unreachable!("logical operators handled above"),
-        };
+        let result_type = numeric::binary_type(op, &left.ty, left.span)?;
         let lhs = self.expr(left, locals, depth)?;
         let rhs = self.expr(right, locals, depth)?;
         if left.ty == Type::String {
             return Ok(self.string_binary(op, &lhs, &rhs, locals));
         }
-        let instruction = binary_instruction(op, left.ty.clone());
-        let value = self.assign(
-            locals,
-            result_type.clone(),
-            &format!("{instruction} {lhs}, {rhs}"),
-        );
+        let value = self.numeric_value(op, &left.ty, &result_type, &lhs, &rhs, locals);
         Ok((result_type, value))
     }
 
@@ -853,6 +840,12 @@ fn binary_instruction(op: BinaryOp, operand: Type) -> String {
         BinaryOp::Multiply => "mul",
         BinaryOp::Divide => "div",
         BinaryOp::Remainder => "rem",
+        BinaryOp::BitAnd => "and",
+        BinaryOp::BitOr => "or",
+        BinaryOp::BitXor => "xor",
+        BinaryOp::ShiftLeft => "shl",
+        BinaryOp::ShiftRight => "sar",
+        BinaryOp::Power => unreachable!("power requires dedicated lowering"),
         BinaryOp::Eq => "ceq",
         BinaryOp::Ne => "cne",
         BinaryOp::Lt => "cslt",

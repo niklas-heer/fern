@@ -564,7 +564,9 @@ impl Checker<'_> {
             ast::ExprKind::Float(n) => (ir::ExprKind::Float(*n), Type::Float),
             ast::ExprKind::Bool(b) => (ir::ExprKind::Bool(*b), Type::Bool),
             ast::ExprKind::String(s) => (ir::ExprKind::String(s.clone()), Type::String),
-            ast::ExprKind::Interpolate(parts) => self.interpolate(parts, expr.span, depth + 1)?,
+            ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {
+                self.interpolate(parts, expr.span, depth + 1)?
+            }
             ast::ExprKind::Unit => (ir::ExprKind::Unit, Type::Unit),
             ast::ExprKind::Try(value) => self.propagate(value, expr.span, depth + 1)?,
             ast::ExprKind::Pipe {
@@ -573,10 +575,7 @@ impl Checker<'_> {
                 args,
                 position,
             } => self.pipe(value, name, args, *position, expr.span, depth + 1)?,
-            ast::ExprKind::Field { value, name } => {
-                let value = self.expression(value, depth + 1)?;
-                self.field(value, name, expr.span)?
-            }
+            ast::ExprKind::Field { .. } => self.source_field(expr, depth + 1)?,
             ast::ExprKind::Name(name) => self.name(name, expr.span)?,
             ast::ExprKind::Tuple(values) => self.tuple(values, expected, expr.span, depth + 1)?,
             ast::ExprKind::Map(entries) => self.map(entries, expected, expr.span, depth + 1)?,
@@ -858,7 +857,7 @@ impl Checker<'_> {
             {
                 Type::Float
             }
-            ast::UnaryOp::Negate => Type::Int,
+            ast::UnaryOp::Negate | ast::UnaryOp::BitNot => Type::Int,
             ast::UnaryOp::Not => Type::Bool,
         };
         self.inference
@@ -889,7 +888,7 @@ impl Checker<'_> {
         let ty = match op {
             Add => left.ty.clone(),
             Eq | Ne => Type::Bool,
-            Subtract | Multiply | Divide | Remainder | Lt | Le | Gt | Ge => {
+            Power | Subtract | Multiply | Divide | Remainder | Lt | Le | Gt | Ge => {
                 let numeric = if op != Remainder
                     && self.inference.resolve(&left.ty, left.span)? == Type::Float
                 {
@@ -904,6 +903,11 @@ impl Checker<'_> {
                 } else {
                     numeric
                 }
+            }
+            BitAnd | BitOr | BitXor | ShiftLeft | ShiftRight => {
+                self.inference
+                    .unify(&left.ty, &Type::Int, left.span, "bitwise operator")?;
+                Type::Int
             }
             And | Or => {
                 self.inference
@@ -1372,6 +1376,15 @@ impl Checker<'_> {
         ))
     }
 
+    /// Evaluate a source field receiver once before resolving its semantic layout.
+    fn source_field(&mut self, expr: &ast::Expr, depth: usize) -> Checked<TypedKind> {
+        let ast::ExprKind::Field { value, name } = &expr.kind else {
+            return Err(Diagnostic::new(expr.span, "invalid field expression"));
+        };
+        let value = self.expression(value, depth)?;
+        self.field(value, name, expr.span)
+    }
+
     /// Resolve a record field once, retaining its index and instantiated semantic type.
     fn field(&mut self, value: ir::Expr, name: &str, span: Span) -> Checked<TypedKind> {
         if value.ty == Type::Never {
@@ -1626,10 +1639,13 @@ fn validate_builtin(target: ir::CallTarget, args: &[ir::Expr], span: Span) -> Ch
         ir::CallTarget::Runtime(id) => {
             let signature = runtime::signature(id)
                 .ok_or_else(|| Diagnostic::new(span, "invalid runtime registry identity"))?;
-            if signature.operation == runtime::Operation::ScalarContains && !scalar(&args[1].ty) {
+            if signature.operation == runtime::Operation::ScalarContains
+                && !scalar(&args[1].ty)
+                && args[1].ty != Type::Float
+            {
                 return Err(Diagnostic::new(
                     span,
-                    "runtime contains requires scalar Int, Bool, or String elements",
+                    "runtime contains requires scalar Int, Float, Bool, or String elements",
                 ));
             }
             Ok(())
@@ -1642,10 +1658,12 @@ fn validate_builtin(target: ir::CallTarget, args: &[ir::Expr], span: Span) -> Ch
                 "print argument must be Int, Bool, String, or Float",
             ))
         }
-        ir::CallTarget::Builtin(ir::Builtin::ListContains) if !scalar(&args[1].ty) => {
+        ir::CallTarget::Builtin(ir::Builtin::ListContains)
+            if !scalar(&args[1].ty) && args[1].ty != Type::Float =>
+        {
             Err(Diagnostic::new(
                 span,
-                "List.contains requires scalar Int, Bool, or String elements",
+                "List.contains requires scalar Int, Float, Bool, or String elements",
             ))
         }
         _ => Ok(()),
@@ -1724,8 +1742,13 @@ fn binary_result(op: ast::BinaryOp, left: &Type, right: &Type) -> Option<Type> {
     }
     match op {
         Add if *left == Type::String => Some(Type::String),
-        Add | Subtract | Multiply | Divide | Remainder if *left == Type::Int => Some(Type::Int),
-        Add | Subtract | Multiply | Divide if *left == Type::Float => Some(Type::Float),
+        Add | Subtract | Multiply | Divide | Remainder | Power | BitAnd | BitOr | BitXor
+        | ShiftLeft | ShiftRight
+            if *left == Type::Int =>
+        {
+            Some(Type::Int)
+        }
+        Add | Subtract | Multiply | Divide | Power if *left == Type::Float => Some(Type::Float),
         Eq | Ne if scalar(left) || *left == Type::Float => Some(Type::Bool),
         Lt | Le | Gt | Ge if matches!(left, Type::Int | Type::Float) => Some(Type::Bool),
         And | Or if *left == Type::Bool => Some(Type::Bool),

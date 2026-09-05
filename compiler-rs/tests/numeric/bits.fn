@@ -1,0 +1,12 @@
+fn main():
+    println(0xFF &&& 0b1010)
+    println(0o7 ||| 0x10)
+    println(0xFF ^^^ 0xF0)
+    println(~~~0)
+    println(1 <<< 63)
+    println(1 <<< 64)
+    println(1 <<< -1)
+    println(-8 >>> 2)
+    println(-9223372036854775808 >>> 63)
+    println(0X7fff_ffff_ffff_ffff)
+    println(-0x8000_0000_0000_0000)

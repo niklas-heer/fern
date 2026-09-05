@@ -77,6 +77,9 @@ impl Emitter<'_> {
             bind_type(template, &arg.ty, &mut bindings, arg.span, 0)?;
         }
         let ty = return_type(&signature.return_type, &bindings, span)?;
+        if signature.operation == Operation::ScalarContains && numeric::float_list(args) {
+            return self.float_contains(args, span, locals, depth);
+        }
         let symbol = runtime_symbol(&signature, args, span)?;
         let mut values = Vec::new();
         for (arg, abi) in args.iter().zip(&signature.parameter_abi) {

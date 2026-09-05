@@ -256,3 +256,27 @@ Native fixtures cover heterogeneous nominal errors, generic With specialization,
 Float payloads, scope shadowing, guarded handlers, full-width range boundaries,
 collection enumeration, retained range/loop captures and cleanup during loop
 control. Interactive tests enforce the same semantics and bounded range work.
+
+
+## Numeric domains, literal text and runtime faults — 2026-09-05
+
+Int power uses bounded exponentiation by squaring; bitwise shifts normalize counts
+modulo 64. Int minimum divided by -1 wraps consistently, and its remainder is zero.
+Float power uses libm, and Float membership compares IEEE values in both direct
+and first-class contains calls. Base-prefixed integer digits and separators are
+validated before producing a full-width value.
+
+Generated functions now receive an explicit fault-context pointer after their
+closure environment. An escaping closure receives its current caller's context;
+it never retains a pointer to a finished invocation. Guards check this context
+before using call results or executing subsequent effects. Numeric domain errors
+unwind through the same deferred cleanup path as other function exits. Cleanup
+callbacks run with clear fault state, then restore the first failure. Native main
+emits one stable diagnostic and exits 1. This changes only compiler-owned calling
+conventions; the C runtime ABI and source Function/Result types are unchanged.
+
+Triple strings preserve actual content bytes, block comments may nest within
+limits, and @doc metadata remains associated with declarations. Unicode identifier
+spelling is preserved without normalization. Formatting must retain text contents
+and documentation. Runtime-fault fixtures separately verify cleanup/effect order,
+error messages and exit status, alongside valid and rejected source programs.

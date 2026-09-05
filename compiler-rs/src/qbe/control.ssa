@@ -1,6 +1,9 @@
-# Every generated Fern function owns its defer stack and saved return payload.
-function $fern_rs_run_defers(l %headslot) {
+# Each invocation receives its current caller's context; closures never retain it.
+function $fern_rs_run_defers(l %headslot, l %fault) {
 @start
+    %saved =l alloc8 8
+    %original =l loadl %fault
+    storel %original, %saved
     jmp @loop
 @loop
     %node =l loadl %headslot
@@ -11,9 +14,18 @@ function $fern_rs_run_defers(l %headslot) {
     %previous_slot =l add %node, 8
     %previous =l loadl %previous_slot
     storel %previous, %headslot
+    storel 0, %fault
     %code =l loadl %closure
-    call %code(l %closure)
+    call %code(l %closure, l %fault)
+    %first =l loadl %saved
+    %had_first =w cnel %first, 0
+    jnz %had_first, @loop, @remember
+@remember
+    %latest =l loadl %fault
+    storel %latest, %saved
     jmp @loop
 @done
+    %primary =l loadl %saved
+    storel %primary, %fault
     ret
 }

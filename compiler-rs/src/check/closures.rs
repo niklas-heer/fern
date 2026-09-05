@@ -447,7 +447,7 @@ fn contains_lambda(expr: &ast::Expr) -> bool {
                 || contains_lambda(then_branch)
                 || else_branch.as_deref().is_some_and(contains_lambda)
         }
-        ast::ExprKind::Interpolate(parts) => parts
+        ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => parts
             .iter()
             .any(|p| matches!(p, ast::StringPart::Value(value) if contains_lambda(value))),
         ast::ExprKind::Match { value, arms } => {

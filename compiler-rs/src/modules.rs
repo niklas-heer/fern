@@ -259,9 +259,9 @@ fn valid_module(name: &str) -> Result<(), Error> {
     if name.split('.').any(|p| {
         p.is_empty()
             || !p
-                .bytes()
+                .chars()
                 .enumerate()
-                .all(|(i, b)| b.is_ascii_alphabetic() || b == b'_' || (i > 0 && b.is_ascii_digit()))
+                .all(|(i, c)| crate::parse::identifier_char(c, i == 0))
     }) {
         return Err(failure(format!("invalid module name: {name}")));
     }
@@ -385,6 +385,10 @@ impl Loader {
                     )
                     .map_err(|e| at_span(e, import.span))?;
                 }
+                for doc in &mut module.syntax.docs {
+                    doc.target = own[&doc.target].clone();
+                    shift(&mut doc.span, module.source.start);
+                }
                 for function in &mut module.syntax.functions {
                     function.name = own[&function.name].clone();
                     for param in &mut function.params {
@@ -414,6 +418,7 @@ impl Loader {
                 Ok(public)
             })()
             .map_err(|e| at_source(e, &module.source))?;
+            program.docs.extend(module.syntax.docs);
             program.functions.extend(module.syntax.functions);
             program.types.extend(module.syntax.types);
             exports.push(public);
@@ -716,7 +721,7 @@ fn rewrite(
             rewrite(callee, names, prefixes, scopes, offset)?;
             rewrite_values(args, names, prefixes, scopes, offset)?;
         }
-        ast::ExprKind::Interpolate(parts) => {
+        ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {
             rewrite_string(parts, names, prefixes, scopes, offset)?
         }
         ast::ExprKind::Call { name, args } => {

@@ -103,17 +103,19 @@ impl Emitter<'_> {
         locals: &mut Locals,
     ) -> String {
         let code = self.assign(locals, Type::Int, &format!("loadl {closure}"));
-        let mut arguments = vec![format!("l {closure}")];
+        let mut arguments = vec![format!("l {closure}"), "l %fault".into()];
         arguments.extend(
             args.iter()
                 .map(|(ty, value)| format!("{} {value}", width(ty.clone()))),
         );
         let instruction = format!("call {code}({})", arguments.join(", "));
-        if *result == Type::Unit {
+        let value = if *result == Type::Unit {
             self.output.push_str(&format!("    {instruction}\n"));
             "0".into()
         } else {
             self.assign(locals, result.clone(), &instruction)
-        }
+        };
+        self.guard_fault(locals);
+        value
     }
 }

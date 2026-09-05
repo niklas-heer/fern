@@ -50,8 +50,9 @@ pub struct Session {
 impl Session {
     /// Check an entry before evaluating it; failed entries never replace prior bindings.
     pub fn evaluate(&mut self, source: &str) -> Result<String, String> {
-        let declaration =
-            source.trim_start().starts_with("fn ") || source.trim_start().starts_with("type ");
+        let declaration = ["fn ", "type ", "pub fn ", "pub type ", "@doc "]
+            .iter()
+            .any(|prefix| source.trim_start().starts_with(prefix));
         let binding = source.trim_start().starts_with("let ");
         let definitions = if declaration {
             format!("{}\n{source}\n", self.definitions)
@@ -66,12 +67,7 @@ impl Session {
         if body.trim().is_empty() {
             body.push_str("()");
         }
-        let mut indented = String::new();
-        for line in body.lines() {
-            indented.push_str("    ");
-            indented.push_str(line);
-            indented.push('\n');
-        }
+        let indented = parse::indent_code(&body, "    ").map_err(|error| error.message)?;
         let program = format!("{definitions}\nfn main():\n{indented}");
         let syntax = parse::parse(&program).map_err(|e| e.message)?;
         let typed = Rc::new(check::check(&syntax).map_err(|e| e.message)?);
@@ -475,6 +471,7 @@ fn unary(op: ast::UnaryOp, value: Value) -> Eval<Value> {
         (ast::UnaryOp::Negate, Value::Int(n)) => Ok(Value::Int(n.wrapping_neg())),
         (ast::UnaryOp::Negate, Value::Float(n)) => Ok(Value::Float(-n)),
         (ast::UnaryOp::Not, Value::Bool(v)) => Ok(Value::Bool(!v)),
+        (ast::UnaryOp::BitNot, Value::Int(n)) => Ok(Value::Int(!n)),
         _ => Err(fault("invalid unary operands")),
     }
 }
@@ -490,6 +487,12 @@ fn binary(op: ast::BinaryOp, left: Value, right: Value) -> Eval<Value> {
             Add => Value::Int(a.wrapping_add(b)),
             Subtract => Value::Int(a.wrapping_sub(b)),
             Multiply => Value::Int(a.wrapping_mul(b)),
+            Power => Value::Int(integer_power(a, b)?),
+            BitAnd => Value::Int(a & b),
+            BitOr => Value::Int(a | b),
+            BitXor => Value::Int(a ^ b),
+            ShiftLeft => Value::Int(a.wrapping_shl((b & 63) as u32)),
+            ShiftRight => Value::Int(a.wrapping_shr((b & 63) as u32)),
             Divide | Remainder if b == 0 => return Err(fault("integer division by zero")),
             Divide => Value::Int(a.wrapping_div(b)),
             Remainder => Value::Int(a.wrapping_rem(b)),
@@ -503,6 +506,7 @@ fn binary(op: ast::BinaryOp, left: Value, right: Value) -> Eval<Value> {
             Add => Value::Float(a + b),
             Subtract => Value::Float(a - b),
             Multiply => Value::Float(a * b),
+            Power => Value::Float(a.powf(b)),
             Divide => Value::Float(a / b),
             Lt => Value::Bool(a < b),
             Le => Value::Bool(a <= b),
@@ -518,6 +522,22 @@ fn binary(op: ast::BinaryOp, left: Value, right: Value) -> Eval<Value> {
         }
         _ => Err(fault("invalid binary operands")),
     }
+}
+/// Use at most 63 squaring steps for nonnegative full-width integer exponents.
+fn integer_power(mut base: i64, exponent: i64) -> Eval<i64> {
+    if exponent < 0 {
+        return Err(fault("negative integer exponent"));
+    }
+    let mut power = exponent as u64;
+    let mut result = 1i64;
+    while power != 0 {
+        if power & 1 != 0 {
+            result = result.wrapping_mul(base);
+        }
+        power >>= 1;
+        base = base.wrapping_mul(base);
+    }
+    Ok(result)
 }
 /// Render interactive values without exposing internal pointers.
 fn display(value: &Value) -> String {

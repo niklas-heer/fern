@@ -1,0 +1,15 @@
+fn main():
+    let nan = 0.0 / 0.0
+    let infinity = 1.0 / 0.0
+    println(List.contains([0.0], -0.0))
+    println(List.contains([-0.0], 0.0))
+    println(List.contains([nan], nan))
+    println(List.contains([infinity], infinity))
+    println(List.contains([nan, 2.0], 2.0))
+    let contains: (List(Float), Float) -> Bool = List.contains
+    println(contains([1.25, 2.5], 2.5))
+    println(contains([], 0.0))
+    let power = (-2.0) ** 0.5
+    println(power != power)
+    println((-0.0) ** -3.0 == -infinity)
+    println(nan ** 0.0 == 1.0)

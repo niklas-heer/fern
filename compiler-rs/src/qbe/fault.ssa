@@ -1,0 +1,13 @@
+data $fern_rs_fault_1 = { b "fern: runtime error: integer division by zero", b 10 }
+data $fern_rs_fault_2 = { b "fern: runtime error: negative integer exponent", b 10 }
+function $fern_rs_report_fault(l %code) {
+@start
+    %division =w ceql %code, 1
+    jnz %division, @division, @exponent
+@division
+    call $write(w 2, l $fern_rs_fault_1, l 46)
+    ret
+@exponent
+    call $write(w 2, l $fern_rs_fault_2, l 47)
+    ret
+}

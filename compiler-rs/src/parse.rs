@@ -15,6 +15,10 @@ enum Kind {
     Name(String),
     Number(String),
     Text(String),
+    Comment,
+    Doc(String),
+    MultilineOpen,
+    MultilineClose,
     StringOpen,
     StringClose,
     HoleOpen,
@@ -38,6 +42,13 @@ enum Kind {
     Plus,
     Minus,
     Star,
+    Power,
+    BitAnd,
+    BitOr,
+    BitXor,
+    BitNot,
+    ShiftLeft,
+    ShiftRight,
     Slash,
     Percent,
     Question,
@@ -113,11 +124,8 @@ fn lex(source: &str) -> ParseResult<Vec<Token>> {
         callbacks: Vec::new(),
     };
     let mut offset = 0;
-    for line in source.split_inclusive('\n') {
-        let content = line.strip_suffix('\n').unwrap_or(line);
-        let content = content.strip_suffix('\r').unwrap_or(content);
-        lexer.line(content, offset)?;
-        offset += line.len();
+    while offset < source.len() {
+        offset += lexer.line(&source[offset..], offset)?;
     }
     if let Some(token) = lexer.delimiters.last() {
         return Err(Diagnostic::new(token.span, "unclosed delimiter"));
@@ -131,7 +139,7 @@ fn lex(source: &str) -> ParseResult<Vec<Token>> {
 
 impl LayoutLexer {
     /// Select significant layout for one physical line; nested ordinary delimiters suspend it.
-    fn line(&mut self, content: &str, offset: usize) -> ParseResult<()> {
+    fn line(&mut self, content: &str, offset: usize) -> ParseResult<usize> {
         let indent = content.bytes().take_while(|b| *b == b' ').count();
         let rest = &content[indent..];
         let span = Span {
@@ -144,12 +152,22 @@ impl LayoutLexer {
                 "tabs are not allowed for indentation; use spaces",
             ));
         }
-        if rest.is_empty() || rest.starts_with('#') {
-            return Ok(());
+        let mut raw = Vec::new();
+        let consumed = lex_line(content, indent, offset, &mut raw)?;
+        raw.retain(|token| token.kind != Kind::Comment);
+        if raw.is_empty() {
+            return Ok(consumed);
         }
         self.prepare_layout(rest, indent, offset)?;
         let from = self.tokens.len();
-        lex_line(content, indent, offset, &mut self.tokens)?;
+        for token in raw {
+            push(
+                &mut self.tokens,
+                token.kind,
+                token.span.start,
+                token.span.end,
+            )?;
+        }
         track_delimiters(&self.tokens[from..], &mut self.delimiters)?;
         if self
             .callbacks
@@ -183,11 +201,11 @@ impl LayoutLexer {
             push(
                 &mut self.tokens,
                 Kind::Newline,
-                offset + content.len(),
-                offset + content.len(),
+                offset + consumed,
+                offset + consumed,
             )?;
         }
-        Ok(())
+        Ok(consumed)
     }
 
     /// End callback frames before their parent's separators without consuming outer layout.
@@ -309,19 +327,91 @@ fn layout(
     Ok(())
 }
 
-/// Scan one physical line with byte offsets; strings retain UTF-8 content.
-fn lex_line(line: &str, mut at: usize, offset: usize, tokens: &mut Vec<Token>) -> ParseResult<()> {
+/// Scan a logical row, allowing strings/comments to span physical lines.
+fn lex_line(
+    line: &str,
+    mut at: usize,
+    offset: usize,
+    tokens: &mut Vec<Token>,
+) -> ParseResult<usize> {
     while at < line.len() {
-        if line.as_bytes()[at] == b'#' {
-            break;
-        }
-        if line.as_bytes()[at] == b' ' {
-            at += 1;
-            continue;
+        match line.as_bytes()[at] {
+            b'\n' => return Ok(at + 1),
+            b' ' | b'\r' => {
+                at += 1;
+                continue;
+            }
+            b'#' => {
+                at = scan_line_comment(line, at, offset, tokens)?;
+                continue;
+            }
+            _ => {}
         }
         at = lex_token(line, at, offset, tokens, 0)?;
     }
-    Ok(())
+    Ok(at)
+}
+
+/// Retain a comment's original span without consuming its terminating newline.
+fn scan_line_comment(
+    line: &str,
+    at: usize,
+    offset: usize,
+    tokens: &mut Vec<Token>,
+) -> ParseResult<usize> {
+    let end = line[at..].find('\n').map_or(line.len(), |n| at + n);
+    push(tokens, Kind::Comment, offset + at, offset + end)?;
+    Ok(end)
+}
+
+/// Skip nested comments with a bounded counter and preserve the complete original text.
+fn scan_block_comment(
+    line: &str,
+    start: usize,
+    offset: usize,
+    tokens: &mut Vec<Token>,
+) -> ParseResult<usize> {
+    let mut at = start + 2;
+    let mut depth = 1;
+    while at < line.len() {
+        if line[at..].starts_with("/*") {
+            depth += 1;
+            if depth > MAX_DEPTH {
+                return Err(Diagnostic::new(
+                    Span {
+                        start: offset + start,
+                        end: offset + at,
+                    },
+                    "comment nesting limit exceeded",
+                ));
+            }
+            at += 2;
+        } else if line[at..].starts_with("*/") {
+            at += 2;
+            depth -= 1;
+            if depth == 0 {
+                push(tokens, Kind::Comment, offset + start, offset + at)?;
+                return Ok(at);
+            }
+        } else {
+            at += line[at..].chars().next().unwrap().len_utf8();
+        }
+    }
+    Err(Diagnostic::new(
+        Span {
+            start: offset + start,
+            end: offset + at,
+        },
+        "unterminated block comment",
+    ))
+}
+
+/// Accept Fern's byte-preserving Unicode identifier policy without normalization.
+pub(crate) fn identifier_char(c: char, initial: bool) -> bool {
+    c.is_ascii_alphabetic()
+        || c == '_'
+        || (!initial && c.is_ascii_digit())
+        || (!c.is_ascii() && !c.is_whitespace())
 }
 
 /// Scan one expression token; embedded strings share the caller's token budget.
@@ -332,6 +422,12 @@ fn lex_token(
     tokens: &mut Vec<Token>,
     depth: usize,
 ) -> ParseResult<usize> {
+    if line[at..].starts_with("/*") {
+        return scan_block_comment(line, at, offset, tokens);
+    }
+    if line[at..].starts_with('@') {
+        return scan_doc(line, at, offset, tokens);
+    }
     let bytes = line.as_bytes();
     let start = at;
     let kind = match bytes[at] {
@@ -348,10 +444,12 @@ fn lex_token(
             };
             Kind::Number(line[start..at].into())
         }
-        b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
-            at += 1;
-            while at < bytes.len() && (bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_') {
-                at += 1;
+        _ if identifier_char(line[at..].chars().next().unwrap(), true) => {
+            for c in line[at..].chars() {
+                if !identifier_char(c, false) {
+                    break;
+                }
+                at += c.len_utf8();
             }
             Kind::Name(line[start..at].into())
         }
@@ -371,6 +469,8 @@ struct StringScan {
     segment: usize,
     text: String,
     interpolated: bool,
+    multiline: bool,
+    literal: bool,
 }
 
 /// Decode one quoted string, flattening interpolation tokens with exact byte locations.
@@ -381,6 +481,53 @@ fn scan_string(
     tokens: &mut Vec<Token>,
     depth: usize,
 ) -> ParseResult<usize> {
+    scan_quoted(line, start, offset, tokens, depth, false)
+}
+
+/// Decode literal documentation through the same escape grammar without interpolation.
+fn scan_doc(
+    line: &str,
+    start: usize,
+    offset: usize,
+    tokens: &mut Vec<Token>,
+) -> ParseResult<usize> {
+    let rest = &line[start..];
+    let quote = start + rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());
+    let at = quote
+        + line[quote..]
+            .bytes()
+            .take_while(|b| matches!(b, b' ' | b'\t'))
+            .count();
+    if &line[start..quote] != "@doc" || !line[at..].starts_with("\"\"\"") {
+        return Err(Diagnostic::new(
+            Span {
+                start: offset + start,
+                end: offset + at,
+            },
+            "unsupported attribute; expected @doc followed by a triple-quoted string",
+        ));
+    }
+    let mut parts = Vec::new();
+    let end = scan_quoted(line, at, offset, &mut parts, 0, true)?;
+    let mut text = String::new();
+    for token in parts {
+        if let Kind::Text(part) = token.kind {
+            text.push_str(&part);
+        }
+    }
+    push(tokens, Kind::Doc(text), offset + start, offset + end)?;
+    Ok(end)
+}
+
+/// Share bounded scanning across ordinary, multiline, and literal documentation strings.
+fn scan_quoted(
+    line: &str,
+    start: usize,
+    offset: usize,
+    tokens: &mut Vec<Token>,
+    depth: usize,
+    literal: bool,
+) -> ParseResult<usize> {
     let span = Span {
         start: offset + start,
         end: offset + line.len(),
@@ -388,50 +535,81 @@ fn scan_string(
     if depth >= MAX_DEPTH {
         return Err(Diagnostic::new(span, "string nesting limit exceeded"));
     }
-    if line[start..].starts_with("\"\"\"") {
-        return Err(Diagnostic::new(
-            span,
-            "multiline strings are unsupported in the Rust prototype",
-        ));
-    }
+    let multiline = line[start..].starts_with("\"\"\"");
+    let width = if multiline { 3 } else { 1 };
     let mut state = StringScan {
         start,
-        at: start + 1,
-        segment: start + 1,
+        at: start + width,
+        segment: start + width,
         text: String::new(),
-        interpolated: false,
+        interpolated: multiline,
+        multiline,
+        literal,
     };
+    if multiline {
+        push(
+            tokens,
+            Kind::MultilineOpen,
+            offset + start,
+            offset + start + 3,
+        )?;
+    }
     while state.at < line.len() {
-        let c = line[state.at..]
-            .chars()
-            .next()
-            .expect("remaining UTF-8 character");
-        match c {
-            '"' => return close_string(&mut state, offset, tokens),
-            '{' => string_hole(&mut state, line, offset, tokens, depth)?,
-            '}' => {
-                return Err(Diagnostic::new(
-                    Span {
-                        start: offset + state.at,
-                        end: offset + state.at + 1,
-                    },
-                    "unmatched '}' in string; escape literal braces with a backslash",
-                ))
-            }
-            '\\' => scan_escape(&mut state, line, offset, span)?,
-            '\0' => {
-                return Err(Diagnostic::new(
-                    span,
-                    "NUL is unsupported in prototype strings",
-                ))
-            }
-            _ => {
-                state.text.push(c);
-                state.at += c.len_utf8();
-            }
+        if line[state.at..].starts_with(if multiline { "\"\"\"" } else { "\"" }) {
+            return close_string(&mut state, offset, tokens);
+        }
+        string_character(&mut state, line, offset, tokens, depth, span)?;
+    }
+    Err(Diagnostic::new(
+        span,
+        if multiline {
+            "unterminated multiline string literal"
+        } else {
+            "unterminated string literal"
+        },
+    ))
+}
+
+/// Consume one scalar, escape or expression hole while enforcing ordinary line boundaries.
+fn string_character(
+    state: &mut StringScan,
+    line: &str,
+    offset: usize,
+    tokens: &mut Vec<Token>,
+    depth: usize,
+    span: Span,
+) -> ParseResult<()> {
+    let c = line[state.at..].chars().next().unwrap();
+    match c {
+        '{' if !state.literal => string_hole(state, line, offset, tokens, depth)?,
+        '}' if !state.literal => {
+            return Err(Diagnostic::new(
+                Span {
+                    start: offset + state.at,
+                    end: offset + state.at + 1,
+                },
+                "unmatched '}' in string; escape literal braces with a backslash",
+            ))
+        }
+        '\\' => scan_escape(state, line, offset, span)?,
+        '\n' | '\r' if !state.multiline => {
+            return Err(Diagnostic::new(
+                span,
+                "unterminated string literal; use triple quotes for multiline text",
+            ))
+        }
+        '\0' => {
+            return Err(Diagnostic::new(
+                span,
+                "NUL is unsupported in prototype strings",
+            ))
+        }
+        _ => {
+            state.text.push(c);
+            state.at += c.len_utf8();
         }
     }
-    Err(Diagnostic::new(span, "unterminated string literal"))
+    Ok(())
 }
 
 /// Consume one escape at the current string cursor, retaining the original byte span.
@@ -458,19 +636,29 @@ fn close_string(
     offset: usize,
     tokens: &mut Vec<Token>,
 ) -> ParseResult<usize> {
+    let width = if state.multiline { 3 } else { 1 };
     let text = Kind::Text(std::mem::take(&mut state.text));
     if state.interpolated {
         push(tokens, text, offset + state.segment, offset + state.at)?;
         push(
             tokens,
-            Kind::StringClose,
+            if state.multiline {
+                Kind::MultilineClose
+            } else {
+                Kind::StringClose
+            },
             offset + state.at,
-            offset + state.at + 1,
+            offset + state.at + width,
         )?;
     } else {
-        push(tokens, text, offset + state.start, offset + state.at + 1)?;
+        push(
+            tokens,
+            text,
+            offset + state.start,
+            offset + state.at + width,
+        )?;
     }
-    Ok(state.at + 1)
+    Ok(state.at + width)
 }
 
 /// Flush literal text before parsing a hole and resume immediately after its closing brace.
@@ -502,7 +690,17 @@ fn string_hole(
         offset + state.at,
         offset + state.at + 1,
     )?;
+    let hole_start = state.at;
     state.at = scan_hole(line, state.at + 1, offset, tokens, depth + 1)?;
+    if !state.multiline && line[hole_start..state.at].contains(['\n', '\r']) {
+        return Err(Diagnostic::new(
+            Span {
+                start: offset + hole_start,
+                end: offset + state.at,
+            },
+            "ordinary string interpolation cannot cross a newline",
+        ));
+    }
     state.segment = state.at;
     Ok(())
 }
@@ -519,7 +717,7 @@ fn scan_hole(
     let mut braces = 0;
     while at < line.len() {
         match line.as_bytes()[at] {
-            b' ' => {
+            b' ' | b'\n' | b'\r' => {
                 at += 1;
                 continue;
             }
@@ -540,7 +738,10 @@ fn scan_hole(
                     ));
                 }
             }
-            b'#' => break,
+            b'#' => {
+                at = scan_line_comment(line, at, offset, tokens)?;
+                continue;
+            }
             _ => {}
         }
         at = lex_token(line, at, offset, tokens, depth)?;
@@ -573,15 +774,94 @@ fn string_escape(c: char, span: Span) -> ParseResult<char> {
     })
 }
 
-/// Return the trailing comment boundary using the same string grammar as the parser.
-pub(crate) fn comment_offset(line: &str) -> Option<usize> {
+/// Locate comments across multiline literals using the actual bounded source scanner.
+pub(crate) fn comment_spans(source: &str) -> Vec<Span> {
+    if source.len() > MAX_SOURCE {
+        return Vec::new();
+    }
     let mut tokens = Vec::new();
-    lex_line(line, 0, 0, &mut tokens).ok()?;
-    let end = tokens.last().map_or(0, |t| t.span.end);
-    line.get(end..)?.find('#').map(|at| at + end)
+    let mut offset = 0;
+    while offset < source.len() {
+        match lex_line(&source[offset..], 0, offset, &mut tokens) {
+            Ok(consumed) => offset += consumed,
+            Err(_) => break,
+        }
+    }
+    tokens
+        .into_iter()
+        .filter(|token| token.kind == Kind::Comment)
+        .map(|token| token.span)
+        .collect()
 }
 
-/// Detect an unfinished interactive delimiter or suite using the source lexer.
+/// Indent code lines for an enclosing suite without changing multiline literal bytes.
+/// Source must lex successfully; resulting source obeys the same 1 MiB size limit.
+pub(crate) fn indent_code(source: &str, prefix: &str) -> ParseResult<String> {
+    if source.len() > MAX_SOURCE {
+        return Err(Diagnostic::new(
+            Span::default(),
+            "source size exceeds 1 MiB limit",
+        ));
+    }
+    let spans = multiline_spans(source)?;
+    let mut output = String::new();
+    let mut offset = 0;
+    let mut span_index = 0;
+    for line in source.split_inclusive('\n') {
+        while span_index < spans.len() && spans[span_index].end <= offset {
+            span_index += 1;
+        }
+        let inside = spans
+            .get(span_index)
+            .is_some_and(|span| span.start < offset && offset < span.end);
+        let added = line
+            .len()
+            .saturating_add(if inside { 0 } else { prefix.len() });
+        if output.len().saturating_add(added) > MAX_SOURCE {
+            return Err(Diagnostic::new(
+                Span::default(),
+                "indented source exceeds 1 MiB limit",
+            ));
+        }
+        if !inside {
+            output.push_str(prefix);
+        }
+        output.push_str(line);
+        offset += line.len();
+    }
+    Ok(output)
+}
+
+/// Collect only outer multiline/doc spans so interpolation strings remain untouched too.
+fn multiline_spans(source: &str) -> ParseResult<Vec<Span>> {
+    let mut tokens = Vec::new();
+    let mut offset = 0;
+    while offset < source.len() {
+        offset += lex_line(&source[offset..], 0, offset, &mut tokens)?;
+    }
+    let mut spans = Vec::new();
+    let mut starts = Vec::new();
+    for token in tokens {
+        match token.kind {
+            Kind::MultilineOpen => starts.push(token.span.start),
+            Kind::MultilineClose => {
+                if let Some(start) = starts.pop() {
+                    if starts.is_empty() {
+                        spans.push(Span {
+                            start,
+                            end: token.span.end,
+                        });
+                    }
+                }
+            }
+            Kind::Doc(_) if starts.is_empty() => spans.push(token.span),
+            _ => {}
+        }
+    }
+    Ok(spans)
+}
+
+/// Detect an unfinished interactive delimiter, string, documentation or suite.
 /// Malformed tokens and mismatched closes return false for immediate diagnostics.
 pub(crate) fn line_continues(source: &str) -> bool {
     if source.len() > MAX_SOURCE {
@@ -590,18 +870,22 @@ pub(crate) fn line_continues(source: &str) -> bool {
     let mut tokens = Vec::new();
     let mut delimiters = Vec::new();
     let mut offset = 0;
-    for line in source.split_inclusive('\n') {
-        let content = line.trim_end_matches(['\n', '\r']);
+    while offset < source.len() {
         let from = tokens.len();
-        if lex_line(content, 0, offset, &mut tokens).is_err()
-            || track_delimiters(&tokens[from..], &mut delimiters).is_err()
-        {
+        match lex_line(&source[offset..], 0, offset, &mut tokens) {
+            Ok(consumed) => offset += consumed,
+            Err(error) => {
+                return error.message.starts_with("unterminated multiline")
+                    || error.message == "unterminated block comment"
+            }
+        }
+        if track_delimiters(&tokens[from..], &mut delimiters).is_err() {
             return false;
         }
-        offset += line.len();
     }
+    tokens.retain(|token| token.kind != Kind::Comment);
     !delimiters.is_empty() || tokens.last().is_some_and(|token| {
-        matches!(token.kind, Kind::Colon | Kind::Arrow)
+        matches!(token.kind, Kind::Colon | Kind::Arrow | Kind::Doc(_))
             || matches!(&token.kind,Kind::Name(name) if matches!(name.as_str(),"with"|"do"|"else"))
     })
 }
@@ -609,6 +893,13 @@ pub(crate) fn line_continues(source: &str) -> bool {
 /// Recognize punctuation or report unsupported characters at a UTF-8 boundary.
 fn punctuation(rest: &str, start: usize) -> ParseResult<(Kind, usize)> {
     let pairs = [
+        ("&&&", Kind::BitAnd),
+        ("|||", Kind::BitOr),
+        ("^^^", Kind::BitXor),
+        ("~~~", Kind::BitNot),
+        ("<<<", Kind::ShiftLeft),
+        (">>>", Kind::ShiftRight),
+        ("**", Kind::Power),
         ("..=", Kind::RangeInclusive),
         ("..", Kind::Range),
         ("<-", Kind::Bind),
@@ -728,12 +1019,24 @@ impl Parser {
     /// Parse module declarations, imports, public exports, functions and custom types.
     fn program(&mut self) -> ParseResult<Program> {
         let mut program = Program::default();
+        let mut pending = None;
         for _ in 0..self.tokens.len() {
             if self.eat(&Kind::Newline) {
                 continue;
             }
             if self.current().kind == Kind::End {
+                if pending.is_some() {
+                    return Err(self.error("@doc must precede a function or type declaration"));
+                }
                 return Ok(program);
+            }
+            if let Kind::Doc(text) = self.current().kind.clone() {
+                if pending.is_some() {
+                    return Err(self.error("duplicate @doc before declaration"));
+                }
+                pending = Some((text, self.take().span));
+                self.line_end()?;
+                continue;
             }
             let public = if self.word("pub") {
                 self.take();
@@ -741,6 +1044,18 @@ impl Parser {
             } else {
                 false
             };
+            if let Some((text, span)) = pending.take() {
+                if !self.word("fn") && !self.word("type") {
+                    return Err(self.error("@doc must precede a function or type declaration"));
+                }
+                let target = match self.tokens.get(self.position + 1).map(|t| &t.kind) {
+                    Some(Kind::Name(name)) => name.clone(),
+                    _ => return Err(self.error("expected documented declaration name")),
+                };
+                program
+                    .docs
+                    .push(crate::ast::DocComment { target, text, span });
+            }
             if self.word("fn") {
                 let function = self.function()?;
                 if public {
@@ -1081,7 +1396,7 @@ impl Parser {
             }
             _ if arguments.is_empty()
                 && !name.contains('.')
-                && name.starts_with(|c: char| c.is_ascii_lowercase()) =>
+                && name.starts_with(|c: char| c.is_lowercase()) =>
             {
                 Type::Generic(name)
             }
@@ -1335,7 +1650,7 @@ impl Parser {
                 break;
             }
             self.take();
-            let right = self.expr(precedence + 1)?;
+            let right = self.expr(precedence + u8::from(op != BinaryOp::Power))?;
             let span = Span {
                 start: left.node.span.start,
                 end: right.node.span.end,
@@ -1443,7 +1758,7 @@ impl Parser {
         if self.word("match") {
             return self.match_expression();
         }
-        if self.word("not") || self.current().kind == Kind::Minus {
+        if self.word("not") || matches!(self.current().kind, Kind::Minus | Kind::BitNot) {
             return self.unary();
         }
         let token = self.take();
@@ -1452,7 +1767,8 @@ impl Parser {
             Kind::Name(name) if name == "continue" => expression(ExprKind::Continue, token.span, 1),
             Kind::Number(text) => number(&text, token.span),
             Kind::Text(text) => expression(ExprKind::String(text), token.span, 1),
-            Kind::StringOpen => self.interpolation(token.span),
+            Kind::StringOpen => self.interpolation(token.span, false),
+            Kind::MultilineOpen => self.interpolation(token.span, true),
             Kind::Name(name) if name == "true" || name == "false" => {
                 expression(ExprKind::Bool(name == "true"), token.span, 1)
             }
@@ -1699,7 +2015,7 @@ impl Parser {
     }
 
     /// Parse embedded expressions using the ordinary grammar and one shared depth bound.
-    fn interpolation(&mut self, mut span: Span) -> ParseResult<Parsed> {
+    fn interpolation(&mut self, mut span: Span, multiline: bool) -> ParseResult<Parsed> {
         let mut parts = Vec::new();
         let mut depth = 1;
         for _ in 0..self.tokens.len() {
@@ -1715,9 +2031,14 @@ impl Parser {
                     )?;
                     parts.push(crate::ast::StringPart::Value(value.node));
                 }
-                Kind::StringClose => {
+                Kind::StringClose | Kind::MultilineClose => {
                     span.end = token.span.end;
-                    return expression(ExprKind::Interpolate(parts), span, depth);
+                    let kind = if multiline {
+                        ExprKind::MultilineString(parts)
+                    } else {
+                        ExprKind::Interpolate(parts)
+                    };
+                    return expression(kind, span, depth);
                 }
                 _ => {
                     return Err(Diagnostic::new(
@@ -2049,7 +2370,7 @@ impl Parser {
             if name
                 .rsplit('.')
                 .next()
-                .is_some_and(|part| part.starts_with(|c: char| c.is_ascii_uppercase()))
+                .is_some_and(|part| part.starts_with(|c: char| c.is_uppercase()))
             {
                 return self.named_pattern(name, span);
             }
@@ -2169,10 +2490,10 @@ impl Parser {
     /// Parse unary operands, accepting the Int minimum without positive overflow.
     fn unary(&mut self) -> ParseResult<Parsed> {
         let token = self.take();
-        let op = if token.kind == Kind::Minus {
-            UnaryOp::Negate
-        } else {
-            UnaryOp::Not
+        let op = match token.kind {
+            Kind::Minus => UnaryOp::Negate,
+            Kind::BitNot => UnaryOp::BitNot,
+            _ => UnaryOp::Not,
         };
         if op == UnaryOp::Negate {
             if let Kind::Number(text) = &self.current().kind {
@@ -2187,7 +2508,7 @@ impl Parser {
                 );
             }
         }
-        let value = self.expr(6)?;
+        let value = self.expr(12)?;
         let span = Span {
             start: token.span.start,
             end: value.node.span.end,
@@ -2279,18 +2600,12 @@ fn builtin_constructor(name: &str) -> Option<Constructor> {
 
 /// Parse a literal pattern with the same signed 64-bit range as expressions.
 fn pattern_integer(text: &str, span: Span) -> ParseResult<i64> {
-    text.parse::<i64>()
-        .map_err(|_| Diagnostic::new(span, "integer pattern is outside Int range"))
+    integer_value(text, span)
 }
 
 /// Convert a decimal token to Fern's signed 64-bit Int with a stable diagnostic.
 fn integer(text: &str, span: Span) -> ParseResult<Parsed> {
-    let value = text.parse::<i64>().map_err(|_| {
-        Diagnostic::new(
-            span,
-            "integer is outside Int range (-9223372036854775808..9223372036854775807)",
-        )
-    })?;
+    let value = integer_value(text, span)?;
     expression(ExprKind::Int(value), span, 1)
 }
 
@@ -2299,17 +2614,23 @@ fn operator(kind: &Kind) -> Option<(BinaryOp, u8)> {
     Some(match kind {
         Kind::Name(n) if n == "or" => (BinaryOp::Or, 0),
         Kind::Name(n) if n == "and" => (BinaryOp::And, 1),
-        Kind::Eq => (BinaryOp::Eq, 2),
-        Kind::Ne => (BinaryOp::Ne, 2),
-        Kind::Lt => (BinaryOp::Lt, 3),
-        Kind::Le => (BinaryOp::Le, 3),
-        Kind::Gt => (BinaryOp::Gt, 3),
-        Kind::Ge => (BinaryOp::Ge, 3),
-        Kind::Plus => (BinaryOp::Add, 4),
-        Kind::Minus => (BinaryOp::Subtract, 4),
-        Kind::Star => (BinaryOp::Multiply, 5),
-        Kind::Slash => (BinaryOp::Divide, 5),
-        Kind::Percent => (BinaryOp::Remainder, 5),
+        Kind::BitOr => (BinaryOp::BitOr, 3),
+        Kind::BitXor => (BinaryOp::BitXor, 4),
+        Kind::BitAnd => (BinaryOp::BitAnd, 5),
+        Kind::Eq => (BinaryOp::Eq, 6),
+        Kind::Ne => (BinaryOp::Ne, 6),
+        Kind::Lt => (BinaryOp::Lt, 7),
+        Kind::Le => (BinaryOp::Le, 7),
+        Kind::Gt => (BinaryOp::Gt, 7),
+        Kind::Ge => (BinaryOp::Ge, 7),
+        Kind::ShiftLeft => (BinaryOp::ShiftLeft, 8),
+        Kind::ShiftRight => (BinaryOp::ShiftRight, 8),
+        Kind::Plus => (BinaryOp::Add, 9),
+        Kind::Minus => (BinaryOp::Subtract, 9),
+        Kind::Star => (BinaryOp::Multiply, 10),
+        Kind::Slash => (BinaryOp::Divide, 10),
+        Kind::Percent => (BinaryOp::Remainder, 10),
+        Kind::Power => (BinaryOp::Power, 11),
         _ => return None,
     })
 }
@@ -2358,7 +2679,19 @@ fn reserved(name: &str) -> bool {
 fn number_end(line: &str, start: usize, offset: usize) -> ParseResult<usize> {
     let bytes = line.as_bytes();
     let mut at = start;
-    while at < bytes.len() && bytes[at].is_ascii_digit() {
+    if bytes.get(start) == Some(&b'0')
+        && matches!(
+            bytes.get(start + 1),
+            Some(b'x' | b'X' | b'b' | b'B' | b'o' | b'O')
+        )
+    {
+        at += 2;
+        while at < bytes.len() && (bytes[at].is_ascii_alphanumeric() || bytes[at] == b'_') {
+            at += 1;
+        }
+        return Ok(at);
+    }
+    while at < bytes.len() && (bytes[at].is_ascii_digit() || bytes[at] == b'_') {
         at += 1;
     }
     if bytes.get(at) == Some(&b'.') && bytes.get(at + 1) != Some(&b'.') {
@@ -2412,7 +2745,7 @@ fn number_end(line: &str, start: usize, offset: usize) -> ParseResult<usize> {
 
 /// Preserve decimal Float literals as IEEE doubles; overflowing literals are diagnosed.
 fn number(text: &str, span: Span) -> ParseResult<Parsed> {
-    if !text.contains(['.', 'e', 'E']) {
+    if integer_radix(text).0 != 10 || !text.contains(['.', 'e', 'E']) {
         return integer(text, span);
     }
     let value = text
@@ -2422,6 +2755,58 @@ fn number(text: &str, span: Span) -> ParseResult<Parsed> {
         return Err(Diagnostic::new(span, "Float literal exceeds finite range"));
     }
     expression(ExprKind::Float(value), span, 1)
+}
+
+/// Identify integer radix without accepting prefixes as digits or losing a leading sign.
+fn integer_radix(text: &str) -> (u32, &str) {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    if let Some(rest) = digits
+        .strip_prefix("0x")
+        .or_else(|| digits.strip_prefix("0X"))
+    {
+        (16, rest)
+    } else if let Some(rest) = digits
+        .strip_prefix("0b")
+        .or_else(|| digits.strip_prefix("0B"))
+    {
+        (2, rest)
+    } else if let Some(rest) = digits
+        .strip_prefix("0o")
+        .or_else(|| digits.strip_prefix("0O"))
+    {
+        (8, rest)
+    } else {
+        (10, digits)
+    }
+}
+
+/// Parse separators and unsigned magnitude before applying the asymmetric signed Int limit.
+fn integer_value(text: &str, span: Span) -> ParseResult<i64> {
+    let (radix, digits) = integer_radix(text);
+    if digits.is_empty()
+        || digits.starts_with('_')
+        || digits.ends_with('_')
+        || digits.contains("__")
+        || !digits.chars().all(|c| c == '_' || c.is_digit(radix))
+    {
+        return Err(Diagnostic::new(
+            span,
+            "invalid integer digits or separators",
+        ));
+    }
+    let magnitude = u64::from_str_radix(&digits.replace('_', ""), radix)
+        .map_err(|_| Diagnostic::new(span, "integer is outside Int range"))?;
+    let negative = text.starts_with('-');
+    if magnitude > i64::MAX as u64 + u64::from(negative) {
+        return Err(Diagnostic::new(span, "integer is outside Int range"));
+    }
+    if negative && magnitude == 1u64 << 63 {
+        Ok(i64::MIN)
+    } else if negative {
+        Ok(-(magnitude as i64))
+    } else {
+        Ok(magnitude as i64)
+    }
 }
 
 /// Record piped argument placement without reordering evaluation or duplicating its value.
@@ -2470,6 +2855,34 @@ fn pipe(left: Parsed, right: Parsed) -> ParseResult<Parsed> {
 
 #[cfg(test)]
 mod continuation_tests {
+    #[test]
+    fn indentation_preserves_triple_content_and_closing_lines() {
+        let source =
+            "let text = \"\"\"\n  first\n  {\"\"\"nested\nline\"\"\"}\n\"\"\"\nprintln(text)\n";
+        let expected = "    let text = \"\"\"\n  first\n  {\"\"\"nested\nline\"\"\"}\n\"\"\"\n    println(text)\n";
+        assert_eq!(super::indent_code(source, "    ").unwrap(), expected);
+        assert!(super::indent_code("let text = \"\"\"open", "    ").is_err());
+    }
+
+    #[test]
+    fn continuation_tracks_multiline_literals_and_documentation() {
+        for source in [
+            "let text = \"\"\"\ntext",
+            "/* open",
+            "@doc \"\"\"text\"\"\"",
+            "@doc \"\"\"\nopen",
+        ] {
+            assert!(super::line_continues(source), "{source}");
+        }
+        for source in [
+            "let text = \"\"\"\ntext\"\"\"",
+            "@doc \"\"\"text\"\"\"\nfn f(): 42",
+            "\"\"\"bad\\q",
+        ] {
+            assert!(!super::line_continues(source), "{source}");
+        }
+    }
+
     #[test]
     fn continuation_uses_tokens_and_rejects_mismatched_delimiters() {
         for source in [

@@ -1,0 +1,62 @@
+# Domain checks precede every machine division, including its signed overflow case.
+function l $fern_rs_int_div(l %fault, l %a, l %b, w %remainder) {
+@start
+    %zero =w ceql %b, 0
+    jnz %zero, @invalid, @overflow_check
+@invalid
+    storel 1, %fault
+    ret 0
+@overflow_check
+    %minimum =w ceql %a, -9223372036854775808
+    %negative_one =w ceql %b, -1
+    %overflow =w and %minimum, %negative_one
+    jnz %overflow, @wrapped, @normal
+@wrapped
+    jnz %remainder, @wrapped_rem, @wrapped_div
+@wrapped_rem
+    ret 0
+@wrapped_div
+    ret -9223372036854775808
+@normal
+    jnz %remainder, @rem, @div
+@rem
+    %rest =l rem %a, %b
+    ret %rest
+@div
+    %quotient =l div %a, %b
+    ret %quotient
+}
+
+# Exponentiation by squaring processes at most 63 nonnegative exponent bits.
+function l $fern_rs_int_pow(l %fault, l %base, l %exponent) {
+@start
+    %negative =w csltl %exponent, 0
+    jnz %negative, @invalid, @init
+@invalid
+    storel 2, %fault
+    ret 0
+@init
+    jmp @loop
+@loop
+    %x =l phi @init %base, @step %square
+    %n =l phi @init %exponent, @step %half
+    %acc =l phi @init 1, @step %updated
+    %done =w ceql %n, 0
+    jnz %done, @end, @bit
+@bit
+    %odd =l and %n, 1
+    jnz %odd, @multiply, @skip
+@multiply
+    %product =l mul %acc, %x
+    jmp @step
+@skip
+    jmp @step
+@step
+    %updated =l phi @multiply %product, @skip %acc
+    %square =l mul %x, %x
+    %half =l shr %n, 1
+    jmp @loop
+@end
+    ret %acc
+}
+

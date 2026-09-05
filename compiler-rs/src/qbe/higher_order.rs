@@ -402,6 +402,7 @@ impl Emitter<'_> {
             .push_str(&format!("    jnz {tag}, {success}, {failure}\n"));
         self.start_block(locals, &success);
         let ok = self.higher_sum_success(builtin, args, values, result, locals);
+        let ok_end = locals.current.clone();
         self.output.push_str(&format!("    jmp {merge}\n"));
         self.start_block(locals, &failure);
         let err = if builtin == Builtin::ResultUnwrapOrElse {
@@ -420,6 +421,7 @@ impl Emitter<'_> {
         } else {
             original.clone()
         };
+        let err_end = locals.current.clone();
         self.output.push_str(&format!("    jmp {merge}\n"));
         self.start_block(locals, &merge);
         if *result == Type::Unit {
@@ -428,7 +430,7 @@ impl Emitter<'_> {
             self.assign(
                 locals,
                 result.clone(),
-                &format!("phi {success} {ok}, {failure} {err}"),
+                &format!("phi {ok_end} {ok}, {err_end} {err}"),
             )
         }
     }

@@ -1,0 +1,4 @@
+fn failure() -> Result(Int, String): Err("bad")
+fn main():
+    defer println("cleanup")
+    println(Result.unwrap_or_else(failure(), (error) -> 2 ** -1))

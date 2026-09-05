@@ -61,7 +61,7 @@ impl Emitter<'_> {
     pub(super) fn finish_function(&mut self, locals: &mut Locals) {
         self.start_block(locals, "@return");
         self.output
-            .push_str("    call $fern_rs_run_defers(l %defer_head)\n");
+            .push_str("    call $fern_rs_run_defers(l %defer_head, l %fault)\n");
         let raw = self.assign(locals, Type::Int, "loadl %return_slot");
         let value = self.unpack(locals, &locals.return_type.clone(), raw);
         self.output.push_str(&format!("    ret {value}\n}}\n\n"));

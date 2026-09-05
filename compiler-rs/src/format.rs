@@ -98,6 +98,7 @@ impl Renderer<'_> {
                 self.function(function, program.exports.contains(&function.name))?,
             ));
         }
+        self.documentation(program, &mut declarations);
         declarations.sort_by_key(|(anchor, _)| *anchor);
         let mut lines = Vec::new();
         for (anchor, declaration) in declarations {
@@ -107,6 +108,43 @@ impl Renderer<'_> {
             lines.extend(declaration);
         }
         Ok(lines)
+    }
+
+    /// Attach documentation to its declaration before sorting source anchors.
+    fn documentation(&self, program: &ast::Program, declarations: &mut [(usize, Vec<Line>)]) {
+        let targets: std::collections::BTreeMap<_, _> = program
+            .functions
+            .iter()
+            .map(|function| (&function.name, function.span.start))
+            .chain(
+                program
+                    .types
+                    .iter()
+                    .map(|declaration| (&declaration.name, declaration.span.start)),
+            )
+            .collect();
+        let indices: std::collections::BTreeMap<_, _> = declarations
+            .iter()
+            .enumerate()
+            .map(|(index, (anchor, _))| (*anchor, index))
+            .collect();
+        for doc in &program.docs {
+            if let Some(index) = targets
+                .get(&doc.target)
+                .and_then(|anchor| indices.get(anchor))
+            {
+                let (anchor, lines) = &mut declarations[*index];
+                *anchor = doc.span.start;
+                lines.insert(
+                    0,
+                    line(
+                        0,
+                        format!("@doc {}", quote_multiline(&doc.text, true)),
+                        doc.span.start,
+                    ),
+                );
+            }
+        }
     }
 
     /// Render a record's named fields or a sum's variant payload declarations.
@@ -185,13 +223,23 @@ impl Renderer<'_> {
     }
 
     /// Preserve text and value boundaries while formatting nested scalar expressions.
-    fn interpolation(&self, parts: &[ast::StringPart], indent: usize) -> Result<String> {
-        let mut text = String::from("\"");
+    fn interpolation(
+        &self,
+        parts: &[ast::StringPart],
+        indent: usize,
+        multiline: bool,
+    ) -> Result<String> {
+        let delimiter = if multiline { "\"\"\"" } else { "\"" };
+        let mut text = String::from(delimiter);
         for part in parts {
             match part {
                 ast::StringPart::Text(value) => {
-                    let escaped = quote(value);
-                    text.push_str(&escaped[1..escaped.len() - 1]);
+                    let escaped = if multiline {
+                        quote_multiline(value, false)
+                    } else {
+                        quote(value)
+                    };
+                    text.push_str(&escaped[delimiter.len()..escaped.len() - delimiter.len()]);
                 }
                 ast::StringPart::Value(value) => {
                     text.push('{');
@@ -200,7 +248,7 @@ impl Renderer<'_> {
                 }
             }
         }
-        text.push('"');
+        text.push_str(delimiter);
         Ok(text)
     }
 
@@ -291,7 +339,8 @@ impl Renderer<'_> {
             ExprKind::Float(value) => format!("{value:?}"),
             ExprKind::Bool(value) => value.to_string(),
             ExprKind::String(value) => quote(value),
-            ExprKind::Interpolate(parts) => self.interpolation(parts, indent)?,
+            ExprKind::Interpolate(parts) => self.interpolation(parts, indent, false)?,
+            ExprKind::MultilineString(parts) => self.interpolation(parts, indent, true)?,
             ExprKind::Name(name) => name.clone(),
             ExprKind::Unit => "()".into(),
             ExprKind::Tuple(items) => tuple_text(self.arguments(items, indent)?, items.len()),
@@ -776,7 +825,11 @@ impl Renderer<'_> {
     /// Keep unary expressions grouped while preserving block operand indentation.
     fn unary(&self, op: UnaryOp, value: &Expr, indent: usize, span: Span) -> Result<Vec<Line>> {
         let mut lines = self.expression(value, indent)?;
-        let operator = if op == UnaryOp::Not { "not " } else { "-" };
+        let operator = match op {
+            UnaryOp::Not => "not ",
+            UnaryOp::BitNot => "~~~",
+            UnaryOp::Negate => "-",
+        };
         let inline = lines.len() == 1;
         if let Some(first) = lines.first_mut() {
             first.text = if inline {
@@ -1000,6 +1053,25 @@ fn pattern_text(pattern: &Pattern) -> String {
     }
 }
 
+/// Preserve physical multiline content while escaping delimiters and interpolation braces.
+fn quote_multiline(value: &str, literal: bool) -> String {
+    let mut output = String::from("\"\"\"");
+    for c in value.chars() {
+        match c {
+            '\\' => output.push_str("\\\\"),
+            '"' => output.push_str("\\\""),
+            '{' | '}' if !literal => {
+                output.push('\\');
+                output.push(c);
+            }
+            '\r' => output.push_str("\\r"),
+            _ => output.push(c),
+        }
+    }
+    output.push_str("\"\"\"");
+    output
+}
+
 /// Escape supported string characters without altering Unicode or treating # as comments.
 fn quote(value: &str) -> String {
     let mut output = String::from("\"");
@@ -1022,6 +1094,12 @@ fn quote(value: &str) -> String {
 /// Map an AST operator to its canonical Fern token.
 fn binary_text(op: BinaryOp) -> &'static str {
     match op {
+        BinaryOp::Power => "**",
+        BinaryOp::BitAnd => "&&&",
+        BinaryOp::BitOr => "|||",
+        BinaryOp::BitXor => "^^^",
+        BinaryOp::ShiftLeft => "<<<",
+        BinaryOp::ShiftRight => ">>>",
         BinaryOp::Add => "+",
         BinaryOp::Subtract => "-",
         BinaryOp::Multiply => "*",
@@ -1048,22 +1126,20 @@ struct Comment {
 
 /// Collect real line comments, respecting escaped quotes and # within string literals.
 fn comments(source: &str) -> Vec<Comment> {
-    let mut output = Vec::new();
-    let mut start = 0;
-    for line in source.split_inclusive('\n') {
-        let content = line.trim_end_matches(['\n', '\r']);
-        if let Some(index) = parse::comment_offset(content) {
-            output.push(Comment {
-                offset: start + index,
+    parse::comment_spans(source)
+        .into_iter()
+        .map(|span| {
+            let start = source[..span.start].rfind('\n').map_or(0, |i| i + 1);
+            let prefix = &source[start..span.start];
+            Comment {
+                offset: span.start,
                 line: start,
-                indent: line.bytes().take_while(|byte| *byte == b' ').count() / 4,
-                inline: !line[..index].trim().is_empty(),
-                text: line[index..].trim_end().into(),
-            });
-        }
-        start += line.len();
-    }
-    output
+                indent: prefix.bytes().take_while(|byte| *byte == b' ').count() / 4,
+                inline: !prefix.trim().is_empty(),
+                text: source[span.start..span.end].trim_end().into(),
+            }
+        })
+        .collect()
 }
 
 /// Index source lines and rendered anchors once rather than rescanning them per comment.
@@ -1149,6 +1225,9 @@ fn attach_comments(source: &str, lines: Vec<Line>, comments: &[Comment]) -> Stri
 
 /// Compare source syntax independently of locations after parsing the rendered artifact.
 fn structural(mut program: ast::Program) -> String {
+    for doc in &mut program.docs {
+        doc.span = Span::default();
+    }
     for function in &mut program.functions {
         function.span = Span::default();
         for param in &mut function.params {
@@ -1212,7 +1291,7 @@ fn clear_expression(expression: &mut Expr) {
                 clear_expression(arg);
             }
         }
-        ExprKind::Interpolate(parts) => {
+        ExprKind::Interpolate(parts) | ExprKind::MultilineString(parts) => {
             for part in parts {
                 if let ast::StringPart::Value(value) = part {
                     clear_expression(value);

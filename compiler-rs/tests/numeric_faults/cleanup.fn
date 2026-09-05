@@ -1,0 +1,10 @@
+fn fail_cleanup() -> ():
+    defer println("nested")
+    println(2 ** -1)
+fn value() -> Int:
+    defer println("last")
+    defer fail_cleanup()
+    7
+fn main():
+    defer println("main")
+    println(value())

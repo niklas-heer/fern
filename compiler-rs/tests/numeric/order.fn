@@ -1,0 +1,8 @@
+fn mark(value: Int) -> Int:
+    println(value)
+    value
+fn main():
+    println(mark(2) ** mark(3))
+    println(mark(1) <<< mark(2))
+    println(false and (1 / 0 == 0))
+    println(true or (2 ** -1 == 0))

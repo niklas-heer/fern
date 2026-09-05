@@ -109,7 +109,7 @@ fn hidden_result_captures_and_first_class_intrinsic_constraints_are_checked() {
     }
     for source in [
         "fn main():\n    let output: (List(Int)) -> Unit = print\n    output([1])",
-        "fn main():\n    let has: (List(Float), Float) -> Bool = List.contains\n    println(has([1.0], 1.0))",
+        "fn main():\n    let has: (List(List(Int)), List(Int)) -> Bool = List.contains\n    println(has([[1]], [1]))",
     ] {
         let error = rejected(source);
         assert!(error.contains("requires") || error.contains("print argument"), "{error}");

@@ -124,7 +124,7 @@ fn generic_runtime_payloads_dispatch_strings_and_retain_float_bits() {
     ))
     .unwrap();
     assert!(il.contains("call $fern_list_contains_str("), "{il}");
-    let invalid = call(
+    let float_contains = call(
         "List.contains",
         vec![
             list(vec![ex(ExprKind::Float(1.5), Type::Float)], Type::Float),
@@ -132,7 +132,8 @@ fn generic_runtime_payloads_dispatch_strings_and_retain_float_bits() {
         ],
         Type::Bool,
     );
-    assert!(emit(invalid).is_err());
+    let il = emit(float_contains).unwrap();
+    assert!(il.contains("call $fern_rs_list_contains_float(l %"), "{il}");
 }
 #[test]
 fn malformed_runtime_calls_and_obsolete_directory_result_types_return_diagnostics() {

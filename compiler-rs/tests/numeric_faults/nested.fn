@@ -1,0 +1,10 @@
+fn inner() -> Int:
+    defer println("inner")
+    1 / 0
+fn outer() -> Int:
+    defer println("outer")
+    inner()
+fn main():
+    defer println("main")
+    println(outer())
+    println("wrong")

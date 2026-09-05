@@ -1,0 +1,3 @@
+fn main():
+    defer println("cleanup")
+    println(1 % 0)

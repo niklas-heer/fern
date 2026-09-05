@@ -77,13 +77,16 @@ fn closure_object_captures_full_width_and_invokes_with_environment() {
         vec![target],
     )
     .unwrap();
-    assert!(il.contains("function l $f1(l %env, w %v0)"), "{il}");
+    assert!(
+        il.contains("function l $f1(l %env, l %fault, w %v0)"),
+        "{il}"
+    );
     assert!(il.contains("call $fern_alloc(l 16)"), "{il}");
     assert!(il.contains("storel $f1,"), "{il}");
     assert!(il.contains("storel 9223372036854775807,"), "{il}");
     assert!(il.contains("add %env, 8"), "{il}");
     assert!(il.contains("call %"), "{il}");
-    assert!(il.contains("call $f0(l 0)"), "{il}");
+    assert!(il.contains("call $f0(l 0, l %fault)"), "{il}");
 }
 
 #[test]

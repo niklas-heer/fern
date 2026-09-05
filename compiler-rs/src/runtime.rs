@@ -72,7 +72,7 @@ pub enum ValueAbi {
 pub enum Operation {
     Direct,
     InvertBool,
-    /// Accept only Int/Bool/String and select fern_list_contains_str for Strings.
+    /// Accept Int/Float/Bool/String; Float uses a typed helper and String uses semantic comparison.
     ScalarContains,
     /// Source padding applies equally to vertical and horizontal native arguments.
     UniformPadding,

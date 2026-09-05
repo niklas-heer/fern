@@ -252,7 +252,7 @@ impl Budget {
             }
             match &expr.kind {
                 ast::ExprKind::ConditionMatch(arms) => queue_conditions(arms, &mut pending, depth),
-                ast::ExprKind::Interpolate(parts) => {
+                ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {
                     self.interpolation(parts, &mut pending, depth, expr.span)?
                 }
                 ast::ExprKind::Map(entries) => queue_map(entries, &mut pending, depth),
@@ -323,6 +323,9 @@ pub(super) fn check(program: &ast::Program) -> Checked<()> {
         ));
     }
     let mut budget = Budget { nodes: 0, bytes: 0 };
+    for doc in &program.docs {
+        budget.charge(doc.target.len().saturating_add(doc.text.len()), doc.span)?;
+    }
     for function in &program.functions {
         budget.charge(function.name.len(), function.span)?;
         for param in &function.params {
