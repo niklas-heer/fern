@@ -45,6 +45,8 @@ Status: Complete for the bounded prototype; `just check`, `just rust-check`, and
 
 ## Active Priorities
 
+- [x] Execute `System.exec_args` with literal argv and independent capture streams (nine native regression cases).
+
 ### Rust Migration: Collections and Error Values
 
 Status: Complete for the collections/error-value milestone; shipping compiler remains C (decisions 45–46). See [migration progress](docs/RUST_MIGRATION.md).

@@ -18,6 +18,11 @@
 #include <string.h>
 #include <assert.h>
 #include <limits.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <spawn.h>
+
+extern char** environ;
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <dirent.h>
@@ -1173,55 +1178,106 @@ FernExecResult* fern_exec(const char* cmd) {
 }
 
 /**
- * Execute a command with arguments (no shell).
- * @param args FernStringList of command and arguments.
- * @return FernExecResult with exit code, stdout, and stderr.
+ * Create an unlinked capture file above the standard descriptor range.
+ * @return A private seekable stream, or NULL on I/O failure.
+ */
+static FILE* fern_exec_capture(void) {
+    FILE* initial = tmpfile();
+    if (initial == NULL) return NULL;
+    assert(fileno(initial) >= 0);
+    int descriptor = fcntl(fileno(initial), F_DUPFD_CLOEXEC, 3);
+    fclose(initial);
+    if (descriptor < 0) return NULL;
+    assert(descriptor >= 3);
+    FILE* stream = fdopen(descriptor, "w+");
+    if (stream == NULL) close(descriptor);
+    return stream;
+}
+
+/**
+ * Read a completed capture stream with checked size and seek operations.
+ * @param stream Valid capture file. @return Captured bytes or an empty string on I/O error.
+ */
+static char* fern_exec_read_capture(FILE* stream) {
+    assert(stream != NULL);
+    assert(fileno(stream) >= 0);
+    if (fseek(stream, 0, SEEK_END) != 0) return FERN_STRDUP("");
+    long length = ftell(stream);
+    if (length < 0 || (uintmax_t)length >= SIZE_MAX) return FERN_STRDUP("");
+    if (fseek(stream, 0, SEEK_SET) != 0) return FERN_STRDUP("");
+    char* text = FERN_ALLOC((size_t)length + 1);
+    assert(text != NULL);
+    size_t received = fread(text, 1, (size_t)length, stream);
+    text[received] = '\0';
+    return text;
+}
+
+/**
+ * Spawn literal argv with distinct output streams and the inherited environment.
+ * @param argv NULL-terminated argument vector. @param output/error Capture streams.
+ * @param child Receives the child PID. @return POSIX error code, or zero on success.
+ */
+static int fern_exec_spawn(char** argv, FILE* output, FILE* error, pid_t* child) {
+    assert(argv != NULL);
+    assert(output != NULL);
+    assert(error != NULL);
+    assert(child != NULL);
+    posix_spawn_file_actions_t actions;
+    int status = posix_spawn_file_actions_init(&actions);
+    if (status != 0) return status;
+    status = posix_spawn_file_actions_adddup2(&actions, fileno(output), STDOUT_FILENO);
+    if (status == 0) status = posix_spawn_file_actions_adddup2(&actions, fileno(error), STDERR_FILENO);
+    if (status == 0) status = posix_spawn_file_actions_addclose(&actions, fileno(output));
+    if (status == 0) status = posix_spawn_file_actions_addclose(&actions, fileno(error));
+    if (status == 0) status = posix_spawnp(child, argv[0], &actions, NULL, argv, environ);
+    posix_spawn_file_actions_destroy(&actions);
+    return status;
+}
+
+/**
+ * Execute a literal argument vector without a shell or argument-string escaping.
+ * @param args Valid FernStringList of command and arguments.
+ * @return Owned result; exit_code is -1 for spawn/wait failure or signal termination.
  */
 FernExecResult* fern_exec_args(FernStringList* args) {
     assert(args != NULL);
-    
-    /* For simplicity, join args and use shell execution */
-    /* A proper implementation would use fork/exec directly */
-    if (args->len == 0) {
-        FernExecResult* result = FERN_ALLOC(sizeof(FernExecResult));
-        assert(result != NULL);
-        result->exit_code = -1;
-        result->stdout_str = FERN_STRDUP("");
-        result->stderr_str = FERN_STRDUP("No command specified");
+    assert(args->len >= 0);
+    FernExecResult* result = FERN_ALLOC(sizeof(FernExecResult));
+    assert(result != NULL);
+    result->exit_code = -1;
+    result->stdout_str = FERN_STRDUP("");
+    result->stderr_str = FERN_STRDUP("No command specified");
+    if (args->len == 0) return result;
+    if ((uint64_t)args->len >= SIZE_MAX / sizeof(char*)) return result;
+    char** argv = FERN_ALLOC(((size_t)args->len + 1) * sizeof(char*));
+    assert(argv != NULL);
+    for (int64_t i = 0; i < args->len; i++) {
+        assert(args->data[i] != NULL);
+        argv[i] = args->data[i];
+    }
+    argv[args->len] = NULL;
+    FILE* output = fern_exec_capture();
+    FILE* error = fern_exec_capture();
+    if (output == NULL || error == NULL) {
+        if (output != NULL) fclose(output);
+        if (error != NULL) fclose(error);
+        result->stderr_str = FERN_STRDUP("Failed to create process capture files");
         return result;
     }
-    
-    /* Calculate total length needed */
-    size_t total_len = 0;
-    for (int64_t i = 0; i < args->len; i++) {
-        total_len += strlen(args->data[i]) + 3; /* quotes + space */
+    pid_t child;
+    int spawned = fern_exec_spawn(argv, output, error, &child);
+    if (spawned == 0) {
+        int status;
+        pid_t waited;
+        do { waited = waitpid(child, &status, 0); } while (waited < 0 && errno == EINTR);
+        if (waited == child && WIFEXITED(status)) result->exit_code = WEXITSTATUS(status);
+        result->stdout_str = fern_exec_read_capture(output);
+        result->stderr_str = fern_exec_read_capture(error);
+    } else {
+        result->stderr_str = FERN_STRDUP(strerror(spawned));
     }
-    
-    /* Build quoted command string */
-    char* cmd = FERN_ALLOC(total_len + 1);
-    assert(cmd != NULL);
-    char* p = cmd;
-    for (int64_t i = 0; i < args->len; i++) {
-        if (i > 0) *p++ = ' ';
-        /* Simple quoting - wrap in single quotes */
-        *p++ = '\'';
-        const char* arg = args->data[i];
-        while (*arg) {
-            if (*arg == '\'') {
-                /* Escape single quote: ' -> '\'' */
-                memcpy(p, "'\\''", 4);
-                p += 4;
-            } else {
-                *p++ = *arg;
-            }
-            arg++;
-        }
-        *p++ = '\'';
-    }
-    *p = '\0';
-    
-    FernExecResult* result = fern_exec(cmd);
-    FERN_FREE(cmd);
+    fclose(output);
+    fclose(error);
     return result;
 }
 
