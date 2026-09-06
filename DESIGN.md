@@ -3207,6 +3207,7 @@ const validated_regex = comptime:
 
 2. **Formatter** (v0.2)
    - `fern fmt` - Format code (automatic indentation, consistency)
+   - Rust frontend: `fern-rs fmt --check source.fn` checks canonical formatting without writing; exit0 means clean, exit1 means drift or an input error.
    - Style guide enforced automatically
 
 3. **LSP** (v0.3)

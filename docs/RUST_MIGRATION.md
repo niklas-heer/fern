@@ -926,3 +926,13 @@ temporary profiles. [The extension guide](../editor/zed-fern/README.md) document
 separate tools, offline provisioning and the unpublished-grammar limitation.
 This establishes local packaging and startup, not marketplace publication or full
 language syntax parity.
+
+## Formatter validation for CI — 2026-09-06
+
+`fern-rs fmt --check source.fn` checks the same canonical formatter used by normal
+`fmt`, without writing or creating temporary files. The flag also works after the
+source path. Clean input exits0 silently; formatting drift exits1 with a path
+diagnostic. Invalid input also exits1 and remains untouched. Six CLI regressions
+cover both flag positions, literal paths, metadata, read-only symlink targets and
+the transition from drift to clean after ordinary formatting. No backend/runtime
+is needed. Recursive formatting and the C CLI check mode are separate work.

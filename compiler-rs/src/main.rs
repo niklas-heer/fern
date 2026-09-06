@@ -19,6 +19,7 @@ struct Options {
     source: PathBuf,
     output: Option<PathBuf>,
     arguments: Vec<OsString>,
+    format_check: bool,
 }
 
 /// Parse options without interpreting shell syntax or silently ignoring extra arguments.
@@ -32,6 +33,7 @@ Subset: generic functions, custom types, modules, Int/Bool/String, List/Option/R
 Documentation: fern-rs doc <source.fn|directory> [--html] [-o output] generates source documentation.\n\
 Tests: fern-rs test --doc [source.fn|directory] executes documentation examples.\n\
 Formatting: fern-rs fmt source.fn updates the file after syntax validation.\n\
+Format validation: fern-rs fmt --check source.fn checks canonical formatting without writing.\n\
 Interactive evaluation: fern-rs repl retains successful bindings and typed functions.\n\
 Editor protocol: fern-rs lsp communicates over standard input/output.\n\
 Native builds: run just rust-build; FERN_QBE and FERN_RUNTIME_LIB override backend paths."
@@ -52,13 +54,21 @@ Native builds: run just rust-build; FERN_QBE and FERN_RUNTIME_LIB override backe
     let mut source = None;
     let mut output = None;
     let mut forwarded = Vec::new();
+    let mut format_check = false;
     let mut rest = arguments.into_iter().skip(1);
     while let Some(argument) = rest.next() {
         if argument == "--" && source.is_some() && command == "run" {
             forwarded.extend(rest);
             break;
         }
-        if argument == "-o" || argument == "--output" {
+        if argument == "--check" {
+            if command != "fmt" {
+                return Err("--check is only valid for fmt".into());
+            }
+            if std::mem::replace(&mut format_check, true) {
+                return Err("--check specified more than once".into());
+            }
+        } else if argument == "-o" || argument == "--output" {
             if !["emit", "build"].contains(&command.as_str()) {
                 return Err("-o is only valid for emit/build".into());
             }
@@ -80,13 +90,14 @@ Native builds: run just rust-build; FERN_QBE and FERN_RUNTIME_LIB override backe
         source: source.ok_or("missing source file")?,
         output,
         arguments: forwarded,
+        format_check,
     }))
 }
 
 /// Parse and check source before producing any artifacts or running backend tools.
 fn run(options: Options) -> Result<u8, String> {
     if options.command == "fmt" {
-        return format_file(&options.source);
+        return format_file(&options.source, options.format_check);
     }
     let loaded = modules::load(&options.source).map_err(|error| error.message)?;
     let typed = check::check(&loaded.program).map_err(|error| loaded.render(error))?;
@@ -125,7 +136,7 @@ fn run(options: Options) -> Result<u8, String> {
 
 /// Validate formatting before atomically replacing the canonical source, preserving permissions.
 /// Reads are bounded; failed formatting and writes leave the original source intact.
-fn format_file(source: &Path) -> Result<u8, String> {
+fn format_file(source: &Path, check_only: bool) -> Result<u8, String> {
     let path = source
         .canonicalize()
         .map_err(|e| format!("{}: {e}", source.display()))?;
@@ -140,6 +151,13 @@ fn format_file(source: &Path) -> Result<u8, String> {
         let line = prefix.bytes().filter(|b| *b == b'\n').count() + 1;
         format!("{}:{line}: error: {}", source.display(), e.message)
     })?;
+    if check_only {
+        return if text == formatted {
+            Ok(0)
+        } else {
+            Err(format!("{}: formatting changes required", source.display()))
+        };
+    }
     if text != formatted {
         let parent = path.parent().ok_or("source has no parent directory")?;
         let workspace = native::Workspace::new(parent).map_err(|e| e.to_string())?;

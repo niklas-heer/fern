@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity under both C and Rust frontends on five pinned fixtures, literal paths and all compiler/library source
-- Rust migration: `just rust-check` passing (1047 Rust tests (1048 on Linux), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 4 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 237 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: `just rust-check` passing (1053 Rust tests (1054 on Linux), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 4 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 237 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
 
@@ -70,6 +70,7 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] IEEE Float values, structural tuples/destructuring, pipelines and interpolation.
 - [x] Registry-driven runtime signatures and full-width/native-object adapters.
 - [x] Formatter preserving syntax/comments and persistent typed-IR interactive evaluation.
+- [x] Add non-writing Rust `fmt --check` for CI, with both flag positions, stable status/diagnostics and preserved literal-path/symlink/file metadata (six CLI regressions).
 - [x] Module-aware LSP diagnostics over unsaved buffers and UTF-16 edits.
 - [x] Replace unsafe argv shell reconstruction with literal process spawning (nine native regressions).
 - [x] Return explicit directory listing errors in both frontends and migrate native callers (four ABI, eight native, two binder and two alias checks).
