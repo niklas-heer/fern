@@ -4,6 +4,13 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 84 Generate the indentation-aware editor grammar from authored templates
+* **Date**: 2026-09-06
+* **Status**: Accepted; bounded native/query/WASM corpus verified
+* **Decision**: I will keep explicit grammar/query templates as editable sources, render every published grammar/query deterministically, and generate parser sources and ABI14 WASM only with pinned Tree-sitter 0.26.12 and WASI SDK 29.0. The Rust compiler and accepted source corpus remain the language authority.
+* **Context**: The old generator silently skipped the actual indentation grammar and could not derive aliases, newtypes or function clauses from C token names. Stale WASM copies and uncompiled query text did not establish editor correctness.
+* **Consequences**: The gate checks 24 accepted sources against Rust and native/WASM trees, eight bounded recovery cases, eight incremental edits, four executable queries, and scanner malformed-state/column/stack limits under sanitizers. The external scanner's explicit lifecycle exception permits Tree-sitter `ts_calloc`/`ts_free` and defensive reset/return guards instead of assertions on untrusted serialized state. All 128 indentation levels fit the 514-byte serialized state; columns are 32-bit and capped at 1 MiB. Generation checks every parser source/header plus both identical WASM copies; build output uses the canonical basename because it affects WASM metadata. Full Rust syntax parity and Zed extension registration/packaging remain open. The unavailable `/decision` skill is replaced by this established decision format.
+
 ### 82 Separate module type and value namespaces
 * **Date**: 2026-09-06
 * **Status**: Accepted for Rust migration completion

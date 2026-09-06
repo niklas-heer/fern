@@ -405,25 +405,13 @@ editor-support:
     @echo "To compile Tree-sitter grammar to WASM:"
     @echo "  just editor-support-compile"
 
-# Compile Tree-sitter grammar to WASM
+# Publish through pinned tooling and execute native/query/WASM/Rust syntax gates.
 editor-support-compile: editor-support
-    #!/usr/bin/env bash
-    set -euo pipefail
+    @python3 scripts/test_editor_support.py --update
 
-    echo "Compiling Tree-sitter grammar to WASM..."
-
-    if ! command -v tree-sitter >/dev/null 2>&1; then
-      echo "Error: tree-sitter CLI not found"
-      echo "Install with: npm install -g tree-sitter-cli"
-      exit 1
-    fi
-
-    (cd editor/tree-sitter-fern && tree-sitter generate)
-    (cd editor/tree-sitter-fern && tree-sitter build --wasm)
-
-    cp editor/tree-sitter-fern/tree-sitter-fern.wasm editor/zed-fern/languages/fern/fern.wasm
-
-    echo "✓ Tree-sitter grammar compiled and installed to Zed extension"
+# Verify generated source and binary reproducibility without publishing changes.
+editor-support-check:
+    @python3 scripts/test_editor_support.py
 
 # Help
 help:

@@ -2,7 +2,6 @@
   "name": "tree-sitter-fern",
   "version": "0.1.0",
   "description": "Tree-sitter grammar for the Fern programming language",
-  "main": "bindings/node",
   "keywords": [
     "tree-sitter",
     "fern",
@@ -14,11 +13,8 @@
   },
   "author": "Niklas Heer <niklas.heer@gmail.com>",
   "license": "MIT",
-  "dependencies": {
-    "nan": "^2.14.0"
-  },
   "devDependencies": {
-    "tree-sitter-cli": "^0.20.0"
+    "tree-sitter-cli": "0.26.12"
   },
   "tree-sitter": [
     {

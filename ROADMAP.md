@@ -203,6 +203,8 @@ The design document is broader than the executable implementation. See
 [release readiness](docs/RELEASE_READINESS.md) and [actor contracts](docs/ACTOR_RUNTIME.md).
 Do not interpret the historical Gate A–D labels as language completion.
 
+- [x] Reproducible Tree-sitter aliases/newtypes/function-clause checkpoint: native/WASM accepted/recovery/incremental corpus, executable editor queries, bounded scanner and pinned generated artifacts (Decision 84).
+- [ ] Complete Tree-sitter parity for remaining Rust syntax and verify Zed grammar registration/extension packaging.
 - [ ] Execute actor functions with suspension, typed messages/receive/timeouts, and descendant supervision lifecycle.
 - [x] Immutable native JSON parser/accessors/stringifier with exact numbers, Unicode validation and bounded resources (14,309 API checks, 24 budget checks and 6,000 numeric oracle cases in debug/release/sanitizer builds).
 - [x] Migrate Rust native JSON to opaque values/errors, immutable builders and bounded lossless collection adapters (ten native programs, twelve semantic rejections, eight Rust integration tests and 248 native builder checks per build).

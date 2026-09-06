@@ -1,6 +1,10 @@
 # Fern Language Extension for Zed
 
-This extension provides Fern language support for the [Zed](https://zed.dev) editor.
+This directory contains Fern editor integration work. Decision84 verifies the
+bounded Tree-sitter grammar and queries through native and WASM execution;
+Zed grammar registration and extension packaging remain unverified. The historical
+installation instructions below are not an end-to-end installation guarantee.
+See [grammar scope and reproducible tooling](../tree-sitter-fern/README.md).
 
 ## Features
 
