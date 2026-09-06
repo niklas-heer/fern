@@ -109,7 +109,7 @@ pub(super) fn format(value: f64) -> Result<String> {
         return Ok(if value.is_sign_negative() { "-0" } else { "0" }.into());
     }
     let scientific = format!("{:.16e}", value.abs());
-    let (mantissa, exponent) = scientific.split_once('e').ok_or(error(8, -1))?;
+    let (mantissa, exponent) = scientific.split_once('e').ok_or_else(|| error(8, -1))?;
     let exponent: i32 = exponent.parse().map_err(|_| error(8, -1))?;
     let mut digits = mantissa.replace('.', "");
     while digits.len() > 1 && digits.ends_with('0') {

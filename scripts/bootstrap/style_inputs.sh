@@ -106,10 +106,10 @@ style_source_paths() {
     style_small_file "$style_work/source.paths" 16777216 || return 125
     while IFS= read -r -d '' path; do
         style_path "$path" && [[ -f $path && ! -L $path ]] || return 125
-        count=$((count + 1)); ((count <= 4093)) || return 125
+        count=$((count + 1)); ((count <= 4092)) || return 125
         style_sources+=("$path")
     done < "$style_work/source.paths"
-    style_sources+=("$style_root/Justfile" "$style_root/scripts/check_style.fn" "$style_root/scripts/check_style")
+    style_sources+=("$style_root/mise.toml" "$style_root/scripts/build_config" "$style_root/scripts/check_style.fn" "$style_root/scripts/check_style")
     printf '%s\n' "${style_sources[@]}" | "$style_sort" > "$style_work/source.sorted" || return 125
     style_sources=()
     while IFS= read -r path; do style_sources+=("$path"); done < "$style_work/source.sorted"
@@ -126,7 +126,7 @@ style_environment() {
         printf '%s\0%s\0%s\0' "$name" "${!name+x}" "${!name-}" >> "$style_work/environment" || return 125
     done
     printf '%s\0%s\0' "$style_platform" "$style_root" >> "$style_work/environment" || return 125
-    "$style_just" --justfile "$style_root/Justfile" --evaluate >> "$style_work/environment" || return 125
+    /bin/bash "$style_root/scripts/build_config" >> "$style_work/environment" || return 125
     for name in bdw-gc sqlite3 openssl; do
         printf '%s\0' "$name" >> "$style_work/environment" || return 125
         "$style_pkg" --cflags --libs "$name" >> "$style_work/environment" || return 125

@@ -44,3 +44,6 @@ This folder contains project-level reference documents. Use this file as the can
 ## Policy
 
 When a document is superseded, keep a short pointer file at the old location and link to the current canonical source.
+
+- [Development tasks and tools](DEVELOPMENT_ENVIRONMENT.md): mise setup, pinned tools, optional feedback and reproducibility boundaries.
+- [Rust guidance adoption](RUST_GUIDANCE.md): lint policy, phase benchmarks and every adopted or omitted recommendation.

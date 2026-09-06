@@ -160,7 +160,7 @@ pub(super) fn access(
             .and_then(|n| values.get(n))
             .cloned()
             .map(Value::Json)
-            .ok_or(error(7, -1)),
+            .ok_or_else(|| error(7, -1)),
         ("length", Kind::Array(values), []) => Ok(Value::Int(values.len() as i64)),
         ("length", Kind::Object(values, _), []) => Ok(Value::Int(values.len() as i64)),
         ("as_bool", Kind::Bool(value), []) => Ok(Value::Bool(*value)),

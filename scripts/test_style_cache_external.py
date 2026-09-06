@@ -12,7 +12,7 @@ def tool_path(directory):
     """Provide only the finite native toolchain; neither Python nor uv exists on this PATH."""
     path = directory / 'native-tools'
     path.mkdir()
-    names = ('bash', 'clang', 'just', 'pkg-config', 'ar', 'openssl', 'find', 'sort', 'stat',
+    names = ('bash', 'clang', 'mise', 'run', 'pkg-config', 'ar', 'openssl', 'find', 'sort', 'stat',
              'mkdir', 'chmod', 'mktemp', 'cat', 'cmp', 'rmdir', 'cp', 'mv', 'rm', 'ln', 'uname', 'head', 'tail', 'ld', 'ldd')
     for name in names:
         selected = shutil.which(name)

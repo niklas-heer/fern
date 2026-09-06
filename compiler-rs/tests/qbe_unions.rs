@@ -96,7 +96,7 @@ fn fabricated_injection_widening_and_narrowed_binders_are_rejected() {
         expr(Type::Bool, ExprKind::Bool(true)),
     ));
     assert!(qbe::emit(&bad).is_err());
-    let value = inject(narrow.clone(), expr(Type::Int, ExprKind::Int(1)));
+    let value = inject(narrow, expr(Type::Int, ExprKind::Int(1)));
     let bad = program(expr(
         union(vec![Type::Int, Type::Bool]),
         ExprKind::UnionWiden {

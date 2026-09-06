@@ -156,23 +156,23 @@ The ROADMAP.md is the single source of truth for project progress. Failing to up
 
 ```bash
 # Single command that does EVERYTHING (strict mode - warnings are errors):
-just check
+mise run check
 ```
 
 This runs the Fern-native quality checker (`scripts/check_style`), followed by
 explicit Python integration and parity oracles. The native checker performs:
-1. **Clean build** - `just clean && just debug` (catches stale .o files)
-2. **Unit tests** - `just test` (all 346+ tests must pass)
+1. **Clean build** - `mise run clean && mise run debug` (catches stale .o files)
+2. **Unit tests** - `mise run test` (all 346+ tests must pass)
 3. **Examples** - Type-checks all `examples/*.fn` files
 4. **FERN_STYLE** - Code compliance (assertions, function length, docs, etc.)
 
 **Alternative commands:**
 ```bash
-just check          # Full check (build + test + examples + style) - STRICT
-just style          # FERN_STYLE only (strict mode)
-just style-lenient  # FERN_STYLE only (warnings allowed, for development)
-just pre-commit     # Pre-commit hook mode (includes git hygiene checks)
-just test-examples  # Type-check all examples/*.fn files
+mise run check          # Full check (build + test + examples + style) - STRICT
+mise run style          # FERN_STYLE only (strict mode)
+mise run style-lenient  # FERN_STYLE only (warnings allowed, for development)
+mise run pre-commit     # Pre-commit hook mode (includes git hygiene checks)
+mise run test-examples  # Type-check all examples/*.fn files
 ```
 
 **Strict mode (default):** All warnings are treated as errors. This ensures:
@@ -182,20 +182,20 @@ just test-examples  # Type-check all examples/*.fn files
 - No raw char* parameters
 
 **Why this matters:**
-- `just clean` removes stale `.o` files that can mask errors
+- `mise run clean` removes stale `.o` files that can mask errors
 - Unit tests verify no regressions in compiler code
 - Examples test the full compilation pipeline end-to-end
 - Style checker enforces FERN_STYLE requirements
 
-**DO NOT commit if `just check` fails.**
+**DO NOT commit if `mise run check` fails.**
 
 ### Pre-Commit Checklist
 
 Before every commit, verify:
 
-- [ ] Clean build passes: `just clean && just debug`
-- [ ] All tests pass: `just test`
-- [ ] Style check passes: `just style`
+- [ ] Clean build passes: `mise run clean && mise run debug`
+- [ ] All tests pass: `mise run test`
+- [ ] Style check passes: `mise run style`
 - [ ] ROADMAP.md is updated with progress
 - [ ] Code follows DESIGN.md specification
 - [ ] Code follows FERN_STYLE.md (min 2 assertions per function, <70 lines)
@@ -330,8 +330,8 @@ fern/
 Decision 45 permits the experimental `compiler-rs/` frontend to use safe Rust
 and standard owned types, enums, `Vec`, and `Result`. C-specific library and
 assertion rules below apply to C; Rust uses type-enforced invariants, explicit
-input limits, rustfmt, and clippy. Run `just rust-check` in addition to
-`just check` for prototype changes. The shipping compiler remains C.
+input limits, rustfmt, and clippy. Run `mise run rust-check` in addition to
+`mise run check` for prototype changes. The shipping compiler remains C.
 
 The Fern compiler is written in **C11** with modern safety libraries. This provides:
 - Excellent AI code generation (C is well-represented in training data)
@@ -843,7 +843,7 @@ Expr **arr = malloc(size * sizeof(Expr*));
 Before committing code, verify:
 
 **Mandatory Verification (single command):**
-- [ ] `just check` - Full quality check (build + test + examples + style)
+- [ ] `mise run check` - Full quality check (build + test + examples + style)
 - [ ] ROADMAP.md updated with completed tasks
 
 This single command runs:
@@ -887,7 +887,7 @@ Edit `scripts/editor/grammar.js.in` and the highlight/outline templates beside i
 The token inventory in `scripts/generate_editor_support.py` remains legacy
 metadata; token names cannot derive structural syntax. Edit
 `editor/tree-sitter-fern/src/scanner.c` directly for indentation behavior.
-`just editor-support` always renders the grammar and both query templates;
+`mise run editor-support` always renders the grammar and both query templates;
 `python3 scripts/generate_editor_support.py --check` reports drift without writes.
 There is no special skip for external scanners.
 
@@ -898,8 +898,8 @@ project generator and pinned Tree-sitter CLI may produce them.
 
 Use the isolated, checksum-pinned tools described in
 [the grammar README](editor/tree-sitter-fern/README.md).
-`just editor-support-compile` regenerates through ABI14 tooling and runs the full
-native/query/WASM/Rust syntax gate before completing. `just editor-support-check`
+`mise run editor-support-compile` regenerates through ABI14 tooling and runs the full
+native/query/WASM/Rust syntax gate before completing. `mise run editor-support-check`
 checks reproducibility without publishing artifacts. Neither command installs
 global tools. A missing compiler oracle, WASI SDK or web runtime is an error.
 Generated C is excluded from hand-authored function/style requirements.
@@ -942,6 +942,6 @@ The entire safety strategy is:
 These rules eliminate 90% of C's danger while keeping AI productivity high. The FERN_STYLE.md requirements ensure assertions document invariants and small functions fit in AI context windows.
 
 **After EVERY task:**
-1. Run `just check` (build + test + examples + style, strict mode)
+1. Run `mise run check` (build + test + examples + style, strict mode)
 2. Update ROADMAP.md
 3. Then commit

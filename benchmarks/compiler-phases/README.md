@@ -1,0 +1,56 @@
+# Compiler phase benchmarks
+
+This separate, unpublished workspace measures the actual Rust frontend with
+Criterion 0.5.1. It adds no dependencies to the production compiler. Its own
+version-3 lockfile was built and tested with Rust 1.75.0; always use `--locked`.
+Updating transitive dependencies without that lock can select a newer MSRV
+(the initial resolution selected an edition-2024 clap_lex and failed on 1.75).
+The lock retains clap 4.5.4 and half 2.4.1. No Cargo install is needed.
+
+From the repository root:
+
+```sh
+cargo test --manifest-path benchmarks/compiler-phases/Cargo.toml --locked
+cargo clippy --manifest-path benchmarks/compiler-phases/Cargo.toml --locked --all-targets -- -D warnings
+cargo bench --manifest-path benchmarks/compiler-phases/Cargo.toml --locked --bench phases -- --test
+cargo bench --manifest-path benchmarks/compiler-phases/Cargo.toml --locked --bench phases -- --save-baseline local
+cargo bench --manifest-path benchmarks/compiler-phases/Cargo.toml --locked --bench phases -- --baseline local
+```
+
+Mise integration exposes the smoke run as `rust-bench-smoke` and the statistical
+run as `rust-bench`; the explicit `--bench phases` avoids passing Criterion
+options to Rust's library-test runner. A populated Cargo cache also supports
+`--offline`; first setup must fetch the locked developer dependencies.
+
+The three fixtures are a 64-function scalar program, a generic recursive
+component instantiated at two types, and a derived JSON record. Each is parsed,
+checked and emitted before timing starts. Tests also verify its REPL behavior,
+generic specialization, entry ABI, and actual codec/storage graph. Nine cases
+measure parsing source bytes, checking a pre-parsed AST, or emitting already
+checked IR. A tenth validates the actual JSON record codec plan. The proof case
+measures validation, not JSON encoding throughput or native runtime execution.
+
+Inputs and returned results cross `std::hint::black_box`; allocation and drop
+of the measured phase's output are included. Fixture construction, source I/O,
+process startup and preparation of earlier phases are outside the loops.
+The source-byte throughput label is a fixture-size normalization, not a claim
+that checking/emission scan only that many bytes. No benchmark is an empty
+stand-in for a future phase.
+
+Each case uses 50 samples, 500 ms warm-up and a 2 s measurement target. Criterion
+stores estimates, confidence intervals and raw sample data in this package's
+`target/criterion/`. Its default Rayon/plotting/async features are disabled;
+`cargo_bench_support` is sufficient for this command-line workload.
+See the [pinned feature manifest](https://github.com/bheisler/criterion.rs/blob/0.5.1/Cargo.toml)
+and [Criterion's measurement guide](https://bheisler.github.io/criterion.rs/book/user_guide/timing_loops.html).
+
+`baseline-guidance107.json` records one real development-machine run, fixture
+implementation and lock hashes, toolchain, and confidence intervals. It validates
+the statistical workflow; it is not a performance threshold or comparison.
+Other agents were using the host during measurement. Re-measure before/after
+changes on the same quiet machine/toolchain and inspect distributions before
+claiming improvement. CI uses the deterministic smoke run, not timing thresholds.
+
+These measurements complement `scripts/evaluate_rust_frontend.py`, which measures
+subprocess cold/warm compilation and backend comparison. They do not replace
+native correctness, memory/resource, platform, or backend evaluation gates.

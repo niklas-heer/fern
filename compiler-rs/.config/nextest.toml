@@ -1,0 +1,5 @@
+# Optional developer runner; cargo test and doc tests remain the required baseline.
+nextest-version = "0.9.143"
+[profile.default]
+test-threads = 4
+retries = 0

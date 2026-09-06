@@ -1,4 +1,4 @@
-#!/usr/bin/env -S uv run --script
+#!/usr/bin/env -S uv run --locked --script
 # /// script
 # requires-python = ">=3.11"
 # dependencies = ["rich>=13.0"]
@@ -72,8 +72,8 @@ def check_failed_build(binary, temporary):
     """A failed build must not skip later checks or become a successful final status."""
     directory = Path(temporary) / "isolated workflow"
     directory.mkdir()
-    fake = directory / "just"
-    fake.write_text("#!/bin/sh\ncase \"$1\" in\n"
+    fake = directory / "mise"
+    fake.write_text("#!/bin/sh\ncase \"$2\" in\n"
                     "clean) exit 0;;\ndebug) echo forced-build-failure; exit 3;;\n"
                     "test) echo 'All tests passed'; exit 0;;\n*) exit 9;;\nesac\n")
     fake.chmod(0o700)

@@ -4,6 +4,48 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 107 Incremental Rust lint and benchmark guidance
+* **Date**: 2026-09-06
+* **Status**: ✅ Adopted
+* **Decision**: I will enforce tested MSRV-compatible lints, audit strict restrictions module by module, and measure compiler phases in an independently locked Criterion developer package.
+* **Context**: The attached review guidance calls for practical safety checks and developer tools while preserving the existing project contracts.
+* **Consequences**: Adopt eight MSRV-compatible package Clippy restrictions, production panic restrictions,
+and a stricter audited source-directory module. Test lint names and enforcement with
+real offline negative crates. Keep validated bounded arithmetic narrowly documented.
+Reject oversized initial source paths before allocation/filesystem lookup.
+
+Add Criterion 0.5.1 in an independent unpublished developer workspace with an exact
+Rust1.75-tested dependency lock. Measure parsing, checking, QBE emission and actual
+codec validation, with independently verified fixtures and black_box. Keep compiler
+production dependencies and lock unchanged. CI smoke checks behavior; statistical
+baselines are optional and cannot alone establish performance improvement.
+
+Use the Decision106 mise workflow and its tested optional tools, not Nix/devenv or
+a new Justfile. Preserve the production MSRV and exact CLI semantics (Decision108
+owns any CLI parser change). docs/RUST_GUIDANCE.md records every attached suggestion,
+its adoption/omission rationale and remaining boundary. No unrelated product crate,
+global tool installation, native runtime changes, or automatic dependency updates.
+
+### 106 Reproducible development tasks with mise
+* **Date**: 2026-09-06
+* **Status**: ✅ Adopted
+* **Decision**: I will use mise as the maintained development environment and task runner, preserving Rust 1.75 and isolating optional newer developer tools.
+* **Context**: The user requested reproducible onboarding and broad adoption of the Rust review guidance without Nix/devenv.
+* **Consequences**: Adopt mise as the sole maintained task/environment entry point, replacing Justfile and mask. Keep existing task names and native gate commands; run composite clean/build/consumer steps sequentially, and set default task jobs to one. No Nix/devenv configuration is introduced.
+
+Pin the required tools to Rust1.75.0 (rustfmt, Clippy, rust-src), Python3.14.7 (the existing CPython3.14 reference contract) and uv0.12.5. CI pins mise2026.9.1 and immutable mise-action commit c2a87611a18de5b3828c5652fe268e992400cb5c. Mise configuration accepts this version or newer. Pin binary-download URLs and SHA256 values on Linux/macOS x64/arm64; use strict config-scoped locking. Rust remains a rustup-backed version pin verified by its distribution mechanism, not a mise URL lock. The three Python reference-script graphs have uv script locks and enforced --locked execution; stale metadata fails without running scripts or updating locks. Native packages/SDKs remain host-managed inputs, not a reproducible OS image or offline build claim.
+
+Centralize authored C configuration in scripts/build_config, consumed by task scripts and the existing bounded native checker bootstrap. Keep its source snapshot, compiler-profile rejection, content/dependency cache validation and supervisor lifecycle unchanged. The checker itself does not execute Python/Cargo; mise may provision configured project tools before any task. Direct scripts/check_style execution remains available with only native dependencies.
+
+Expose focused non-writing Rust formatting, locked all-target/all-feature checking, Clippy warnings-as-errors, tests and documentation tests. The editor baseline uses an explicitly installed Rust Analyzer editor extension plus rust-src; no extension is installed silently. Preserve Zed package Rust1.97.1 through a task-local process scope so the project Rust1.75 environment cannot override its component toolchain.
+
+Provide opt-in nextest0.9.143 (prebuilt, four threads, no retries) and watchexec2.7.1 (explicit project origin, literal queued cargo-check command). Required CI retains cargo test and documentation tests. Provide optional Bacon3.25.0 check/Clippy UI: its installer uses a separately pinned Rust1.98.1 and cargo install --locked into compiler-rs/target/dev-tools/bacon-3.25.0; its actual project jobs explicitly select Rust1.75. No global executable/default or application dependency changes. This source build and extra compiler are opt-in, not ordinary setup requirements.
+
+Keep historical decisions and published measurements unchanged. Update active guidance, CI, release/developer scripts, compiler help and bootstrap workflow to mise. Cargo-generate/cargo-seek have no concrete existing workflow here and are not installed speculatively. Decision107 supplies the verified rust-lint-policy, rust-bench-smoke and rust-bench tasks and a separate developer dependency lock.
+
+Verification includes real runner dependency serialization, literal source/config/installation paths, fail-fast native task dispatch, pin mismatch rejection, all platform lock records, optional toolchain separation, and the existing bootstrap/native workflow gates. Mise provisioning installs the configured rust-src component for the pinned project toolchain. Fresh Linux tools and the combined macOS/Linux Rust, native, cache, documentation and nextest gates passed. Literal quoted build flags and pkg-config paths use a bounded non-evaluating decoder, tested across all build helpers and generated roundtrips.
+
+
 ### 109 Reevaluate native backends with measured user workflows
 * **Date**: 2026-09-06
 * **Status**: Assessment accepted; production backend and compiler MSRV unchanged

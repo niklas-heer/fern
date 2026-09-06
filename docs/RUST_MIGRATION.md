@@ -28,7 +28,7 @@ prototype; its measurements do not describe the expanded compiler.
 Try the collection and error examples:
 
 ```sh
-just rust-build
+mise run rust-build
 ./bin/fern-rs run compiler-rs/tests/collections/lists.fn
 ./bin/fern-rs run compiler-rs/tests/collections/propagation.fn
 ./bin/fern-rs run compiler-rs/tests/collections/nested_sums.fn
@@ -108,13 +108,13 @@ suite against C remains in place and currently reports four known backend
 differences. The new heap Option representation is checked against Fern semantics
 directly because it deliberately differs from C's packed ABI.
 
-Run `just rust-check`, `just check`, and `just docs-check` to reproduce the gates.
+Run `mise run rust-check`, `mise run check`, and `mise run docs-check` to reproduce the gates.
 The same Rust gates are configured in the existing Linux/macOS CI matrix; this
 milestone was verified locally on macOS arm64.
 
 ## Collections-stage release measurements
 
-`just rust-evaluate` passed with the expanded frontend, using the same 101-function
+`mise run rust-evaluate` passed with the expanded frontend, using the same 101-function
 shared-subset fixture, 15 check/emit samples and three verified native builds per
 compiler. The host is macOS arm64 with Rust 1.75 and Apple clang 16. See
 [raw measurements and hashes](reports/rust-collections-evaluation-2026-09-05.json).
@@ -825,7 +825,7 @@ The shared parity gate accepts `--compiler` and verifies exact strict/lenient
 records, severity, exit codes and file counts on five pinned fixtures, nested
 folders, literal paths and all compiler/library source. An isolated failed-build
 scenario verifies continuation and final failure without invoking project builds.
-`just rust-check` runs this gate with the Rust frontend; `just style-parity` uses C.
+`mise run rust-check` runs this gate with the Rust frontend; `mise run style-parity` uses C.
 
 This is diagnostic and source-portability parity. Full build/test/git/CLI workflow
 parity, bounded native process execution and the default-checker switch remain
@@ -1193,7 +1193,7 @@ work and is not claimed fixed by this fixture change.
 ## Native quality-checker default (Decision93) — 2026-09-06
 
 The default style, lenient and pre-commit recipes now launch the compiled Fern
-checker through a content-validated C-bootstrap cache. Full `just check` keeps
+checker through a content-validated C-bootstrap cache. Full `mise run check` keeps
 its independent Python integration cases, while ordinary style checks require
 neither Python nor Cargo. Seven real-Just dispatch regressions first failed when
 Python tools were disabled, then passed with exact native arguments, streams

@@ -1145,7 +1145,7 @@ static int cmd_test(Arena* arena, const char* filename) {
 
     const char* test_override = getenv("FERN_TEST_CMD");
     const char* doc_override = getenv("FERN_TEST_DOC_CMD");
-    const char* test_command = (test_override && test_override[0] != '\0') ? test_override : "just test";
+    const char* test_command = (test_override && test_override[0] != '\0') ? test_override : "mise run test";
     const char* doc_command_base = (doc_override && doc_override[0] != '\0')
         ? doc_override
         : "python3 scripts/run_doc_tests.py";

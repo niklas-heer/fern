@@ -2,8 +2,8 @@
 
 The native checker runs build, test, examples, style and advisory Git checks using
 literal subprocess arguments with explicit time/output limits. Both C and Rust
-can compile `scripts/check_style.fn`; `just style-fern` runs its full workflow.
-`just style`, `just style-lenient`, `just pre-commit` and the primary `just check`
+can compile `scripts/check_style.fn`; `mise run style-fern` runs its full workflow.
+`mise run style`, `mise run style-lenient`, `mise run pre-commit` and the primary `mise run check`
 workflow use the [native launcher](NATIVE_STYLE_CHECKER.md). Ordinary style checks
 require neither Python nor Cargo. Full checks retain explicit Python integration
 tests, and the Python checker remains the compatibility reference. The workflow
@@ -13,10 +13,10 @@ different expected behavior. Normal Python checker execution remains available
 under its existing supported versions. Native CLI behavior is independent of
 the installed Python version.
 
-`just style-parity` compares exact style diagnostic identities, severities,
+`mise run style-parity` compares exact style diagnostic identities, severities,
 messages, counts and exits on five fixtures and every compiler/library C source,
-then checks the full command workflow. `just check` includes the workflow cases,
-and `just rust-check` repeats diagnostic/workflow checks with the Rust compiler.
+then checks the full command workflow. `mise run check` includes the workflow cases,
+and `mise run rust-check` repeats diagnostic/workflow checks with the Rust compiler.
 
 The 66 workflow cases cover build warnings/failures, test counts, sorted literal
 example paths, bounded error details, missing tools/directories, advisory Git
@@ -38,6 +38,6 @@ The [Unicode classifier](STRING_DECIMAL.md) pins the same Unicode 16 profile.
 
 Default migration is verified through cold-build, source/compiler/runtime and
 external-dependency invalidation, failure, concurrent invocation and ownership
-tests on macOS/Linux. `just style-launcher-check` runs the native infrastructure
+tests on macOS/Linux. `mise run style-launcher-check` runs the native infrastructure
 matrices. See the [launcher contract](NATIVE_STYLE_CHECKER.md) for configuration,
 cache cleanup and precise supervision limits.

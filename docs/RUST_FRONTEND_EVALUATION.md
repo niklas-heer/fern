@@ -25,8 +25,8 @@ limits, build commands, architecture, and remaining language/tooling gaps.
 Rust implements `check`, `emit`, `build`, and `run`; normal Fern commands and
 release packaging still use C.
 
-Local verification passed `just check` (542 C tests and existing integration/style
-gates), `just rust-check`, `just docs-check`, and strict style checks for the C QBE
+Local verification passed `mise run check` (542 C tests and existing integration/style
+gates), `mise run rust-check`, `mise run docs-check`, and strict style checks for the C QBE
 adapter. Linux/macOS Rust validation is added to CI; Linux execution was not
 available in this local macOS run.
 
@@ -68,7 +68,7 @@ local feasibility experiment on a small shared subset.
 Reproduce release measurements and native differential output:
 
 ```sh
-just rust-evaluate
+mise run rust-evaluate
 python3 scripts/test_rust_frontend.py \
   --rust-bin compiler-rs/target/release/fern-rs \
   --report build/rust-native-comparison.json
@@ -116,7 +116,7 @@ Each phase is one wall-clock sample, so differences below are exploratory.
 | No source change | 0.021 s | 0.020 s |
 | One source comment change | 0.473 s | 1.282 s |
 
-Two runs of `just _build-fern release` took 3.97 s and 3.91 s. That recipe recompiles
+Two runs of `mise run _build-fern release` took 3.97 s and 3.91 s. That recipe recompiles
 the complete C frontend, support libraries, and QBE every time; there is no
 incremental object-reuse path in the current recipe. It excludes the runtime.
 The Rust measurements exclude QBE/runtime and cover a much smaller implementation,

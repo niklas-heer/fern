@@ -1,4 +1,4 @@
-#!/usr/bin/env -S uv run --script
+#!/usr/bin/env -S uv run --locked --script
 # /// script
 # requires-python = ">=3.14,<3.15"
 # dependencies = ["rich>=13.0"]
@@ -32,7 +32,7 @@ def setup(directory, case):
     """Create literal fake tools and fixtures, never invoking a real build or Git mutation."""
     for name in ['tools', 'bin', 'src', 'lib']:
         (directory / name).mkdir()
-    for name in ['just', 'git']:
+    for name in ['mise', 'git']:
         tool = directory / 'tools' / name
         tool.write_text(FAKE.format(python=sys.executable)); tool.chmod(0o700)
     if case.get('compiler', True):
@@ -87,21 +87,21 @@ def build_cases():
     """Cover every build/test state, stderr inspection and continuation after failure."""
     common = ['Tests:', 'Examples:', 'FERN_STYLE Compliance']
     return [
-        dict(name='clean_failure', replies={'just clean':[3,'clean detail','']}, code=1,
+        dict(name='clean_failure', replies={'mise run clean':[3,'clean detail','']}, code=1,
              contains=['Build: Clean failed', *common], absent=['clean detail']),
-        dict(name='build_failure', replies={'just debug':[2,'build stdout','build stderr']}, code=1,
+        dict(name='build_failure', replies={'mise run debug':[2,'build stdout','build stderr']}, code=1,
              contains=['Build: Build failed', 'build stdoutbuild stderr', *common]),
-        dict(name='warning_case', replies={'just debug':[0,'','WARNING: native warning']}, code=1,
+        dict(name='warning_case', replies={'mise run debug':[0,'','WARNING: native warning']}, code=1,
              contains=['Build: Build has warnings/errors', 'WARNING: native warning', *common]),
-        dict(name='error_case', replies={'just debug':[0,'ERROR: native error','']}, code=1,
+        dict(name='error_case', replies={'mise run debug':[0,'ERROR: native error','']}, code=1,
              contains=['Build: Build has warnings/errors', *common]),
-        dict(name='tests_count', replies={'just test':[0,'Passed: 0042\n','']},
+        dict(name='tests_count', replies={'mise run test':[0,'Passed: 0042\n','']},
              contains=['Build: Build clean', 'Tests: All tests passing (0042 tests)', 'All checks passed!']),
-        dict(name='tests_count_stderr', replies={'just test':[0,'Passed:', ' \n17\n']},
+        dict(name='tests_count_stderr', replies={'mise run test':[0,'Passed:', ' \n17\n']},
              contains=['Tests: All tests passing (17 tests)']),
-        dict(name='tests_plain', replies={'just test':[0,'All tests passed\n','']},
+        dict(name='tests_plain', replies={'mise run test':[0,'All tests passed\n','']},
              contains=['Tests: Tests passed', 'No .c files found to check']),
-        dict(name='tests_failure', replies={'just test':[9,'test stdout','test stderr']}, code=1,
+        dict(name='tests_failure', replies={'mise run test':[9,'test stdout','test stderr']}, code=1,
              contains=['Tests: Tests failed', 'test stdouttest stderr', 'Examples:']),
     ]
 
@@ -119,7 +119,7 @@ def example_cases():
              replies={'fern':[1,'','🌿'*101]}, code=1,
              contains=['a.fn: ' + '🌿'*100], absent=['🌿'*101]),
         dict(name='compiler_missing', compiler=False, files={'examples/a.fn':''}, code=1,
-             contains=['Examples: Fern compiler not built', 'Run just debug first']),
+             contains=['Examples: Fern compiler not built', 'Run mise run debug first']),
         dict(name='literal_examples', files={name:'' for name in reversed(names)},
              contains=['Examples: All 4 examples type-check']),
         dict(name='example_failure_details', files={f'examples/{i}.fn':'' for i in range(7)},

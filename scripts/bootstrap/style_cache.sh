@@ -17,19 +17,18 @@ style_tools_init() {
     style_openssl=$(style_tool openssl) || return 125
     style_find=$(style_tool find) || return 125
     style_sort=$(style_tool sort) || return 125
-    style_just=$(style_tool just) || return 125
     style_pkg=$(style_tool pkg-config) || return 125
     style_ar=$(style_tool ar) || return 125
     if [[ -n ${FERN_STYLE_CC-} ]]; then
         style_cc=$(style_tool "$FERN_STYLE_CC") || return 125
     else
         local configured
-        configured=$("$style_just" --justfile "$style_root/Justfile" --evaluate cc) || return 125
+        configured=$(/bin/bash "$style_root/scripts/build_config" cc) || return 125
         [[ -n $configured && ${#configured} -le 4096 && $configured != *$'\n'* && $configured != *$'\r'* ]] || return 125
         style_cc=$(style_tool "$configured") || return 125
     fi
     style_cc=$(style_absolute "$style_cc") || return 125
-    style_tools=("$style_cc" "$style_just" "$style_pkg" "$style_ar" "$style_openssl"
+    style_tools=("$style_cc" "$style_pkg" "$style_ar" "$style_openssl"
         "$style_find" "$style_sort" "$style_stat_tool" /bin/bash /bin/ls /bin/cp /bin/mv /bin/rm /bin/cat /bin/mkdir /bin/chmod /bin/ln /usr/bin/cmp /usr/bin/mktemp /usr/bin/head /usr/bin/tail /usr/bin/grep /usr/bin/readlink /usr/bin/id /usr/bin/uname /bin/rmdir /bin/sleep)
     if [[ $style_platform == Darwin ]]; then
         style_tools+=(/usr/bin/xcrun /usr/bin/sw_vers "$(/usr/bin/xcrun --find clang)" "$(/usr/bin/xcrun --find ld)")

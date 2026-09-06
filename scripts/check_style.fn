@@ -64,8 +64,8 @@ fn print_help():
     println("  --style-only        Only FERN_STYLE checks (skip build/test/examples)")
     println("  --pre-commit        Pre-commit hook mode (includes git hygiene)")
     println("\nAll Checks Run:")
-    println("  1. Build            just clean && just debug (no warnings)")
-    println("  2. Tests            just test (all must pass)")
+    println("  1. Build            mise run clean && mise run debug (no warnings)")
+    println("  2. Tests            mise run test (all must pass)")
     println("  3. Examples         Type-check all examples/*.fn files")
     println("  4. FERN_STYLE       Code compliance checks")
 
@@ -205,11 +205,11 @@ fn process_failure(code: Int) -> String:
             "Command failed (process error {code})"
 
 fn check_build() -> (Bool, String, String):
-    let clean = workflow_command(["just", "clean"])
+    let clean = workflow_command(["mise", "run", "clean"])
     if clean.0 != 0:
         (false, "Clean failed", "")
     else:
-        let build = workflow_command(["just", "debug"])
+        let build = workflow_command(["mise", "run", "debug"])
         let output: String = build.1 + build.2
         let lower = String.to_lower(output)
         if build.0 != 0:
@@ -221,7 +221,7 @@ fn check_build() -> (Bool, String, String):
                 (true, "Build clean", "")
 
 fn check_tests() -> (Bool, String, String):
-    let result = workflow_command(["just", "test"])
+    let result = workflow_command(["mise", "run", "test"])
     let output: String = result.1 + result.2
     if result.0 != 0:
         (false, "Tests failed", output)
@@ -257,7 +257,7 @@ fn prepare_examples(files: List(String)) -> (Bool, String, String):
         (true, "No .fn files in examples/", "")
     else:
         if not File.exists("bin/fern"):
-            (false, "Fern compiler not built", "Run just debug first")
+            (false, "Fern compiler not built", "Run mise run debug first")
         else:
             check_example_files(files: files, passed: 0, failed: 0, details: [])
 

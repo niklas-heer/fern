@@ -17,7 +17,7 @@ def snapshot(directory):
     root.mkdir()
     for name in ("src", "lib", "include", "runtime", "deps", "scripts/bootstrap", "compiler-rs/backend"):
         shutil.copytree(ROOT / name, root / name, ignore=shutil.ignore_patterns(".git", "*.o"))
-    for name in ("Justfile", "scripts/check_style", "scripts/check_style.fn"):
+    for name in ("mise.toml", "scripts/build_config", "scripts/check_style", "scripts/check_style.fn"):
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / name, root / name)
     return root

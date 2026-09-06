@@ -119,7 +119,7 @@ void test_canonical_examples_build(void) {
         snprintf(
             cmd,
             sizeof(cmd),
-            "just runtime-lib >/dev/null 2>&1 && ./bin/fern build -o %s %s 2>&1",
+            "mise run runtime-lib >/dev/null 2>&1 && ./bin/fern build -o %s %s 2>&1",
             output_path,
             examples[i]
         );

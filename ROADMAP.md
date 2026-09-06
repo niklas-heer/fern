@@ -6,14 +6,14 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 
 ## Current Status Snapshot
 
-- Quality gate: `just check` passing (574 C tests, 16 full-width Int programs, native file/process/stderr/workflow/string/print tests, 13 TUI tests, 18 examples, strict style); validated with stale host `LIBRARY_PATH` excluded
-- Perf gate: `just perf-budget` passing on macOS arm64 (7.49 s build, 549,384-byte compiler, 2.82 ms startup p95)
-- Fuzz gate: `just fuzz-smoke` passing (64 cases, seed `0xC0FFEE`)
-- Docs gate: `just docs-check` passing (consistency, generation, doc tests); LSP RPC smoke passing
-- Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
+- Quality gate: `mise run check` passing (574 C tests, 16 full-width Int programs, native file/process/stderr/workflow/string/print tests, 13 TUI tests, 18 examples, strict style); validated with stale host `LIBRARY_PATH` excluded
+- Perf gate: `mise run perf-budget` passing on macOS arm64 (7.49 s build, 549,384-byte compiler, 2.82 ms startup p95)
+- Fuzz gate: `mise run fuzz-smoke` passing (64 cases, seed `0xC0FFEE`)
+- Docs gate: `mise run docs-check` passing (consistency, generation, doc tests); LSP RPC smoke passing
+- Release readiness: `mise run release-package` and `mise run release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: Fern-native default checker, exact native/Python diagnostic and 66 workflow parity cases, bounded content cache and native supervision verified on macOS/Linux; ordinary style checks need no Python/Cargo
-- Rust migration: `just rust-check` passing (1397 Rust tests (1399 on Linux; recursive Result proofs and typed JSON unions), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: `mise run rust-check` passing (1412 Rust checks (1414 on Linux; CLI controls, lint policy and typed JSON unions), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
 
@@ -34,7 +34,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 
 ## Rust Frontend Evaluation (2026-09-05)
 
-Status: Complete for the bounded prototype; `just check`, `just rust-check`, and `just docs-check` pass on macOS arm64. CI includes Linux/macOS Rust checks. C remains the shipping default (decision 45).
+Status: Complete for the bounded prototype; `mise run check`, `mise run rust-check`, and `mise run docs-check` pass on macOS arm64. CI includes Linux/macOS Rust checks. C remains the shipping default (decision 45).
 
 - [x] Build an independent lexer/parser for a clearly bounded Fern subset (11 parser tests).
 - [x] Resolve names and types once into a typed intermediate representation (10 checker tests).
@@ -44,6 +44,16 @@ Status: Complete for the bounded prototype; `just check`, `just rust-check`, and
 - [x] Record evidence, gaps, and a migration recommendation before expanding scope ([evaluation](docs/RUST_FRONTEND_EVALUATION.md)): continue Rust incrementally; require parity before switching defaults.
 
 ## Active Priorities
+
+### Development Environment and Rust Review Guidance
+
+- [x] Replace Justfile with pinned mise tools/tasks and platform checksums; preserve sequential native builds and explicit Zed toolchain scope (Decision106).
+- [x] Verify optional nextest, Bacon and watchexec against Rust 1.75 without adding application dependencies.
+- [x] Lock all three Python reference-script dependency graphs and reject metadata drift before execution.
+- [x] Preserve quoted native compiler flags and pkg-config paths through bounded literal decoding; cover all build helpers and 128 generated argument roundtrips.
+- [x] Add the strict incremental Rust lint policy and initial-path fix, with 17 negative/two positive lint contracts, three fixture tests, ten Criterion phase smoke cases and the review-guidance adoption matrix (Decision107).
+- [ ] Extend audited strict modules and collect quiet-host comparative phase measurements.
+- [x] Verify the combined environment/compiler gates on macOS and freshly provisioned Linux tools: full Rust/native/C/cache/docs gates, 1409/1410 nextest tests without skips, 23 workflow/flag/lock tests, lint contracts and Criterion smoke.
 
 ### Rust Migration Completion
 
@@ -176,7 +186,7 @@ Status: Complete for the native quality-checker bootstrap workflow
 - [x] Accept interpolated strings as indented C-parser body expressions (three AST regressions), including final branches followed by else.
 - [x] Run the native build/test/example/Git workflow through literal bounded argv, preserve stderr CLI failures and compare 47 scenarios under both frontends.
 - [x] Reach pinned diagnostic/workflow parity for `scripts/check_style.py` in `scripts/check_style.fn`, including Unicode numeric-path prefix classification (66 reference-first workflow cases under both frontends).
-- [x] Add parity assertions to CI (`just style-parity` as a required gate)
+- [x] Add parity assertions to CI (`mise run style-parity` as a required gate)
 - [x] Make the Fern-native checker the default through a content-validated C-bootstrap launcher; verify cold/warm caches, source and external inputs, concurrency, failure, ownership and independent Python parity on macOS/Linux (Decision93).
 
 Exit criteria:

@@ -45,8 +45,8 @@ def main():
         expected = subprocess.run([ROOT / 'bin/check_style', '--help'], capture_output=True, check=True).stdout
         result = execute(root, env)
         assert result == (0, expected, b''), result
-        justfile = root / 'Justfile'
-        justfile.write_text(justfile.read_text().replace('base_cflags := "', 'base_cflags := "-fplugin=forbidden.so '))
+        configuration = root / 'scripts/build_config'
+        configuration.write_text(configuration.read_text().replace("base_cflags) printf '%s\\n' '", "base_cflags) printf '%s\\n' '-fplugin=forbidden.so "))
         result = execute(root, env)
         assert result[0] == 125 and result[1] == b'' and b'unsupported Clang bootstrap flag' in result[2], result
         print('nine driver-profile checks plus implicit-config and explicit-plugin native cases passed')

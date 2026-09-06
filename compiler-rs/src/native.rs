@@ -70,7 +70,7 @@ fn component(variable: &str, filename: &str) -> Result<PathBuf, String> {
         return Ok(development);
     }
     Err(format!(
-        "missing {filename}; run `just rust-build` or set {variable}"
+        "missing {filename}; run `mise run rust-build` or set {variable}"
     ))
 }
 
@@ -118,7 +118,7 @@ fn package_flags(packages: &[&str]) -> Result<Vec<OsString>, String> {
 /// Decode pkg-config's shell-escaped `flags` into literal argv words.
 /// Only quoting and escapes are recognized: variable/command expansion never occurs.
 fn parse_linker_flags(flags: &str) -> Result<Vec<OsString>, String> {
-    let mut chars = flags.chars().peekable();
+    let mut chars = flags.chars();
     let mut words = Vec::new();
     let mut word = String::new();
     let mut quote = None;

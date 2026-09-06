@@ -4778,7 +4778,7 @@ match(result) {
 
 **Debug builds:**
 ```bash
-just debug
+mise run debug
 
 # Debug profile:
 # - Symbols enabled
@@ -4788,7 +4788,7 @@ just debug
 
 **Release builds:**
 ```bash
-just release
+mise run release
 
 # Optimized, stripped, production-ready
 ```

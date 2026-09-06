@@ -203,9 +203,9 @@ miscompilation and does not claim the complete concurrency model is available.
 
 Before any tagged release:
 
-1. Run `just check` and every gate in [release readiness](RELEASE_READINESS.md).
-2. Run `just perf-budget` (or `PERF_BUDGET_FLAGS=--skip-build just perf-budget` if release build already ran in the same job).
-3. Run `just release-policy-check`.
+1. Run `mise run check` and every gate in [release readiness](RELEASE_READINESS.md).
+2. Run `mise run perf-budget` (or `PERF_BUDGET_FLAGS=--skip-build mise run perf-budget` if release build already ran in the same job).
+3. Run `mise run release-policy-check`.
 4. Publish release notes with:
    - compatibility notes,
    - deprecations and removals,
@@ -218,5 +218,5 @@ The release workflow must fail if policy checks fail.
 
 ## Workflow Linkage
 
-The GitHub release workflow references this policy via `just release-policy-check`.
+The GitHub release workflow references this policy via `mise run release-policy-check`.
 This ensures compatibility/deprecation requirements are evaluated on every release run.

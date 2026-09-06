@@ -38,7 +38,7 @@ fn protocol_rejects_noncanonical_domains_and_incomplete_records() {
     ] {
         assert!(decode(&frame(kind, code, b"", b"")).is_err());
     }
-    let mut extra = valid.clone();
+    let mut extra = valid;
     extra.push(0);
     assert!(decode(&extra).is_err());
     assert!(decode(&frame("N", "0", &vec![0; OUTPUT_MAX + 1], b"")).is_err());

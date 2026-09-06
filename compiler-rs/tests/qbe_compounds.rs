@@ -158,7 +158,7 @@ fn all_list_builtins_resolve_checked_signatures() {
         ),
         (
             Builtin::ListContains,
-            vec![values.clone(), int(3)],
+            vec![values, int(3)],
             Type::Bool,
             "fern_list_contains",
         ),
@@ -214,7 +214,7 @@ fn result_and_option_predicates_use_typed_heap_tags() {
     );
     for (builtin, value) in [
         (Builtin::OptionIsSome, some),
-        (Builtin::ResultIsOk, ok.clone()),
+        (Builtin::ResultIsOk, ok),
         (Builtin::ResultIsErr, err.clone()),
     ] {
         let il = emit(print(call(builtin, vec![value], Type::Bool))).unwrap();
@@ -475,7 +475,7 @@ fn empty_list_reserves_valid_nonzero_runtime_capacity() {
 #[test]
 fn match_binding_types_are_not_interchangeable_and_nested_results_remain_concrete() {
     let ty = result_type(Type::Int, Type::String);
-    let value = ctor(Constructor::Err, Some(text("message")), ty.clone());
+    let value = ctor(Constructor::Err, Some(text("message")), ty);
     let body = matching(
         value,
         vec![

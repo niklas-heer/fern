@@ -2,7 +2,7 @@
 # Private C-bootstrap build. All command arguments are arrays; metadata is never evaluated.
 set -euo pipefail
 export LC_ALL=C
-: "${FERN_STYLE_CC:?}" "${FERN_STYLE_JUST:?}" "${FERN_STYLE_PKG_CONFIG:?}"
+: "${FERN_STYLE_CC:?}" "${FERN_STYLE_PKG_CONFIG:?}"
 : "${FERN_STYLE_AR:?}" "${FERN_STYLE_METADATA:?}"
 [[ $# == 1 ]] || exit 125
 cd -P -- "$1"
@@ -19,10 +19,10 @@ read_words() {
     while IFS= read -r -d '' word; do words+=("$word"); done < build/words.tmp
 }
 
-# Obtain effective authored Justfile variables while retaining the exact evaluated bytes.
+# Obtain effective authored native build variables while retaining the exact evaluated bytes.
 configuration() {
     local name=$1
-    "$FERN_STYLE_JUST" --justfile "$root/Justfile" --evaluate "$name" > "build/config.$name"
+    /bin/bash "$root/scripts/build_config" "$name" > "build/config.$name"
     read_words "build/config.$name"
 }
 

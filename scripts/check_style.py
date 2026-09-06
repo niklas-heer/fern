@@ -1,4 +1,4 @@
-#!/usr/bin/env -S uv run --script
+#!/usr/bin/env -S uv run --locked --script
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
@@ -10,7 +10,7 @@ Fern Quality Checker - Consolidated pre-commit and style checker.
 
 This script combines ALL quality checks into one place:
 1. Build verification (clean compile with no warnings)
-2. Unit tests (just test)
+2. Unit tests (mise run test)
 3. Examples testing (type-check all examples/*.fn files)
 4. FERN_STYLE code compliance
 
@@ -176,11 +176,11 @@ ALLOW_PATTERN = re.compile(r"(?://|/\*)\s*FERN_STYLE:\s*allow\(([^)]+)\)")
 
 def check_build() -> CheckResult:
     """Run clean build and check for errors/warnings."""
-    code, _, _ = run_command(["just", "clean"])
+    code, _, _ = run_command(["mise", "run", "clean"])
     if code != 0:
         return CheckResult(False, "Clean failed", "")
 
-    code, stdout, stderr = run_command(["just", "debug"])
+    code, stdout, stderr = run_command(["mise", "run", "debug"])
     output = stdout + stderr
 
     if code != 0:
@@ -194,7 +194,7 @@ def check_build() -> CheckResult:
 
 def check_tests() -> CheckResult:
     """Run test suite."""
-    code, stdout, stderr = run_command(["just", "test"])
+    code, stdout, stderr = run_command(["mise", "run", "test"])
     output = stdout + stderr
 
     if code != 0:
@@ -220,7 +220,7 @@ def check_examples() -> CheckResult:
 
     fern_bin = Path("bin/fern")
     if not fern_bin.exists():
-        return CheckResult(False, "Fern compiler not built", "Run just debug first")
+        return CheckResult(False, "Fern compiler not built", "Run mise run debug first")
 
     failed = []
     passed = 0
@@ -711,8 +711,8 @@ Modes:
   --pre-commit        Pre-commit hook mode (includes git hygiene)
 
 All Checks Run:
-  1. Build            just clean && just debug (no warnings)
-  2. Tests            just test (all must pass)
+  1. Build            mise run clean && mise run debug (no warnings)
+  2. Tests            mise run test (all must pass)
   3. Examples         Type-check all examples/*.fn files
   4. FERN_STYLE       Code compliance checks
 """,

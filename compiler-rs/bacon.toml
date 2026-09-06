@@ -1,0 +1,13 @@
+default_job = "check"
+
+[jobs.check]
+command = ["cargo", "check", "--locked", "--all-targets", "--all-features"]
+need_stdout = false
+[jobs.check.env]
+RUSTUP_TOOLCHAIN = "1.75.0"
+
+[jobs.clippy]
+command = ["cargo", "clippy", "--locked", "--all-targets", "--all-features", "--", "-D", "warnings"]
+need_stdout = false
+[jobs.clippy.env]
+RUSTUP_TOOLCHAIN = "1.75.0"

@@ -351,7 +351,7 @@ static BuildRunResult build_and_run_source(const char* source) {
     snprintf(
         cmd,
         sizeof(cmd),
-        "just runtime-lib >/dev/null 2>&1 && "
+        "mise run runtime-lib >/dev/null 2>&1 && "
         "./bin/fern build -o %s %s 2>&1",
         output_path,
         source_path
@@ -394,7 +394,7 @@ static BuildRunResult build_and_run_c_source(const char* source) {
     snprintf(
         cmd,
         sizeof(cmd),
-        "just runtime-lib >/dev/null 2>&1 && "
+        "mise run runtime-lib >/dev/null 2>&1 && "
         "cc -std=c11 -Wall -Wextra -Werror -Iruntime "
         "%s bin/libfern_runtime.a "
         "$(pkg-config --libs bdw-gc 2>/dev/null || echo -lgc) "

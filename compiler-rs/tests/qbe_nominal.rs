@@ -172,7 +172,7 @@ fn nested_bool_patterns_prove_exhaustive_and_guarded_patterns_do_not() {
         variants: vec![vec![Type::Bool]],
         fields: vec![],
     };
-    let value = construct(ty.clone(), 0, vec![boolean(true)]);
+    let value = construct(ty, 0, vec![boolean(true)]);
     let patterns = vec![
         arm(
             Pattern::Variant {
@@ -297,7 +297,7 @@ fn generic_instantiations_have_distinct_concrete_layouts_and_field_types() {
     ];
     let selected = ex(
         ExprKind::Field {
-            value: Box::new(construct(string.clone(), 0, vec![text("boxed")])),
+            value: Box::new(construct(string, 0, vec![text("boxed")])),
             index: 0,
         },
         Type::String,

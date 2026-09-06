@@ -79,8 +79,8 @@ def ensure_release_build() -> float:
     """Build a clean release and return build duration in seconds."""
 
     start = time.perf_counter()
-    run(["just", "clean"])
-    run(["just", "release"])
+    run(["mise", "run", "clean"])
+    run(["mise", "run", "release"])
     return time.perf_counter() - start
 
 
@@ -218,7 +218,7 @@ def render_report(
 
     lines.append("## Reproduce")
     lines.append("```bash")
-    lines.append("just release")
+    lines.append("mise run release")
     lines.append(
         "python3 scripts/publish_benchmarks.py "
         f"--startup-runs {startup_runs} --case-runs {case_runs}"
@@ -262,7 +262,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-release-build",
         action="store_true",
-        help="Skip `just clean && just release` before measuring",
+        help="Skip `mise run clean && mise run release` before measuring",
     )
     parser.add_argument(
         "--example",

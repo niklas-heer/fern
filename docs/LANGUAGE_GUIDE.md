@@ -8,7 +8,7 @@ local types, and explicit errors. This guide uses the working compiler surface.
 ## Build and say hello
 
 Follow [BUILD.md](../BUILD.md) to install the build dependencies, then run
-`just debug` in the checkout. Save this program as `hello.fn`:
+`mise run debug` in the checkout. Save this program as `hello.fn`:
 
 ```fern
 fn main():
@@ -25,7 +25,7 @@ The four-space indentation introduces the function body. A `main` without a
 return annotation finishes with exit code zero. Use `fn main() -> Int` when you
 need to choose a process exit code.
 
-For a local installation, run `PREFIX="$HOME/.local" just install`, then add
+For a local installation, run `PREFIX="$HOME/.local" mise run install`, then add
 `$HOME/.local/bin` to `PATH`. Both `fern` and its companion `libfern_runtime.a`
 are installed there. Keep the pair together when moving an installation.
 Compilation still needs the host C toolchain and native libraries listed in the
@@ -130,7 +130,7 @@ locations and hints; fix the earliest error first, then check again. Use
 - [File operations](../examples/file_io.fn): reads, writes, and Result matching.
 
 The four runnable programs above and the first three canonical examples run
-with exact output assertions in `just test-user-workflows` and `just test`.
+with exact output assertions in `mise run test-user-workflows` and `mise run test`.
 Actors currently expose a deterministic mailbox/lifecycle model; they do not
 yet run arbitrary spawned Fern functions concurrently. The
 [readiness checklist](RELEASE_READINESS.md) records the remaining language work.

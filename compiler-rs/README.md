@@ -10,7 +10,7 @@ Install the [native build dependencies](../BUILD.md), plus Rust 1.75 or newer,
 Cargo, rustfmt, and clippy. From the repository root:
 
 ```sh
-just rust-build
+mise run rust-build
 ./bin/fern-rs check compiler-rs/tests/corpus/hello.fn
 ./bin/fern-rs emit compiler-rs/tests/corpus/hello.fn
 ./bin/fern-rs build compiler-rs/tests/corpus/hello.fn -o hello-rs
@@ -19,7 +19,7 @@ just rust-build
 ./bin/fern-rs run compiler-rs/tests/collections/propagation.fn
 ./bin/fern-rs run compiler-rs/tests/types/project/main.fn
 ./bin/fern-rs fmt source.fn
-just rust-check
+mise run rust-check
 ```
 
 Frontend compilation needs no C runtime build. The complete Cargo test suite
@@ -38,7 +38,7 @@ single compiler executable (not a shell command). `run source.fn -- args` forwar
 literal arguments, available through `System.arg`, `System.args`, and `System.args_count`.
 
 Native documentation/unit tests additionally require `fern-test-supervisor`, built by
-`just rust-build` (and the Rust release build). Discovery uses
+`mise run rust-build` (and the Rust release build). Discovery uses
 `FERN_TEST_SUPERVISOR`, an executable sibling, then the development `bin` directory.
 An absent or incompatible helper fails explicitly; there is no post-reap group-kill
 fallback. The helper is a trusted executable component, not an untrusted protocol
@@ -582,8 +582,8 @@ aliases are rejected. Normal install/release recipes continue to package C only.
 
 ## Evaluation and maintenance
 
-Run `just rust-check` for format, clippy, Rust tests, and native differential
-fixtures. CI runs it on Linux and macOS. Run `just check` for the existing C gates.
+Run `mise run rust-check` for format, clippy, Rust tests, and native differential
+fixtures. CI runs it on Linux and macOS. Run `mise run check` for the existing C gates.
 Native fixtures specify exact stdout and exit status independently of C. Known C
 backend differences are named in the manifest and reported; they do not relax
 Rust's expected output. Seeded generated programs exercise the shared subset.
@@ -626,7 +626,7 @@ remain errors.
 The Rust frontend also compiles `scripts/check_style.fn`. Run
 `uv run scripts/test_style_parity.py --compiler compiler-rs/target/debug/fern-rs`
 to compare its native diagnostics, severity, file counts and exits with Python.
-This gate is included in `just rust-check`; full bootstrap workflow parity remains
+This gate is included in `mise run rust-check`; full bootstrap workflow parity remains
 tracked in the roadmap.
 
 Finite ordinary-type unions now support declared member/subset conversions and

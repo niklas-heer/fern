@@ -80,7 +80,7 @@ class FeasibilitySnapshot:
 def ensure_release_build() -> None:
     """Build release artifacts used by benchmarks."""
 
-    run(["just", "release"])
+    run(["mise", "run", "release"])
 
 
 def parse_perf_snapshot(stdout: str) -> PerfSnapshot:
@@ -396,7 +396,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-release-build",
         action="store_true",
-        help="Skip `just release` before probing",
+        help="Skip `mise run release` before probing",
     )
     return parser.parse_args()
 

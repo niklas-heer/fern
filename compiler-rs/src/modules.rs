@@ -189,7 +189,7 @@ fn load_sources(
         }
     });
     valid_module(&name)?;
-    let mut root = entry.parent().unwrap_or(Path::new(".")).to_owned();
+    let mut root = entry.parent().unwrap_or_else(|| Path::new(".")).to_owned();
     let levels =
         name.split('.').count() - usize::from(entry.file_stem().is_some_and(|s| s != "mod"));
     for _ in 0..levels {
@@ -314,7 +314,7 @@ pub fn source_identity(path: &Path) -> Result<PathBuf, Error> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
+        .unwrap_or_else(|| Path::new("."));
     let name = path
         .file_name()
         .ok_or_else(|| failure("source path has no file name"))?;

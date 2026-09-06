@@ -70,7 +70,7 @@ codegen, and runtime implementations.
 ## Regression coverage
 
 `tests/fixtures/runtime_actor_scenarios.c` links the actual runtime with FernSim,
-not a separate implementation of supervision. The normal `just check` suite
+not a separate implementation of supervision. The normal `mise run check` suite
 runs it through `test_runtime_actor_seeded_lifecycle_invariants`:
 
 - Zero-time restart-window exhaustion and exact window-boundary recovery.
@@ -85,7 +85,7 @@ runs it through `test_runtime_actor_seeded_lifecycle_invariants`:
   replacement IDs, empty replacement mailboxes, dead-PID rejection, and scheduler
   cleanup. Repeated replacement also exercises registry capacity growth.
 
-For a focused replay after `just debug`:
+For a focused replay after `mise run debug`:
 
 ```sh
 cc -std=c11 -Wall -Wextra -Werror -Iruntime -Iinclude \

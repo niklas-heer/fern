@@ -179,7 +179,7 @@ fn declaration(
             if !decl.record && symbol == Some(variant.name.as_str()) {
                 let ty = Type::Function(
                     variant.fields.iter().map(|f| f.ty.clone()).collect(),
-                    Box::new(owner.clone()),
+                    Box::new(owner),
                 );
                 return Some((
                     format!("{name}: {}", presentation::render_type(&ty, limits()).ok()?),

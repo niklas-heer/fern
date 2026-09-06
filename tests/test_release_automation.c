@@ -63,7 +63,7 @@ void test_ci_workflow_runs_docs_consistency_check(void) {
     char* workflow = read_file_text(".github/workflows/ci.yml");
     ASSERT_NOT_NULL(workflow);
     ASSERT_TRUE(strstr(workflow, "name: Check docs consistency") != NULL);
-    ASSERT_TRUE(strstr(workflow, "run: just docs-consistency") != NULL);
+    ASSERT_TRUE(strstr(workflow, "run: mise run docs-consistency") != NULL);
     free(workflow);
 }
 

@@ -56,21 +56,21 @@ Before tagging a release, run these from a clean checkout with documented native
 dependencies installed:
 
 ```sh
-just check
-just style-parity
-just docs-check
-just fuzz-smoke
-just lsp-rpc-smoke
-just release-policy-check
-just perf-budget
-just release-package
-just release-package-check
+mise run check
+mise run style-parity
+mise run docs-check
+mise run fuzz-smoke
+mise run lsp-rpc-smoke
+mise run release-policy-check
+mise run perf-budget
+mise run release-package
+mise run release-package-check
 ```
 
-`just check` includes native user workflows, installation, PTY, string/print, and
-actor regression coverage. `just perf-budget` measures a release build; its
+`mise run check` includes native user workflows, installation, PTY, string/print, and
+actor regression coverage. `mise run perf-budget` measures a release build; its
 budgets are enforced in the script, not inferred from aspirational README sizes.
-`just release-package` builds the release bundle, and its packaging script verifies
+`mise run release-package` builds the release bundle, and its packaging script verifies
 the archive checksum and required members.
 
 The supported CI matrix is Linux and macOS. Local validation on one host does

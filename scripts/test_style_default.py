@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise default Just recipes without Python/uv, preserving native arguments and exits."""
+"""Exercise default mise tasks without Python/uv, preserving native arguments and exits."""
 import os
 from pathlib import Path
 import shutil
@@ -18,12 +18,12 @@ RECIPES = {
 def main():
     """Use the real task runner and shell fixtures to observe dispatch and failure propagation."""
     root = Path(os.environ.get('FERN_RECIPE_ROOT', str(ROOT)))
-    just = shutil.which('just')
-    assert just, 'just is required'
+    mise = shutil.which('mise')
+    assert mise, 'mise is required'
     count = 0
     with tempfile.TemporaryDirectory(prefix='fern-native-recipes-') as temporary:
         work = Path(temporary)
-        shutil.copyfile(root / 'Justfile', work / 'Justfile')
+        shutil.copyfile(root / 'mise.toml', work / 'mise.toml')
         (work / 'scripts').mkdir()
         (work / 'tools').mkdir()
         checker = work / 'scripts/check_style'
@@ -45,9 +45,9 @@ exit "$FERN_RECIPE_STATUS"
                     continue  # Full check intentionally continues to explicit integration oracles.
                 arguments.unlink(missing_ok=True)
                 environment = dict(os.environ, PATH=str(work / 'tools') + os.pathsep + os.environ['PATH'],
-                                   FERN_RECIPE_ARGS=str(arguments), FERN_RECIPE_STATUS=str(code))
-                result = subprocess.run([just, '--justfile', str(work / 'Justfile'),
-                                         '--working-directory', str(work), recipe], env=environment,
+                                   FERN_RECIPE_ARGS=str(arguments), FERN_RECIPE_STATUS=str(code), MISE_TRUSTED_CONFIG_PATHS=str(work),
+                                   MISE_AUTO_INSTALL="0", MISE_TASK_OUTPUT="interleave")
+                result = subprocess.run([mise, '-C', str(work), 'run', '--quiet', recipe], env=environment,
                                         text=True, capture_output=True, timeout=20)
                 assert result.returncode == code, (recipe, code, result)
                 assert arguments.read_text().splitlines() == expected, (recipe, result)

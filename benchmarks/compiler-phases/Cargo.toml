@@ -1,0 +1,18 @@
+[package]
+name = "fern-phase-benchmarks"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.75"
+publish = false
+
+[workspace]
+
+[dependencies]
+fern-prototype = { path = "../../compiler-rs" }
+
+[dev-dependencies]
+criterion = { version = "=0.5.1", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "phases"
+harness = false

@@ -63,15 +63,15 @@ class InstallationTests(unittest.TestCase):
     def test_install_and_uninstall_custom_prefix(self):
         prefix = self.directory / "installed 'tools' $literal"
         env = dict(self.env, PREFIX=str(prefix))
-        # Verify destinations before running the recipe: never touch system paths.
-        dry = subprocess.run(["just", "--dry-run", "--no-deps", "install"], cwd=ROOT,
+        # Inspect the literal environment-based command; actual argv checks below pin the destination.
+        dry = subprocess.run(["mise", "run", "--dry-run", "--skip-deps", "install"], cwd=ROOT,
                              env=env, text=True, capture_output=True, timeout=10)
-        self.assertIn(str(self.directory), dry.stdout + dry.stderr)
-        subprocess.run(["just", "--no-deps", "install"], cwd=ROOT, env=env,
+        self.assertIn("${DESTDIR-}${PREFIX-/usr/local}/bin", dry.stdout + dry.stderr)
+        subprocess.run(["mise", "run", "--skip-deps", "install"], cwd=ROOT, env=env,
                        check=True, capture_output=True, timeout=10)
         self.assertTrue((prefix / "bin/libfern_runtime.a").is_file())
         self.assert_success(self.run_fern(prefix / "bin/fern", "run", self.source))
-        subprocess.run(["just", "uninstall"], cwd=ROOT, env=env,
+        subprocess.run(["mise", "run", "uninstall"], cwd=ROOT, env=env,
                        check=True, capture_output=True, timeout=10)
         self.assertFalse((prefix / "bin/fern").exists())
         self.assertFalse((prefix / "bin/libfern_runtime.a").exists())

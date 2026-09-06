@@ -19,7 +19,7 @@ void run_lsp_tests(void);
 void run_lsp_rpc_integration_tests(void);
 void run_release_packaging_tests(void);
 void run_release_automation_tests(void);
-void run_justfile_tests(void);
+void run_mise_tests(void);
 void run_docs_consistency_tests(void);
 void run_benchmark_publication_tests(void);
 void run_fuzz_generator_tests(void);
@@ -49,7 +49,7 @@ int main(void) {
     run_lsp_rpc_integration_tests();
     run_release_packaging_tests();
     run_release_automation_tests();
-    run_justfile_tests();
+    run_mise_tests();
     run_docs_consistency_tests();
     run_benchmark_publication_tests();
     run_fuzz_generator_tests();

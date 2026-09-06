@@ -133,7 +133,7 @@ fn caller_created_rest_patterns_obey_flat_and_shape_limits() {
     for (kind, message) in [
         (
             ast::PatternKind::List {
-                prefix: vec![wildcard.clone(); 129],
+                prefix: vec![wildcard; 129],
                 rest: None,
             },
             "prefix limit",

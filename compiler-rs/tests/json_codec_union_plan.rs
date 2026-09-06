@@ -58,7 +58,7 @@ fn union_child_membership_order_duplicates_and_slots_are_independently_validated
         wrong.entries[2].kind = Kind::Union(ids);
         assert!(wrong.validate(&[], Span::default()).is_err());
     }
-    let mut wrong = plan.clone();
+    let mut wrong = plan;
     wrong.entries[2].ty = Type::Union(vec![Type::Int, Type::Int]);
     assert!(wrong.validate(&[], Span::default()).is_err());
 }

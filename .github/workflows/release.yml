@@ -18,25 +18,31 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libgc-dev python3
+          sudo apt-get install -y clang pkg-config libgc-dev libsqlite3-dev libssl-dev
 
-      - name: Install just
-        uses: taiki-e/install-action@just
+      - name: Install pinned mise tools
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          version: 2026.9.1
+          install: true
+
+      - name: Verify managed and native tools
+        run: mise run tool-versions
 
       - name: Build release binary
-        run: just clean && just release
+        run: mise run clean && mise run release
 
       - name: Validate release staging layout
-        run: just release-package-check
+        run: mise run release-package-check
 
       - name: Validate compatibility policy
-        run: just release-policy-check
+        run: mise run release-policy-check
 
       - name: Enforce performance budgets
-        run: PERF_BUDGET_FLAGS=--skip-build just perf-budget
+        run: PERF_BUDGET_FLAGS=--skip-build mise run perf-budget
 
       - name: Generate benchmark + case-study report
-        run: BENCHMARK_FLAGS="--skip-release-build --output dist/benchmark-case-studies.md" just benchmark-report
+        run: BENCHMARK_FLAGS="--skip-release-build --output dist/benchmark-case-studies.md" mise run benchmark-report
 
       - name: Upload readiness binary artifact
         uses: actions/upload-artifact@v4
@@ -71,19 +77,25 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libgc-dev python3
+          sudo apt-get install -y clang pkg-config libgc-dev libsqlite3-dev libssl-dev
 
       - name: Install dependencies (macOS)
         if: matrix.os == 'macos-latest'
         run: |
-          brew install bdw-gc
+          brew install bdw-gc sqlite openssl pkg-config
           clang --version
 
-      - name: Install just
-        uses: taiki-e/install-action@just
+      - name: Install pinned mise tools
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
+        with:
+          version: 2026.9.1
+          install: true
+
+      - name: Verify managed and native tools
+        run: mise run tool-versions
 
       - name: Build and package release bundle
-        run: just clean && just release-package
+        run: mise run clean && mise run release-package
 
       - name: Upload packaged artifacts
         uses: actions/upload-artifact@v4

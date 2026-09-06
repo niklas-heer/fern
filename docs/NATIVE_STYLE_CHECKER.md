@@ -1,13 +1,14 @@
 # Native quality-checker launcher
 
-`just style`, `just style-lenient`, `just pre-commit` and the primary checker in
-`just check` use `scripts/check_style`. It builds and caches the Fern checker with
-the C bootstrap compiler. Ordinary style and Git checks need no Python or Cargo.
-The full `just check` gate still runs explicit Python integration tests; Python
+`mise run style`, `mise run style-lenient`, `mise run pre-commit` and the primary checker in
+`mise run check` use `scripts/check_style`. It builds and caches the Fern checker with
+the C bootstrap compiler. The native checker process needs no Python or Cargo. Mise may still provision
+its configured project tools; direct launcher execution needs only native tools.
+The full `mise run check` gate still runs explicit Python integration tests; Python
 3.14 remains the independent diagnostic and workflow reference.
 
 The launcher requires Bash 3.2 or newer, Clang 14 or newer (including Apple Clang),
-Just, OpenSSL, pkg-config and the native libraries listed in BUILD.md. GCC remains
+OpenSSL, pkg-config and the native libraries listed in BUILD.md. GCC remains
 supported by the ordinary C build but is outside this launcher's private compiler
 profile. Builds use literal argument arrays. Compiler-owned empty configuration
 and a compiler-scoped environment setting suppress implicit Clang configuration;
@@ -79,7 +80,7 @@ cleanup, writerless FIFO rejection and explicit cache pruning. Supervisor,
 controller, descriptor and directory-inventory matrices run in debug, release,
 AddressSanitizer and UndefinedBehaviorSanitizer profiles.
 
-The recipe regression executes Just with Python tools that fail if invoked. It
+The recipe regression executes mise with Python tools that fail if invoked. It
 checks literal native arguments, streams and exit propagation for style, lenient,
-pre-commit and early-failing full checks. `just style-launcher-check` runs the
+pre-commit and early-failing full checks. `mise run style-launcher-check` runs the
 launcher infrastructure suite; these verification tools intentionally use Python.

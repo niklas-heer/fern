@@ -114,7 +114,7 @@ fn inactive_sum_entries_names_and_storage_are_validated_before_emission() {
     assert!(plan.validate(&program.types, Span::default()).is_err());
     layout.ty = Type::Named("Inactive".into(), vec![]);
     layout.variant_names[0] = "Bad\0Name".into();
-    let mut forged = program.clone();
+    let mut forged = program;
     forged.types.push(layout);
     assert!(fern_prototype::qbe::emit(&forged)
         .unwrap_err()
@@ -150,7 +150,7 @@ fn sum_name_and_product_work_share_the_whole_plan_allowance() {
         .unwrap_err()
         .message
         .contains("work limit"));
-    let mut forged = program.clone();
+    let mut forged = program;
     forged.types[0].variant_names = vec!["X".repeat(400_001)];
     assert!(fern_prototype::qbe::emit(&forged)
         .unwrap_err()

@@ -3,7 +3,7 @@
 The editable sources are `scripts/editor/grammar.js.in`, its highlight/outline
 query templates, and `src/scanner.c`. The Rust compiler is the syntax authority.
 Never edit generated `grammar.js`, parser sources/headers, queries or WASM by hand.
-`just editor-support` renders the templates unconditionally; `--check` on the
+`mise run editor-support` renders the templates unconditionally; `--check` on the
 Python generator detects drift without writing.
 
 Decision84 verifies aliases, newtypes, unions, typed narrowing, function clauses,
@@ -68,8 +68,8 @@ export TREE_SITTER_CLI="$TOOLS/tree-sitter"
 export TREE_SITTER_WASI_SDK_PATH="$TOOLS/wasi-sdk"
 export TREE_SITTER_WEB_RUNTIME="$TOOLS/web/web-tree-sitter.cjs"
 export FERN_RUST="$PWD/compiler-rs/target/debug/fern-rs"
-env -u LIBRARY_PATH just editor-support-compile
-env -u LIBRARY_PATH just editor-support-check
+env -u LIBRARY_PATH mise run editor-support-compile
+env -u LIBRARY_PATH mise run editor-support-check
 ```
 
 The compile recipe renders templates then runs `scripts/test_editor_support.py

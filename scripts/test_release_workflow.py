@@ -14,13 +14,13 @@ class ReleaseWorkflow(unittest.TestCase):
     def test_recipe_builds_one_correctly_named_archive(self):
         with tempfile.TemporaryDirectory(prefix="fern-release-") as temp:
             root = Path(temp)
-            for name in ("Justfile", "LICENSE", "README.md", "include/version.h",
+            for name in ("mise.toml", "LICENSE", "README.md", "include/version.h",
                          "docs/COMPATIBILITY_POLICY.md", "scripts/package_release.py",
                          "bin/fern", "bin/libfern_runtime.a"):
                 destination = root / name
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(ROOT / name, destination)
-            result = subprocess.run(["just", "--no-deps", "release-package"], cwd=root,
+            result = subprocess.run(["mise", "run", "--skip-deps", "release-package"], cwd=root,
                                     text=True, capture_output=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             version = subprocess.check_output([str(ROOT / "bin/fern"), "--version"],

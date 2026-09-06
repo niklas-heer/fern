@@ -298,7 +298,7 @@ def main(arguments=None):
     if stale:
         return 1
     print("Editor generated inputs are current" if arguments else
-          "Use pinned Tree-sitter 0.26.12 and just editor-support-compile for native/WASM validation")
+          "Use pinned Tree-sitter 0.26.12 and mise run editor-support-compile for native/WASM validation")
     return 0
 
 

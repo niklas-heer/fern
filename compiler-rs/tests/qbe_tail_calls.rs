@@ -371,7 +371,7 @@ fn with_success_and_error_handler_tails_share_hoisted_scratch_slots() {
 #[test]
 fn closure_capture_expressions_with_owned_defer_disable_reuse() {
     let unit = ex(ExprKind::Unit, Type::Unit);
-    let cleanup = function(2, vec![], unit.clone(), Type::Unit);
+    let cleanup = function(2, vec![], unit, Type::Unit);
     let closure = ex(
         ExprKind::Closure {
             function: FunctionId(2),

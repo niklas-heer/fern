@@ -20,7 +20,7 @@ style_payload_identity=$(style_identity "$style_work") || exit 125
 trap style_worker_exit EXIT
 style_cache_root "$style_requested_cache" || exit 125
 style_metadata_compile || exit 125
-FERN_STYLE_CC=$style_cc FERN_STYLE_JUST=$style_just FERN_STYLE_PKG_CONFIG=$style_pkg \
+FERN_STYLE_CC=$style_cc FERN_STYLE_PKG_CONFIG=$style_pkg \
 FERN_STYLE_AR=$style_ar FERN_STYLE_METADATA=$style_metadata \
 /bin/bash "$style_snapshot/scripts/bootstrap/style_build" "$style_snapshot" || exit 125
 style_collect "$style_snapshot" || exit 125

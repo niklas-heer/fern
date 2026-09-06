@@ -1,5 +1,7 @@
 //! Experimental CLI; parsing and type checking never call the C frontend.
 #![forbid(unsafe_code)]
+// Rust1.75 has no allow-panic-in-tests option; keep production and test scopes explicit.
+#![cfg_attr(not(test), deny(clippy::panic, clippy::panic_in_result_fn))]
 mod doctest_cli;
 mod documentation_cli;
 mod format_cli;
@@ -37,7 +39,7 @@ Formatting: fern-rs fmt <source.fn|directory> updates sources after validating e
 Format validation: fern-rs fmt --check <source.fn|directory> checks canonical formatting without writing.\n\
 Interactive evaluation: fern-rs repl retains successful bindings and typed functions.\n\
 Editor protocol: fern-rs lsp communicates over standard input/output.\n\
-Native builds: run just rust-build; FERN_QBE and FERN_RUNTIME_LIB override backend paths."
+Native builds: run mise run rust-build; FERN_QBE and FERN_RUNTIME_LIB override backend paths."
         );
         return Ok(None);
     }

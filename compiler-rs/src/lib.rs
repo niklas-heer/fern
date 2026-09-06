@@ -1,5 +1,7 @@
 //! Experimental independent Fern frontend. The C compiler remains the reference.
 #![forbid(unsafe_code)]
+// Rust1.75 has no allow-panic-in-tests option; keep production and test scopes explicit.
+#![cfg_attr(not(test), deny(clippy::panic, clippy::panic_in_result_fn))]
 pub mod ast;
 pub mod check;
 pub mod documentation;

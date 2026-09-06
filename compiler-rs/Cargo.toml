@@ -15,3 +15,14 @@ path = "src/main.rs"
 
 [profile.release]
 strip = true
+
+# Decision107: strict supported lints, expanded only after auditing existing invariants.
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+exit = "deny"
+unchecked_duration_subtraction = "deny"
+unused_peekable = "deny"
+redundant_clone = "deny"
+or_fun_call = "deny"

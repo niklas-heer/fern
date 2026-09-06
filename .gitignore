@@ -58,3 +58,11 @@ compiler-rs/target/
 
 # Authored backend ABI regression input.
 !tests/fixtures/qbe_apple_registers.ssa
+
+# Personal mise overrides and developer runner state
+mise.local.toml
+mise.local.lock
+compiler-rs/.bacon-locations
+
+# Independently locked compiler phase benchmark output
+benchmarks/compiler-phases/target/

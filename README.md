@@ -27,7 +27,7 @@ fn main():
 Install the [build dependencies](BUILD.md), then:
 
 ```sh
-just debug
+mise run debug
 ./bin/fern run examples/tiny_cli.fn
 ./bin/fern build examples/tiny_cli.fn -o hello
 ./hello
@@ -42,7 +42,7 @@ exact output assertions in the test suite.
 To install under your home directory:
 
 ```sh
-PREFIX="$HOME/.local" just install
+PREFIX="$HOME/.local" mise run install
 export PATH="$HOME/.local/bin:$PATH"
 fern --help
 ```
@@ -93,12 +93,12 @@ Core modules use `String`, `List`, `System`, `Regex`, `Result`, `Option`, and
 ## Develop and verify
 
 ```sh
-just check                 # Clean build, unit/native tests, examples, strict style
-just style-parity          # Native/reference diagnostic parity
-just docs-check            # Documentation generation and doc examples
-just fuzz-smoke            # Reproducible parser/formatter fuzzing
-just perf-budget           # Measured release build/startup/size budgets
-just release-package       # Compiler/runtime bundle and checksum
+mise run check                 # Clean build, unit/native tests, examples, strict style
+mise run style-parity          # Native/reference diagnostic parity
+mise run docs-check            # Documentation generation and doc examples
+mise run fuzz-smoke            # Reproducible parser/formatter fuzzing
+mise run perf-budget           # Measured release build/startup/size budgets
+mise run release-package       # Compiler/runtime bundle and checksum
 ```
 
 CI covers Linux and macOS. The tests include relocated installations, unusual
@@ -127,3 +127,5 @@ Fern takes inspiration from Gleam, Elixir, Rust, Zig, Python, and Go. Contributi
 follow the test-first workflow in [CLAUDE.md](CLAUDE.md).
 
 MIT License — see [LICENSE](LICENSE).
+
+See [development tasks and optional tools](docs/DEVELOPMENT_ENVIRONMENT.md) for the pinned mise environment and Rust feedback workflows.
