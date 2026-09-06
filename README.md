@@ -1,134 +1,137 @@
-# 🌿 Fern
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/fern-logo-light.png">
+    <img src="docs/assets/fern-logo.png" alt="Fern logo: a geometric fern frond" width="128" height="128">
+  </picture>
+</p>
 
-> A statically typed, functional language with Python-like syntax and native compilation.
+<h1 align="center">Fern</h1>
 
-**Status:** Pre-1.0, in active development. Native CLI programs, core libraries,
-editor tooling, and deterministic actor mailbox primitives are implemented.
-The full language design is not finished. See [release readiness](docs/RELEASE_READINESS.md)
-for the executable feature boundary and [ROADMAP.md](ROADMAP.md) for remaining work.
+<p align="center">
+  <strong>Readable code. Native programs.</strong><br>
+  A statically typed, functional language with Python-like syntax.
+</p>
 
-An independent [Rust frontend prototype](compiler-rs/README.md) evaluates a typed
-compiler pipeline with the existing QBE backend and C runtime. See the
-[evaluation results](docs/RUST_FRONTEND_EVALUATION.md) and
-[migration progress](docs/RUST_MIGRATION.md). Lists, Option/Result, exhaustive
-matching, and Result propagation now work through the Rust native pipeline;
-C remains the default. An opt-in [relocatable Rust preview](docs/RUST_PREVIEW_PACKAGING.md)
-can bundle explicit built inputs without installing or changing that default.
+Fern combines immutable values, pattern matching and explicit errors with
+indentation-based syntax. Write a small program, check its types, and compile it
+to a native executable.
 
 ```fern
 fn greet(name: String) -> String:
     String.concat("Hello, ", name)
 
 fn main():
-    println(greet("Fern"))
+    let language = "Fern"
+    println(greet(language))
 ```
 
-## Try it
+**Early preview.** Fern is pre-1.0 and actively evolving. You can run native
+programs today, but the complete language design is still being implemented.
+[What's ready?](docs/RELEASE_READINESS.md) · [What's next?](ROADMAP.md)
 
-Install the [build dependencies](BUILD.md), then:
+## Why Fern?
+
+- **Familiar syntax, functional foundations.** Indentation, immutable bindings,
+  inferred local types and functions that return their last expression.
+- **Errors you can see.** `Option`, `Result`, pattern matching and `?` keep
+  missing values and fallible operations explicit.
+- **Native executables.** Compile through QBE and the native runtime, with
+  garbage collection handling memory allocation.
+- **Useful libraries.** Work with files, HTTP/HTTPS clients, SQLite and terminal
+  interfaces without assembling a separate framework.
+- **Tools for everyday work.** Type checking, formatting, a REPL, documentation
+  generation and [editor support](editor/zed-fern/README.md).
+
+## Try Fern
+
+Install [mise and the native build dependencies](BUILD.md), then:
 
 ```sh
+git clone https://github.com/niklas-heer/fern.git
+cd fern
+mise install
 mise run debug
 ./bin/fern run examples/tiny_cli.fn
+```
+
+The program prints `hello, fern`. To build and run an executable:
+
+```sh
 ./bin/fern build examples/tiny_cli.fn -o hello
 ./hello
 ```
 
-Expected output from the program: `hello, fern`.
+Follow the [language guide](docs/LANGUAGE_GUIDE.md) to write your own functions,
+work with lists and handle errors. Its examples are checked against exact output
+in the test suite. The [build guide](BUILD.md) covers local installation and
+platform requirements; native builds need the host C compiler and the GC,
+SQLite and OpenSSL libraries listed there.
 
-Follow the [language guide](docs/LANGUAGE_GUIDE.md) for functions, immutable
-values, lists, errors, and the edit/check/run workflow. Its programs run with
-exact output assertions in the test suite.
+### Try the Rust frontend
 
-To install under your home directory:
-
-```sh
-PREFIX="$HOME/.local" mise run install
-export PATH="$HOME/.local/bin:$PATH"
-fern --help
-```
-
-The installation includes `fern` and `libfern_runtime.a` in the same directory.
-Keep both files together when moving a bundle. QBE is embedded, so a separate
-QBE executable is unnecessary. Native compilation still needs the host C
-compiler and the GC, SQLite, and OpenSSL libraries documented in [BUILD.md](BUILD.md).
-
-## Why Fern?
-
-Fern aims to make functional programming feel natural: readable indentation,
-immutable values, explicit errors, and one clear way to express a task. Its
-long-term design spans small CLI tools and concurrent applications with built-in
-services. Working examples and native execution tests guide implementation.
-
-What you can use today:
-
-- Static type checking, inference for local values, functions, lists, strings,
-  conditionals, and Result-based library errors.
-- Native compilation through embedded QBE and a Boehm GC runtime.
-- Filesystem operations, HTTP/HTTPS GET and POST, and SQLite open/execute calls.
-- Terminal styling, panels, tables, editable input/password prompts, cursor
-  controls, immutable trees, and deterministic log formatting.
-- Legacy C actor FIFO mailboxes with lifecycle, monitoring and deterministic
-  supervision policies; opt-in Rust native actors with typed mailboxes, selective
-  receive and bounded cooperative execution.
-- CLI diagnostics, formatter, REPL, LSP, and generated editor support.
-
-Features in [DESIGN.md](DESIGN.md) can still be planned. The opt-in Rust frontend
-executes [bounded native actors](docs/RUST_ACTORS.md); generalized suspension,
-typed supervision and actor REPL/FernSim parity remain open. The default C
-frontend retains explicit mailbox APIs and rejects actor execution syntax.
-HTTP serving is absent. Rust uses validating JSON, while the legacy C JSON
-compatibility API still copies strings. Read the [actor contracts](docs/ACTOR_RUNTIME.md)
-and [readiness checklist](docs/RELEASE_READINESS.md) before building on those areas.
-
-## Modules and examples
-
-Core modules use `String`, `List`, `System`, `Regex`, `Result`, `Option`, and
-`Tui.*`. Service modules use `fs`, `json`, `http`, `sql`, and `actors`.
-`File.*` remains a compatibility alias for `fs.*`.
-
-- [Tiny CLI](examples/tiny_cli.fn): string output and command dispatch.
-- [Actor mailboxes](examples/actor_app.fn): enqueue and explicitly consume jobs.
-- [HTTP errors](examples/http_api.fn): deterministic error handling without network access.
-- [Terminal project view](examples/tui_project.fn): structured trees and logs.
-- [Stdlib reference](docs/STDLIB_API_REFERENCE.md): current module signatures.
-
-## Develop and verify
+Fern is moving to Rust. The expanded frontend is available explicitly while the
+C compiler remains the default:
 
 ```sh
-mise run check                 # Clean build, unit/native tests, examples, strict style
-mise run style-parity          # Native/reference diagnostic parity
-mise run docs-check            # Documentation generation and doc examples
-mise run fuzz-smoke            # Reproducible parser/formatter fuzzing
-mise run perf-budget           # Measured release build/startup/size budgets
-mise run release-package       # Compiler/runtime bundle and checksum
+mise run rust-build
+./bin/fern-rs run examples/tiny_cli.fn
 ```
 
-CI covers Linux and macOS. The tests include relocated installations, unusual
-file paths, exact program output, pseudo-terminal interaction, and seeded actor
-failure scenarios. The Fern-native quality checker is the default; ordinary
-style checks require no Python or Cargo. Full verification retains independent
-Python integration oracles. See the [native launcher](docs/NATIVE_STYLE_CHECKER.md).
+Mise selects the project's dated Rust nightly and required components. See the
+[Rust frontend guide](compiler-rs/README.md) for supported syntax and commands,
+or [package a relocatable preview](docs/RUST_PREVIEW_PACKAGING.md) to try it
+outside the source checkout.
 
-The complete release checklist is in [release readiness](docs/RELEASE_READINESS.md).
-Releases use conventional commits and `release-please`, starting from the
-`0.1.0` baseline. The release workflow requires its configured repository token.
+## Explore by example
 
-## Documentation
+| Example | What it shows |
+| --- | --- |
+| [Tiny CLI](examples/tiny_cli.fn) | Functions, strings and command dispatch |
+| [HTTP errors](examples/http_api.fn) | Explicit error handling, with no network access required |
+| [Terminal project view](examples/tui_project.fn) | Structured trees and logs |
+| [Actor mailboxes](examples/actor_app.fn) | The default compiler's explicit mailbox operations |
+| [Rust actors](compiler-rs/tests/actors/receive_continues.fn) | Typed messages and native receive continuations; use `fern-rs` |
 
-- [Documentation Index](docs/README.md)
-- [Language Guide](docs/LANGUAGE_GUIDE.md)
-- [Build Guide](BUILD.md)
-- [Language Design](DESIGN.md)
-- [Implementation Roadmap](ROADMAP.md)
-- [Decision Log](DECISIONS.md)
-- [Coding Standards](FERN_STYLE.md)
-- [Development Guidelines](CLAUDE.md)
-- [Compatibility Policy](docs/COMPATIBILITY_POLICY.md)
+## Where the project stands
 
-Fern takes inspiration from Gleam, Elixir, Rust, Zig, Python, and Go. Contributions
-follow the test-first workflow in [CLAUDE.md](CLAUDE.md).
+Both compiler paths use QBE and the native runtime. The Rust frontend adds
+features including validating JSON, derived codecs and
+[bounded typed actor execution](docs/RUST_ACTORS.md). The default C frontend
+retains its legacy JSON compatibility API and explicit mailbox primitives.
 
-MIT License — see [LICENSE](LICENSE).
+Generalized actor suspension, typed supervision, actor REPL/FernSim parity and
+HTTP serving remain open. Cranelift has an
+[experimental feasibility assessment](docs/BACKEND_REASSESSMENT.md); it is not
+an integrated backend yet. The [readiness checklist](docs/RELEASE_READINESS.md)
+defines the current feature boundaries; [DESIGN.md](DESIGN.md) also includes
+planned features. Syntax and APIs are subject to the
+[compatibility policy](docs/COMPATIBILITY_POLICY.md).
 
-See [development tasks and optional tools](docs/DEVELOPMENT_ENVIRONMENT.md) for the pinned mise environment and Rust feedback workflows.
+## Learn more
+
+- [Language guide](docs/LANGUAGE_GUIDE.md) — write and run your first programs.
+- [Standard library](docs/STDLIB_API_REFERENCE.md) — explore built-in modules.
+- [Documentation index](docs/README.md) — find the deeper reference material.
+- [Roadmap](ROADMAP.md) — see completed work and remaining milestones.
+- [Development environment](docs/DEVELOPMENT_ENVIRONMENT.md) — tool pins, checks
+  and optional developer tools.
+
+## Contribute
+
+Small examples, focused bug reports, documentation improvements and compiler
+changes are welcome. Start with the [roadmap](ROADMAP.md) and the
+[test-first contribution workflow](CLAUDE.md).
+
+```sh
+mise run check           # Native build, tests, examples and strict style
+mise run rust-check      # Rust compiler and native integration checks
+mise run docs-check      # Documentation links, generation and examples
+```
+
+CI covers Linux and macOS. Tests exercise native output, relocated packages,
+unusual paths, resource limits and failure cleanup. See the
+[development guide](docs/DEVELOPMENT_ENVIRONMENT.md) for lint, fuzzing,
+benchmark and feedback tools.
+
+Fern takes inspiration from Gleam, Elixir, Rust, Zig, Python and Go.
+Released under the [MIT License](LICENSE).

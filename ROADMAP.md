@@ -46,6 +46,8 @@ Status: Complete for the bounded prototype; `mise run check`, `mise run rust-che
 
 ## Active Priorities
 
+- [x] Refresh the public README around runnable onboarding, accurate feature boundaries and a dedicated Fern logo; greeting and quickstart outputs verified on both compilers, with light/dark presentation checked.
+
 ### Development Environment and Rust Review Guidance
 
 - [x] Adopt nightly-2026-09-06 across mise, direct Cargo, CI and developer jobs; verify component identities and drift, 18 negative lint contracts, complete macOS/Linux Rust/native/C/docs/nextest gates and all ten benchmark smoke cases. Bacon check/Clippy and watchexec initial/source-change jobs select nightly (Decision111).
