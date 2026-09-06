@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `mise run release-package` and `mise run release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: Fern-native default checker, exact native/Python diagnostic and 66 workflow parity cases, bounded content cache and native supervision verified on macOS/Linux; ordinary style checks need no Python/Cargo
-- Rust migration: `mise run rust-check` passing (1412 Rust checks (1414 on Linux; CLI controls, lint policy and typed JSON unions), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: `mise run rust-check` passing (1450 Rust checks (1453 on Linux; bounded CLI inspection/docs and mutual Result handlers), 4 measurement-harness tests, 197 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
 
@@ -66,7 +66,9 @@ for approval between milestones. C remains the default until the parity gates pa
 - [ ] Remaining executable language parity: remaining function/numeric/string operations, control flow and complete error handling.
 - [x] Replace reference-only Result checks with bounded reachable-path handling, call/alias provenance, complete collection coverage and deferred cleanup (Decision95).
 - [x] Prove direct recursive nominal Result handlers, complete List/Map child traversals, exact recursive callbacks and deferred child handling (Decision95 R1–R2).
-- [ ] Complete mutual structural induction, recursive builders and wider recursive summary equations without granting unproved handling credit.
+- [x] Prove complete mutual structural handler groups over actual nominal descendants, including typed List/Map traversal and transparent wrapped children, with independent source-order and unsafe-path probes (Decision95 R3).
+- [x] Verify the combined boundary/CLI/Result checkpoint on macOS and Linux: full Rust/native/C/docs gates, 1447/1449 nextest tests without skips, separate doctests and Criterion smoke.
+- [ ] Complete recursive builders and wider recursive summary equations without granting unproved handling credit.
 - [ ] Standard-library/native ABI compatibility and executable application coverage.
 - [ ] Diagnostics, formatting, REPL/LSP, documentation and developer-command parity.
 - [x] Preserve common quiet/verbose/color controls, literal forwarded argv, visible failures and missing-command status in the Rust CLI (Decision108A).

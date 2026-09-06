@@ -1,6 +1,24 @@
 //! Whole-subtree cuts permit finite structural induction without merging sibling obligations.
 use super::*;
 impl Engine<'_> {
+    /// Fresh stored children inherit only actual active ancestors, charged before set allocation.
+    pub(super) fn certify_ancestors(
+        &mut self,
+        node: usize,
+        anchor: Option<usize>,
+        span: Span,
+    ) -> Checked<()> {
+        self.charge(self.active_nominals.len().saturating_add(1), span)?;
+        if self.active_nominals.is_empty() && anchor.is_none() {
+            return Ok(());
+        }
+        let certificates = self.nominal_descendants.entry(node).or_default();
+        certificates.extend(self.active_nominals.iter().map(|(_, id)| *id));
+        if let Some(anchor) = anchor {
+            certificates.insert(anchor);
+        }
+        Ok(())
+    }
     /// A repeated layout edge owns an indivisible duty for this subtree, never a tag acknowledgement.
     pub(super) fn recursive_cut(
         &mut self,
@@ -18,8 +36,7 @@ impl Engine<'_> {
             },
             span,
         )?;
-        self.charge(1, span)?;
-        self.nominal_descendants.insert(value.node.id, anchor);
+        self.certify_ancestors(value.node.id, Some(anchor), span)?;
         Ok(value)
     }
 }
@@ -47,31 +64,50 @@ pub(super) fn candidate(
 }
 /// Follow real storage edges with finite identity tracking, excluding unresolved callable interfaces.
 fn storage(program: &ir::Program, ty: &Type, work: &mut usize, span: Span) -> Checked<bool> {
-    let mut pending = vec![ty];
-    let mut seen = HashSet::new();
+    enum Edge<'a> {
+        Enter(&'a Type),
+        Exit(usize),
+    }
+    let mut pending = vec![Edge::Enter(ty)];
+    let mut active = HashSet::new();
+    let mut done = HashSet::new();
     let mut recursive = false;
-    while let Some(ty) = pending.pop() {
+    while let Some(edge) = pending.pop() {
+        charge(work, 1, span)?;
+        let ty = match edge {
+            Edge::Enter(ty) => ty,
+            Edge::Exit(index) => {
+                active.remove(&index);
+                done.insert(index);
+                continue;
+            }
+        };
         gate::type_cost(ty, work, span)?;
         match ty {
             Type::Named(..) => {
                 let index = gate::layout_index(program, ty, work, span)?;
-                if !seen.insert(index) {
+                if active.contains(&index) {
                     recursive = true;
                     continue;
                 }
+                if done.contains(&index) {
+                    continue;
+                }
+                active.insert(index);
+                pending.push(Edge::Exit(index));
                 for fields in &program.types[index].variants {
                     charge(work, fields.len(), span)?;
-                    pending.extend(fields);
+                    pending.extend(fields.iter().map(Edge::Enter));
                 }
             }
-            Type::List(a) | Type::Option(a) => pending.push(a),
+            Type::List(a) | Type::Option(a) => pending.push(Edge::Enter(a)),
             Type::Result(a, b) | Type::Map(a, b) => {
                 charge(work, 2, span)?;
-                pending.extend([a.as_ref(), b.as_ref()]);
+                pending.extend([Edge::Enter(a), Edge::Enter(b)]);
             }
             Type::Tuple(xs) | Type::Union(xs) => {
                 charge(work, xs.len(), span)?;
-                pending.extend(xs);
+                pending.extend(xs.iter().map(Edge::Enter));
             }
             Type::Function(..) | Type::Infer(_) | Type::Never => return Ok(false),
             _ => {}
@@ -91,7 +127,7 @@ pub(super) fn apply(
         .get(index)
         .ok_or_else(|| Diagnostic::new(span, "missing recursive tree argument"))?;
     let context = context(engine);
-    if !matches!(context, Some((id, parameter, _)) if id == function.id.0 && parameter == index)
+    if !matches!(context, Some((id, parameter, _)) if (id == function.id.0 && parameter == index) || engine.summaries.is_some_and(|s| s.same_mutual_group(id, function.id.0)))
         || !strict(
             engine,
             actual,
@@ -115,6 +151,15 @@ pub(super) fn context(engine: &Engine<'_>) -> Option<(usize, usize, usize)> {
     let anchor = *engine.nominal_roots.get(&value.node.id)?;
     Some((function, index, anchor))
 }
+/// Unboxed aliases can share a node with the root; identity never proves its own decrease.
+pub(super) fn certified(engine: &Engine<'_>, value: &Value, anchor: usize) -> bool {
+    value.complete
+        && engine.nominal_roots.get(&value.node.id) != Some(&anchor)
+        && engine
+            .nominal_descendants
+            .get(&value.node.id)
+            .is_some_and(|anchors| anchors.contains(&anchor))
+}
 /// Choices retain their own certificates; equal layout or type names confer no structural descent.
 fn strict(
     engine: &mut Engine<'_>,
@@ -130,13 +175,16 @@ fn strict(
     if !value.complete {
         return Ok(false);
     }
-    if engine.nominal_descendants.get(&value.node.id) == Some(&anchor) {
+    if certified(engine, value, anchor) {
         return Ok(true);
     }
     if let Region::Choice(choices) = &value.node.kind {
         engine.charge(choices.len(), span)?;
         for (guard, child) in choices {
-            if *guard != Predicate::FALSE && !strict(engine, child, anchor, span, depth + 1)? {
+            let reachable = engine
+                .predicates
+                .and(engine.path, *guard, &mut engine.work, span)?;
+            if reachable != Predicate::FALSE && !strict(engine, child, anchor, span, depth + 1)? {
                 return Ok(false);
             }
         }
@@ -167,6 +215,21 @@ mod tests {
         super::super::super::pipeline_mode(&ast, |_, _, _| Ok(()), false)
             .unwrap()
             .0
+    }
+    #[test]
+    fn repeated_sibling_layouts_are_not_recursive_storage() {
+        let source = "type Box:\n    Boxed(Result(Int,String))\ntype Pair:\n    Both(Box,Box)\nfn identity(value:Pair)->Pair:value\nfn main():()\n";
+        let ast = crate::parse::parse(source).unwrap();
+        let program = super::super::super::pipeline_mode(&ast, |_, _, _| Ok(()), false)
+            .unwrap()
+            .0;
+        assert!(!storage(
+            &program,
+            &Type::Named("Pair".into(), vec![]),
+            &mut 0,
+            Span::default()
+        )
+        .unwrap());
     }
     #[test]
     fn repeated_edges_are_distinct_indivisible_subtree_duties() {

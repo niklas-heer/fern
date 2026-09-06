@@ -192,6 +192,7 @@ impl Engine<'_> {
         self.active_nominals.pop();
         if let Ok(value) = &value {
             self.nominal_roots.insert(value.node.id, anchor);
+            self.certify_ancestors(value.node.id, None, span)?;
         }
         value
     }

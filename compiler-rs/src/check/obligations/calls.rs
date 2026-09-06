@@ -5,8 +5,47 @@ pub(super) struct Summaries {
     ready: HashMap<usize, Rc<Summary>>,
     index: HashMap<usize, usize>,
     recursive_defaults: HashMap<usize, recursive::Contract>,
+    mutual_groups: HashMap<usize, usize>,
+    mutual_members: Vec<Vec<usize>>,
 }
 impl Summaries {
+    /// Membership is structural proof context only, never sufficient handling evidence.
+    pub(super) fn same_mutual_group(&self, left: usize, right: usize) -> bool {
+        self.mutual_groups
+            .get(&left)
+            .is_some_and(|group| self.mutual_groups.get(&right) == Some(group))
+    }
+    /// No outside caller may use a partially verified group's provisional handling effects.
+    fn mutual_ready(&self, id: usize, work: &mut usize, span: Span) -> Checked<bool> {
+        let Some(group) = self.mutual_groups.get(&id) else {
+            return Ok(true);
+        };
+        let members = &self.mutual_members[*group];
+        charge(work, members.len(), span)?;
+        Ok(members.iter().all(|id| self.ready.contains_key(id)))
+    }
+    /// Each eligible SCC member receives a provisional contract before any body is analyzed.
+    fn register_mutual(
+        &mut self,
+        groups: Vec<Vec<(usize, usize)>>,
+        work: &mut usize,
+        span: Span,
+    ) -> Checked<()> {
+        charge(work, groups.len(), span)?;
+        for group in groups {
+            charge(work, group.len().saturating_mul(3), span)?;
+            let id = self.mutual_members.len();
+            let mut members = Vec::new();
+            for (function, parameter) in group {
+                self.mutual_groups.insert(function, id);
+                self.recursive_defaults
+                    .insert(function, recursive::Contract::TreeHandler(parameter));
+                members.push(function);
+            }
+            self.mutual_members.push(members);
+        }
+        Ok(())
+    }
     /// Expose only the checked structural contract identity needed for child traversal proofs.
     pub(super) fn tree_parameter(&self, function: usize) -> Option<usize> {
         match self.recursive_defaults.get(&function) {
@@ -57,6 +96,11 @@ pub(super) fn extend(
             .collect();
     }
     let order = dependency_order(program, root, relevance, mode, summaries, work)?;
+    summaries.register_mutual(
+        mutual_trees::groups(program, &order, work)?,
+        work,
+        root.body.span,
+    )?;
     for function in order {
         let mut engine = Engine::new(program);
         engine.work = *work;
@@ -120,7 +164,7 @@ fn dependency_order<'a>(
     Ok(ordered)
 }
 /// Deferred bodies execute in their registering proof context, not as independent recursive assumptions.
-fn ordered_dependencies(
+pub(super) fn ordered_dependencies(
     program: &ir::Program,
     expr: &ir::Expr,
     work: &mut usize,
@@ -191,6 +235,27 @@ pub(super) fn dependencies(expr: &ir::Expr, work: &mut usize) -> Checked<Vec<usi
 impl Engine<'_> {
     /// Instantiate finalized parameter and output provenance without treating a call as consuming.
     pub(super) fn source_call(&mut self, id: usize, args: &[Value], span: Span) -> Checked<Value> {
+        if let Some(summaries) = self.summaries {
+            if recursive_trees::context(self)
+                .is_some_and(|(caller, _, _)| summaries.same_mutual_group(caller, id))
+            {
+                let function = summaries
+                    .index
+                    .get(&id)
+                    .and_then(|index| self.program.functions.get(*index))
+                    .ok_or_else(|| Diagnostic::new(span, "missing mutual tree function"))?;
+                let parameter = summaries
+                    .tree_parameter(id)
+                    .ok_or_else(|| Diagnostic::new(span, "missing mutual tree contract"))?;
+                return recursive_trees::apply(self, function, parameter, args, span);
+            }
+            if !summaries.mutual_ready(id, &mut self.work, span)? {
+                return Err(Diagnostic::new(
+                    span,
+                    "Result obligation mutual handler group is not fully verified",
+                ));
+            }
+        }
         if let Some(summaries) = self.summaries {
             if let Some(contract) = summaries
                 .recursive_defaults

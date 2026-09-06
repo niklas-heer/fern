@@ -94,6 +94,21 @@ Map emptiness keeps its actual conditional identity across full traversal and
 Map.values. Deleting a dynamically selected key may empty a map; it cannot reuse
 the old nonempty fact or erase removed Result duties.
 
-General mutual structural induction, recursive builders and richer recursive
-higher-order equations remain completion work. Origin-free recursive JSON
+Mutually recursive complete Unit handlers may form a checked group. Every member
+must accept exactly one Result-bearing recursive nominal input, and every call
+within the group must receive a complete strict descendant of that member's own
+input. Different node types and parameter positions are supported, including
+complete List/Map traversal and exact callbacks. Every member proves all branches
+before outside callers receive handling credit. Guarded aliases retain actual
+branch conditions; equal layouts, unrelated captures and reconstructed nodes do
+not establish descent. An iterative dependency graph and ancestor certificates
+use the same aggregate proof budget.
+
+Recursive builders, groups requiring non-structural recursive summaries and richer
+recursive higher-order equations remain completion work. Origin-free recursive JSON
 payloads are supported; their enclosing codec Result still requires handling.
+
+Typed child traversals also preserve transparent newtype wrappers, including nested
+wrappers. Projecting the stored child retains its identity; constructing a wrapper
+around the original root never supplies descent evidence. Native regressions cover
+alternating node types, deferred child handling and wrapped Map children.

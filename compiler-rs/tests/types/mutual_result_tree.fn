@@ -1,0 +1,23 @@
+type A:
+    EndA
+    LeafA(Result(Int,String))
+    ToB(B,B)
+type B:
+    EndB
+    LeafB(Result(Int,String))
+    ToA(A,A)
+fn walk_a(tree:A)->Unit:
+    match tree:
+        EndA->()
+        LeafA(value)->println(Result.is_err(value))
+        ToB(left,right)->
+            walk_b(left)
+            walk_b(right)
+fn walk_b(tree:B)->Unit:
+    match tree:
+        EndB->()
+        LeafB(value)->println(Result.is_err(value))
+        ToA(left,right)->
+            walk_a(left)
+            walk_a(right)
+fn main():walk_a(ToB(LeafB(Ok(1)),ToA(LeafA(Err("left")),LeafA(Err("right")))))

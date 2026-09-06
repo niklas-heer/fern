@@ -22,7 +22,7 @@ impl Engine<'_> {
         };
         let captures = self.iteration_captures(body, span)?;
         let item = self.iteration_family(&collection, &iterable.ty, span)?;
-        let plan = tree_iteration::prepare(self, &item, span)?;
+        let plan = tree_iteration::prepare(self, &item, &item_type, span)?;
         let summary = self.iteration_summary(pattern, &item_type, body, &captures, &plan, span)?;
         self.work = summary.work;
         self.charge(captures.len().saturating_add(1), span)?;

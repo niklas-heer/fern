@@ -1,0 +1,13 @@
+newtype Wrapped = Wrapped(Node)
+type Node:
+    value:Result(Int,String)
+    children:Map(String,Wrapped)
+fn even(node:Node)->Unit:
+    println(Result.is_err(node.value))
+    for child in Map.values(node.children):
+        odd(child.0)
+fn odd(node:Node)->Unit:
+    println(Result.is_err(node.value))
+    for child in Map.values(node.children):
+        even(child.0)
+fn main():even(Node(Ok(0),%{"child":Wrapped(Node(Err("child"),%{}))}))

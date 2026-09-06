@@ -57,6 +57,8 @@ mod gate;
 mod iteration;
 #[path = "obligations/map_views.rs"]
 mod map_views;
+#[path = "obligations/mutual_trees.rs"]
+mod mutual_trees;
 #[path = "obligations/nominal.rs"]
 mod nominal;
 #[path = "obligations/partitions.rs"]
@@ -164,7 +166,7 @@ struct Engine<'a> {
     sequence_offsets: HashMap<usize, (usize, usize)>,
     active_nominals: Vec<(usize, usize)>,
     nominal_roots: HashMap<usize, usize>,
-    nominal_descendants: HashMap<usize, usize>,
+    nominal_descendants: HashMap<usize, HashSet<usize>>,
     tree_context: Option<(usize, usize, usize)>,
 }
 

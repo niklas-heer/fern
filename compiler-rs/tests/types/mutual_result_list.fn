@@ -1,0 +1,13 @@
+type Node:
+    value:Result(Int,String)
+    children:List(Node)
+fn even(node:Node)->Unit:
+    println(Result.is_err(node.value))
+    for child in node.children:
+        odd(child)
+fn odd(node:Node)->Unit:
+    println(Result.is_err(node.value))
+    for child in node.children:
+        defer even(child)
+        ()
+fn main():even(Node(Ok(0),[Node(Err("left"),[Node(Ok(2),[])]),Node(Err("right"),[])]))

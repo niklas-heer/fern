@@ -28,7 +28,7 @@ impl Engine<'_> {
             output.as_ref()
         };
         let family = substitute::Substitution::family(self, list, false, span, 0)?;
-        let plan = tree_iteration::prepare(self, &family, span)?;
+        let plan = tree_iteration::prepare(self, &family, item, span)?;
         let summary = self.collection_callback(
             callback,
             &callback_expr.ty,
