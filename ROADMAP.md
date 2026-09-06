@@ -161,7 +161,8 @@ Status: Diagnostic parity complete; workflow parity remains open
 - [x] Capture bounded literal processes through both native frontends with full-width limits, distinct normal/error results and owned cleanup (31 native scenarios and five atomic rejections per frontend; 21 runtime groups in debug/release/sanitizer builds).
 - [x] Add fallible exact stderr output with thread-local SIGPIPE preservation (nine native groups in debug/release/sanitizer builds; six source-native cases and two atomic rejections per frontend).
 - [x] Accept interpolated strings as indented C-parser body expressions (three AST regressions), including final branches followed by else.
-- [ ] Reach feature parity for `scripts/check_style.py` in `scripts/check_style.fn`
+- [x] Run the native build/test/example/Git workflow through literal bounded argv, preserve stderr CLI failures and compare 47 scenarios under both frontends.
+- [ ] Reach feature parity for `scripts/check_style.py` in `scripts/check_style.fn` (remaining Unicode numeric-path classification is an executable known-gap oracle).
 - [x] Add parity assertions to CI (`just style-parity` as a required gate)
 - [ ] Make Fern-native checker the default once parity is stable
 

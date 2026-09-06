@@ -8,6 +8,7 @@ This folder contains project-level reference documents. Use this file as the can
 - [Release readiness](RELEASE_READINESS.md): implemented features, remaining gaps, and release gates.
 - [Actor runtime](ACTOR_RUNTIME.md): exact mailbox/supervision commitments and execution limits.
 - [Rust frontend evaluation](RUST_FRONTEND_EVALUATION.md): prototype scope, native correctness, measured costs, and migration criteria.
+- [Native checker progress](BOOTSTRAP_CHECKER.md): bounded command workflows and remaining default-migration gates.
 - [Rust migration progress](RUST_MIGRATION.md): collections, error values, verification, and remaining parity work.
 
 ## Core References

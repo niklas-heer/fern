@@ -1,259 +1,398 @@
-# Fern Style Checker
-# Native style checker, verified against the Python compatibility reference
-# Checks FERN_STYLE compliance for C source files
-
-# Type aliases for clarity:
-# FuncInfo = (String, Int, Int, Int, String, Bool, List(String), String, List(String))
-#          = (name, start_line, end_line, assertions, body, has_doc, param_names, return_type, doc_params)
-# Violation = (String, Int, String, String, String, String)
-#          = (file, line, func_name, rule, message, severity)
-# DocComment = (Bool, Bool, List(String), Bool) = (exists, has_desc, documented_params, has_return)
-
+# Native quality workflow. Python remains the shipping compatibility reference.
 fn main() -> Int:
     let argc = System.args_count()
+    let flag_error = cli_flags(1, argc)
+    if not String.eq(flag_error, ""):
+        cli_failure(flag_error)
+    else:
+        if has_flag(argc, "--help"):
+            print_help()
+            0
+        else:
+            let extras = cli_extras(1, argc, true, 0, [])
+            if not List.is_empty(extras):
+                let names = String.join(extras, " ")
+                cli_failure("unrecognized arguments: {names}")
+            else:
+                quality_workflow(argc)
 
-    # Parse flags
-    let style_only = has_flag(argc, "--style-only")
+fn cli_failure(error: String) -> Int:
+    let usage = "usage: check_style [paths ...] [--lenient] [--style-only] [--pre-commit] [--summary]\n"
+    match System.write_stderr("{usage}check_style: error: {error}\n"):
+        Ok(()) -> 2
+        Err(_) -> 2
+
+fn quality_workflow(argc: Int) -> Int:
     let lenient = has_flag(argc, "--lenient")
-    let pre_commit = has_flag(argc, "--pre-commit")
-    let summary_only = has_flag(argc, "--summary")
-
-    # Print header
-    let mode_text = if lenient: "lenient mode" else: "strict mode"
-    let header = Tui.Panel.new("Fern Style Checker")
-    let header = Tui.Panel.title(header, "fern-style")
-    let header = Tui.Panel.subtitle(header, mode_text)
-    let header = Tui.Panel.border(header, "rounded")
-    let header = Tui.Panel.border_color(header, "cyan")
+    let mode = if lenient: "lenient mode" else: "strict mode"
+    let header = Tui.Panel.new("Fern Quality Checker")
+    let header = Tui.Panel.subtitle(header, mode)
     println(Tui.Panel.render(header))
     println("")
-
-    let build_passed = run_build_checks(style_only)
-
-    # Run FERN_STYLE checks
+    let build_ok = run_build_checks(has_flag(argc, "--style-only"))
     println(Tui.Style.bold("FERN_STYLE Compliance"))
     println("")
-
-    # Determine paths to check - use args or defaults (filtering out flags)
-    let paths = get_paths_to_check(argc)
-
-    let totals = check_paths(paths, 0, 0)
-    let total_files: Int = totals.0
-    let total_violations: Int = totals.1
-    let style_passed = total_violations == 0
-
-    println("Checked {total_files} files")
+    let totals = check_paths(get_paths_to_check(argc), 0, 0, 0)
+    let files: Int = totals.0
+    let errors: Int = totals.1
+    let warnings: Int = totals.2
+    print_style_summary(files, errors, warnings, has_flag(argc, "--summary"))
+    if has_flag(argc, "--pre-commit"):
+        println("\nGit Hygiene\n")
+        check_git_hygiene()
+    let style_ok = errors == 0 and (lenient or warnings == 0)
     println("")
-
-    # Git hygiene (pre-commit mode only)
-    let git_passed = if pre_commit:
-        println(Tui.Style.bold("Git Hygiene"))
-        println("")
-        let git_result = check_git_hygiene()
-        git_result
-    else:
-        true
-
-    # Print summary
-    println("")
-    if build_passed and style_passed and git_passed:
+    if build_ok and style_ok:
         println(Tui.Status.ok("All checks passed!"))
         0
     else:
-        if total_violations > 0:
-            let summary = "{total_violations} violations in {total_files} files"
-            println(Tui.Status.error(summary))
-        else:
-            println(Tui.Status.error("Checks failed - fix issues before committing"))
+        println(Tui.Status.error("Checks failed - fix issues before committing"))
         1
 
-# Check if a flag is present in command line args
+fn print_help():
+    println("usage: check_style [paths ...] [--lenient] [--style-only] [--pre-commit] [--summary]")
+    println("Fern Quality Checker - Build, Test, Examples, and FERN_STYLE")
+    println("Directories or files to check (default: src lib)")
+    println("-h, --help       Show this help message and exit")
+    println("--lenient        Allow warnings (default is strict mode)")
+    println("--style-only     Only run FERN_STYLE checks (skip build/test/examples)")
+    println("--pre-commit     Pre-commit hook mode (full strict check + git hygiene)")
+    println("--summary        Show only summary, not individual violations")
+    println("\nModes:")
+    println("  Default (strict)    Run all checks, warnings are errors")
+    println("  --lenient           Run all checks, allow warnings")
+    println("  --style-only        Only FERN_STYLE checks (skip build/test/examples)")
+    println("  --pre-commit        Pre-commit hook mode (includes git hygiene)")
+    println("\nAll Checks Run:")
+    println("  1. Build            just clean && just debug (no warnings)")
+    println("  2. Tests            just test (all must pass)")
+    println("  3. Examples         Type-check all examples/*.fn files")
+    println("  4. FERN_STYLE       Code compliance checks")
+
+fn known_flags() -> List(String):
+    ["--help", "--lenient", "--style-only", "--pre-commit", "--summary"]
+
+fn canonical_flag(arg: String) -> String:
+    if String.eq(arg, "--diagnostics"):
+        arg
+    else:
+        if String.starts_with(arg, "-h") and not short_help_value(arg):
+            "--help"
+        else:
+            public_flag(arg)
+
+fn short_help_value(arg: String) -> Bool:
+    let parts = String.split(arg, "=")
+    List.len(parts) > 1 and Regex.is_match(List.head(parts), "^-h+$")
+
+fn public_flag(arg: String) -> String:
+    if not String.starts_with(arg, "--") or String.eq(arg, "--"):
+        ""
+    else:
+        flag_prefix(arg, known_flags(), "")
+
+fn flag_prefix(arg: String, flags: List(String), found: String) -> String:
+    if List.is_empty(flags):
+        found
+    else:
+        let name: String = List.head(flags)
+        if String.starts_with(name, arg):
+            if not String.eq(found, ""): "ambiguous" else: flag_prefix(arg, List.tail(flags), name)
+        else:
+            flag_prefix(arg, List.tail(flags), found)
+
+fn cli_flags(index: Int, argc: Int) -> String:
+    if index >= argc:
+        ""
+    else:
+        let arg = System.arg(index)
+        if String.eq(arg, "--") or String.eq(canonical_flag(arg), "--help"):
+            ""
+        else:
+            let parts = String.split(arg, "=")
+            let flag = canonical_flag(List.head(parts))
+            if String.eq(flag, "ambiguous"):
+                let names = String.join(matching_flags(List.head(parts), known_flags()), ", ")
+                "ambiguous option: {arg} could match {names}"
+            else:
+                if List.len(parts) > 1 and not String.eq(flag, ""):
+                    let value = String.join(List.tail(parts), "=")
+                    let display = if String.eq(flag, "--help"): "-h/--help" else: flag
+                    "argument {display}: ignored explicit argument '{value}'"
+                else:
+                    cli_flags(index + 1, argc)
+
+fn matching_flags(prefix: String, flags: List(String)) -> List(String):
+    if List.is_empty(flags):
+        []
+    else:
+        let rest = matching_flags(prefix, List.tail(flags))
+        let name = List.head(flags)
+        if String.starts_with(name, prefix): List.concat([name], rest) else: rest
+
+fn negative_numeric_path(arg: String) -> Bool:
+    Regex.is_match(arg, "^-[0-9]+$") or Regex.is_match(arg, "^-[0-9]*[.][0-9]+$")
+
+# argparse's paths operand occupies one contiguous positional argument group.
+fn cli_extras(index: Int, argc: Int, options: Bool, positional: Int, extras: List(String)) -> List(String):
+    if index >= argc:
+        extras
+    else:
+        let arg = System.arg(index)
+        if options and String.eq(arg, "--"):
+            cli_extras(index + 1, argc, false, positional, extras)
+        else:
+            let option = options and String.starts_with(arg, "-") and not String.eq(arg, "-") and not negative_numeric_path(arg)
+            if option:
+                let extras = if String.eq(canonical_flag(arg), ""): List.push(extras, arg) else: extras
+                let positional = if positional == 1: 2 else: positional
+                cli_extras(index + 1, argc, options, positional, extras)
+            else:
+                let extras = if positional == 2: List.push(extras, arg) else: extras
+                let positional = if positional == 0: 1 else: positional
+                cli_extras(index + 1, argc, options, positional, extras)
+
 fn has_flag(argc: Int, flag: String) -> Bool:
     has_flag_rec(1, argc, flag)
 
-fn has_flag_rec(i: Int, argc: Int, flag: String) -> Bool:
-    if i >= argc:
+fn has_flag_rec(index: Int, argc: Int, flag: String) -> Bool:
+    if index >= argc:
         false
     else:
-        let arg = System.arg(i)
-        if String.eq(arg, flag):
-            true
+        let arg = System.arg(index)
+        if String.eq(arg, "--"):
+            false
         else:
-            has_flag_rec(i + 1, argc, flag)
+            String.eq(canonical_flag(arg), flag) or has_flag_rec(index + 1, argc, flag)
 
-# Get paths from command line or use defaults (filtering out flags starting with --)
 fn get_paths_to_check(argc: Int) -> List(String):
-    if argc > 1:
-        collect_paths(1, argc)
+    let paths = collect_paths_rec(1, argc, true, [])
+    if List.is_empty(paths): ["src", "lib"] else: paths
+
+fn collect_paths_rec(index: Int, argc: Int, options: Bool, paths: List(String)) -> List(String):
+    if index >= argc:
+        paths
     else:
-        ["lib", "src"]
-
-# Collect command line args that are paths (not flags)
-fn collect_paths(start: Int, end: Int) -> List(String):
-    collect_paths_rec(start, end, [])
-
-fn collect_paths_rec(i: Int, end: Int, result: List(String)) -> List(String):
-    if i >= end:
-        if List.is_empty(result):
-            ["lib", "src"]
+        let arg = System.arg(index)
+        if options and String.eq(arg, "--"):
+            collect_paths_rec(index + 1, argc, false, paths)
         else:
-            result
-    else:
-        let arg = System.arg(i)
-        if String.starts_with(arg, "--"):
-            collect_paths_rec(i + 1, end, result)
-        else:
-            let result = List.push(result, arg)
-            collect_paths_rec(i + 1, end, result)
-
-# ========== Build & Test Verification ==========
-
-# Check that the project builds cleanly
-fn check_build() -> (Bool, String):
-    # Run just clean first
-    let clean_result = System.exec("just clean 2>&1")
-    let clean_code: Int = clean_result.0
-    if clean_code != 0:
-        (false, "just clean failed")
-    else:
-        # Run just debug
-        let build_result = System.exec("just debug 2>&1")
-        let build_code: Int = build_result.0
-        let build_out: String = build_result.1
-        if build_code != 0:
-            (false, "Build failed")
-        else:
-            # Check for warnings in output
-            if String.contains(build_out, "warning:"):
-                (false, "Build has warnings")
+            let paths = if options and not String.eq(canonical_flag(arg), ""):
+                paths
             else:
-                (true, "Build clean")
+                List.push(paths, arg)
+            collect_paths_rec(index + 1, argc, options, paths)
 
-# Run the test suite
-fn check_tests() -> (Bool, String):
-    let result = System.exec("just test 2>&1")
-    let code: Int = result.0
-    let out: String = result.1
-    if code != 0:
-        (false, "Tests failed")
+# Literal process capture never invokes a shell or publishes partial failure output.
+fn workflow_command(args: List(String)) -> (Int, String, String):
+    match System.exec_args_bounded(args, 300000, 8388608):
+        Ok(result) -> result
+        Err(code) -> (1, "", process_failure(code))
+
+fn process_failure(code: Int) -> String:
+    if code == 3:
+        "Command timed out"
     else:
-        # Check for test pass message
-        if String.contains(out, "All tests passed"):
-            (true, "All tests passed")
+        if code == 4:
+            "Command output limit exceeded"
         else:
-            (true, "Tests completed")
+            "Command failed (process error {code})"
 
-# Type-check example files
-fn check_examples() -> (Bool, String):
+fn check_build() -> (Bool, String, String):
+    let clean = workflow_command(["just", "clean"])
+    if clean.0 != 0:
+        (false, "Clean failed", "")
+    else:
+        let build = workflow_command(["just", "debug"])
+        let output: String = build.1 + build.2
+        let lower = String.to_lower(output)
+        if build.0 != 0:
+            (false, "Build failed", output)
+        else:
+            if String.contains(lower, "warning:") or String.contains(lower, "error:"):
+                (false, "Build has warnings/errors", output)
+            else:
+                (true, "Build clean", "")
+
+fn check_tests() -> (Bool, String, String):
+    let result = workflow_command(["just", "test"])
+    let output: String = result.1 + result.2
+    if result.0 != 0:
+        (false, "Tests failed", output)
+    else:
+        let matches = Regex.find_all(output, "Passed:[[:space:]]*[0-9]+")
+        if List.is_empty(matches):
+            (true, "Tests passed", "")
+        else:
+            let count = Regex.replace_all(List.head(matches), "Passed:[[:space:]]*", "")
+            (true, "All tests passing ({count} tests)", "")
+
+fn check_examples() -> (Bool, String, String):
     if not File.exists("examples"):
-        (true, "No examples directory")
+        (true, "No examples directory", "")
     else:
-        match File.list_dir("examples"):
-            Ok(files) -> check_example_files(files, 0, 0)
-            Err(code) -> (false, "Cannot list examples: error {code}")
+        if not File.is_dir("examples"):
+            (true, "No .fn files in examples/", "")
+        else:
+            match File.list_dir("examples"):
+                Ok(files) -> prepare_examples(example_names(files, []))
+                Err(code) -> (false, "Cannot list examples", "error {code}")
 
-fn check_example_files(files: List(String), passed: Int, failed: Int) -> (Bool, String):
+fn example_names(files: List(String), result: List(String)) -> List(String):
     if List.is_empty(files):
-        if failed > 0:
-            let total = passed + failed
-            (false, "{failed}/{total} examples failed type-check")
-        else:
-            (true, "All {passed} examples type-check")
+        sort_strings(result)
     else:
-        let file: String = List.head(files)
-        let rest = List.tail(files)
-        if String.ends_with(file, ".fn"):
-            let path = "examples/" + file
-            let result = System.exec("bin/fern check " + path + " 2>&1")
-            let code: Int = result.0
-            if code == 0:
-                check_example_files(rest, passed + 1, failed)
-            else:
-                check_example_files(rest, passed, failed + 1)
-        else:
-            check_example_files(rest, passed, failed)
+        let name: String = List.head(files)
+        let result = if String.ends_with(name, ".fn"): List.push(result, name) else: result
+        example_names(List.tail(files), result)
 
-# Print result of a check and return success status
-fn print_check_result(name: String, result: (Bool, String)) -> Bool:
-    let success: Bool = result.0
-    let msg: String = result.1
-    if success:
-        println(Tui.Status.ok("  {name}: {msg}"))
+fn prepare_examples(files: List(String)) -> (Bool, String, String):
+    if List.is_empty(files):
+        (true, "No .fn files in examples/", "")
     else:
-        println(Tui.Status.error("  {name}: {msg}"))
+        if not File.exists("bin/fern"):
+            (false, "Fern compiler not built", "Run just debug first")
+        else:
+            check_example_files(files, 0, 0, [])
+
+fn check_example_files(files: List(String), passed: Int, failed: Int, details: List(String)) -> (Bool, String, String):
+    if List.is_empty(files):
+        let total = passed + failed
+        if failed > 0:
+            (false, "{failed}/{total} examples failed type check", String.join(details, "\n"))
+        else:
+            (true, "All {passed} examples type-check", "")
+    else:
+        let name: String = List.head(files)
+        let result = workflow_command(["bin/fern", "check", "examples/" + name])
+        if result.0 == 0:
+            check_example_files(List.tail(files), passed + 1, failed, details)
+        else:
+            let stderr: String = result.2
+            let error: String = if String.eq(stderr, ""): result.1 else: stderr
+            let details = if failed < 5:
+                List.push(details, "  {name}: {text_prefix(error, 100)}")
+            else:
+                details
+            check_example_files(List.tail(files), passed, failed + 1, details)
+
+# Native String indices count bytes; only slice at a complete UTF8 scalar boundary.
+fn text_prefix(text: String, count: Int) -> String:
+    String.slice(text, 0, prefix_end(text, count, 0))
+
+fn prefix_end(text: String, count: Int, index: Int) -> Int:
+    if count == 0 or index >= String.len(text):
+        index
+    else:
+        let byte = Option.unwrap_or(String.char_at(text, index), 0)
+        let width = if byte < 128: 1 else: if byte < 224: 2 else: if byte < 240: 3 else: 4
+        prefix_end(text, count - 1, index + width)
+
+fn print_check_result(name: String, result: (Bool, String, String)) -> Bool:
+    let success: Bool = result.0
+    let message: String = result.1
+    if success:
+        println(Tui.Status.ok("  {name}: {message}"))
+    else:
+        println(Tui.Status.error("  {name}: {message}"))
+        if not String.eq(result.2, ""):
+            println(result.2)
     success
 
-# Check git hygiene (for pre-commit mode)
-fn check_git_hygiene() -> Bool:
-    # Check for TODO/FIXME comments in staged files
-    let result = System.exec("git diff --cached --name-only 2>&1")
-    let code: Int = result.0
-    if code != 0:
-        println(Tui.Status.error("  Could not check git status"))
-        true
+fn check_git_hygiene():
+    let available = workflow_command(["git", "rev-parse", "--git-dir"])
+    let reminders = if available.0 != 0:
+        []
     else:
-        let staged: String = result.1
-        if String.len(staged) == 0:
-            println(Tui.Status.ok("  No staged files"))
-            true
+        let staged = workflow_command(["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"])
+        if staged.0 != 0: [] else: git_reminders(String.lines(String.trim(staged.1)))
+    if List.is_empty(reminders):
+        println(Tui.Status.ok("  No issues detected"))
+    else:
+        for reminder in reminders:
+            println(Tui.Status.warn("  {reminder}"))
+
+fn git_reminders(files: List(String)) -> List(String):
+    if not staged_code(files):
+        []
+    else:
+        let messages: List(String) = []
+        let messages = if staged_feature(files) and not list_contains_string(files, "ROADMAP.md"):
+            List.push(messages, "Reminder: Consider updating ROADMAP.md for feature changes")
         else:
-            println(Tui.Status.ok("  Git hygiene OK"))
-            true
+            messages
+        if staged_design(files) and not list_contains_string(files, "DECISIONS.md"):
+            List.push(messages, "Reminder: Did you make a design decision? Consider /decision")
+        else:
+            messages
+
+fn staged_code(files: List(String)) -> Bool:
+    if List.is_empty(files): false else:
+        let name: String = List.head(files)
+        String.ends_with(name, ".c") or String.ends_with(name, ".h") or staged_code(List.tail(files))
+
+fn staged_feature(files: List(String)) -> Bool:
+    if List.is_empty(files): false else:
+        String.contains(String.to_lower(List.head(files)), "feat") or staged_feature(List.tail(files))
+
+fn staged_design(files: List(String)) -> Bool:
+    if List.is_empty(files): false else:
+        let name: String = List.head(files)
+        String.starts_with(name, "include/") or String.eq(name, "DESIGN.md") or staged_design(List.tail(files))
+
+fn print_style_summary(files: Int, errors: Int, warnings: Int, summary: Bool):
+    if files == 0:
+        println("No .c files found to check")
+    else:
+        println("Checked {files} files\n")
+        if errors + warnings == 0:
+            println("All files pass FERN_STYLE checks")
+        else:
+            if summary:
+                println("{errors} errors, {warnings} warnings")
+            else:
+                println("{errors} errors, {warnings} warnings")
 
 # Check a path (file or directory)
-fn check_path(path: String) -> (Int, Int):
+fn check_path(path: String) -> (Int, Int, Int):
     let is_dir = File.is_dir(path)
     let is_c_file = String.ends_with(path, ".c")
     check_path_impl(path, is_dir, is_c_file)
 
 # Implementation helper to avoid nested if/else codegen issues
-fn check_path_impl(path: String, is_dir: Bool, is_c_file: Bool) -> (Int, Int):
+fn check_path_impl(path: String, is_dir: Bool, is_c_file: Bool) -> (Int, Int, Int):
     if is_dir:
         check_directory(path)
     else:
         check_single_file(path, is_c_file)
 
 # Check a single file (not a directory)
-fn check_single_file(path: String, is_c_file: Bool) -> (Int, Int):
+fn check_single_file(path: String, is_c_file: Bool) -> (Int, Int, Int):
     if is_c_file and File.exists(path):
         let v = check_file(path)
-        (1, v)
+        (1, v.0, v.1)
     else:
-        (0, 0)
+        (0, 0, 0)
 
 # Check all .c files in a directory
-fn check_directory(dir: String) -> (Int, Int):
+fn check_directory(dir: String) -> (Int, Int, Int):
     match File.list_dir(dir):
-        Ok(entries) -> check_entries(dir, entries, 0, 0)
+        Ok(entries) -> check_entries(dir, entries, 0, 0, 0)
         Err(code) ->
             println("Cannot list {dir}: error {code}")
-            (0, 1)
+            (0, 1, 0)
 
-# Helper to process directory entries recursively
-fn check_entries(dir: String, entries: List(String), files: Int, violations: Int) -> (Int, Int):
+# Walk directory entries once, preserving immutable error and warning counts.
+fn check_entries(dir: String, entries: List(String), files: Int, errors: Int, warnings: Int) -> (Int, Int, Int):
     if List.is_empty(entries):
-        (files, violations)
+        (files, errors, warnings)
     else:
-        let entry = List.head(entries)
-        let rest = List.tail(entries)
-        let full_path = dir + "/" + entry
-        let is_dir = File.is_dir(full_path)
-        let is_c_file = String.ends_with(entry, ".c")
-
-        if is_dir:
-            let sub_result = check_directory(full_path)
-            let new_files = files + sub_result.0
-            let new_violations = violations + sub_result.1
-            check_entries(dir, rest, new_files, new_violations)
-        else:
-            if is_c_file:
-                let v = check_file(full_path)
-                check_entries(dir, rest, files + 1, violations + v)
-            else:
-                check_entries(dir, rest, files, violations)
+        let path = dir + "/" + List.head(entries)
+        let result = check_path(path)
+        check_entries(dir, List.tail(entries), files + result.0, errors + result.1, warnings + result.2)
 
 # Check a single C file for FERN_STYLE violations
-fn check_file(filepath: String) -> Int:
+fn check_file(filepath: String) -> (Int, Int):
     let content_result = File.read(filepath)
 
     match content_result:
@@ -261,12 +400,12 @@ fn check_file(filepath: String) -> Int:
         Err(_) -> check_file_error(filepath)
 
 # Handle file read error
-fn check_file_error(filepath: String) -> Int:
+fn check_file_error(filepath: String) -> (Int, Int):
     println(Tui.Status.error("Could not read: {filepath}"))
-    1
+    (1, 0)
 
 # Check file with valid content
-fn check_file_content(filepath: String, content: String) -> Int:
+fn check_file_content(filepath: String, content: String) -> (Int, Int):
     let lines = String.split(content, "\n")
     let violations: List((String, Int, String, String, String)) = []
 
@@ -290,7 +429,8 @@ fn check_file_content(filepath: String, content: String) -> Int:
             println("")
             println(Tui.Style.bold(filepath))
             print_violations_table(violations)
-    count_failures(violations, lenient, 0)
+    let errors = count_severity(violations, lenient, "error", 0)
+    (errors, List.len(violations) - errors)
 
 # Classify warnings exactly as the compatibility reference does.
 fn violation_severity(rule: String, lenient: Bool) -> String:
@@ -508,13 +648,16 @@ fn print_violations_table(violations: List((String, Int, String, String, String)
     let table = Tui.Table.border(table, "simple")
 
     for v in violations:
-        let icon: String = Tui.Style.red("X")
         # Extract tuple fields with type annotations to ensure correct codegen
         let v_name: String = v.2
         let v_line: Int = v.1
         let v_rule: String = v.3
+        let lenient = has_flag(System.args_count(), "--lenient")
+        let warning = String.eq(violation_severity(v_rule, lenient), "warning")
+        let icon = if warning: Tui.Style.yellow("!") else: Tui.Style.red("X")
         let v_msg: String = v.4
-        let func_name: String = Tui.Style.yellow(v_name + "()")
+        let label = if String.eq(v_name, ""): "file" else: v_name + "()"
+        let func_name = Tui.Style.yellow(label)
         let line_str: String = "" + "{v_line}"
         let rule: String = Tui.Style.magenta(v_rule)
         let msg: String = v_msg
@@ -920,12 +1063,12 @@ fn count_assertion_lines(lines: List(String), count: Int) -> Int:
         count_assertion_lines(List.tail(lines), count)
 
 # Sum path results without rebinding a value inside a loop scope.
-fn check_paths(paths: List(String), files: Int, failures: Int) -> (Int, Int):
+fn check_paths(paths: List(String), files: Int, errors: Int, warnings: Int) -> (Int, Int, Int):
     if List.is_empty(paths):
-        (files, failures)
+        (files, errors, warnings)
     else:
         let result = check_path(List.head(paths))
-        check_paths(List.tail(paths), files + result.0, failures + result.1)
+        check_paths(List.tail(paths), files + result.0, errors + result.1, warnings + result.2)
 
 # Accumulate each function's ordered diagnostics.
 fn check_functions(filepath: String, functions: List((String, Int, Int, Int, String, Bool, List(String), String, List(String))), violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
@@ -936,15 +1079,14 @@ fn check_functions(filepath: String, functions: List((String, Int, Int, Int, Str
         check_functions(filepath, List.tail(functions), violations)
 
 # Preserve strict/lenient failure classification independently of rendering.
-fn count_failures(violations: List((String, Int, String, String, String)), lenient: Bool, failures: Int) -> Int:
+fn count_severity(violations: List((String, Int, String, String, String)), lenient: Bool, severity: String, total: Int) -> Int:
     if List.is_empty(violations):
-        failures
+        total
     else:
-        let v = List.head(violations)
-        let rule: String = v.3
-        let failed = not lenient or String.eq(violation_severity(rule, lenient), "error")
-        let failures = if failed: failures + 1 else: failures
-        count_failures(List.tail(violations), lenient, failures)
+        let value = List.head(violations)
+        let rule: String = value.3
+        let total = if String.eq(violation_severity(rule, lenient), severity): total + 1 else: total
+        count_severity(List.tail(violations), lenient, severity, total)
 
 # Collect distinct undocumented parameters in declaration order before sorting.
 fn missing_parameters(names: List(String), documented: List(String), missing: List(String)) -> List(String):

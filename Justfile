@@ -245,6 +245,7 @@ check:
     python3 scripts/test_c_int64.py
     python3 scripts/test_process_frontends.py --compiler bin/fern
     python3 scripts/test_stderr_frontends.py --compiler bin/fern
+    uv run scripts/test_style_workflow.py
 
 # Style check only (no build/test)
 style:
@@ -261,6 +262,7 @@ style-fern: debug
 # Compare exact diagnostic records, severities, and exits on fixtures and repository
 style-parity: debug
     uv run scripts/test_style_parity.py
+    uv run scripts/test_style_workflow.py
 
 # Pre-commit hook check
 pre-commit:
@@ -462,6 +464,7 @@ rust-check: rust-build
     python3 scripts/test_rust_doctests.py
     python3 scripts/test_rust_units.py
     uv run scripts/test_style_parity.py --compiler compiler-rs/target/debug/fern-rs
+    uv run scripts/test_style_workflow.py --compiler compiler-rs/target/debug/fern-rs
     python3 scripts/test_runtime_directory.py
     python3 scripts/test_runtime_stderr.py
     python3 scripts/test_stderr_frontends.py --compiler compiler-rs/target/debug/fern-rs

@@ -82,7 +82,7 @@ def check_failed_build(binary, temporary):
     result = subprocess.run([str(binary), str(FIXTURES / "empty.c")], cwd=directory,
                             env=environment, text=True, capture_output=True, timeout=30)
     assert result.returncode == 1 and result.stderr == "", result
-    for expected in ("Build: Build failed", "Tests: All tests passed", "Examples:", "Checked 1 files"):
+    for expected in ("Build: Build failed", "Tests: Tests passed", "Examples:", "Checked 1 files"):
         assert expected in result.stdout, (expected, result.stdout)
     print("  PASS failed build retains later checks and unsuccessful final status")
 
