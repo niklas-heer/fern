@@ -231,6 +231,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [x] Repin the locally staged Zed package to the verified label/recovery grammar, test exact label captures and reproducible archives, and rerun both actual-editor LSP discovery/override smokes.
 - [x] Repin the locally verified Zed package to the numeric-literal grammar and rerun package/actual-editor checks.
 - [x] Format explicit source directories and check all dirty paths without writes; validate all inputs and stage all replacements before publication (Decision99).
+- [x] Expose canonical full-document formatting through Rust LSP over current unsaved buffers, with UTF-16 edits, no server-side publication and explicit syntax/parameter errors (Decision100).
 - [ ] Complete Tree-sitter parity for remaining Rust syntax and publish a fetchable matching grammar revision when release is authorized.
 - [ ] Execute actor functions with suspension, typed messages/receive/timeouts, ancestor escalation and descendant subtree reconstruction.
 - [x] Immutable native JSON parser/accessors/stringifier with exact numbers, Unicode validation and bounded resources (14,309 API checks, 24 budget checks and 6,000 numeric oracle cases in debug/release/sanitizer builds).

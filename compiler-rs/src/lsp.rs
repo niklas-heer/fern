@@ -1,6 +1,8 @@
 //! Bounded JSON-RPC transport and UTF-16 editor diagnostics.
 //! Lifecycle and sync follow https://microsoft.github.io/language-server-protocol/.
 use crate::{ast, check, modules, parse, runtime, Span, Type};
+#[path = "lsp/formatting.rs"]
+mod formatting;
 #[path = "lsp/hover.rs"]
 mod hover;
 #[path = "lsp/index.rs"]
@@ -597,47 +599,11 @@ impl Server {
         output: &mut impl Write,
     ) -> Result<()> {
         match method {
-            "initialize" if self.state == State::New => {
-                if !matches!(params, Json::Object(_)) {
-                    return send_error(output, id, -32602, "initialize params must be an object");
-                }
-                self.state = State::Running;
-                respond(
-                    output,
-                    id,
-                    object([
-                        (
-                            "capabilities",
-                            object([
-                                ("positionEncoding", string("utf-16")),
-                                ("definitionProvider", Json::Bool(true)),
-                                ("hoverProvider", Json::Bool(true)),
-                                (
-                                    "completionProvider",
-                                    object([
-                                        ("resolveProvider", Json::Bool(false)),
-                                        ("triggerCharacters", Json::Array(vec![string(".")])),
-                                    ]),
-                                ),
-                                (
-                                    "textDocumentSync",
-                                    object([
-                                        ("openClose", Json::Bool(true)),
-                                        ("change", number(2)),
-                                    ]),
-                                ),
-                            ]),
-                        ),
-                        (
-                            "serverInfo",
-                            object([
-                                ("name", string("fern-rs")),
-                                ("version", string(env!("CARGO_PKG_VERSION"))),
-                            ]),
-                        ),
-                    ]),
-                )
-            }
+            "initialize" if self.state == State::New => self.initialize(id, params, output),
+            "textDocument/formatting" => match self.formatting(params) {
+                Ok(result) => respond(output, id, result),
+                Err((code, message)) => send_error(output, id, code, &message),
+            },
             "textDocument/definition" | "textDocument/completion" | "textDocument/hover" => {
                 match self.navigation(method, params) {
                     Ok(result) => respond(output, id, result),
@@ -653,6 +619,46 @@ impl Server {
             "exit" => send_error(output, id, -32600, "exit must be a notification"),
             _ => send_error(output, id, -32601, "method not found"),
         }
+    }
+    /// Initialize once with the implemented static capabilities and incremental UTF-16 sync.
+    fn initialize(&mut self, id: Json, params: &Json, output: &mut impl Write) -> Result<()> {
+        if !matches!(params, Json::Object(_)) {
+            return send_error(output, id, -32602, "initialize params must be an object");
+        }
+        self.state = State::Running;
+        respond(
+            output,
+            id,
+            object([
+                (
+                    "capabilities",
+                    object([
+                        ("positionEncoding", string("utf-16")),
+                        ("definitionProvider", Json::Bool(true)),
+                        ("hoverProvider", Json::Bool(true)),
+                        ("documentFormattingProvider", Json::Bool(true)),
+                        (
+                            "completionProvider",
+                            object([
+                                ("resolveProvider", Json::Bool(false)),
+                                ("triggerCharacters", Json::Array(vec![string(".")])),
+                            ]),
+                        ),
+                        (
+                            "textDocumentSync",
+                            object([("openClose", Json::Bool(true)), ("change", number(2))]),
+                        ),
+                    ]),
+                ),
+                (
+                    "serverInfo",
+                    object([
+                        ("name", string("fern-rs")),
+                        ("version", string(env!("CARGO_PKG_VERSION"))),
+                    ]),
+                ),
+            ]),
+        )
     }
     /// Apply document notifications; malformed edits leave all existing buffers intact.
     fn notification(&mut self, method: &str, params: &Json) -> Result<Vec<Json>> {

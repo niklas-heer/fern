@@ -100,7 +100,9 @@ Full release parity remains migration work.
 and verify that each complete syntax tree remains equivalent. Directory formatting
 validates all selected sources and stages all changed files before any replacement;
 publication is atomic per file. Hidden/build/dependency directories and child
-symlinks are skipped. `fmt --check src/` reports all dirty files without writing.
+symlinks are skipped. `fmt --check src/` reports all dirty files without writing. The Rust LSP also
+exposes canonical full-document formatting over the current unsaved buffer; the
+editor applies the returned edits.
 Comments inside multiline arguments may move adjacent to their statement. Invalid
 source leaves the selected files untouched. See the [directory formatting limits](../DECISIONS.md#99-format-source-directories-after-complete-input-validation).
 Every generic body is checked before specialization, including unused definitions;

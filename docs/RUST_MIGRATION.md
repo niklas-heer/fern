@@ -1047,3 +1047,20 @@ Discovery limits are 256 files, 8192 entries, 32 levels and 4096-byte paths; inp
 at most 1 MiB per file and 8 MiB total, with a separate 8 MiB formatted-output cap.
 Twelve new regressions cover these boundaries, exclusions, sorted diagnostics,
 read-only checks and staging cleanup, alongside all six existing file-check tests.
+
+## Editor formatting — 2026-09-06
+
+The Rust LSP advertises full-document formatting and returns canonical edits for
+the latest accepted unsaved buffer. Clean source returns an empty edit list;
+malformed syntax returns a formatting error. Formatting needs no checked imports
+or backend and does not change disk files, buffers, versions or diagnostics.
+The editor applies the returned UTF-16 replacement. Fern keeps its canonical
+four-space style even when the client requests different whitespace preferences.
+Eight protocol/executable regressions cover these rules, non-BMP text, CRLF, stale
+changes, malformed options and lifecycle errors. Range/on-type formatting, rename
+and code actions remain open.
+
+The complete Rust gates pass 1113 tests on macOS and 1114 on Linux arm64. Isolated
+actual Zed startup succeeds through both discovery and an explicit compiler path;
+its recorded initialize responses receive the formatting capability. The format
+request itself is verified through the library and executable protocol tests.
