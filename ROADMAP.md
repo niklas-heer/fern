@@ -239,7 +239,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [x] Evaluate dynamic JSON in the Rust REPL with exact native semantics, independent cleanup budgets and bounded shared storage (21 new Rust regressions and 12,000 numeric/formatting oracles).
 - [x] Implement concrete typed JSON codecs: explicit derive(Json), static targets, native/REPL shared plans, strict fields and bounded error paths (Decision98 J4; 4 native programs, 14 atomic invalids and runtime debug/release/sanitizer boundaries).
 - [x] Verify record derivations and static JSON targets in native/WASM editor grammar (98 valid sources, 34 malformed cases recovered, 36 incremental edits).
-- [ ] Repin and verify the Zed package after the typed JSON grammar commit.
+- [x] Repin the Zed package to the typed JSON grammar and verify reproducible archives, hostile-package rejection and both actual-editor startup modes with derived-record codec source.
 - [ ] Extend typed JSON to regular recursive schemas/newtypes, generic constraints, sum/union wire formats and general/custom Json traits (J5–J7).
 - [ ] Verify default-command migration to Rust, retaining C as an explicit bootstrap/reference executable and documenting its legacy JSON source contract (Decision96).
 - [ ] Implement HTTP serving and the broader SQL query/resource APIs described in the design.

@@ -3,7 +3,11 @@
 The extension registers `.fn` files, the Fern grammar, and the Rust language
 server. The staged package has been tested with Zed **1.18.0** on macOS arm64.
 It does not download a compiler. See the [grammar scope](../tree-sitter-fern/README.md)
-for the verified syntax and the three known malformed-source recovery gaps.
+for the verified syntax and remaining parser scope. The package pins grammar
+`20f3cb053a35a1321bb0c3932a3d3c842692e74d`, including record `derive(Json)`.
+Its native/WASM corpus covers 98 valid sources, 34 malformed cases with recovery
+and 36 incremental edits. Actual-editor smoke tests open a derived record and
+codec call with clean diagnostics through discovery and explicit binary paths.
 
 ## Language server
 

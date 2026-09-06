@@ -1096,3 +1096,14 @@ names have exact syntax/query tests; trailing commas reject consistently with Ru
 Matching Zed package pinning follows the grammar commit; no remote publication
 is implied. Recursive/newtype codecs, generic constraints, sum/union wire formats
 and general/custom traits remain J5–J7 work.
+
+
+## Matching typed-JSON Zed package — 2026-09-06
+
+The package pins `20f3cb053a35a1321bb0c3932a3d3c842692e74d`. The stale grammar
+first failed to compile the new derive highlight query. The matching revision
+passes two byte-identical archives, hostile component/query checks and the
+98/34/36 native/WASM corpus. Zed 1.18.0 starts the Rust server and opens derived
+record/codec source with clean diagnostics through both discovery and explicit
+binary configuration in isolated profiles. Toolchain metadata records the same
+grammar revision. The package remains local; remote publication is not implied.

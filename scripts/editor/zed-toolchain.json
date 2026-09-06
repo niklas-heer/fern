@@ -4,7 +4,7 @@
   "zed_extension_api": "0.7.0",
   "wasm_tools": "1.258.0",
   "tested_zed": "1.18.0",
-  "grammar_rev": "354a677dfd497fbd86f90a581b04839b7a987899",
+  "grammar_rev": "20f3cb053a35a1321bb0c3932a3d3c842692e74d",
   "grammar_profile": "Tree-sitter0.26.12 ABI14 / WASI SDK29.0 (see toolchain.json)",
   "official_packager": false,
   "wasm_tools_asset": {
