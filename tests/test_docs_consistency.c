@@ -1,5 +1,12 @@
 /* Docs Consistency Checks */
 
+/* Expose POSIX APIs under glibc strict C11; retain Darwin's default extensions. */
+#ifdef __linux__
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
+
 #include "test.h"
 
 #include <limits.h>

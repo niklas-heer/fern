@@ -55,6 +55,7 @@ for approval between milestones. C remains the default until the parity gates pa
 - [ ] Remaining executable language parity: remaining function/numeric/string operations, control flow and complete error handling.
 - [ ] Standard-library/native ABI compatibility and executable application coverage.
 - [ ] Diagnostics, formatting, REPL/LSP, documentation and developer-command parity.
+- [x] Verify the 1006-test expanded Rust checkpoint, C quality gate and documentation on Linux arm64 with Rust 1.75; expose POSIX test APIs under glibc strict C11 without hiding Darwin extensions.
 - [ ] Linux/macOS verification, fuzz/performance/packaging gates and default migration.
 
 Each checkpoint below records verified scope; this completion list stays open
