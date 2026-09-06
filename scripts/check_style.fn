@@ -28,23 +28,7 @@ fn main() -> Int:
     println(Tui.Panel.render(header))
     println("")
 
-    let all_passed = true
-
-    # Run build & test checks (unless --style-only)
-    if not style_only:
-        println(Tui.Style.bold("Build & Test"))
-        println("")
-
-        let build_result = check_build()
-        let all_passed = all_passed and print_check_result("Build", build_result)
-
-        let test_result = check_tests()
-        let all_passed = all_passed and print_check_result("Tests", test_result)
-
-        let examples_result = check_examples()
-        let all_passed = all_passed and print_check_result("Examples", examples_result)
-
-        println("")
+    let build_passed = run_build_checks(style_only)
 
     # Run FERN_STYLE checks
     println(Tui.Style.bold("FERN_STYLE Compliance"))
@@ -53,32 +37,26 @@ fn main() -> Int:
     # Determine paths to check - use args or defaults (filtering out flags)
     let paths = get_paths_to_check(argc)
 
-    # Check each path
-    let total_files = 0
-    let total_violations = 0
-
-    for path in paths:
-        let result = check_path(path)
-        let total_files = total_files + result.0
-        let total_violations = total_violations + result.1
-
-    # Determine pass/fail based on mode
+    let totals = check_paths(paths, 0, 0)
+    let total_files: Int = totals.0
+    let total_violations: Int = totals.1
     let style_passed = total_violations == 0
-    let all_passed = all_passed and style_passed
 
     println("Checked {total_files} files")
     println("")
 
     # Git hygiene (pre-commit mode only)
-    if pre_commit:
+    let git_passed = if pre_commit:
         println(Tui.Style.bold("Git Hygiene"))
         println("")
         let git_result = check_git_hygiene()
-        let all_passed = all_passed and git_result
+        git_result
+    else:
+        true
 
     # Print summary
     println("")
-    if all_passed:
+    if build_passed and style_passed and git_passed:
         println(Tui.Status.ok("All checks passed!"))
         0
     else:
@@ -279,7 +257,7 @@ fn check_file(filepath: String) -> Int:
     let content_result = File.read(filepath)
 
     match content_result:
-        Ok(content) -> check_file_content(filepath, content),
+        Ok(content) -> check_file_content(filepath, content)
         Err(_) -> check_file_error(filepath)
 
 # Handle file read error
@@ -298,8 +276,7 @@ fn check_file_content(filepath: String, content: String) -> Int:
     # Find all functions and check them
     let functions = find_functions(lines)
 
-    for func in functions:
-        let violations = check_function(filepath, func, violations)
+    let violations = check_functions(filepath, functions, violations)
 
     let argc = System.args_count()
     let lenient = has_flag(argc, "--lenient")
@@ -313,12 +290,7 @@ fn check_file_content(filepath: String, content: String) -> Int:
             println("")
             println(Tui.Style.bold(filepath))
             print_violations_table(violations)
-    let failures = 0
-    for v in violations:
-        let rule: String = v.3
-        if not lenient or String.eq(violation_severity(rule, lenient), "error"):
-            let failures = failures + 1
-    failures
+    count_failures(violations, lenient, 0)
 
 # Classify warnings exactly as the compatibility reference does.
 fn violation_severity(rule: String, lenient: Bool) -> String:
@@ -339,22 +311,27 @@ fn print_diagnostics(violations: List((String, Int, String, String, String)), le
         let severity = violation_severity(rule, lenient)
         println("DIAG\t{file}\t{line}\t{name}\t{rule}\t{message}\t{severity}")
 
-# Match each single-line enum discriminator; struct fields are not tagged unions.
+# Collect single-line enum discriminator diagnostics with explicit immutable state.
 fn check_tagged_unions(filepath: String, content: String, violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
-    let violations = violations
-    if not String.contains(content, "FERN_STYLE: allow(no-tagged-union)"):
-        let lines = String.split(content, "\n")
-        for i in 0..List.len(lines):
-            let line: String = List.get(lines, i)
-            if Regex.is_match(line, "(^|[^a-zA-Z0-9_])enum[[:space:]]*[\{][^}]+[}][[:space:]]*(kind|tag|type)[[:space:]]*;"):
-                let v = make_violation(filepath, i + 1, "", "no-tagged-union",
-                    "Manual tagged union detected - use Datatype99 instead")
-                let violations = List.push(violations, v)
-    violations
+    if String.contains(content, "FERN_STYLE: allow(no-tagged-union)"):
+        violations
+    else:
+        check_tagged_lines(filepath, String.lines(content), 1, violations)
 
-# Check a single function for violations
-# func tuple: (name, start_line, end_line, assertions, body, has_doc, param_names, return_type, doc_params)
-#             .0     .1          .2        .3          .4     .5       .6           .7           .8
+# Scan enum discriminator lines with explicit line numbers and diagnostics.
+fn check_tagged_lines(filepath: String, lines: List(String), line_number: Int, violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
+    if List.is_empty(lines):
+        violations
+    else:
+        let line: String = List.head(lines)
+        let violations = if Regex.is_match(line, "(^|[^a-zA-Z0-9_])enum[[:space:]]*[\{][^\}]+[\}][[:space:]]*(kind|tag|type)[[:space:]]*;"):
+            let v = make_violation(filepath, line_number, "", "no-tagged-union", "Manual tagged union detected - use Datatype99 instead")
+            List.push(violations, v)
+        else:
+            violations
+        check_tagged_lines(filepath, List.tail(lines), line_number + 1, violations)
+
+# Check one function using its parsed body, signature and documentation facts.
 fn check_function(filepath: String, func: (String, Int, Int, Int, String, Bool, List(String), String, List(String)), violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
     let violations = violations
     let func_name: String = func.0
@@ -367,49 +344,13 @@ fn check_function(filepath: String, func: (String, Int, Int, Int, String, Bool, 
     let return_type: String = func.7
     let doc_params: List(String) = func.8
 
-    # Check assertion density (minimum 2 per function)
-    if assertions < 2:
-        if not has_allow(body, "assertion-density"):
-            let v = make_violation(filepath, start_line, func_name,
-                "assertion-density", "{assertions} assertions (need 2+)")
-            let violations = List.push(violations, v)
-
-    # Check function length (max 70 lines)
+    let violations = add_rule_violation(filepath, start_line, func_name, body, violations, assertions < 2, "assertion-density", "{assertions} assertions (need 2+)")
     let length = end_line - start_line
-    if length > 70:
-        if not has_allow(body, "function-length"):
-            let v = make_violation(filepath, start_line, func_name,
-                "function-length", "{length} lines (max 70)")
-            let violations = List.push(violations, v)
-
-    # Check for malloc usage
-    if has_call(function_body(body), "malloc"):
-        if not has_allow(body, "no-malloc"):
-            let v = make_violation(filepath, start_line, func_name,
-                "no-malloc", "Uses malloc() - use arena allocation instead")
-            let violations = List.push(violations, v)
-
-    # Check for free usage
-    if has_call(function_body(body), "free"):
-        if not has_allow(body, "no-free"):
-            let v = make_violation(filepath, start_line, func_name,
-                "no-free", "Uses free() - use arena allocation instead")
-            let violations = List.push(violations, v)
-
-    # Check for unbounded loops
-    if has_unbounded_loop(body):
-        let allowed = has_allow(body, "bounded-loops")
-        if not allowed:
-            let v = make_violation(filepath, start_line, func_name,
-                "bounded-loops", "Unbounded loop detected - add explicit limit")
-            let violations = List.push(violations, v)
-
-    # Check for raw char* parameters (non-const)
-    if has_raw_char_param(body):
-        if not has_allow(body, "no-raw-char"):
-            let v = make_violation(filepath, start_line, func_name,
-                "no-raw-char", "Raw char* parameter - use sds or const char* instead")
-            let violations = List.push(violations, v)
+    let violations = add_rule_violation(filepath, start_line, func_name, body, violations, length > 70, "function-length", "{length} lines (max 70)")
+    let violations = add_rule_violation(filepath, start_line, func_name, body, violations, has_call(function_body(body), "malloc"), "no-malloc", "Uses malloc() - use arena allocation instead")
+    let violations = add_rule_violation(filepath, start_line, func_name, body, violations, has_call(function_body(body), "free"), "no-free", "Uses free() - use arena allocation instead")
+    let violations = add_rule_violation(filepath, start_line, func_name, body, violations, has_unbounded_loop(body), "bounded-loops", "Unbounded loop detected - add explicit limit")
+    let violations = add_rule_violation(filepath, start_line, func_name, body, violations, has_raw_char_param(body), "no-raw-char", "Raw char* parameter - use sds or const char* instead")
 
     # Check for doc comment
     let violations = check_doc_comment_violations(filepath, start_line, func_name, body, has_doc, param_names, return_type, doc_params, violations)
@@ -439,10 +380,7 @@ fn check_doc_params(filepath: String, line: Int, func_name: String, body: String
         check_doc_params_rec(filepath, line, func_name, param_names, doc_params, violations)
 
 fn check_doc_params_rec(filepath: String, line: Int, func_name: String, param_names: List(String), doc_params: List(String), violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
-    let missing: List(String) = []
-    for param in param_names:
-        if not list_contains_string(doc_params, param) and not list_contains_string(missing, param):
-            let missing = List.push(missing, param)
+    let missing = missing_parameters(param_names, doc_params, [])
     if List.is_empty(missing):
         violations
     else:
@@ -477,10 +415,10 @@ fn string_before(a: String, b: String, index: Int) -> Bool:
             false
         else:
             let left = match String.char_at(a, index):
-                Some(c) -> c,
+                Some(c) -> c
                 None -> 0
             let right = match String.char_at(b, index):
-                Some(c) -> c,
+                Some(c) -> c
                 None -> 0
             if left == right:
                 string_before(a, b, index + 1)
@@ -517,19 +455,24 @@ fn list_contains_string(list: List(String), s: String) -> Bool:
             list_contains_string(List.tail(list), s)
 
 # Check for unbounded loops: while(1), while(true), for(;;)
+# Search loop conditions without mutable local state.
 fn has_unbounded_loop(body: String) -> Bool:
     let body = function_body(body)
     let found = Regex.is_match(body, "(^|[^a-zA-Z0-9_])for[[:space:]]*[(][[:space:]]*;[[:space:]]*;[[:space:]]*[)]")
-    let loops = Regex.find_all(body, "(^|[^a-zA-Z0-9_])while[[:space:]]*[(][^)]+[)]")
-    for loop in loops:
+    found or has_unbounded_while(Regex.find_all(body, "(^|[^a-zA-Z0-9_])while[[:space:]]*[(][^)]+[)]"))
+
+# Test each while condition until an unbounded one is found.
+fn has_unbounded_while(loops: List(String)) -> Bool:
+    if List.is_empty(loops):
+        false
+    else:
+        let loop: String = List.head(loops)
         let condition = Regex.replace(loop, "^[^(]*[(]", "")
         let condition = String.trim(condition)
         let condition = String.trim(Regex.replace_all(condition, "[)]$", ""))
-        if not Regex.is_match(condition, "[<>=!]") and not String.eq(condition, "0") and not String.eq(condition, "false"):
-            let found = true
-    found
+        let unbounded = not Regex.is_match(condition, "[<>=!]") and not String.eq(condition, "0") and not String.eq(condition, "false")
+        unbounded or has_unbounded_while(List.tail(loops))
 
-# Check each parameter separately so a const parameter cannot hide a mutable one.
 fn has_raw_char_param(body: String) -> Bool:
     let signature: String = List.head(String.lines(body))
     let parts = String.split(signature, "(")
@@ -538,8 +481,8 @@ fn has_raw_char_param(body: String) -> Bool:
     else:
         let params: String = List.head(String.split(List.get(parts, 1), ")"))
         let without_const = Regex.replace_all(params, "const[[:space:]]char", "CONST_CHAR")
-        not String.contains(params, "argv") and not String.contains(params, "argc") and
-            Regex.is_match(without_const, "char[[:space:]]*[*]")
+        (not String.contains(params, "argv") and not String.contains(params, "argc") and
+            Regex.is_match(without_const, "char[[:space:]]*[*]"))
 
 # Exclude the signature from body-only rules, matching the Python scan.
 fn function_body(body: String) -> String:
@@ -582,20 +525,32 @@ fn print_violations_table(violations: List((String, Int, String, String, String)
     println(Tui.Table.render(table))
 
 # Check if body contains FERN_STYLE: allow(rule)
+# Match explicit rule exemptions, preserving exact compatibility spelling.
 fn has_allow(body: String, rule: String) -> Bool:
-    let allowed = false
-    for line in String.lines(body):
-        let matches = Regex.find_all(line, "(//|/[*])[[:space:]]*FERN_STYLE:[[:space:]]*allow[(][^)]+[)]")
-        if not List.is_empty(matches):
+    has_allow_lines(String.lines(body), rule)
+
+# Find the first matching explicit exemption across source lines.
+fn has_allow_lines(lines: List(String), rule: String) -> Bool:
+    if List.is_empty(lines):
+        false
+    else:
+        let matches = Regex.find_all(List.head(lines), "(//|/[*])[[:space:]]*FERN_STYLE:[[:space:]]*allow[(][^)]+[)]")
+        let allowed = if List.is_empty(matches):
+            false
+        else:
             let text: String = List.head(matches)
             let start: String = List.get(String.split(text, "allow("), 1)
             let rules: String = List.head(String.split(start, ")"))
-            for item in String.split(rules, ","):
-                if String.eq(String.trim(item), rule):
-                    let allowed = true
-    allowed
+            has_allow_items(String.split(rules, ","), rule)
+        allowed or has_allow_lines(List.tail(lines), rule)
 
-# Find all function definitions in the file
+# Compare comma-separated exemption names after trimming.
+fn has_allow_items(items: List(String), rule: String) -> Bool:
+    if List.is_empty(items):
+        false
+    else:
+        String.eq(String.trim(List.head(items)), rule) or has_allow_items(List.tail(items), rule)
+
 fn find_functions(lines: List(String)) -> List((String, Int, Int, Int, String, Bool, List(String), String, List(String))):
     let functions: List((String, Int, Int, Int, String, Bool, List(String), String, List(String))) = []
     find_functions_rec(lines, 0, functions)
@@ -724,15 +679,18 @@ fn strip_comment_markers(line: String) -> String:
     line
 
 # Extract @param name from a doc comment line
+# Return all documented parameter names in source order.
 fn extract_param_from_doc_line(line: String, params: List(String)) -> List(String):
-    let params = params
-    let matches = Regex.find_all(line, "@param[[:space:]]+([a-zA-Z0-9_]+|[.][.][.])")
-    for entry in matches:
-        let name = Regex.replace(entry, "^@param[[:space:]]+", "")
-        let params = List.push(params, name)
-    params
+    append_doc_parameters(Regex.find_all(line, "@param[[:space:]]+([a-zA-Z0-9_]+|[.][.][.])"), params)
 
-# Collect /// style comments
+# Append extracted parameter names while retaining source order.
+fn append_doc_parameters(matches: List(String), params: List(String)) -> List(String):
+    if List.is_empty(matches):
+        params
+    else:
+        let name = Regex.replace(List.head(matches), "^@param[[:space:]]+", "")
+        append_doc_parameters(List.tail(matches), List.push(params, name))
+
 fn collect_triple_slash_comment(lines: List(String), start_idx: Int, search_start: Int) -> (Bool, List(String), Bool):
     let empty_params: List(String) = []
     collect_triple_slash_rec(lines, start_idx, search_start, empty_params, false, false)
@@ -920,7 +878,7 @@ fn count_braces_rec(line: String, idx: Int, len: Int, in_string: Bool, string_ch
     else:
         let char_opt = String.char_at(line, idx)
         match char_opt:
-            None -> (opens, closes),
+            None -> (opens, closes)
             Some(c) -> count_brace_char(line, idx, len, in_string, string_char, opens, closes, c)
 
 fn count_brace_char(line: String, idx: Int, len: Int, in_string: Bool, string_char: Int, opens: Int, closes: Int, c: Int) -> (Int, Int):
@@ -949,9 +907,81 @@ fn count_brace_char(line: String, idx: Int, len: Int, in_string: Bool, string_ch
                 count_braces_rec(line, idx + 1, len, true, string_char, opens, closes)
 
 # Count assert() calls in function body
+# Count assertions by returning the next accumulator at each recursive step.
 fn count_assertions(body: String) -> Int:
-    let count = 0
-    for line in String.lines(function_body(body)):
-        if has_call(line, "assert"):
-            let count = count + 1
-    count
+    count_assertion_lines(String.lines(function_body(body)), 0)
+
+# Count at most one assertion-bearing call line per step.
+fn count_assertion_lines(lines: List(String), count: Int) -> Int:
+    if List.is_empty(lines):
+        count
+    else:
+        let count = if has_call(List.head(lines), "assert"): count + 1 else: count
+        count_assertion_lines(List.tail(lines), count)
+
+# Sum path results without rebinding a value inside a loop scope.
+fn check_paths(paths: List(String), files: Int, failures: Int) -> (Int, Int):
+    if List.is_empty(paths):
+        (files, failures)
+    else:
+        let result = check_path(List.head(paths))
+        check_paths(List.tail(paths), files + result.0, failures + result.1)
+
+# Accumulate each function's ordered diagnostics.
+fn check_functions(filepath: String, functions: List((String, Int, Int, Int, String, Bool, List(String), String, List(String))), violations: List((String, Int, String, String, String))) -> List((String, Int, String, String, String)):
+    if List.is_empty(functions):
+        violations
+    else:
+        let violations = check_function(filepath, List.head(functions), violations)
+        check_functions(filepath, List.tail(functions), violations)
+
+# Preserve strict/lenient failure classification independently of rendering.
+fn count_failures(violations: List((String, Int, String, String, String)), lenient: Bool, failures: Int) -> Int:
+    if List.is_empty(violations):
+        failures
+    else:
+        let v = List.head(violations)
+        let rule: String = v.3
+        let failed = not lenient or String.eq(violation_severity(rule, lenient), "error")
+        let failures = if failed: failures + 1 else: failures
+        count_failures(List.tail(violations), lenient, failures)
+
+# Collect distinct undocumented parameters in declaration order before sorting.
+fn missing_parameters(names: List(String), documented: List(String), missing: List(String)) -> List(String):
+    if List.is_empty(names):
+        missing
+    else:
+        let param: String = List.head(names)
+        let missing = if not list_contains_string(documented, param) and not list_contains_string(missing, param):
+            List.push(missing, param)
+        else:
+            missing
+        missing_parameters(List.tail(names), documented, missing)
+
+# Run every build/test check even after an earlier failure.
+fn run_build_checks(style_only: Bool) -> Bool:
+    if not style_only:
+        println(Tui.Style.bold("Build & Test"))
+        println("")
+
+        let build_result = check_build()
+        let build_ok = print_check_result("Build", build_result)
+
+        let test_result = check_tests()
+        let tests_ok = print_check_result("Tests", test_result)
+
+        let examples_result = check_examples()
+        let examples_ok = print_check_result("Examples", examples_result)
+
+        println("")
+        build_ok and tests_ok and examples_ok
+    else:
+        true
+
+
+# Return a new diagnostic list only when a rule fails without a local exemption.
+fn add_rule_violation(filepath: String, line: Int, name: String, body: String, violations: List((String, Int, String, String, String)), failed: Bool, rule: String, message: String) -> List((String, Int, String, String, String)):
+    if failed and not has_allow(body, rule):
+        List.push(violations, make_violation(filepath, line, name, rule, message))
+    else:
+        violations

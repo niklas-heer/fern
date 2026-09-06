@@ -12,7 +12,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Docs gate: `just docs-check` passing (consistency, generation, doc tests); LSP RPC smoke passing
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
-- Bootstrap gate: exact native/Python style diagnostic parity passing on five pinned fixtures and all compiler/library source
+- Bootstrap gate: exact native/Python style diagnostic parity under both C and Rust frontends on five pinned fixtures, literal paths and all compiler/library source
 - Rust migration: `just rust-check` passing (919 Rust tests, 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 21 entry/access programs, 9 controlled-fault cases, 210 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
@@ -152,6 +152,7 @@ Exit criteria:
 Status: Diagnostic parity complete; workflow parity remains open
 
 - [x] Compare exact diagnostics, severity, messages, and exits on pinned failing fixtures and all `src`/`lib` sources (strict, lenient, summary, nested paths)
+- [x] Port the Fern checker to immutable returned state and verify exact diagnostics, file counts and exits under both C and Rust frontends, including continuation after a failed build.
 - [ ] Reach feature parity for `scripts/check_style.py` in `scripts/check_style.fn`
 - [x] Add parity assertions to CI (`just style-parity` as a required gate)
 - [ ] Make Fern-native checker the default once parity is stable

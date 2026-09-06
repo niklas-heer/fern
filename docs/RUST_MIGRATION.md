@@ -811,3 +811,22 @@ See Decision 82.
 Nineteen new Rust regressions and twelve native programs verify these behaviors.
 Twelve invalid builds preserve existing output bytes, mode and modification time.
 The deterministic mutation corpus now also includes newtype programs.
+
+
+## Native quality checker under both frontends
+
+The Fern-written quality checker now uses explicit returned accumulators for
+files, violations, assertion counts and documentation rules. Rebinding inside an
+inner scope no longer silently loses results under Rust. It also uses syntax
+accepted by both parsers. A separate lexer fix preserves complete C lookahead and
+rollback state, removing parsing dependence on earlier nested calls.
+
+The shared parity gate accepts `--compiler` and verifies exact strict/lenient
+records, severity, exit codes and file counts on five pinned fixtures, nested
+folders, literal paths and all compiler/library source. An isolated failed-build
+scenario verifies continuation and final failure without invoking project builds.
+`just rust-check` runs this gate with the Rust frontend; `just style-parity` uses C.
+
+This is diagnostic and source-portability parity. Full build/test/git/CLI workflow
+parity, bounded native process execution and the default-checker switch remain
+open. Python remains the shipping quality gate.

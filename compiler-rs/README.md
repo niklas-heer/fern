@@ -592,3 +592,10 @@ constructors; an alias never creates or exports its target's constructors. Calls
 and annotations navigate to their respective declarations, while an import
 selector can navigate to both. Duplicate declarations within either namespace
 remain errors.
+
+
+The Rust frontend also compiles `scripts/check_style.fn`. Run
+`uv run scripts/test_style_parity.py --compiler compiler-rs/target/debug/fern-rs`
+to compare its native diagnostics, severity, file counts and exits with Python.
+This gate is included in `just rust-check`; full bootstrap workflow parity remains
+tracked in the roadmap.
