@@ -437,6 +437,14 @@ rust-build: debug
     cargo build --locked --manifest-path compiler-rs/Cargo.toml
     cp compiler-rs/target/debug/fern-rs bin/fern-rs
 
+# Verify the extension with separately provisioned pinned tools; no editor profile changes.
+zed-extension-check:
+    python3 scripts/test_zed_support.py --grammar-repository . --cargo "$FERN_ZED_CARGO" --wasi-sdk "$TREE_SITTER_WASI_SDK_PATH" --tree-sitter "$TREE_SITTER_CLI" --web-runtime "$TREE_SITTER_WEB_RUNTIME" --wasm-tools "$FERN_WASM_TOOLS" --rust "${FERN_RUST:-compiler-rs/target/debug/fern-rs}"
+
+# Stage a fresh, reproducible extension package without installing it.
+zed-package:
+    python3 scripts/package_zed.py --output "$FERN_ZED_OUTPUT" --grammar-repository . --cargo "$FERN_ZED_CARGO" --wasi-sdk "$TREE_SITTER_WASI_SDK_PATH" --tree-sitter "$TREE_SITTER_CLI" --web-runtime "$TREE_SITTER_WEB_RUNTIME" --wasm-tools "$FERN_WASM_TOOLS"
+
 # Rust safety/style/unit gates and native specification/differential checks
 rust-check: rust-build
     cargo fmt --manifest-path compiler-rs/Cargo.toml -- --check

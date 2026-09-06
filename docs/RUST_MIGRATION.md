@@ -913,3 +913,16 @@ provenance and the fixed text profile. Exhaustive native Unicode tests pass in
 debug/release/sanitizer builds on macOS/Linux arm64. Full C and Rust gates pass on
 both platforms (1047/1048 Rust tests); native checker CLI adaptation remains a
 separate follow-on.
+
+## Zed extension packaging — 2026-09-06
+
+The extension registers a pinned grammar and discovers `fern-rs`, with literal
+path/argument overrides. Staging builds a validated Preview2 component and the
+portable canonical grammar, checks four executable queries and produces identical
+archives from fresh builds. Fifteen package-boundary tests and five adapter tests
+cover failures and command selection. Actual Zed1.18.0 sessions loaded the package
+and exchanged diagnostics through both discovery and explicit-path modes in owned
+temporary profiles. [The extension guide](../editor/zed-fern/README.md) documents
+separate tools, offline provisioning and the unpublished-grammar limitation.
+This establishes local packaging and startup, not marketplace publication or full
+language syntax parity.

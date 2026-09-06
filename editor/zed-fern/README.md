@@ -1,100 +1,112 @@
-# Fern Language Extension for Zed
+# Fern for Zed
 
-This directory contains Fern editor integration work. Decision84 verifies the
-bounded Tree-sitter grammar and queries through native and WASM execution;
-Zed grammar registration and extension packaging remain unverified. The historical
-installation instructions below are not an end-to-end installation guarantee.
-See [grammar scope and reproducible tooling](../tree-sitter-fern/README.md).
+The extension registers `.fn` files, the Fern grammar, and the Rust language
+server. The staged package has been tested with Zed **1.18.0** on macOS arm64.
+It does not download a compiler. See the [grammar scope](../tree-sitter-fern/README.md)
+for the verified syntax and the three known malformed-source recovery gaps.
 
-## Features
+## Language server
 
-- Syntax highlighting for `.fn` files
-- Language Server Protocol (LSP) support via `fern lsp`
-  - Real-time diagnostics (error reporting)
-  - Hover information (type information)
-  - Go-to-definition (function navigation)
+Build the Rust frontend with `cargo build --release --manifest-path compiler-rs/Cargo.toml`
+and put `compiler-rs/target/release/fern-rs` in your PATH. The extension discovers
+`fern-rs` in the worktree environment and launches `fern-rs lsp`. It deliberately
+does not fall back to the legacy C `fern` frontend.
 
-## Requirements
+Alternatively, put this in your Zed settings, using your executable's real path:
 
-The `fern` compiler must be installed and available in your PATH. The extension runs `fern lsp` to start the language server.
-
-### Installing Fern
-
-```bash
-# Clone and build
-git clone https://github.com/niklas-heer/fern
-cd fern
-just release
-just install  # Installs to /usr/local/bin
+```json
+{
+  "lsp": {
+    "fern-lsp": {
+      "binary": {
+        "path": "/absolute/path/to/fern-rs",
+        "arguments": ["lsp"]
+      }
+    }
+  }
+}
 ```
 
-## Installation
+Include `arguments` when overriding `path`: Zed's binary override bypasses the
+extension's default command arguments. Paths and arguments are passed literally;
+no shell is invoked. Trust the project when prompted before starting its server.
+[Official worktree trust documentation](https://zed.dev/docs/worktree-trust).
 
-### Quick Install (Recommended)
+## Build a local package
 
-From the Fern project root:
+The compiler retains Rust 1.75 compatibility. This extension has a separate
+pinned Rust **1.97.1** toolchain and `wasm32-wasip2` target, with the published
+`zed_extension_api` **0.7.0** dependency locked in Cargo.lock. Current Zed requires
+Preview2 components; the old `wasm32-wasi` build instructions do not apply.
+[Official extension development documentation](https://zed.dev/docs/extensions/developing-extensions).
 
-```bash
-./editor/install-zed-extension.sh
+Provision those tools explicitly, then run `cargo fetch --locked` in this
+extension directory once. Package builds use `--offline --locked`. For isolation, set `RUSTUP_HOME` and
+`CARGO_HOME` to dedicated temporary directories before installing the extension
+toolchain; do not change the compiler toolchain. The package gate also requires
+Python 3.11+, Node, Tree-sitter 0.26.12, WASI SDK 29.0, the pinned web runtime,
+and wasm-tools 1.258.0. Version and download hashes are recorded in
+[scripts/editor/toolchain.json](../../scripts/editor/toolchain.json) and
+[zed-toolchain.json](../../scripts/editor/zed-toolchain.json).
+
+From the repository root, choose a **new** output directory:
+
+```sh
+python3 scripts/package_zed.py \
+  --output /tmp/fern-zed-package \
+  --grammar-repository /absolute/path/to/fern \
+  --cargo /absolute/path/to/cargo \
+  --wasi-sdk /absolute/path/to/wasi-sdk-29 \
+  --tree-sitter /absolute/path/to/tree-sitter \
+  --web-runtime /absolute/path/to/web-tree-sitter.cjs \
+  --wasm-tools /absolute/path/to/wasm-tools
 ```
 
-Then reload extensions in Zed:
-- Open Command Palette (`Cmd+Shift+P`)
-- Run: "zed: reload extensions"
+`editor/install-zed-extension.sh` forwards to this staging command. It no longer
+deletes or symlinks directories in your Zed profile. The command refuses existing
+outputs and leaves them unchanged on failure. It produces `extension/`,
+`archive.tar.gz`, and `build.json`; the latter records exact input/output hashes.
+No prebuilt `extension.wasm` is claimed to be checked into this directory.
 
-This creates a symlink for development - changes to the extension are reflected immediately after reloading.
+The package contains `extension.wasm`, **`grammars/fern.wasm`**, the language
+config and four queries. It excludes Cargo caches and the historical
+`languages/fern/fern.wasm` test artifact. The grammar is rebuilt from the manifest's
+full commit, then compared byte-for-byte with that commit's pinned portable WASM.
+It is validated and executed with the actual staged queries before publication.
 
-### Manual Installation
+This is our local staging pipeline, **not** the official `zed-extension` packager;
+`build.json` records `official_packager: false`. Zed's source builder uses a
+separate clang build profile. Its SDK25 output was accepted by native Zed 1.18.0,
+but its `libc.so` dependency is not loadable by the pinned web runtime. The staged
+portable grammar uses the project's verified Tree-sitter/SDK29 profile instead.
+[Zed's official builder source](https://github.com/zed-industries/zed/blob/v1.18.1/crates/extension/src/extension_builder.rs).
 
-1. Copy or symlink the extension directory:
-   ```bash
-   ln -s /path/to/fern/editor/zed-fern \
-     "$HOME/Library/Application Support/Zed/extensions/installed/fern"
-   ```
+## Verify and try the package
 
-2. Reload extensions in Zed (Command Palette → "zed: reload extensions")
-
-### Building the Extension
-
-The extension is pre-built (`extension.wasm`), but to rebuild:
-
-```bash
-cd editor/zed-fern
-cargo build --release --target wasm32-wasi
-cp target/wasm32-wasi/release/zed_fern.wasm extension.wasm
+```sh
+python3 scripts/test_zed_package.py
+# scripts/test_zed_support.py runs the complete pinned build/parity gate; see --help.
+python3 scripts/test_zed_smoke.py \
+  --zed /Applications/Zed.app/Contents/MacOS/zed \
+  --package /tmp/fern-zed-package \
+  --rust /absolute/path/to/fern-rs
 ```
 
-## Configuration
+The opt-in smoke opens Zed with separate temporary profiles, exercises both PATH
+discovery and explicit binary settings, and verifies real initialize/didOpen and
+clean diagnostic messages. It terminates only its own test processes and retains
+the temporary logs. It does not install into your normal editor profile.
+[Zed CLI profile isolation](https://zed.dev/docs/reference/cli).
 
-No additional configuration is required. The extension will automatically:
-- Recognize `.fn` files as Fern
-- Start the language server when you open a Fern file
+For a normal development installation, use Zed's **Install Dev Extension** action
+and select this source directory after provisioning its build tools. That action
+builds from the repository/revision/path in extension.toml. The pinned revision
+must be available in the configured repository: an unpublished local commit
+cannot be fetched remotely. Local package verification does not publish it.
+[Grammar registration and local repositories](https://zed.dev/docs/extensions/languages).
 
-## Troubleshooting
+If startup fails, verify `fern-rs` exists, check `binary.arguments`, and open
+Zed's language-server logs. The extension never substitutes another compiler or
+downloads an executable on your behalf.
 
-If the language server isn't working:
-
-1. Verify `fern` is in your PATH:
-   ```bash
-   which fern
-   fern --version
-   ```
-
-2. Test the LSP manually:
-   ```bash
-   fern lsp
-   # Should wait for JSON-RPC input on stdin
-   ```
-
-3. Check Zed's language server logs:
-   - Open Command Palette (Cmd+Shift+P)
-   - Run "debug: open language server logs"
-
-4. Check the LSP log file:
-   ```bash
-   cat /tmp/fern-lsp.log
-   ```
-
-## License
-
-MIT License - see [LICENSE](LICENSE)
+MIT License — see [LICENSE](LICENSE).

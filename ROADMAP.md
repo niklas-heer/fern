@@ -220,7 +220,8 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [x] Extend the pinned editor grammar to finite unions, function-type precedence and typed narrowing; verify 38 accepted, 12 recovery and 13 incremental sources with native/WASM structural equivalence.
 - [x] Verify control/collection editor syntax against 69 Rust-checked programs, 20 malformed inputs and 22 native/WASM edits; isolate parser caches and enforce the exact 1 MiB scanner boundary.
 - [ ] Recover the following declaration after malformed inline for/with headers (three named exact-range regression gaps).
-- [ ] Complete Tree-sitter parity for remaining Rust syntax and verify Zed grammar registration/extension packaging.
+- [x] Verify Zed grammar registration, pinned Preview2 component packaging, reproducible staged archives and actual isolated Rust LSP startup through discovery and explicit paths.
+- [ ] Complete Tree-sitter parity for remaining Rust syntax and publish a fetchable matching grammar revision when release is authorized.
 - [ ] Execute actor functions with suspension, typed messages/receive/timeouts, and descendant supervision lifecycle.
 - [x] Immutable native JSON parser/accessors/stringifier with exact numbers, Unicode validation and bounded resources (14,309 API checks, 24 budget checks and 6,000 numeric oracle cases in debug/release/sanitizer builds).
 - [x] Migrate Rust native JSON to opaque values/errors, immutable builders and bounded lossless collection adapters (ten native programs, twelve semantic rejections, eight Rust integration tests and 248 native builder checks per build).
