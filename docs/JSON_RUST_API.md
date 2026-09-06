@@ -123,4 +123,6 @@ cross-entry closures, offsets, rollback and shared storage. Fifteen private engi
 tests cover resource boundaries, cleanup budgets, exact 16 MiB encoding, DAG limits,
 and 6,000 decimal/binary64 plus 6,000 Float formatting oracles. The independent
 checksum generator is `scripts/json_repl_oracles.py`; it is test tooling, never
-called by JSON evaluation. C source migration and typed codecs remain future work.
+called by JSON evaluation. Typed codecs and default-command migration remain
+future work. Decision96 retains the old C source API only for the explicitly
+selected bootstrap/reference compiler after the verified Rust default switch.

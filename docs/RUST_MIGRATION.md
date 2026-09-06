@@ -989,3 +989,17 @@ on the new label query; the updated package passes exact label captures, all
 Actual Zed startup opens a labeled-call fixture with clean diagnostics through both
 Rust-server discovery and explicit-path configuration in isolated temporary profiles.
 The package remains local; its source revision has not been published remotely.
+
+## Frontend completion scope — 2026-09-06
+
+Decision96 concentrates new source-language work in Rust. The C frontend remains
+the current shipping default until the explicit migration gates pass; afterward
+it is retained as a bootstrap/reference executable with documented legacy behavior.
+Its tested native ABI symbols remain available. This replaces duplicated C-source
+feature expansion with a verified command/API migration, while keeping typed JSON
+codecs, standard-library completion and executable language semantics open.
+
+Additional x86-64 Linux checks used QEMU with Rust 1.75 and Clang 14: 32 core, five
+label, 13 newtype and 27 union native programs passed, plus their 50 invalid inputs.
+The full Cargo run stalled and reached its external timeout, so this is limited
+emulated execution evidence, not a passing full platform or performance gate.
