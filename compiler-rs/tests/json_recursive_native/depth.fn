@@ -1,0 +1,18 @@
+type Node derive(Json):
+    children: List(Node)
+
+fn tree(depth: Int) -> Node:
+    let levels = List.filter([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63], (level) -> level < depth)
+    List.fold(levels, Node([]), (node, level) -> Node([node]))
+
+fn main() -> Result(Unit, json.Error):
+    let shallow = json.encode(tree(63))?
+    let restored = json.decode(shallow, Node)?
+    println(String.eq(shallow, json.encode(restored)?))
+    match json.encode(tree(64)):
+        Ok(_) -> println(0)
+        Err(error) ->
+            println(json.error_code(error))
+            println(json.error_offset(error))
+            println(String.len(json.error_path(error)))
+    Ok(())

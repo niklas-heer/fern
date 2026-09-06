@@ -4,6 +4,13 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 101 Build finite recursive JSON plans and extend explicit derivation coherently
+* **Date**: 2026-09-06
+* **Status**: Accepted staged continuation; J5a regular recursive records
+* **Decision**: I will represent recursive codecs as finite indexed graphs keyed by exact instantiated types, reserve private construction slots before visiting children, and publish only complete validated plans. Reject strict schema cycles with no finite value as a codec restriction; Lists, Maps and safe Options provide finite bases.
+* **Context**: J4's acyclic plans reject ordinary trees even when empty children terminate recursion. Disabling the child-first check without graph validation would admit invalid references, skipped fields and unbounded generic expansion. An explicit graph preserves source nominal identity without recursively owning plan nodes. The proposal and failing tests preceded implementation; the unavailable `/decision` skill is replaced by this established format.
+* **Consequences**: Validate every entry, typed edge and storage layout, including inactive entries; graph construction and finite-value proof share the existing work/count bounds. Every executed edge retains depth/work/path charges, including hostile cyclic native values. Native descriptor ABI is unchanged. Subsequent J5b adds explicitly derived transparent newtypes, inherits payload nullability while retaining actual Option field optionality, and proves no native wrapper allocation. Subsequent J5c adds conditional Json requirements and an unforgeable private template operation retaining real input effects; all executable boundaries reject that operation. Neither later stage is implemented by J5a. Sum/union wire formats, general/custom traits and Result serialization remain separate decisions/work.
+
 ### 100 Expose canonical formatting through the editor protocol
 * **Date**: 2026-09-06
 * **Status**: Accepted for full-document Rust LSP formatting

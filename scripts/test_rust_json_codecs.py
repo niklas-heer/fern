@@ -17,6 +17,7 @@ def main():
     environment.setdefault("FERN_RUNTIME_LIB", str(ROOT / "bin/libfern_runtime.a"))
     corpus = ROOT / "compiler-rs/tests/json_codecs_native"
     sources = sorted(corpus.glob("*.fn"))
+    sources += sorted((ROOT / "compiler-rs/tests/json_recursive_native").glob("*.fn"))
     invalid = json.loads((corpus / "invalid.json").read_text())
     assert sources and invalid, "typed JSON corpus is missing"
     with tempfile.TemporaryDirectory(prefix="fern-json-codecs-") as temporary:

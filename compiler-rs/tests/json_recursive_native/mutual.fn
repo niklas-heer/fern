@@ -1,0 +1,10 @@
+type A derive(Json):
+    next: Option(B)
+type B derive(Json):
+    next: Option(A)
+
+fn main() -> Result(Unit, json.Error):
+    println(json.encode(A(Some(B(Some(A(None))))))?)
+    let value = json.decode("\{\"next\":\{\"next\":null\}\}", B)?
+    println(json.encode(value)?)
+    Ok(())

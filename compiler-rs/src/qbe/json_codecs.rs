@@ -53,7 +53,7 @@ impl Emitter<'_> {
         }
         Ok(())
     }
-    /// All descriptors use four native 64-bit words and only earlier validated child pointers.
+    /// All descriptors use four native 64-bit words and validated finite-graph child pointers.
     fn codec_table(&mut self, plan: &std::rc::Rc<Plan>, span: Span) -> Lowering<String> {
         let identity = std::rc::Rc::as_ptr(plan) as usize;
         if let Some(table) = self.codec_tables.get(&identity) {

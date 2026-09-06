@@ -1976,7 +1976,7 @@ int64_t fern_prompt_int(const char* prompt, int64_t min, int64_t max);
 /** Read an immutable JSON Pointer path; dynamic errors have an empty path. @param error opaque error; @return retained path. */
 const char* fern_json_value_error_path(const FernJsonError* error);
 
-/** Compiler-validated concrete codec descriptor; child descriptors are acyclic constants. */
+/** Compiler-validated concrete codec descriptor; child descriptors form a validated indexed constant graph. */
 typedef struct FernJsonCodec {
     int64_t kind;
     int64_t count;

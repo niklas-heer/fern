@@ -1107,3 +1107,30 @@ passes two byte-identical archives, hostile component/query checks and the
 record/codec source with clean diagnostics through both discovery and explicit
 binary configuration in isolated profiles. Toolchain metadata records the same
 grammar revision. The package remains local; remote publication is not implied.
+
+
+## Regular recursive typed JSON (J5a) — 2026-09-06
+
+Derived trees, mutually recursive records with optional bases, recursive Maps and
+finite generic permutations now use exact instantiated type identities in indexed
+codec graphs. Strict cycles without a finite value and expanding generic schemas
+reject before execution; cached back edges do not skip later unsupported fields.
+The public plan validator independently checks every entry and edge, including
+inactive entries, under one aggregate budget. A linear finite-value proof matches
+an independent oracle for all 65,536 four-node strict graphs.
+
+The native descriptor ABI is unchanged. Repeated visits retain the same depth,
+work and path accounting: a hostile cyclic native value reports code 4 at the
+same depth and 704-byte path as an equivalent deep chain. Four new native/REPL
+programs extend the typed-codec corpus to eight programs plus fourteen atomic
+invalid inputs. Newtype derivations and generic constraints remain separate
+Decision101 stages; sum/union wire formats and general traits remain open.
+
+Integrated verification passes 1,165 Rust tests on macOS and 1,166 on Linux, full
+C compatibility gates on both platforms, native/REPL codec tests, runtime
+debug/release/sanitizer profiles, and documentation checks. Linux's first parallel
+Cargo run reproduced a preexisting freshly-written shell-fixture race: native
+capture returned `Text file busy (os error 26)` before the timeout assertion.
+The unchanged-source full Linux gate passes with `RUST_TEST_THREADS=1`; a separate
+fixture reliability fix remains tracked. This serialization is not needed by the
+recursive JSON tests themselves.

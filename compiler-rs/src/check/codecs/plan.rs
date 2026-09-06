@@ -11,6 +11,8 @@ pub(super) struct Field {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Kind {
+    /// Private reserved graph slot; completion is required before any proof or publication.
+    Pending,
     Int,
     Float,
     Bool,

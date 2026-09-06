@@ -37,7 +37,7 @@ fn generic_record_instances_are_independent_and_optional_nullability_is_checked(
         .contains("null"));
 }
 #[test]
-fn unsupported_and_recursive_plans_fail_without_guessing_types() {
+fn unsupported_plans_fail_and_regular_recursive_plans_close() {
     for ty in [
         Type::Infer(0),
         Type::Generic("a".into()),
@@ -47,10 +47,7 @@ fn unsupported_and_recursive_plans_fail_without_guessing_types() {
         assert!(graph("", ty).is_err());
     }
     let source = "type Node derive(Json):\n    children:List(Node)\n";
-    assert!(graph(source, Type::Named("Node".into(), vec![]))
-        .unwrap_err()
-        .message
-        .contains("recursive"));
+    assert!(graph(source, Type::Named("Node".into(), vec![])).is_ok());
 }
 #[test]
 fn finite_nested_generic_instantiations_are_not_recursive_declarations() {

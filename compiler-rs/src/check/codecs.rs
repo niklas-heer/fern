@@ -16,7 +16,6 @@ struct Planner<'a> {
     registry: &'a nominal::Registry,
     entries: Vec<Plan>,
     cached: HashMap<Type, plan::Id>,
-    active: HashSet<Type>,
     work: usize,
     symbolic: bool,
 }
@@ -28,7 +27,6 @@ impl<'a> Planner<'a> {
             registry,
             entries: Vec::new(),
             cached: HashMap::new(),
-            active: HashSet::new(),
             work: 0,
             symbolic: false,
         }
@@ -66,38 +64,55 @@ impl<'a> Planner<'a> {
         }
         Ok(())
     }
-    /// Emit children before parents, sharing only exact concrete type identities.
+    /// Reserve exact type identities before traversal so regular cycles close without expansion.
     fn plan(&mut self, ty: &Type, span: Span, depth: usize) -> Checked<plan::Id> {
-        if depth >= MAX_TYPE_DEPTH {
-            return Err(Diagnostic::new(
-                span,
-                "JSON codec type depth limit exceeded",
-            ));
-        }
         self.type_work(ty, span)?;
         if let Some(id) = self.cached.get(ty) {
             return Ok(*id);
         }
-        let kind = self.kind(ty, span, depth + 1)?;
-        if self.entries.len() >= PLAN_LIMIT {
+        if depth >= MAX_TYPE_DEPTH || self.entries.len() >= PLAN_LIMIT {
             return Err(Diagnostic::new(
                 span,
-                "JSON codec plan count limit exceeded",
+                "JSON codec type depth or plan count limit exceeded",
             ));
         }
         let id = plan::Id(self.entries.len());
         self.entries.push(Plan {
             ty: ty.clone(),
-            kind,
+            kind: Kind::Pending,
         });
         self.cached.insert(ty.clone(), id);
+        let kind = self.kind(ty, span, depth + 1)?;
+        self.entries[id.0].kind = kind;
         Ok(id)
+    }
+    /// Pending slots never leave construction; strict cycles must admit a finite value.
+    fn finite(&mut self, span: Span) -> Checked<()> {
+        let mut proof =
+            crate::json_codec::finite::Proof::new(self.entries.len(), &mut self.work, span)?;
+        for (id, entry) in self.entries.iter().enumerate() {
+            match &entry.kind {
+                Kind::Pending => return Err(Diagnostic::new(span, "incomplete JSON codec plan")),
+                Kind::Tuple(children) => {
+                    for child in children {
+                        proof.edge(id, child.0)?;
+                    }
+                }
+                Kind::Record(fields) => {
+                    for field in fields {
+                        proof.edge(id, field.codec.0)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        proof.finish()
     }
     /// Wire nullability is a structural property, never inferred from a current runtime value.
     fn nullable(&self, id: plan::Id) -> bool {
         matches!(
-            self.entries[id.0].kind,
-            Kind::Unit | Kind::Dynamic | Kind::Option(_)
+            self.entries[id.0].ty,
+            Type::Unit | Type::Native(runtime::NativeType::JsonValue) | Type::Option(_)
         )
     }
     /// Admit only the explicit J4 wire domains; unsupported values never gain a fallback codec.
@@ -164,16 +179,9 @@ impl<'a> Planner<'a> {
                 "derive(Json) currently requires a record",
             ));
         }
-        if !self.active.insert(ty.clone()) {
-            return Err(Diagnostic::new(
-                span,
-                "recursive JSON codec plans are not supported in this checkpoint",
-            ));
-        }
-        let result = self.fields(ty, declaration, span, depth);
-        self.active.remove(ty);
-        result.map(Kind::Record)
+        self.fields(ty, declaration, span, depth).map(Kind::Record)
     }
+
     /// Reserve all substituted field nodes before nominal layout allocates any copied payload.
     fn layout_work(&mut self, ty: &Type, decl: &ast::TypeDecl, span: Span) -> Checked<()> {
         let Type::Named(_, arguments) = ty else {
@@ -275,6 +283,7 @@ pub(super) fn validate(program: &ast::Program, registry: &nominal::Registry) -> 
         );
         planner.plan(&ty, declaration.span, 0)?;
     }
+    planner.finite(Span::default())?;
     registry.codec_work.set(planner.work);
     Ok(())
 }

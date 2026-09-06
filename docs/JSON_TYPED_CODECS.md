@@ -26,7 +26,7 @@ same-spelled function or value. Arbitrary expressions are not type targets.
 Input pipes work, for example `text |> json.decode(User)`.
 
 Supported concrete wire types are Int, Float, Bool, String, Unit, `json.Value`,
-tuples, Lists, `Map(String, value)`, nullable-safe Options, and acyclic records
+tuples, Lists, `Map(String, value)`, nullable-safe Options, and regular recursive records
 marked `derive(Json)`. Concrete instantiations of generic records are supported.
 Records retain declaration order; maps retain their existing entry order.
 Unknown record fields fail strictly. A missing Option field becomes None; other
@@ -36,7 +36,7 @@ are rejected. Int conversion preserves the full signed 64-bit range; Float and
 text conversion reuse the dynamic API's existing exact adapters.
 
 This checkpoint does not implement general Json traits, user codec implementations,
-generic codec function constraints, recursive records, newtypes, sums, or unions.
+generic codec function constraints, newtypes, sums, or unions.
 Unsupported derivations are diagnosed even when unused. Result-bearing values,
 including nested fields or containers, cannot be serialized: converting a Result
 to opaque JSON does not acknowledge its error obligation.
@@ -77,3 +77,24 @@ function bodies. Source type targets never enter executable IR.
 boundary and preservation of original errors in debug, release and ASan/UBSan.
 The same source corpus is exercised in the REPL. Existing dynamic JSON runtime
 and numeric-oracle gates remain required.
+
+## Regular recursive records
+
+A derived record may refer back to itself or to another derived record through
+List, Map or a nullable-safe Option. Concrete generic instances retain separate
+schema identities. The compiler closes a finite indexed graph rather than
+expanding a recursive record into an infinite tree. Finite generic permutations
+can close too; type-changing recursion that exceeds the existing type/plan/work
+bounds is rejected.
+
+Every declared codec must admit a finite value. `Node { children: List(Node) }`
+has the empty-list base case. A strict cycle such as `Loop { next: Loop }` has no
+finite value and is rejected as a codec, even when unused. Other fields on a
+recursive record are still validated, so a cycle never hides a Result or an
+unsupported function payload.
+
+Schema reuse does not replenish runtime allowances. Each executed visit spends
+the existing depth/work/node budgets. A repeated record/list chain at depths
+127 and 128 preserves the same success/error boundary in native and interactive
+execution; a hostile native cyclic value terminates with code 4. The path and
+original-error preservation rules above continue to apply.

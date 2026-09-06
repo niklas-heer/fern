@@ -1,0 +1,14 @@
+type Node derive(Json):
+    children: Map(String, Node)
+fn main() -> Result(Unit, json.Error):
+    let empty: Map(String, Node) = %{}
+    let root = Node(%{"a/b~c": Node(empty)})
+    let text = json.encode(root)?
+    println(text)
+    println(json.encode(json.decode(text, Node)?)?)
+    match json.decode("\{\"children\":\{\"a/b~c\":\{\"children\":42\}\}\}", Node):
+        Ok(_) -> println(0)
+        Err(error) ->
+            println(json.error_code(error))
+            println(json.error_path(error))
+    Ok(())

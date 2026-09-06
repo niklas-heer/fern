@@ -1,6 +1,8 @@
-//! Concrete, acyclic JSON wire plans shared by native and interactive execution.
+//! Concrete, finite JSON wire plans shared by native and interactive execution.
 use crate::{ir, runtime::NativeType, Diagnostic, Span, Type};
 use std::collections::HashMap;
+
+pub(crate) mod finite;
 
 const MAX_ENTRIES: usize = 4096;
 const MAX_WORK: usize = 400_000;
@@ -13,7 +15,7 @@ pub struct Field {
     pub codec: usize,
     pub optional: bool,
 }
-/// Child indices always precede their containing entry; symbolic parameters have no wire form.
+/// Child indices address a validated finite graph; symbolic parameters have no wire form.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Kind {
     Int,
@@ -170,18 +172,35 @@ impl Plan {
         for (index, entry) in self.entries.iter().enumerate() {
             self.entry(index, entry, &storage, audit)?;
         }
-        Ok(())
+        self.finite(audit)
     }
-    /// Child-first order proves acyclicity independently of claimed source derivations.
+    /// All strict components must reach finite constructors, including inactive components.
+    fn finite(&self, audit: &mut Validation) -> Result<(), Diagnostic> {
+        let mut proof = finite::Proof::new(self.entries.len(), &mut audit.work, audit.span)?;
+        for (id, entry) in self.entries.iter().enumerate() {
+            match &entry.kind {
+                Kind::Tuple(children) => {
+                    for child in children {
+                        proof.edge(id, *child)?;
+                    }
+                }
+                Kind::Record(fields) => {
+                    for field in fields {
+                        proof.edge(id, field.codec)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        proof.finish()
+    }
+    /// Exact indexed references permit regular cycles without trusting source derivations.
     fn child(
         &self,
         child: usize,
-        parent: usize,
+        _parent: usize,
         audit: &mut Validation,
     ) -> Result<&Entry, Diagnostic> {
-        if child >= parent {
-            return Err(audit.error("JSON codec child must precede its parent"));
-        }
         let entry = self
             .entries
             .get(child)

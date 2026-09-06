@@ -27,8 +27,11 @@ engineering milestones; they do not certify the entire language.
   See [the exact actor contract](ACTOR_RUNTIME.md).
 - **JSON:** Rust native execution and its REPL use the bounded, validating opaque
   JSON model with exact numbers and immutable builders. The legacy C source API
-  still copies strings and can accept invalid JSON. Typed codecs and verified
-  retirement of the legacy source API at the Rust default switch remain open; see [the Rust JSON contract](JSON_RUST_API.md).
+  still copies strings and can accept invalid JSON. Explicitly derived record codecs
+  now include regular recursive schemas with finite bases. Newtypes, generic
+  constraints, sum/union wire formats, general traits and the verified Rust default
+  switch remain open; see [typed codecs](JSON_TYPED_CODECS.md) and
+  [the Rust JSON contract](JSON_RUST_API.md).
 - **Server and database APIs:** HTTP serving, typed SQL queries and the broader
   design-level application stack are not implemented by the current client and
   SQLite execute primitives.

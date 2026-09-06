@@ -66,6 +66,7 @@ fn concrete(registry: &nominal::Registry, ty: &Type, span: Span) -> Checked<Rc<w
             return Ok(plan.clone());
         }
         let root = builder.plan(ty, span, 0)?.0;
+        builder.finite(span)?;
         let entries = std::mem::take(&mut builder.entries)
             .into_iter()
             .map(concrete_entry)
@@ -104,7 +105,7 @@ fn concrete_entry(entry: Plan) -> Checked<wire::Entry> {
                 })
                 .collect(),
         ),
-        Kind::Parameter => {
+        Kind::Parameter | Kind::Pending => {
             return Err(Diagnostic::new(
                 Span::default(),
                 "symbolic JSON codec cannot become executable",
