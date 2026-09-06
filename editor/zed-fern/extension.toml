@@ -13,5 +13,5 @@ languages = ["Fern"]
 
 [grammars.fern]
 repository = "https://github.com/niklas-heer/fern"
-rev = "6d4efbb2f14a73be872f7c8e94c5ac31e54afcb9"
+rev = "742a21db7373eb170133eab1aafeb087e1feff3f"
 path = "editor/tree-sitter-fern"

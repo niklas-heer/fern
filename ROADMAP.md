@@ -229,6 +229,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [x] Recover the following declaration after malformed inline for/with headers, preserving the original sources and genuine errors (85 valid, all 33 malformed recovered, 30 native/WASM edits).
 - [x] Verify Zed grammar registration, pinned Preview2 component packaging, reproducible staged archives and actual isolated Rust LSP startup through discovery and explicit paths.
 - [x] Repin the locally staged Zed package to the verified label/recovery grammar, test exact label captures and reproducible archives, and rerun both actual-editor LSP discovery/override smokes.
+- [x] Repin the locally verified Zed package to the numeric-literal grammar and rerun package/actual-editor checks.
 - [ ] Complete Tree-sitter parity for remaining Rust syntax and publish a fetchable matching grammar revision when release is authorized.
 - [ ] Execute actor functions with suspension, typed messages/receive/timeouts, ancestor escalation and descendant subtree reconstruction.
 - [x] Immutable native JSON parser/accessors/stringifier with exact numbers, Unicode validation and bounded resources (14,309 API checks, 24 budget checks and 6,000 numeric oracle cases in debug/release/sanitizer builds).

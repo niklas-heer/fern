@@ -1025,3 +1025,9 @@ assert exact numeric tokens, including patterns, signed minimum Int and ranges;
 three incremental edits change radix, exponent and range form. The pinned native
 and WASM gate passes 93 valid sources, all 33 unchanged malformed recovery cases
 and 33 edits. Generated artifacts remain reproducible; full syntax parity stays open.
+
+The local Zed extension pins this grammar revision. Its package passes all 93/33/33
+syntax and edit cases, reproducible packaging and hostile-input checks. Isolated
+actual Zed runs verify initialization, opening a source and clean diagnostics through
+both the configured override and package discovery. This is local verification;
+the grammar and extension have not been published.
