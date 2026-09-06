@@ -17,7 +17,7 @@ In this initial checkpoint wholly positional source calls remain accepted.
 Decision7's mandatory Bool and repeated-type policy is the next enforcement phase.
 
 A simple parameter binding supplies its external name. Pattern parameters can
-declare one explicitly, for example `fn choose(enabled true: Bool) -> Int -> 1`.
+declare one explicitly, for example `fn choose(enabled true: Bool) -> Int: 1`.
 All clauses expose a stable agreed interface; literal/wildcard clauses may inherit
 it from another clause. Conflicting names need consistent explicit external names.
 External labels and local pattern bindings occupy distinct source roles.
