@@ -110,3 +110,10 @@ Zed's language-server logs. The extension never substitutes another compiler or
 downloads an executable on your behalf.
 
 MIT License — see [LICENSE](LICENSE).
+
+The current verified grammar pin is
+`6d4efbb2f14a73be872f7c8e94c5ac31e54afcb9`: source labels and inline-header recovery,
+with 85 valid sources, 33 recovered malformed cases and 30 incremental edits.
+Package checks execute the exact staged label highlights, and both actual-editor
+LSP startup modes open a labeled-call fixture. This local commit must be available
+on the configured remote before another machine can fetch it.

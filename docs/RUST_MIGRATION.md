@@ -979,3 +979,13 @@ malformed sources and genuine error/missing-token ranges. The expanded pinned ga
 passes 85 valid sources, all 33 malformed cases retaining the following declaration,
 and 30 incremental edits. Public, CRLF, blank-line, keyword-prefix and column-zero
 lambda boundaries are covered; scanner state and serialization limits are unchanged.
+
+## Matching Zed grammar package — 2026-09-06
+
+The extension now pins verified grammar revision
+`6d4efbb2f14a73be872f7c8e94c5ac31e54afcb9`. A stale-revision regression first failed
+on the new label query; the updated package passes exact label captures, all
+85/33/30 native/WASM corpus cases, hostile-package checks and two identical archives.
+Actual Zed startup opens a labeled-call fixture with clean diagnostics through both
+Rust-server discovery and explicit-path configuration in isolated temporary profiles.
+The package remains local; its source revision has not been published remotely.

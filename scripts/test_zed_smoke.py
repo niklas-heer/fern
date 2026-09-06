@@ -20,7 +20,9 @@ fn size(value:Choice)->Int:
     match value:
         number:Int -> number
         text:String -> String.len(text)
+fn add(left:Int,right:Int)->Int:left+right
 fn main():
+    println(add(right:2,left:1))
     for value in [1, 2]:
         println(size(value))
 '''

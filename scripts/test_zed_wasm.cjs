@@ -15,7 +15,8 @@ async function main() {
   parser.setLanguage(language);
   const source = 'type Choice = Int | String\nfn size(value:Choice)->Int:\n' +
     '    match value:\n        n:Int -> n\n        _:String -> 0\n' +
-    'fn main():\n    let xs = [1, 2]\n    defer println("done")\n' +
+    'fn add(left:Int,right:Int)->Int:left+right\n' +
+    'fn main():\n    println(add(right:2,left:1))\n    let xs = [1, 2]\n    defer println("done")\n' +
     '    for x in xs:\n        println(size(x))\n';
   const tree = parser.parse(source);
   assert(!tree.rootNode.hasError, tree.rootNode.toString());
@@ -29,10 +30,13 @@ async function main() {
         assert(captures.some(c => c.name === 'keyword' && c.node.text === word), word);
       }
       assert(captures.some(c => c.name === 'operator' && c.node.text === '|'));
+      for (const label of ['left', 'right']) {
+        assert(captures.some(c => c.name === 'variable.parameter' && c.node.text === label), label);
+      }
     }
     if (name === 'outline') {
       assert.deepEqual(captures.filter(c => c.name === 'name').map(c => c.node.text),
-        ['Choice', 'size', 'main']);
+        ['Choice', 'size', 'add', 'main']);
     }
     query.delete();
   }
