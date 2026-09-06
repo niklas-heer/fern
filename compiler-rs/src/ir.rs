@@ -270,6 +270,8 @@ pub enum Pattern {
         binding: Option<LocalId>,
     },
 }
+// Keep the public IR shape; boxing this field needs a separate allocation/layout audit.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum Stmt {
     LetElse {

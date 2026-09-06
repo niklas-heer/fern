@@ -1,6 +1,6 @@
 //! Experimental CLI; parsing and type checking never call the C frontend.
 #![forbid(unsafe_code)]
-// Rust1.75 has no allow-panic-in-tests option; keep production and test scopes explicit.
+// Keep production panic restrictions explicit while allowing assertions in tests.
 #![cfg_attr(not(test), deny(clippy::panic, clippy::panic_in_result_fn))]
 mod cli_controls;
 mod doctest_cli;

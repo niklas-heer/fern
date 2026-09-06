@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Use the optional local developer executable without changing the compiler MSRV.
+# Use the optional local developer executable without changing the project toolchain.
 set -euo pipefail
 cd "$(dirname "$0")/../../compiler-rs"
 if [[ ! -x target/dev-tools/bacon-3.25.0/bin/bacon ]]; then

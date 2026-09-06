@@ -29,7 +29,7 @@ fn timeout_ms(timeout: Duration) -> Result<u64, String> {
     if timeout.is_zero() || timeout > Duration::from_secs(60) {
         return Err("test timeout must be greater than zero and at most 60 seconds".into());
     }
-    Ok(((timeout.as_nanos() + 999_999) / 1_000_000) as u64)
+    Ok(timeout.as_nanos().div_ceil(1_000_000) as u64)
 }
 
 /// Keep native spool ownership separate from Rust; only remove the empty parent.

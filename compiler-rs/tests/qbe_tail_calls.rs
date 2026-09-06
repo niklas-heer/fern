@@ -266,7 +266,7 @@ fn every_argument_finishes_before_parameter_updates_and_fault_context_is_retaine
 
 #[test]
 fn tail_parameters_preserve_float_bits_bool_unit_and_pointer_width() {
-    let types = vec![
+    let types = [
         Type::Float,
         Type::Bool,
         Type::Unit,

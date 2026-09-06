@@ -293,6 +293,6 @@ fn owned_documentation(program: &ast::Program, owner: Span) -> Option<&ast::DocC
         .filter(|start| *start < owner.start)
         .max();
     program.docs.iter().find(|doc| {
-        doc.span.end <= owner.start && previous.map_or(true, |start| start < doc.span.end)
+        doc.span.end <= owner.start && previous.is_none_or(|start| start < doc.span.end)
     })
 }

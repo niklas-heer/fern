@@ -71,7 +71,8 @@ fn public_newtype_plans_reject_storage_and_optional_marker_forgery() {
         fields: vec![],
         variants: vec![vec![Type::Int]],
     };
-    plan.validate(&[layout.clone()], Span::default()).unwrap();
+    plan.validate(std::slice::from_ref(&layout), Span::default())
+        .unwrap();
     let mut forged = layout.clone();
     forged.storage = ir::LayoutStorage::Tagged;
     assert!(plan.validate(&[forged], Span::default()).is_err());

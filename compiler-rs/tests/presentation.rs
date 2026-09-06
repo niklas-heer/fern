@@ -190,7 +190,7 @@ fn extracted_headers_accept_new_bodies_across_the_native_corpus() {
             continue;
         }
         for entry in std::fs::read_dir(folder.path()).unwrap().flatten() {
-            if entry.path().extension().map_or(true, |ext| ext != "fn") {
+            if entry.path().extension().is_none_or(|ext| ext != "fn") {
                 continue;
             }
             let source = std::fs::read_to_string(entry.path()).unwrap();
@@ -349,7 +349,7 @@ fn source_result_quantifiers_reserve_names_before_inferred_display() {
     assert_eq!(
         show::resolved_signature(
             &f,
-            &[ty.clone()],
+            std::slice::from_ref(&ty),
             &ty,
             &["$inferred1_0".into()],
             Limits::default()

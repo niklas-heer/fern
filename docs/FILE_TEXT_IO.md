@@ -26,7 +26,7 @@ is closed exactly once. There is no hard deadline or fsync guarantee.
 
 The Rust REPL enforces the same text policy and retains its stricter interactive
 String/storage budgets. Explicit reads and unbuffered writes are checked. Safe
-Rust 1.75 cannot observe a late OS error from File drop; this is distinct from
+Rust file-drop cleanup does not report a late OS close error; this is distinct from
 the native buffered close/flush check and is not a durability guarantee.
 
 This deliberately changes prior behavior: File.read no longer reports success

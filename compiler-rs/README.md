@@ -6,8 +6,12 @@ bounded subset; it is not a replacement for the current compiler.
 
 ## Run it
 
-Install the [native build dependencies](../BUILD.md), plus Rust 1.75 or newer,
-Cargo, rustfmt, and clippy. From the repository root:
+Install the [native build dependencies](../BUILD.md), then run `mise install`
+from the repository root. Fern uses **nightly-2026-09-06** with Cargo, rustfmt,
+Clippy and rust-src; `rust-toolchain.toml` selects the same pin for direct Cargo
+commands. The numeric Cargo requirement `1.100` is a minimum version check,
+not a stable MSRV promise. Edition 2021 and standard-library-only production
+dependencies remain unchanged. From the repository root:
 
 ```sh
 mise run rust-build

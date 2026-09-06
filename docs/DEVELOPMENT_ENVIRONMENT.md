@@ -23,11 +23,19 @@ Shell activation is optional. `mise run` and `mise exec -- <command>` select the
 project tools directly. Tool installation is explicit in CI; merely opening a
 shell does not run builds, mutate Cargo dependencies or install Git hooks.
 
-The managed baseline is Rust **1.75.0**, Python **3.14.7**, and uv **0.12.5**.
+The managed baseline is Rust **nightly-2026-09-06** (Rust 1.100.0-nightly),
+Python **3.14.7**, and uv **0.12.5**.
 Python matches the existing CPython 3.14 argparse reference contract. `UV_PYTHON`
 selects that exact interpreter; uv cannot silently download a different Python.
-Rust keeps the existing 1.75 MSRV and uses stable rustfmt, Clippy and rust-src
-components. Install your editor's Rust Analyzer extension (for VS Code,
+The root `rust-toolchain.toml` matches mise and selects the dated nightly with
+its rustfmt, Clippy and rust-src components for direct Cargo commands too.
+Fern no longer promises Rust 1.75 compatibility. Cargo's numeric `rust-version =
+"1.100"` is a coarse minimum check; it cannot encode a nightly date and does not
+promise support for an untested stable compiler. The dated nightly is the
+supported build policy. Edition 2021 and standard-library-only production
+dependencies remain unchanged. [Cargo version semantics](https://doc.rust-lang.org/cargo/reference/rust-version.html)
+
+Install your editor's Rust Analyzer extension (for VS Code,
 `rust-lang.rust-analyzer`; Zed includes Rust support), and launch it from the
 mise environment. The extension supplies the language server; rust-src supplies
 standard-library sources and is not itself a language server. No editor
@@ -41,7 +49,9 @@ Install the host's native dependencies separately as described in [BUILD.md](../
 Clang, Bash, pkg-config, Boehm GC, SQLite and OpenSSL development files. Optional
 C formatting and memory tasks also need clang-format and Valgrind respectively.
 The vendored QBE sources are built from the checkout. `tool-versions` verifies
-managed pins and reports actual native compiler/library versions.
+managed pins and reports actual native compiler/library versions. It compares
+the active rustc/Cargo verbose identities and rustfmt/Clippy versions against
+the installed dated toolchain, and requires rust-src to be present.
 
 ## Required and focused checks
 
@@ -87,9 +97,10 @@ mise run rust-bacon            # Bacon 3.25.0 check UI; `rust-bacon clippy` sele
 
 These task-specific tools are installed only when requested. The watcher never
 runs Fern applications or changes dependencies. Nextest's build MSRV differs
-from the compiler it can test: the prebuilt runner was actually verified with
-this project's Rust 1.75.0 toolchain. Required CI remains `cargo test`, including
-doctests. [Nextest version policy](https://github.com/nextest-rs/nextest/blob/cargo-nextest-0.9.143/README.md)
+from the compiler it can test. The prebuilt runner follows the project nightly;
+its original Decision106 verification used Rust 1.75.0. Required CI remains
+`cargo test`, including doctests. Current migration evidence belongs in
+[the roadmap](../ROADMAP.md). [Nextest version policy](https://github.com/nextest-rs/nextest/blob/cargo-nextest-0.9.143/README.md)
 
 Bacon provides an interactive job/output UI in addition to the simple watcher.
 Its opt-in installer pins Rust **1.98.1** and runs `cargo install --locked` for
@@ -97,9 +108,10 @@ Bacon **3.25.0** into `compiler-rs/target/dev-tools/bacon-3.25.0`. It does not
 install a global executable or change Fern dependencies. This requires a second
 Rust compiler and a source build; ordinary setup and CI do not install it.
 The UI runs separately under the project environment, and both configured Bacon
-jobs explicitly select **Rust 1.75.0**. Thus the developer tool's
-[build requirement](https://github.com/Canop/bacon/blob/v3.25.0/Cargo.toml)
-does not change Fern's MSRV. [Bacon jobs](https://dystroy.org/bacon/config/)
+jobs explicitly select **nightly-2026-09-06**. The installer retains its
+independently pinned [build requirement](https://github.com/Canop/bacon/blob/v3.25.0/Cargo.toml);
+its compiler does not select the toolchain used to check Fern.
+[Bacon jobs](https://dystroy.org/bacon/config/)
 
 Cargo-generate and cargo-seek do not serve
 an existing project workflow. The [Rust guidance review](RUST_GUIDANCE.md) records the lint policy and the
@@ -111,7 +123,7 @@ for optional statistical measurements. The compiler has no application dependenc
 
 `mise.lock` records version-specific URLs/checksums for Python, uv and optional
 binary tools on Linux/macOS x64/arm64. Config-scoped strict locking rejects a
-missing supported-platform URL. Rust is exactly versioned but uses rustup's own
+missing supported-platform URL. Rust is date-pinned but uses rustup's own
 distribution verification: mise's URL-lock enforcement does not apply to that
 backend. This is not an offline environment or a pinned OS image. Native package
 versions and platform SDKs remain host inputs. The three Python reference scripts
@@ -119,7 +131,11 @@ have checked-in uv script locks; maintained tasks and script shebangs use
 `--locked`, so dependency metadata drift fails before execution. [Lockfile scope](https://mise.jdx.dev/dev-tools/mise-lock.html)
 
 Update a pin deliberately, regenerate and review the lockfile, then run affected
-gates. Do not remove checksums to bypass verification:
+gates. For Rust, update mise, the root toolchain file, Bacon jobs and their
+contract tests together; verify required nightly components on supported hosts.
+Run the full Rust/native/C/docs gates and developer-tool checks before recording
+the new date as verified. Do not use a floating `nightly` or remove checksums to
+bypass verification:
 
 ```sh
 mise lock -p linux-x64,linux-arm64,macos-x64,macos-arm64

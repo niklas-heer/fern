@@ -1,11 +1,14 @@
 # Compiler phase benchmarks
 
 This separate, unpublished workspace measures the actual Rust frontend with
-Criterion 0.5.1. It adds no dependencies to the production compiler. Its own
-version-3 lockfile was built and tested with Rust 1.75.0; always use `--locked`.
-Updating transitive dependencies without that lock can select a newer MSRV
-(the initial resolution selected an edition-2024 clap_lex and failed on 1.75).
-The lock retains clap 4.5.4 and half 2.4.1. No Cargo install is needed.
+Criterion 0.5.1. It adds no dependencies to the production compiler. Current
+commands use the repository's **nightly-2026-09-06** pin; the numeric Cargo floor
+is 1.100, with no stable MSRV promise. Always use `--locked`. The independent
+lock was originally built and tested on Rust 1.75.0 during Decision107 on
+2026-09-06. Its clap 4.5.4 and half 2.4.1 pins remain unchanged; the original
+unlocked resolution selected an edition-2024 clap_lex and failed on 1.75.
+No Cargo install is needed. Historical measurements below are not measurements
+of the new nightly; compare compiler changes on the same pinned toolchain.
 
 From the repository root:
 
@@ -44,7 +47,7 @@ stores estimates, confidence intervals and raw sample data in this package's
 See the [pinned feature manifest](https://github.com/bheisler/criterion.rs/blob/0.5.1/Cargo.toml)
 and [Criterion's measurement guide](https://bheisler.github.io/criterion.rs/book/user_guide/timing_loops.html).
 
-`baseline-guidance107.json` records one real development-machine run, fixture
+`baseline-guidance107.json` records the 2026-09-06 Rust 1.75 development run, fixture
 implementation and lock hashes, toolchain, and confidence intervals. It validates
 the statistical workflow; it is not a performance threshold or comparison.
 Other agents were using the host during measurement. Re-measure before/after
@@ -57,7 +60,7 @@ native correctness, memory/resource, platform, or backend evaluation gates.
 
 ## Actor preparation review
 
-The [paired phase record](actor105-preparation-review.json) compares exact unchanged
+The 2026-09-06 [paired phase record](actor105-preparation-review.json) compares exact unchanged
 fixtures on Rust 1.75/Criterion 0.5.1 in release mode: pre-actor commit 05c4d27, the
 frozen actor candidate, and the borrowed-program optimization. Order was
 pre-actor/actor/optimized/optimized/actor/pre-actor, giving paired reversals.

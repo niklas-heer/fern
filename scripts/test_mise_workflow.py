@@ -45,7 +45,7 @@ class MiseWorkflow(unittest.TestCase):
 
     def test_mise_versions_and_msrv_are_exact(self):
         config = self.config()
-        self.assertEqual(config['tools']['rust']['version'], '1.75.0')
+        self.assertEqual(config['tools']['rust']['version'], 'nightly-2026-09-06')
         self.assertEqual(set(config['tools']['rust']['components']), {'rustfmt', 'clippy', 'rust-src'})
         self.assertEqual(config['tools']['python'], '3.14.7')
         self.assertEqual(config['tools']['uv'], '0.12.5')
@@ -61,9 +61,9 @@ class MiseWorkflow(unittest.TestCase):
         self.assertNotIn('depends', config['tasks']['rust-bacon'])
         jobs = tomllib.loads((ROOT / 'compiler-rs/bacon.toml').read_text())['jobs']
         for job in jobs.values():
-            self.assertEqual(job['env']['RUSTUP_TOOLCHAIN'], '1.75.0')
+            self.assertEqual(job['env']['RUSTUP_TOOLCHAIN'], 'nightly-2026-09-06')
             self.assertIn('--locked', job['command'])
-        self.assertEqual(config['tools']['rust']['version'], '1.75.0')
+        self.assertEqual(config['tools']['rust']['version'], 'nightly-2026-09-06')
 
     def test_zed_component_tasks_keep_their_independent_compiler(self):
         config = self.config()
@@ -121,15 +121,49 @@ class MiseWorkflow(unittest.TestCase):
             self.assertIn('support/space name.c', args)
             self.assertIn('backend/space name.c', args)
 
-    def test_version_verification_rejects_a_mismatched_cargo(self):
+    def test_root_toolchain_and_lock_match_mise(self):
+        expected = self.config()['tools']['rust']
+        toolchain = tomllib.loads((ROOT / 'rust-toolchain.toml').read_text())['toolchain']
+        self.assertEqual(toolchain['channel'], expected['version'])
+        self.assertEqual(toolchain['profile'], expected['profile'])
+        self.assertEqual(set(toolchain['components']), set(expected['components']))
+        lock = tomllib.loads((ROOT / 'mise.lock').read_text())['tools']['rust'][0]
+        self.assertEqual(lock['version'], expected['version'])
+        self.assertEqual(lock['specifiers'], [expected['version']])
+        for directory in ('compiler-rs', 'benchmarks/compiler-phases'):
+            package = tomllib.loads((ROOT / directory / 'Cargo.toml').read_text())['package']
+            self.assertEqual(package['rust-version'], '1.100')
+            self.assertEqual(package['edition'], '2021')
+
+    def rust_probe(self, changed=None, source=True):
+        def probe(argv):
+            if argv[:3] == ['rustup', 'component', 'list']:
+                return 'rustfmt-host\nclippy-host\n' + ('rust-src' if source else '')
+            tool = argv[3] if argv[:2] == ['rustup', 'run'] else argv[0]
+            # Nightly rustc and Cargo commit hashes/dates can legitimately differ.
+            identity = {'rustc': 'rustc 1.100.0-nightly\ncommit-hash: compiler-one',
+                        'cargo': 'cargo 1.100.0-nightly\ncommit-hash: cargo-two',
+                        'rustfmt': 'rustfmt 1.9.0-nightly (fmt-three)',
+                        'cargo-clippy': 'clippy 0.1.100 (clippy-four)'}[tool]
+            return identity + (' different' if tool == changed and argv[0] != 'rustup' else '')
+        return probe
+
+    def test_nightly_identity_checks_each_active_component(self):
         import check_tool_versions
-        versions = {'rustc': 'rustc 1.75.0', 'cargo': 'cargo 1.98.1',
-                    'python3': 'Python 3.14.7', 'uv': 'uv 0.12.5',
-                    'mise': '2026.9.1'}
-        with patch.object(check_tool_versions, 'output',
-                          side_effect=lambda argv: versions.get(argv[0], 'native tool')):
-            with self.assertRaisesRegex(RuntimeError, 'cargo: expected 1.75.0'):
-                check_tool_versions.verify()
+        with patch.object(check_tool_versions, 'output', side_effect=self.rust_probe()):
+            report = check_tool_versions.verify_rust('nightly-2026-09-06')
+        self.assertTrue(report['rust-src-installed'])
+        for tool in ('rustc', 'cargo', 'rustfmt', 'cargo-clippy'):
+            with self.subTest(tool=tool), patch.object(
+                    check_tool_versions, 'output', side_effect=self.rust_probe(changed=tool)):
+                with self.assertRaisesRegex(RuntimeError, tool + ': expected'):
+                    check_tool_versions.verify_rust('nightly-2026-09-06')
+
+    def test_nightly_requires_standard_library_sources(self):
+        import check_tool_versions
+        with patch.object(check_tool_versions, 'output', side_effect=self.rust_probe(source=False)):
+            with self.assertRaisesRegex(RuntimeError, 'rust-src'):
+                check_tool_versions.verify_rust('nightly-2026-09-06')
 
     def test_native_recipe_failure_stops_before_python_or_later_gates(self):
         self.config()

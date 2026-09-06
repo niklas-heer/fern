@@ -2,7 +2,7 @@
 min_version = "2026.9.1"
 
 [tools]
-rust = { version = "1.75.0", profile = "minimal", components = [
+rust = { version = "nightly-2026-09-06", profile = "minimal", components = [
   "rustfmt",
   "clippy",
   "rust-src",
@@ -549,12 +549,12 @@ tools = { watchexec = "2.7.1" }
 run = "watchexec --project-origin . --shell=none --watch compiler-rs/src --watch compiler-rs/tests --watch compiler-rs/Cargo.toml --exts rs,toml --debounce 500ms --on-busy-update queue -- mise run rust-compile-check"
 
 [tasks.rust-bacon-install]
-description = "Opt-in local Bacon build using a separate modern compiler; Fern stays Rust 1.75"
+description = "Opt-in local Bacon build using a separate modern compiler; Fern jobs use the pinned nightly"
 tools = { rust = "1.98.1" }
 run = "cargo install --locked --version 3.25.0 --root compiler-rs/target/dev-tools/bacon-3.25.0 bacon"
 
 [tasks.rust-bacon]
-description = "Optional Bacon UI with Rust 1.75 check/clippy jobs; install once with rust-bacon-install"
+description = "Optional Bacon UI with pinned-nightly check/clippy jobs; install once with rust-bacon-install"
 raw_args = true
 run = "bash scripts/tasks/bacon"
 

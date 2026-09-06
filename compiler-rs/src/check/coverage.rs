@@ -70,7 +70,7 @@ fn retained_mode(
         let pattern = lower(&arm.pattern, subject, registry, arm.span)?;
         if !useful(
             &matrix,
-            &[pattern.clone()],
+            std::slice::from_ref(&pattern),
             std::slice::from_ref(subject),
             registry,
             0,

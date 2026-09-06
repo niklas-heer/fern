@@ -60,7 +60,8 @@ fn public_plan_rejects_mismatched_record_and_nullable_option_storage() {
         fields: vec!["value".into()],
         variants: vec![vec![Type::Int]],
     };
-    plan.validate(&[layout.clone()], Span::default()).unwrap();
+    plan.validate(std::slice::from_ref(&layout), Span::default())
+        .unwrap();
     layout.storage = ir::LayoutStorage::Unboxed;
     assert!(plan.validate(&[layout], Span::default()).is_err());
     let plan = Plan {
@@ -119,7 +120,8 @@ fn phantom_metadata_never_enables_unsupported_executable_entries() {
             }]),
         });
         plan.root = 1;
-        plan.validate(&[layout.clone()], Span::default()).unwrap();
+        plan.validate(std::slice::from_ref(&layout), Span::default())
+            .unwrap();
         let mut stored = layout.clone();
         stored.variants[0][0] = arg.clone();
         assert!(plan.validate(&[stored], Span::default()).is_err());

@@ -4,10 +4,10 @@ default_job = "check"
 command = ["cargo", "check", "--locked", "--all-targets", "--all-features"]
 need_stdout = false
 [jobs.check.env]
-RUSTUP_TOOLCHAIN = "1.75.0"
+RUSTUP_TOOLCHAIN = "nightly-2026-09-06"
 
 [jobs.clippy]
 command = ["cargo", "clippy", "--locked", "--all-targets", "--all-features", "--", "-D", "warnings"]
 need_stdout = false
 [jobs.clippy.env]
-RUSTUP_TOOLCHAIN = "1.75.0"
+RUSTUP_TOOLCHAIN = "nightly-2026-09-06"

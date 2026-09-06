@@ -22,7 +22,7 @@ impl Engine<'_> {
             .sequence_offsets
             .get(&value.node.id)
             .map_or(value.node.id, |(base, _)| *base);
-        let mut state = self.partitions.remove(&base).unwrap_or(Partition {
+        let mut state = self.partitions.remove(&base).unwrap_or_else(|| Partition {
             lengths: vec![Predicate::TRUE, nonempty],
             positions: vec![],
             remainder: nonempty,

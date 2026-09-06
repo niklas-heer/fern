@@ -22,12 +22,14 @@ brew install mise bdw-gc sqlite openssl pkg-config
 sudo apt-get install clang pkg-config libgc-dev libsqlite3-dev libssl-dev
 ```
 
-The repository pins Rust 1.75.0, Python 3.14.7 and uv 0.12.5 in `mise.toml`.
+The repository pins Rust **nightly-2026-09-06**, Python 3.14.7 and uv 0.12.5
+in `mise.toml`. A matching root `rust-toolchain.toml` selects the same Rust
+compiler for direct Cargo commands.
 Run `mise install`, then `mise run tool-versions`. Review and trust this checkout
 when mise requests it; no global configuration or activation hook is needed.
 The native packages above are host-managed, not a fully pinned OS image.
 See [the task and tool environment](docs/DEVELOPMENT_ENVIRONMENT.md) for lockfiles,
-optional runners, MSRV details and the remaining reproducibility boundary.
+optional runners, nightly update policy and the remaining reproducibility boundary.
 
 ## Quick Start
 
@@ -48,7 +50,7 @@ mise run clean
 
 ### Experimental Rust frontend
 
-With Rust 1.75 or newer, Cargo, rustfmt, and clippy installed:
+After `mise install` provisions the dated nightly, Cargo, rustfmt, Clippy and rust-src:
 
 ```sh
 mise run rust-build

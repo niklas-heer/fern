@@ -2,7 +2,7 @@
 name = "fern-prototype"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.100"
 publish = false
 
 [lib]
@@ -22,7 +22,7 @@ dbg_macro = "deny"
 todo = "deny"
 unimplemented = "deny"
 exit = "deny"
-unchecked_duration_subtraction = "deny"
+unchecked_time_subtraction = "deny"
 unused_peekable = "deny"
 redundant_clone = "deny"
 or_fun_call = "deny"

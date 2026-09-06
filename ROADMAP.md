@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `mise run release-package` and `mise run release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: Fern-native default checker, exact native/Python diagnostic and 66 workflow parity cases, bounded content cache and native supervision verified on macOS/Linux; ordinary style checks need no Python/Cargo
-- Rust migration: `mise run rust-check` passing (1515 Rust checks (1518 on Linux; bounded native actors and relocatable previews), 4 measurement-harness tests, 197 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: `mise run rust-check` passing (1515 Rust checks on nightly-2026-09-06 (1518 on Linux; bounded native actors and relocatable previews), 4 measurement-harness tests, 197 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 - Rust developer tooling: pinned mise environment and incremental lint-policy checks verified; nextest passes 1511 tests on macOS and 1513 on Linux without skips; Criterion fixtures and all 10 smoke cases pass on both. Actor20-program/16-rejection, managed-runtime sanitizer and moved-preview gates pass on both.
 
 ## Canonical Documents
@@ -48,8 +48,10 @@ Status: Complete for the bounded prototype; `mise run check`, `mise run rust-che
 
 ### Development Environment and Rust Review Guidance
 
+- [x] Adopt nightly-2026-09-06 across mise, direct Cargo, CI and developer jobs; verify component identities and drift, 18 negative lint contracts, complete macOS/Linux Rust/native/C/docs/nextest gates and all ten benchmark smoke cases. Bacon check/Clippy and watchexec initial/source-change jobs select nightly (Decision111).
+
 - [x] Replace Justfile with pinned mise tools/tasks and platform checksums; preserve sequential native builds and explicit Zed toolchain scope (Decision106).
-- [x] Verify optional nextest, Bacon and watchexec against Rust 1.75 without adding application dependencies.
+- [x] Verify optional nextest, Bacon and watchexec without adding application dependencies (initial Rust1.75 checkpoint; nightly migration above supersedes the project pin).
 - [x] Lock all three Python reference-script dependency graphs and reject metadata drift before execution.
 - [x] Preserve quoted native compiler flags and pkg-config paths through bounded literal decoding; cover all build helpers and 128 generated argument roundtrips.
 - [x] Add the strict incremental Rust lint policy and initial-path fix, with 17 negative/two positive lint contracts, three fixture tests, ten Criterion phase smoke cases and the review-guidance adoption matrix (Decision107).

@@ -1301,7 +1301,7 @@ impl Emitter<'_> {
         }
         let mut arguments = Vec::new();
         for (arg, expected) in args.iter().zip(params) {
-            expect_type(arg.ty.clone(), expected.clone(), arg.span)?;
+            expect_type(arg.ty.clone(), expected, arg.span)?;
             let value = self.expr(arg, locals, depth)?;
             let payload = self.payload(locals, &arg.ty, value);
             arguments.push(format!("l {payload}"));

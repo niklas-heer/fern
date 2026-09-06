@@ -94,10 +94,7 @@ impl Server {
         if let Some(result) = self.label_completion(uri, source, cursor) {
             return Ok(result);
         }
-        if facts
-            .as_ref()
-            .map_or(true, |facts| facts.receiver.is_none())
-        {
+        if facts.as_ref().is_none_or(|facts| facts.receiver.is_none()) {
             if let Some(result) = self.member_completion(uri, source, cursor) {
                 return Ok(result);
             }
@@ -290,7 +287,7 @@ fn add_candidate(
     if first.starts_with(prefix) && !first.is_empty() {
         candidates
             .entry(first.into())
-            .or_insert(if member.contains('.') { 9 } else { kind });
+            .or_insert_with(|| if member.contains('.') { 9 } else { kind });
     }
 }
 /// Report truncation explicitly so clients can request a narrower completion prefix.

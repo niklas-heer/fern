@@ -1,10 +1,14 @@
-# Rust guidance adoption (Decision107)
+# Rust guidance adoption (Decisions107 and111)
 
-Fern keeps production Rust 1.75, stable Rust, safe owned representations and a
-standard-library-only compiler. This checkpoint adds strict incremental lint
-checks and an independently locked Criterion developer workspace. It fixes an
-actual directory-discovery boundary and unnecessary allocations without changing
-language behavior or updating the production dependency graph.
+Fern uses **nightly-2026-09-06**, safe owned representations and a
+standard-library-only compiler. Decision111 supersedes the earlier Rust 1.75
+preservation policy at the user's request; the numeric Cargo floor is 1.100,
+with no stable MSRV promise. Edition 2021 remains unchanged. The original
+Decision107 checkpoint added strict incremental lint checks and an independently
+locked Criterion developer workspace, fixing a directory-discovery boundary and
+unnecessary allocations. Historical test and benchmark results below retain
+their original toolchains; they do not establish nightly validation. See
+[the roadmap](../ROADMAP.md) for current verification evidence.
 
 ## Verification and development workflow
 
@@ -24,7 +28,7 @@ cargo test --manifest-path compiler-rs/Cargo.toml --locked --doc
 cargo bench --manifest-path benchmarks/compiler-phases/Cargo.toml --locked --bench phases -- --test
 ```
 
-The isolated checkpoint ran all of these on Rust 1.75, plus the benchmark
+The original 2026-09-06 Decision107 checkpoint ran these on Rust 1.75, plus the benchmark
 package's tests/Clippy, offline build and an actual statistical baseline.
 Decision106 separately verified nextest, Bacon check/Clippy and a watchexec
 source-change dispatch; nextest does not replace documentation tests.
@@ -45,29 +49,28 @@ audits. Later gate counts are tracked in [the current roadmap](../ROADMAP.md).
 
 ## Enforced lint policy
 
-Cargo's package lint table is supported by the existing toolchain; it does not
-require a compiler upgrade. [Cargo reference](https://doc.rust-lang.org/cargo/reference/manifest.html#the-lints-section)
+Cargo's package lint table provides the current enforcement contract. [Cargo reference](https://doc.rust-lang.org/cargo/reference/manifest.html#the-lints-section)
 
 | Scope | Policy and evidence |
 | --- | --- |
-| Entire compiler package | Deny `dbg_macro`, `todo`, `unimplemented`, `exit`, `unchecked_duration_subtraction`, `unused_peekable`, `redundant_clone`, `or_fun_call`. All-target Clippy passes. |
+| Entire compiler package | Deny `dbg_macro`, `todo`, `unimplemented`, `exit`, `unchecked_time_subtraction`, `unused_peekable`, `redundant_clone`, `or_fun_call`. All-target Clippy is a required gate. |
 | Production library and binary | Deny `panic` and `panic_in_result_fn` via `cfg_attr(not(test), ...)`; intentional test assertions/panics remain available. |
 | Source-directory, native linker-argument and test-frame boundaries | Deny `pedantic`, `nursery`, `unwrap_used`, `expect_used`, `indexing_slicing`, `as_conversions`, `unreachable`, `string_slice`, `arithmetic_side_effects`. These are audited boundary modules, not a claim of whole-compiler compliance. |
-| Narrow allowances | Discovery counter/depth arithmetic has explicit small bounds (8193 and 33); one documented function allowance preserves those validated operations. The frame decoder has a documented small-offset allowance (header under 128 bytes and two streams up to 256 KiB); explicit caller visibility has a separate `redundant_pub_crate` allowance. No crate-wide group allowance masks failures. |
+| Narrow allowances | Discovery counter/depth arithmetic has explicit small bounds (8193 and 33); one documented function allowance preserves those validated operations. The frame decoder has a documented small-offset allowance (header under 128 bytes and two streams up to 256 KiB); explicit caller visibility has a separate `redundant_pub_crate` allowance. A local `large_enum_variant` allowance preserves the public statement IR representation pending a separate allocation/layout audit. No crate-wide group allowance masks failures. |
 
-The policy test compiles 17 deliberately bad, dependency-free temporary crates
+The policy test compiles 18 deliberately bad, dependency-free temporary crates
 under the selected toolchain and checks each expected diagnostic, then compiles
 a checked positive and a test-only panic without executing either fixture. It rejects weakened manifest entries and unsupported lint
 names. It uses offline Cargo and does not execute the panic/exit fixtures.
 
-The requested `unchecked_time_subtraction` spelling is unavailable in 1.75.
-Its applicable predecessor is `unchecked_duration_subtraction`, specifically
-`Instant - Duration`; it does not promise to diagnose every time arithmetic
-operation. The test pins that exact behavior against the
-[pinned Clippy implementation](https://github.com/rust-lang/rust-clippy/blob/rust-1.75.0/clippy_lints/src/instant_subtraction.rs).
-The supplied `allow-panic-in-tests` configuration is also unsupported on this
-MSRV. Explicit production attributes provide the intended separation without
-unknown configuration keys. No unused test-exception configuration is added.
+The nightly policy uses `unchecked_time_subtraction`, the current name for
+`unchecked_duration_subtraction`, and tests both `Instant - Duration` and
+`Duration - Duration`. The original Rust 1.75 checkpoint tested the predecessor
+name for `Instant - Duration` only. [Clippy lint documentation](https://rust-lang.github.io/rust-clippy/master/index.html#unchecked_time_subtraction)
+Modern Clippy supports `allow-panic-in-tests`; the project retains its explicit
+production `cfg_attr` restrictions for both panic lints instead. This preserves
+the existing compile-tested scope without adding redundant configuration.
+[Clippy test configuration](https://doc.rust-lang.org/clippy/lint_configuration.html#allow-panic-in-tests)
 
 A broad audit found over a thousand arithmetic warnings and hundreds of indexed
 accesses, many in bounded IR/ABI traversal. Enabling every restriction globally
@@ -89,14 +92,14 @@ unchanged except removal of redundant test clones required by the same policy.
 | --- | --- |
 | rustfmt, Clippy, unit/integration/doc tests, CI | Retained and exercised; mise provides focused and aggregate tasks. Strict warnings remain the enforcement boundary. |
 | Rust Analyzer | Documented editor setup in Decision106; no user-editor installation. rust-src is a separate managed component, not a language server. |
-| Bacon | Optional project-local tool, built with its separate toolchain and tested against compiler 1.75 by Decision106. It provides an interactive view beyond the simple watcher. |
-| cargo-nextest | Optional pinned prebuilt runner, actually tested with 1.75. No retries conceal failing tests; doctests remain a separate command. |
+| Bacon | Optional project-local tool, built with its separate 1.98.1 toolchain; its check/Clippy jobs select Fern's dated nightly. Decision106 originally tested jobs on 1.75. It provides an interactive view beyond the simple watcher. |
+| cargo-nextest | Optional pinned prebuilt runner using Fern's selected toolchain; original Decision106 verification used 1.75. No retries conceal failing tests; doctests remain a separate command. |
 | watchexec | Optional bounded check workflow, source-change behavior tested. It does not launch arbitrary Fern programs or alter dependencies. |
-| Criterion | Added as a dev-dependency only in `benchmarks/compiler-phases`; pinned 0.5.1 and its own 1.75-tested lock, 10 real phase measurements and fixture oracles. [Methodology](../benchmarks/compiler-phases/README.md) |
+| Criterion | Added as a dev-dependency only in `benchmarks/compiler-phases`; pinned 0.5.1 and its own lock originally verified on 1.75, 10 real phase measurements and fixture oracles. [Methodology](../benchmarks/compiler-phases/README.md) |
 | cargo-generate | Not installed: this repository maintains one compiler and no reusable starter-project template. There is no current scaffolding operation to exercise or validate. Revisit when a Fern application/extension template exists. |
 | cargo-seek | Not installed: this change has one known developer dependency, verified against its official manifest and real locked builds. No ongoing interactive crate-discovery workflow justifies another executable; reconsider during actual dependency selection. |
 | Typestate | Existing private probe/editor/codec-template tokens and publication validators express meaningful construction/execution boundaries and have compile-fail tests. No generic state wrapper is added to ordinary mutable checker state without an operation it would make impossible. |
-| Nightly | Not needed for the measured phases, lint policy or compiler. Zed/developer-tool compilers and the experimental backend probe remain explicitly separate from the production MSRV. |
+| Nightly | Adopted by user request in Decision111, pinned to nightly-2026-09-06 through mise and rustup. Upgrades require renewed gates. It does not itself implement Cranelift or require unstable language features. |
 | Git hooks | Optional convenience; CI/task checks enforce the contract. No automatic hook installation or dependency updates on entering the environment. |
 
 ## Crate selection

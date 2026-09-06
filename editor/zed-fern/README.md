@@ -38,7 +38,7 @@ no shell is invoked. Trust the project when prompted before starting its server.
 
 ## Build a local package
 
-The compiler retains Rust 1.75 compatibility. This extension has a separate
+Fern's compiler uses nightly-2026-09-06. This extension retains its separate
 pinned Rust **1.97.1** toolchain and `wasm32-wasip2` target, with the published
 `zed_extension_api` **0.7.0** dependency locked in Cargo.lock. Current Zed requires
 Preview2 components; the old `wasm32-wasi` build instructions do not apply.

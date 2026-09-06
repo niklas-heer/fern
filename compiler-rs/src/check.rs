@@ -1219,10 +1219,12 @@ impl Checker<'_> {
             .map_err(|e| closures::context(e, "if branch"))?;
         let else_branch = else_branch
             .map(|branch| {
-                let context = expected.or(if then_branch.ty == Type::Never {
-                    None
-                } else {
-                    Some(&then_branch.ty)
+                let context = expected.or_else(|| {
+                    if then_branch.ty == Type::Never {
+                        None
+                    } else {
+                        Some(&then_branch.ty)
+                    }
                 });
                 if !directional {
                     if let Some(context) = context {

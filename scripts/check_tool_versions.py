@@ -18,15 +18,31 @@ def output(argv):
     return result.stdout.strip()
 
 
+def verify_rust(toolchain):
+    """Require active component identities to match the installed dated pin, including Cargo."""
+    report = {}
+    for tool in ('rustc', 'cargo', 'rustfmt', 'cargo-clippy'):
+        arguments = ['--version', '--verbose'] if tool in ('rustc', 'cargo') else ['--version']
+        actual = output([tool, *arguments])
+        expected = output(['rustup', 'run', toolchain, tool, *arguments])
+        if actual != expected:
+            raise RuntimeError(f'{tool}: expected {toolchain} identity {expected!r}, got {actual!r}; run mise install')
+        report[tool] = actual
+    components = output(['rustup', 'component', 'list', '--toolchain',
+                         toolchain, '--installed']).splitlines()
+    if 'rust-src' not in components:
+        raise RuntimeError(f'rust-src is required for {toolchain}; run mise install')
+    report['rust-src-installed'] = True
+    return report
+
+
 def verify():
     """Managed pins are exact; native packages are explicitly reported as host-owned inputs."""
     config = tomllib.loads((ROOT / 'mise.toml').read_text())
     tools = config['tools']
-    probes = [('rustc', ['rustc', '--version'], tools['rust']['version']),
-              ('cargo', ['cargo', '--version'], tools['rust']['version']),
-              ('python', ['python3', '--version'], tools['python']),
+    probes = [('python', ['python3', '--version'], tools['python']),
               ('uv', ['uv', '--version'], tools['uv'])]
-    report = {}
+    report = verify_rust(tools['rust']['version'])
     for name, command, expected in probes:
         actual = output(command)
         if not re.search(r'(?<![\d.])' + re.escape(expected) + r'(?![\d.])', actual):
@@ -38,13 +54,10 @@ def verify():
     if not match or tuple(map(int, match.groups())) < minimum:
         raise RuntimeError(f'mise {config["min_version"]} or newer is required; got {version}')
     report['mise'] = version
-    for tool in ('rustfmt', 'cargo-clippy', 'clang', 'pkg-config'):
+    for tool in ('clang', 'pkg-config'):
         report[tool] = output([tool, '--version'])
     for package in ('bdw-gc', 'sqlite3', 'openssl'):
         report[package] = output(['pkg-config', '--modversion', package])
-    components = output(['rustup', 'component', 'list', '--toolchain',
-                         tools['rust']['version'], '--installed']).splitlines()
-    report['rust-src-installed'] = 'rust-src' in components
     print(json.dumps(report, indent=2))
 
 

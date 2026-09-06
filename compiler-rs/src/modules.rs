@@ -966,7 +966,7 @@ fn import_namespace(
 ) -> Result<(), Error> {
     let prefix = import.alias.as_ref().unwrap_or(&import.module);
     for (name, value) in exported {
-        let selected = import.items.as_ref().map_or(true, |items| {
+        let selected = import.items.as_ref().is_none_or(|items| {
             items.iter().any(|item| {
                 item == "*"
                     || name == item

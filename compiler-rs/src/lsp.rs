@@ -526,9 +526,9 @@ impl Server {
     /// Validate JSON-RPC envelopes before lifecycle or document handlers inspect parameters.
     fn message(&mut self, message: Json, output: &mut impl Write) -> Result<bool> {
         let id = message.get("id").cloned();
-        let valid_id = id.as_ref().map_or(true, |id| {
-            matches!(id, Json::String(_)) || id.integer().is_ok()
-        });
+        let valid_id = id
+            .as_ref()
+            .is_none_or(|id| matches!(id, Json::String(_)) || id.integer().is_ok());
         if message.get("jsonrpc").and_then(|value| value.string().ok()) != Some("2.0") || !valid_id
         {
             send_error(output, Json::Null, -32600, "invalid JSON-RPC envelope")?;
@@ -964,7 +964,7 @@ fn byte_position(source: &str, position: &Json) -> Result<usize> {
         .map_or(source.len(), |end| start + end);
     let text = source[start..end]
         .strip_suffix('\r')
-        .unwrap_or(&source[start..end]);
+        .unwrap_or_else(|| &source[start..end]);
     let mut units = 0;
     for (offset, character) in text.char_indices() {
         if units == column {

@@ -37,7 +37,7 @@ Use Tree-sitter CLI **0.26.12**, generated grammar ABI **14**, WASI SDK **29.0**
 are test hosts. Exact official asset URLs and SHA256 digests for the verified
 macOS arm64 profile are in `scripts/editor/toolchain.json`. Download into an
 explicit tool directory, verify every archive before extraction, and keep tools
-and caches outside the repository. This workflow does not modify Fern's Rust1.75
+and caches outside the repository. This workflow does not modify Fern's dated nightly
 or any global tool installation. Other host profiles need separately verified
 release asset hashes before claiming reproducible support.
 
