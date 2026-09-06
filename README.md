@@ -18,7 +18,7 @@ to a native executable.
 
 ```fern
 fn greet(name: String) -> String:
-    String.concat("Hello, ", name)
+    "Hello, {name}!"
 
 fn main():
     let language = "Fern"

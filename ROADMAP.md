@@ -46,6 +46,8 @@ Status: Complete for the bounded prototype; `mise run check`, `mise run rust-che
 
 ## Active Priorities
 
+- [x] Showcase native string interpolation in the README greeting; exact `Hello, Fern!` output verified on both C and Rust compilers.
+
 - [x] Refresh the public README around runnable onboarding, accurate feature boundaries and a dedicated Fern logo; greeting and quickstart outputs verified on both compilers, with light/dark presentation checked.
 
 ### Development Environment and Rust Review Guidance
