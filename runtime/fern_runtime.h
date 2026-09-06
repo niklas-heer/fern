@@ -209,6 +209,11 @@ char* fern_str_replace(const char* s, const char* old_str, const char* new_str);
  */
 int64_t fern_str_split_is_valid(const char* s, const char* delim);
 
+/** Unicode16 Nd predicate, empty/malformed false; >16MiB is a runtime size fault. */
+int64_t fern_str_is_decimal(const char* text);
+/** Internal allocation-free decimal size preflight, for compiler-controlled cleanup. */
+int64_t fern_str_decimal_size_is_valid(const char* text);
+
 /**
  * Split string by delimiter.
  * @param s The string.

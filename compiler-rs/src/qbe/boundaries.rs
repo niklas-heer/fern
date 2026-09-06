@@ -132,3 +132,25 @@ impl Emitter<'_> {
         self.start_block(locals, &resume);
     }
 }
+
+impl Emitter<'_> {
+    /// Bound decimal text before native classification so a size fault drains Fern defers.
+    pub(super) fn decimal_guard(&mut self, arguments: &[String], locals: &mut Locals) {
+        let valid = self.assign(
+            locals,
+            Type::Int,
+            &format!(
+                "call $fern_str_decimal_size_is_valid({})",
+                arguments.join(", ")
+            ),
+        );
+        let resume = locals.label();
+        let invalid = locals.label();
+        self.output
+            .push_str(&format!("    jnz {valid}, {resume}, {invalid}\n"));
+        self.start_block(locals, &invalid);
+        self.output
+            .push_str("    storel 5, %fault\n    storel 0, %return_slot\n    jmp @return\n");
+        self.start_block(locals, &resume);
+    }
+}

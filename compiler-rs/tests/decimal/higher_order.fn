@@ -1,0 +1,11 @@
+fn apply(value: a, predicate: (a) -> Bool) -> Bool:
+    predicate(value)
+fn once() -> String:
+    println("once")
+    "١２"
+fn main():
+    let predicate = String.is_decimal
+    println(apply(once(), predicate))
+    println(List.all(["12", "١", "𝟚"], predicate))
+    println(List.any(["²", "Ⅳ", ""], predicate))
+    println(List.len(List.filter(["²", "١", "１２", "Ⅳ"], predicate)))

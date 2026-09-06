@@ -1,0 +1,13 @@
+fn checked(value: String) -> Bool:
+    String.is_decimal(value)
+fn main():
+    println(String.is_decimal("0١２𝟛"))
+    println(str_is_decimal("１２３"))
+    println(checked("१२३"))
+    println(String.is_decimal(""))
+    println(String.is_decimal("²"))
+    println(String.is_decimal("Ⅳ"))
+    println(String.is_decimal("½"))
+    println(String.is_decimal("1́"))
+    println(String.is_decimal("-1"))
+    println(String.is_decimal("1.2"))

@@ -902,3 +902,14 @@ records positional compatibility, erased callable interfaces and the remaining
 mandatory-enforcement/navigation/editor work. The complete checkpoint passes
 1037 Rust tests on macOS arm64 and 1038 on Linux arm64, plus four native labeled
 programs and four atomic invalid-output checks on both platforms.
+
+## Pinned Unicode decimal text — 2026-09-06
+
+`String.is_decimal` uses the same generated Unicode 16 Nd table in both native
+frontends and the REPL. It preserves full Bool ABI and once-only callback effects,
+rejects oversized input through Rust deferred cleanup, and charges interactive
+scan work before execution. [The classifier contract](STRING_DECIMAL.md) records
+provenance and the fixed text profile. Exhaustive native Unicode tests pass in
+debug/release/sanitizer builds on macOS/Linux arm64. Full C and Rust gates pass on
+both platforms (1047/1048 Rust tests); native checker CLI adaptation remains a
+separate follow-on.

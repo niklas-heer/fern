@@ -1,0 +1,6 @@
+fn costly() -> ():
+    println(String.is_decimal(String.repeat("1", 16777216) + "1"))
+fn main():
+    defer println("done")
+    defer costly()
+    println(1 / 0)

@@ -88,6 +88,8 @@ pub enum ValueAbi {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Operation {
     Direct,
+    /// Check the decimal classifier input ceiling through the caller fault context.
+    DecimalPredicate,
     /// Adapt one compiler-owned Map into checked parallel native lists.
     JsonObject,
     InvertBool,
@@ -1383,14 +1385,23 @@ const ENTRIES: &[Entry] = &[
         ResultUnitInt,
         "fern_write_stderr",
     ),
+    operation(
+        entry(
+            &["String.is_decimal", "str_is_decimal"],
+            &[String],
+            Bool,
+            "fern_str_is_decimal",
+        ),
+        Operation::DecimalPredicate,
+    ),
 ];
 
 const OMISSIONS: &[Omission] = &[
     Omission { names: &["fern_json_parse", "fern_json_stringify"], reason: "Legacy string-copy ABI retained for C source; Rust JSON uses opaque typed values." },
     Omission { names: &["fern_json_value_limit_error"], reason: "Internal checked JSON adapter preflight; not a source API." },
     Omission {
-        names: &["fern_str_slice_is_valid", "fern_str_split_is_valid"],
-        reason: "Internal nonallocating UTF-8 preflight helpers used by compiler-generated fault guards, not source APIs",
+        names: &["fern_str_slice_is_valid", "fern_str_split_is_valid", "fern_str_decimal_size_is_valid"],
+        reason: "Internal nonallocating text preflight helpers used by compiler-generated fault guards, not source APIs",
     },
     Omission { names: &["print", "println", "Some", "None", "Ok", "Err", "fern_bool_to_str", "fern_int_to_str", "fern_print_bool", "fern_print_int", "fern_print_str", "fern_println_bool", "fern_println_int", "fern_println_str", "fern_result_err", "fern_result_ok", "fern_result_unwrap"], reason: "Type-directed compiler intrinsics or interpolation helpers; no single source signature/runtime symbol. Conversion helper names are not public source APIs." },
     Omission { names: &["List.any", "List.all", "List.map", "List.fold", "List.filter", "List.find", "Result.map", "Result.and_then", "Result.unwrap_or_else", "Option.map", "fern_list_all", "fern_list_any", "fern_list_filter", "fern_list_find", "fern_list_fold", "fern_list_map", "fern_option_map", "fern_result_and_then", "fern_result_map", "fern_result_unwrap_or_else"], reason: "Source calls use compiler-owned typed closure lowering. The legacy C callback ABI lacks closure environments and is deliberately not invoked." },

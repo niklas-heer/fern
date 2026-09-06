@@ -2590,6 +2590,8 @@ let repeated = String.repeat("-", 10)      # "----------"
 
 # Predicates
 let empty = String.is_empty("")            # true
+let digits = String.is_decimal("١２3")     # true: Unicode 16 decimal digits
+let superscript = String.is_decimal("²")  # false: numeric, but not decimal
 
 # Splitting and joining
 let parts = String.split("a,b,c", ",")     # ["a", "b", "c"]
@@ -2600,6 +2602,13 @@ let joined = String.join(["a", "b"], "-")  # "a-b"
 let idx = String.index_of("hello", "ll")   # Some(2)
 let ch = String.char_at("hello", 0)        # Some(104) - ASCII 'h'
 ```
+
+`String.is_decimal(String) -> Bool` is true exactly for nonempty text containing
+only Unicode 16.0.0 General_Category=Nd scalars. It accepts mixed digit scripts;
+signs, separators and other numeric characters are false. The native content
+ceiling is 16 MiB; oversize raises the existing controlled String-size fault.
+This predicate does not change numeric literal or conversion syntax. See
+[the pinned text classification contract](docs/STRING_DECIMAL.md).
 
 ### List Module
 

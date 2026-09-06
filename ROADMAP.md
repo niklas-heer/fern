@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity under both C and Rust frontends on five pinned fixtures, literal paths and all compiler/library source
-- Rust migration: `just rust-check` passing (1037 Rust tests (1038 on Linux), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 4 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 237 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: `just rust-check` passing (1047 Rust tests (1048 on Linux), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 4 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 237 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
 
@@ -86,6 +86,7 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Bound shared runtime String.repeat allocations before multiplication; empty-input fast path (eight native ABI regressions).
 - [x] Replace shared runtime list access assertions with defined failures before access (six native ABI regressions; preserves full-width successful values).
 - [x] Publish complete bounded File.read text and require buffered write/append completion, with shared REPL text policy (eight source-native cases per frontend and five runtime groups in debug/release/sanitizer builds on macOS/Linux arm64).
+- [x] Classify decimal text using checksum-pinned Unicode 16 tables in C/Rust/REPL; preserve size-fault cleanup and charge aggregate interactive work (exhaustive native Unicode oracle and source callback/failure tests).
 - [x] Private return inference with bounded recursive constraints, explicit public return signatures and concrete Result-valued entry points (17 checker regressions, bounded type-work checks and native execution).
 - [x] Guard Rust list access, repetition and UTF-8 slicing/splitting through deferred cleanup, including native malformed-byte input (21 native programs, 26 shared-runtime UTF-8 cases and interactive regressions).
 - [x] Shared exact list and list/tuple rest patterns, bounded coverage and Result discard checks; native length guards and atomic interactive bindings.

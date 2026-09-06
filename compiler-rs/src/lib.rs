@@ -74,3 +74,6 @@ pub enum Constructor {
 pub mod doctest;
 
 pub mod unit_test;
+
+mod decimal;
+mod decimal_table;

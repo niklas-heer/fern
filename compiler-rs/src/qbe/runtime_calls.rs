@@ -152,6 +152,7 @@ impl Emitter<'_> {
         locals: &mut Locals,
     ) -> Lowering<()> {
         match operation {
+            Operation::DecimalPredicate => self.decimal_guard(values, locals),
             Operation::UniformPadding => values.push(values[1].clone()),
             Operation::TableBorder => {
                 let name = values[1]

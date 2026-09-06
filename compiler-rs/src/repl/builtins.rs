@@ -78,6 +78,16 @@ impl Machine {
         if let Some(value) = self.json(signature.symbol, &args) {
             return value;
         }
+        if signature.operation == runtime::Operation::DecimalPredicate {
+            let [Value::String(text)] = args.as_slice() else {
+                return Err(fault("invalid decimal predicate arguments"));
+            };
+            if text.len() > 16 * 1024 * 1024 {
+                return Err(fault("string size limit exceeded"));
+            }
+            self.charge_steps(text.len().div_ceil(64).max(1))?;
+            return decimal(text);
+        }
         if let Some(value) = strings(signature.symbol, &args) {
             return value;
         }
@@ -421,5 +431,43 @@ mod file_text_tests {
                 Err(3)
             );
         }
+    }
+}
+
+/// Apply the native decimal content ceiling before scanning; retained interactive limits remain stricter.
+fn decimal(text: &str) -> Eval<Value> {
+    if text.len() > 16 * 1024 * 1024 {
+        return Err(fault("string size limit exceeded"));
+    }
+    Ok(Value::Bool(crate::decimal::is_decimal(text)))
+}
+
+#[cfg(test)]
+mod decimal_tests {
+    use super::*;
+    #[test]
+    fn decimal_scan_reserves_work_before_scanning_and_keeps_cleanup_budget_separate() {
+        let mut machine = Machine::new(Rc::new(ir::Program::default()), HashMap::new());
+        let id = runtime::resolve("String.is_decimal").unwrap();
+        machine.steps = 99_999;
+        assert!(machine
+            .runtime(id, vec![Value::String(Rc::new("1".repeat(128)))])
+            .is_err());
+        assert!(machine.steps > 100_000);
+        machine.cleanup_depth = 1;
+        assert!(matches!(
+            machine.runtime(id, vec![Value::String(Rc::new("1".into()))]),
+            Ok(Value::Bool(true))
+        ));
+        assert_eq!(machine.cleanup_steps, 1);
+    }
+    #[test]
+    fn oversized_decimal_is_a_fault_even_when_first_byte_is_not_decimal() {
+        let mut text = "1".repeat(16 * 1024 * 1024 + 1);
+        assert!(decimal(&text).is_err());
+        text.replace_range(..1, "x");
+        assert!(decimal(&text).is_err());
+        text.pop();
+        assert!(matches!(decimal(&text), Ok(Value::Bool(false))));
     }
 }

@@ -1,0 +1,6 @@
+fn main():
+    defer println("done")
+    let text = String.repeat("1", 16777216) + "1"
+    let predicate = String.is_decimal
+    println(predicate(text))
+    println("unreachable")

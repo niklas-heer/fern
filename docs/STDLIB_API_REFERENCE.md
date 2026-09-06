@@ -34,6 +34,17 @@ Current runtime-facing APIs use `Int` for error codes.
 
 ## Module Signatures
 
+### `String` decimal predicate
+
+```fern
+String.is_decimal(text: String) -> Bool
+```
+
+Nonempty Unicode 16.0.0 decimal-digit text is true. Empty text, signs and other
+numeric categories are false. The intentional `str_is_decimal` alias has the same
+signature. See [the classifier contract](STRING_DECIMAL.md) for the 16 MiB native
+limit, generated data provenance and interactive work budgets.
+
 ### `fs`
 
 ```fern

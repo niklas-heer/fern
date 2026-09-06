@@ -399,6 +399,12 @@ static Type* lookup_module_function(Checker* checker, const char* module, const 
             TypeVec_push(arena, params, type_string(arena));
             return type_fn(arena, params, type_bool(arena));
         }
+        /* String.is_decimal(String) -> Bool */
+        if (strcmp(func, "is_decimal") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_bool(arena));
+        }
         /* String.split(String, String) -> List(String) */
         if (strcmp(func, "split") == 0) {
             params = TypeVec_new(arena);
@@ -1507,6 +1513,10 @@ static void register_string_builtins(Checker* checker) {
     params = TypeVec_new(arena);
     TypeVec_push(arena, params, type_string(arena));
     register_builtin(checker, "str_is_empty", type_fn(arena, params, type_bool(arena)));
+    /* str_is_decimal(String) -> Bool */
+    params = TypeVec_new(arena);
+    TypeVec_push(arena, params, type_string(arena));
+    register_builtin(checker, "str_is_decimal", type_fn(arena, params, type_bool(arena)));
 }
 
 /**

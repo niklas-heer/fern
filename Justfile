@@ -246,6 +246,9 @@ check:
     python3 scripts/test_process_frontends.py --compiler bin/fern
     python3 scripts/test_stderr_frontends.py --compiler bin/fern
     python3 scripts/test_file_text_frontends.py --compiler bin/fern
+    python3 scripts/generate_decimal_tables.py --check
+    python3 scripts/test_decimal_generator.py
+    python3 scripts/test_decimal_frontends.py --compiler bin/fern --c
     uv run scripts/test_style_workflow.py
 
 # Style check only (no build/test)
@@ -470,6 +473,10 @@ rust-check: rust-build
     python3 scripts/test_runtime_directory.py
     python3 scripts/test_runtime_file_text.py
     python3 scripts/test_file_text_frontends.py
+    python3 scripts/generate_decimal_tables.py --check
+    python3 scripts/test_decimal_generator.py
+    python3 scripts/test_runtime_decimal.py
+    python3 scripts/test_decimal_frontends.py
     python3 scripts/test_runtime_stderr.py
     python3 scripts/test_stderr_frontends.py --compiler compiler-rs/target/debug/fern-rs
     python3 scripts/test_runtime_process_bounded.py

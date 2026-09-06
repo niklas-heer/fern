@@ -1958,6 +1958,13 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                                 string_cstr(result), string_cstr(s));
                             return result;
                         }
+                        /* String.is_decimal(s) -> Bool */
+                        if (strcmp(func, "is_decimal") == 0 && call->args->len == 1) {
+                            String* s = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_str_is_decimal(l %s)\n",
+                                string_cstr(result), string_cstr(s));
+                            return result;
+                        }
                         /* String.split(s, delim) -> List(String) */
                         if (strcmp(func, "split") == 0 && call->args->len == 2) {
                             String* s = codegen_expr(cg, call->args->data[0].value);
@@ -3134,6 +3141,14 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 if (strcmp(fn_name, "str_is_empty") == 0 && call->args->len == 1) {
                     String* s = codegen_expr(cg, call->args->data[0].value);
                     emit(cg, "    %s =l call $fern_str_is_empty(l %s)\n",
+                        string_cstr(result), string_cstr(s));
+                    return result;
+                }
+
+                /* Handle str_is_decimal(s) -> Bool */
+                if (strcmp(fn_name, "str_is_decimal") == 0 && call->args->len == 1) {
+                    String* s = codegen_expr(cg, call->args->data[0].value);
+                    emit(cg, "    %s =l call $fern_str_is_decimal(l %s)\n",
                         string_cstr(result), string_cstr(s));
                     return result;
                 }

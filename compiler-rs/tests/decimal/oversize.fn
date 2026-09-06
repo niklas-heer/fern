@@ -1,0 +1,2 @@
+fn main():
+    println(String.is_decimal("x" + String.repeat("1", 16777216)))
