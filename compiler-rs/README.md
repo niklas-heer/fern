@@ -22,6 +22,14 @@ mise run rust-build
 mise run rust-check
 ```
 
+Global `--quiet`, `--verbose` and `--color=auto|always|never` controls work before
+or after the command. Quiet suppresses compiler/test summaries and prompts while
+preserving errors and program output. Verbose reports the command on stderr;
+color never changes emitted IR, documents or protocol data. Arguments after
+`run source.fn --` remain literal, including global-looking flags. Explicit help
+and version remain visible in quiet mode; `-v` aliases `--version`. Missing a
+command returns usage failure (status 1).
+
 Frontend compilation needs no C runtime build. The complete Cargo test suite
 compiles a small native supervisor fixture with the host C compiler:
 

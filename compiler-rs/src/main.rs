@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 // Rust1.75 has no allow-panic-in-tests option; keep production and test scopes explicit.
 #![cfg_attr(not(test), deny(clippy::panic, clippy::panic_in_result_fn))]
+mod cli_controls;
 mod doctest_cli;
 mod documentation_cli;
 mod format_cli;
@@ -23,15 +24,16 @@ struct Options {
     output: Option<PathBuf>,
     arguments: Vec<OsString>,
     format_check: bool,
+    controls: cli_controls::Controls,
 }
 
-/// Parse options without interpreting shell syntax or silently ignoring extra arguments.
-fn options(arguments: Vec<OsString>) -> Result<Option<Options>, String> {
-    if arguments.is_empty() || arguments[0] == "--help" || arguments[0] == "-h" {
-        println!(
+/// Print explicit user-requested help, even when informational output is quiet.
+fn help() {
+    println!(
             "fern-rs: experimental Rust frontend (C remains the default)\n\
 Usage: fern-rs <check|emit|build|run|fmt|doc> <source.fn> [-o output]\n\
 Run arguments: fern-rs run source.fn -- [arguments]\n\
+Global controls: --quiet, --verbose, --color=auto|always|never; -v aliases --version.\n\
 Subset: generic functions, custom types, modules, Int/Bool/String, List/Option/Result, guarded match, and Result ?.\n\
 Documentation: fern-rs doc <source.fn|directory> [--html] [-o output] generates source documentation.\n\
 Tests: fern-rs test --doc [source.fn|directory] executes documentation examples.\n\
@@ -41,6 +43,18 @@ Interactive evaluation: fern-rs repl retains successful bindings and typed funct
 Editor protocol: fern-rs lsp communicates over standard input/output.\n\
 Native builds: run mise run rust-build; FERN_QBE and FERN_RUNTIME_LIB override backend paths."
         );
+}
+
+/// Parse options without interpreting shell syntax or silently ignoring extra arguments.
+fn options(
+    arguments: Vec<OsString>,
+    controls: cli_controls::Controls,
+) -> Result<Option<Options>, String> {
+    if arguments.is_empty() {
+        return Err("Usage: fern-rs <command> [options] <source.fn>\nUse fern-rs --help for commands and global controls.".into());
+    }
+    if arguments[0] == "--help" || arguments[0] == "-h" {
+        help();
         return Ok(None);
     }
     if arguments[0] == "--version" {
@@ -94,6 +108,7 @@ Native builds: run mise run rust-build; FERN_QBE and FERN_RUNTIME_LIB override b
         output,
         arguments: forwarded,
         format_check,
+        controls,
     }))
 }
 
@@ -105,7 +120,9 @@ fn run(options: Options) -> Result<u8, String> {
     let loaded = modules::load(&options.source).map_err(|error| error.message)?;
     let typed = check::check(&loaded.program).map_err(|error| loaded.render(error))?;
     if options.command == "check" {
-        println!("No type errors (Rust prototype subset)");
+        options
+            .controls
+            .information("No type errors (Rust prototype subset)");
         return Ok(0);
     }
     let il = qbe::emit(&typed).map_err(|error| loaded.render(error))?;
@@ -118,7 +135,7 @@ fn run(options: Options) -> Result<u8, String> {
         return Ok(0);
     }
     if options.command == "build" {
-        return build(&options.source, options.output, &il);
+        return build(&options.source, options.output, &il, options.controls);
     }
     let workspace = native::Workspace::new(&env::temp_dir()).map_err(|e| e.to_string())?;
     let executable = native::compile(&il, &workspace)?;
@@ -195,22 +212,27 @@ fn emit_file(source: &Path, output: &Path, il: &str) -> Result<(), String> {
 }
 
 /// Build beside the final output and atomically replace it only after successful linking.
-fn build(source: &Path, output: Option<PathBuf>, il: &str) -> Result<u8, String> {
+fn build(
+    source: &Path,
+    output: Option<PathBuf>,
+    il: &str,
+    controls: cli_controls::Controls,
+) -> Result<u8, String> {
     let output = output.unwrap_or_else(|| PathBuf::from(source.file_stem().unwrap_or_default()));
     let destination = output_destination(source, &output)?;
     let parent = destination.parent().ok_or("invalid output directory")?;
     let workspace = native::Workspace::new(parent).map_err(|e| e.to_string())?;
     let executable = native::compile(il, &workspace)?;
     fs::rename(executable, destination).map_err(|e| format!("cannot install output: {e}"))?;
-    println!("Created executable: {}", output.display());
+    controls.information(&format!("Created executable: {}", output.display()));
     Ok(0)
 }
 
-/// Convert expected diagnostics and I/O failures into stable nonzero process exits.
-fn main() -> ExitCode {
-    let arguments: Vec<_> = env::args_os().skip(1).collect();
-    let result = if arguments.first().is_some_and(|arg| arg == "test") {
-        doctest_cli::run(arguments)
+/// Dispatch only after global validation; data commands retain their own literal parsers.
+fn dispatch(arguments: Vec<OsString>, controls: cli_controls::Controls) -> Result<u8, String> {
+    controls.announce(&arguments);
+    if arguments.first().is_some_and(|arg| arg == "test") {
+        doctest_cli::run(arguments, controls)
     } else if arguments.first().is_some_and(|arg| arg == "doc") {
         documentation_cli::run(arguments)
     } else if arguments.first().is_some_and(|arg| arg == "repl") {
@@ -221,7 +243,7 @@ fn main() -> ExitCode {
             fern_prototype::repl::serve(
                 std::io::stdin().lock(),
                 std::io::stdout().lock(),
-                std::io::stdin().is_terminal(),
+                std::io::stdin().is_terminal() && !controls.quiet,
             )
             .map(|()| 0)
         }
@@ -233,12 +255,20 @@ fn main() -> ExitCode {
                 .map(|()| 0)
         }
     } else {
-        options(arguments).and_then(|options| options.map_or(Ok(0), run))
-    };
+        options(arguments, controls).and_then(|options| options.map_or(Ok(0), run))
+    }
+}
+
+/// Convert expected diagnostics and I/O failures into stable nonzero process exits.
+fn main() -> ExitCode {
+    let mut controls = cli_controls::Controls::default();
+    let result = controls
+        .arguments(env::args_os().skip(1).collect())
+        .and_then(|arguments| dispatch(arguments, controls));
     match result {
         Ok(code) => ExitCode::from(code),
         Err(message) => {
-            eprintln!("{message}");
+            controls.error(&message);
             ExitCode::FAILURE
         }
     }

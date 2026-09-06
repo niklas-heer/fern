@@ -4,6 +4,13 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 108 Preserve common CLI controls during Rust migration
+* **Date**: 2026-09-06
+* **Status**: Accepted for common output controls (108A)
+* **Decision**: I will parse bounded global quiet/verbose/color controls before subcommand dispatch while retaining literal option operands and all run arguments after `--`.
+* **Context**: A C/Rust command audit and failing regressions found missing common controls and an incorrect successful status for a missing command. The existing std-only parser can preserve the compatibility contract without a dependency change.
+* **Consequences**: Quiet hides check/build/test summaries and interactive prompts; errors, explicit help/version, generated data and native program streams remain visible. Verbose identifies the selected command on stderr. Color applies only to human compiler/test output; auto checks its actual terminal destination and NO_COLOR, while explicit always wins. `-v` aliases version. Bound arguments at4096 words/1MiB before dispatch, preserve non-UTF8 operands, and return status1 for a missing action. Rust emit-output/fmt-check extensions remain. Debug lex/parse commands, doc --open and default installation remain later scope. Source/runtime semantics and the shipping compiler are unchanged.
+
 ### 107 Incremental Rust lint and benchmark guidance
 * **Date**: 2026-09-06
 * **Status**: ✅ Adopted

@@ -1,5 +1,5 @@
 //! Explicit native documentation-test command with bounded discovery and execution.
-use super::native;
+use super::{cli_controls::Controls, native};
 use fern_prototype::{check, doctest, ir, modules, qbe, unit_test};
 use std::{
     collections::HashMap,
@@ -16,7 +16,7 @@ struct Options {
 }
 
 /// Run source-owned examples in independent native processes and report every failed example.
-pub(super) fn run(arguments: Vec<OsString>) -> Result<u8, String> {
+pub(super) fn run(arguments: Vec<OsString>, controls: Controls) -> Result<u8, String> {
     if arguments.len() == 2 && (arguments[1] == "--help" || arguments[1] == "-h") {
         println!("Usage: fern-rs test [--doc] [source.fn|directory] [--timeout seconds]\nExecute zero-argument test_ functions and fenced Fern documentation examples. --doc runs only documentation examples and # => pattern expectations.\nDefaults to the current directory and a 10-second timeout per example (1–60).\nExamples execute user code. Unit tests must return Unit or Result(Unit, E). Assertion libraries, coverage, benchmarks and watch mode are not yet supported.");
         return Ok(0);
@@ -30,14 +30,17 @@ pub(super) fn run(arguments: Vec<OsString>) -> Result<u8, String> {
     let mut bytes = 0;
     for file in files {
         let source = read_source(&file, &mut bytes)?;
-        run_file(&file, &source, &options, &mut totals)?;
+        run_file(&file, &source, &options, &mut totals, controls)?;
     }
     let label = if options.doc_only {
         "doc tests"
     } else {
         "tests"
     };
-    println!("{label}: {}/{} passed", totals.passed, totals.total);
+    controls.information(&format!(
+        "{label}: {}/{} passed",
+        totals.passed, totals.total
+    ));
     Ok(u8::from(totals.passed != totals.total))
 }
 
@@ -67,6 +70,7 @@ fn run_file(
     source: &str,
     options: &Options,
     totals: &mut Totals,
+    controls: Controls,
 ) -> Result<(), String> {
     let examples = doctest::extract(source)
         .map_err(|error| format!("{}: {}", path.display(), error.message))?;
@@ -82,7 +86,15 @@ fn run_file(
     }
     for case in units {
         let result = execute_unit(path, source, &case, options.timeout);
-        record(path, source, case.span.start, &case.name, result, totals);
+        record(
+            path,
+            source,
+            case.span.start,
+            &case.name,
+            result,
+            totals,
+            controls,
+        );
     }
     for example in examples {
         let result = execute(path, source, &example, options.timeout);
@@ -93,6 +105,7 @@ fn run_file(
             &format!("doc example {}", example.ordinal),
             result,
             totals,
+            controls,
         );
     }
     Ok(())
@@ -106,12 +119,16 @@ fn record(
     label: &str,
     result: Result<(), String>,
     totals: &mut Totals,
+    controls: Controls,
 ) {
     match result {
         Ok(()) => totals.passed += 1,
         Err(error) => {
             let line = source[..start].bytes().filter(|b| *b == b'\n').count() + 1;
-            eprintln!("{}:{line}: {label} failed: {error}", path.display());
+            controls.error(&format!(
+                "{}:{line}: {label} failed: {error}",
+                path.display()
+            ));
         }
     }
 }
