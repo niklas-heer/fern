@@ -41,6 +41,13 @@ This document tracks major architectural and technical decisions made during the
 
 The union follow-on extends this verified profile to 38 accepted sources, 12 recovery cases and 13 incremental edits. Structural assertions distinguish functions returning unions from function-valued union members, and typed binders from wildcards. Module-alias fixtures use real Rust module graphs; native/WASM trees and highlight captures agree. Both generated WASM artifacts are 110,316 bytes with SHA256 `fccdfd05b2db4117680058e3d6fe2c39bd8d13c02ed24d95486cb79b218d1f0a`. Broader syntax and extension packaging remain open.
 
+The control/collection follow-through verifies 69 accepted sources, 20 malformed
+inputs and 22 incremental edits with fresh per-run native caches. A serialized
+post-dedent separator and exact 1 MiB indentation boundary prevent cross-line
+calls and unbounded scanner work. Three named malformed inline for/with headers
+still absorb the following declaration; their exact error ranges remain tracked,
+without a full-recovery claim.
+
 ### 83 Directional finite unions and typed narrowing
 * **Date**: 2026-09-06
 * **Status**: Accepted for the bounded first checkpoint

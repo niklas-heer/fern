@@ -870,3 +870,15 @@ Its legacy packed Option and other recorded C limitations remain separate.
 The previous 1006-test checkpoint also passes C/Rust/docs gates on Linux arm64
 with Rust 1.75; this does not establish Linux amd64, current performance or default
 migration readiness. Full checker workflow parity is still being integrated.
+
+## Editor control and collection syntax — 2026-09-06
+
+The pinned editor grammar covers for/with, ranges, map literals and record updates,
+condition matches, defer and loop control. Native and WASM parsers agree across
+69 valid Rust-checked sources, 20 malformed inputs and 22 incremental edits.
+The scanner preserves post-dedent expression boundaries and rejects indentation
+beyond 1 MiB. Fresh native caches prevent results from another grammar snapshot.
+
+Three explicitly tracked malformed inline headers still absorb the following
+declaration. Full recovery, remaining syntax and Zed packaging stay open; see
+[the exact editor contract](../editor/tree-sitter-fern/README.md).

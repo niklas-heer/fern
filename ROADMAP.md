@@ -214,6 +214,8 @@ Do not interpret the historical Gate A–D labels as language completion.
 
 - [x] Reproducible Tree-sitter aliases/newtypes/function-clause checkpoint: native/WASM accepted/recovery/incremental corpus, executable editor queries, bounded scanner and pinned generated artifacts (Decision 84).
 - [x] Extend the pinned editor grammar to finite unions, function-type precedence and typed narrowing; verify 38 accepted, 12 recovery and 13 incremental sources with native/WASM structural equivalence.
+- [x] Verify control/collection editor syntax against 69 Rust-checked programs, 20 malformed inputs and 22 native/WASM edits; isolate parser caches and enforce the exact 1 MiB scanner boundary.
+- [ ] Recover the following declaration after malformed inline for/with headers (three named exact-range regression gaps).
 - [ ] Complete Tree-sitter parity for remaining Rust syntax and verify Zed grammar registration/extension packaging.
 - [ ] Execute actor functions with suspension, typed messages/receive/timeouts, and descendant supervision lifecycle.
 - [x] Immutable native JSON parser/accessors/stringifier with exact numbers, Unicode validation and bounded resources (14,309 API checks, 24 budget checks and 6,000 numeric oracle cases in debug/release/sanitizer builds).

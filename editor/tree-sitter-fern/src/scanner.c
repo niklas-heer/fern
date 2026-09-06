@@ -11,6 +11,7 @@ enum TokenType { NEWLINE, INDENT, DEDENT };
 typedef struct {
     uint32_t columns[INDENT_LEVELS];
     uint16_t count;
+    bool boundary;
 } Scanner;
 _Static_assert(2 + 4 * INDENT_LEVELS <= TREE_SITTER_SERIALIZATION_BUFFER_SIZE,
                "complete indentation state must fit Tree-sitter serialization");
@@ -38,7 +39,7 @@ unsigned tree_sitter_fern_external_scanner_serialize(void *payload, char *buffer
     const Scanner *scanner = payload;
     if (scanner == NULL || scanner->count == 0 || scanner->count > INDENT_LEVELS) return 0;
     buffer[0] = (char)(scanner->count & 255);
-    buffer[1] = (char)(scanner->count >> 8);
+    buffer[1] = scanner->boundary ? (char)128 : 0;
     for (unsigned i = 0; i < scanner->count; i++) {
         for (unsigned byte = 0; byte < 4; byte++) {
             buffer[2 + i * 4 + byte] = (char)(scanner->columns[i] >> (byte * 8));
@@ -53,7 +54,8 @@ void tree_sitter_fern_external_scanner_deserialize(void *payload, const char *bu
     if (scanner == NULL) return;
     reset(scanner);
     if (length < 6 || length > 2 + 4 * INDENT_LEVELS) return;
-    unsigned count = (unsigned char)buffer[0] | (unsigned char)buffer[1] << 8;
+    unsigned count = (unsigned char)buffer[0];
+    if (((unsigned char)buffer[1] & 127) != 0) return;
     if (count == 0 || count > INDENT_LEVELS || length != 2 + 4 * count) return;
     for (unsigned i = 0; i < count; i++) {
         uint32_t column = 0;
@@ -67,6 +69,7 @@ void tree_sitter_fern_external_scanner_deserialize(void *payload, const char *bu
         scanner->columns[i] = column;
     }
     scanner->count = (uint16_t)count;
+    scanner->boundary = (unsigned char)buffer[1] == 128;
 }
 
 /** Consume exactly one logical line ending when requested; CRLF remains a single newline token. */
@@ -81,15 +84,23 @@ static bool newline(TSLexer *lexer, const bool *valid) {
 }
 
 /** Emit one bounded indentation transition, preserving remaining dedents for subsequent scans. */
-static bool indentation(Scanner *scanner, TSLexer *lexer, const bool *valid, uint32_t column) {
+static bool indentation(Scanner *scanner, TSLexer *lexer, const bool *valid, uint32_t column, bool at_start) {
     uint32_t current = scanner->columns[scanner->count - 1];
     if (valid[DEDENT] && scanner->count > 1 && (lexer->eof(lexer) || column < current)) {
         scanner->count--;
+        scanner->boundary = !lexer->eof(lexer) && lexer->lookahead != ')' &&
+            lexer->lookahead != ']' && lexer->lookahead != '}' && lexer->lookahead != ',';
         lexer->result_symbol = DEDENT;
         lexer->mark_end(lexer);
         return true;
     }
-    if (valid[INDENT] && !lexer->eof(lexer) && column > current && column <= COLUMN_MAX && scanner->count < INDENT_LEVELS) {
+    if (scanner->boundary && valid[NEWLINE] && column >= current) {
+        scanner->boundary = false;
+        lexer->result_symbol = NEWLINE;
+        lexer->mark_end(lexer);
+        return true;
+    }
+    if (at_start && valid[INDENT] && !lexer->eof(lexer) && column > current && column <= COLUMN_MAX && scanner->count < INDENT_LEVELS) {
         scanner->columns[scanner->count++] = column;
         lexer->result_symbol = INDENT;
         lexer->mark_end(lexer);
@@ -108,7 +119,8 @@ bool tree_sitter_fern_external_scanner_scan(void *payload, TSLexer *lexer, const
         lexer->advance(lexer, true);
         spaces++;
     }
-    if (lexer->lookahead == '\t' || lexer->lookahead == '#') return false;
+    if (lexer->lookahead == ' ' || lexer->lookahead == '\t' || lexer->lookahead == '#') return false;
     if (newline(lexer, valid)) return true;
-    return indentation(scanner, lexer, valid, lexer->get_column(lexer));
+    return indentation(scanner, lexer, valid, lexer->get_column(lexer),
+                       lexer->get_column(lexer) == spaces);
 }

@@ -1,8 +1,10 @@
 ; AUTO-GENERATED from scripts/editor/highlights.scm.in. Edit the authored template.
-["fn" "type" "newtype" "pub" "import" "as" "let" "if" "else" "match" "return"] @keyword
+["fn" "type" "newtype" "pub" "import" "as" "let" "if" "else" "match" "return" "for" "in" "with" "do" "defer"] @keyword
+(break_expression) @keyword
+(continue_expression) @keyword
 ["and" "or" "not"] @keyword.operator
 ["true" "false"] @constant.builtin
-["+" "-" "*" "/" "%" "**" "==" "!=" "<" "<=" ">" ">=" "|>" "&&&" "|||" "^^^" "<<<" ">>>" "~~~" "=" "->" "?" "|"] @operator
+["+" "-" "*" "/" "%" "**" "==" "!=" "<" "<=" ">" ">=" "|>" "&&&" "|||" "^^^" "<<<" ">>>" "~~~" "=" "->" "?" "|" "<-" "..="] @operator
 ["(" ")" "[" "]" "{" "}"] @punctuation.bracket
 ["," ":" "." ".."] @punctuation.delimiter
 (integer_literal) @number
@@ -17,6 +19,7 @@
 (function_definition name: (identifier) @function)
 (call_expression function: (expression (identifier) @function.call))
 (parameter pattern: (pattern (identifier) @variable.parameter))
+(update_field name: (identifier) @property)
 (member_access member: (identifier) @property)
 (newtype_definition constructor: (type_identifier) @constructor)
 (constructor_pattern (type_identifier) @constructor)

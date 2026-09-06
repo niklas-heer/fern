@@ -331,56 +331,579 @@
       "paths": [
         ".//typed_pattern/type/unit_type"
       ]
+    },
+    {
+      "name": "control_arguments",
+      "source": "fn mark(n: Int) -> Int:\n    println(n)\n    n\nfn combine(a: Int, b: Int, c: Int) -> Int:\n    println(\"called\")\n    a + b + c\nfn early() -> Int:\n    defer println(\"cleanup\")\n    combine(mark(1), return 7, mark(3))\nfn literal() -> Int:\n    [mark(4), return 8, mark(6)]\nfn id(value: a) -> a: value\nfn generic() -> Int: id(return 9)\nfn main():\n    println(early())\n    println(literal())\n    println(generic())\n",
+      "nodes": [
+        "defer_statement",
+        "return_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/control/arguments.fn"
+    },
+    {
+      "name": "control_branches",
+      "source": "fn floating(flag: Bool) -> Float:\n    if flag: return 1.25\n    2.5\nfn both(flag: Bool) -> Int:\n    if flag: return 4294967296 else: return -4294967296\nfn matching(flag: Bool) -> String:\n    match flag:\n        true -> return \"yes\"\n        false -> return \"no\"\nfn short(flag: Bool) -> Int:\n    flag and (return 8)\n    9\nfn main():\n    println(floating(true))\n    println(floating(false))\n    println(both(true))\n    println(both(false))\n    println(matching(true))\n    println(matching(false))\n    println(short(true))\n    println(short(false))\n",
+      "nodes": [
+        "return_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/control/branches.fn"
+    },
+    {
+      "name": "control_conditions",
+      "source": "fn test(value: Int, limit: Int) -> Bool:\n    println(limit)\n    value < limit\nfn choose(value: Int) -> Int:\n    match:\n        test(value, 0) -> return -1\n        test(value, 10) -> 1\n        _ -> 2\nfn main():\n    println(choose(-5))\n    println(choose(5))\n    println(choose(50))\n",
+      "nodes": [
+        "condition_match",
+        "return_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/control/conditions.fn"
+    },
+    {
+      "name": "control_defers",
+      "source": "fn work(early: Bool) -> Int:\n    let snapshot = 1\n    defer println(snapshot)\n    let snapshot = 2\n    defer println(snapshot)\n    if early:\n        defer println(\"conditional\")\n        println(\"body\")\n    println(\"after block\")\n    return 7 if early\n    9\nfn main():\n    println(work(true))\n    println(work(false))\n",
+      "nodes": [
+        "defer_statement",
+        "return_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/control/defers.fn",
+      "paths": [
+        ".//postfix_if_expression/expression/return_statement"
+      ]
+    },
+    {
+      "name": "control_errors",
+      "source": "fn fail() -> Result(Int, Float): Err(1.25)\nfn inner() -> Result(Int, Float):\n    defer println(\"inner\")\n    let value = fail()?\n    Ok(value)\nfn outer() -> Result(Int, Float):\n    defer println(\"outer\")\n    let value = inner()?\n    Ok(value)\nfn captured() -> Int:\n    let result: Result(Int, String) = Ok(4294967296)\n    defer println(Result.unwrap_or(result, 0))\n    3\nfn main():\n    match outer():\n        Ok(value) -> println(value)\n        Err(error) -> println(error)\n    println(captured())\n",
+      "nodes": [
+        "defer_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/control/errors.fn"
+    },
+    {
+      "name": "control_lambdas",
+      "source": "fn cleanup() -> ():\n    defer println(\"cleanup's cleanup\")\n    println(\"cleanup body\")\nfn outer() -> Int:\n    defer println(\"outer\")\n    let callback = () ->\n        defer cleanup()\n        return 3\n    let value = callback()\n    println(\"after callback\")\n    value + 10\nfn main(): println(outer())\n",
+      "nodes": [
+        "defer_statement",
+        "return_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/control/lambdas.fn"
+    },
+    {
+      "name": "control_let_else",
+      "source": "fn unwrap(value: Option((Int, Bool))) -> Int:\n    defer println(\"unwrapped\")\n    let Some((number, true)) = value else:\n        return -1\n    number + 1\nfn main():\n    println(unwrap(Some((41, true))))\n    println(unwrap(Some((41, false))))\n    println(unwrap(None))\n",
+      "nodes": [
+        "defer_statement",
+        "return_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/control/let_else.fn"
+    },
+    {
+      "name": "control_return_value",
+      "source": "fn mark(value: String) -> String:\n    println(value)\n    value\nfn saved(early: Bool) -> String:\n    let text = \"cleanup\"\n    defer println(mark(text))\n    return mark(\"early\") if early\n    mark(\"implicit\")\nfn main():\n    println(saved(true))\n    println(saved(false))\n",
+      "nodes": [
+        "defer_statement",
+        "return_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/control/return_value.fn"
+    },
+    {
+      "name": "control_stress",
+      "source": "fn retain(depth: Int) -> String:\n    let value = \"saved {depth}\"\n    defer println(value) if depth == 0 or depth == 256\n    if depth == 0: return value\n    let nested = retain(depth - 1)\n    value\nfn main(): println(retain(256))\n",
+      "nodes": [
+        "defer_statement",
+        "return_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/control/stress.fn"
+    },
+    {
+      "name": "iteration_captures",
+      "source": "fn capture() -> () -> Int:\n    for value in [42]:\n        defer println(\"leaving\")\n        return () -> value\n    () -> 0\nfn main():\n    let callback = capture()\n    println(callback())\n",
+      "nodes": [
+        "for_expression",
+        "defer_statement",
+        "return_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/iteration/captures.fn",
+      "paths": [
+        ".//for_expression/block/expression_statement/expression/return_statement/expression/lambda_expression",
+        ".//function_definition/block/expression_statement/expression/lambda_expression"
+      ]
+    },
+    {
+      "name": "iteration_collections",
+      "source": "fn values() -> List(Float):\n    println(\"values\")\n    [1.25, 2.5]\nfn main():\n    for (index, value) in values().enumerate():\n        println(value)\n    let names = [\"x\", \"y\"]\n    for (index, name) in names.enumerate():\n        println(\"{index}={name}\")\n    for (index, value) in List.enumerate([1.25, 2.5]):\n        println(index)\n        println(value)\n    for (key, value) in %{ \"first\": 4294967296, \"second\": -4294967296 }:\n        println(key)\n        println(value)\n    for (key, value) in %{true: 1.25, false: 2.5}:\n        println(key)\n        println(value)\n",
+      "nodes": [
+        "for_expression",
+        "map_literal"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/iteration/collections.fn"
+    },
+    {
+      "name": "iteration_defers",
+      "source": "fn walk() -> ():\n    for n in 0..4:\n        continue if n == 1\n        defer println(n)\n        break if n == 2\n        println(n)\n    println(\"done\")\nfn main(): walk()\n",
+      "nodes": [
+        "for_expression",
+        "defer_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/iteration/defers.fn"
+    },
+    {
+      "name": "iteration_nested",
+      "source": "fn main():\n    for i in 0..2:\n        for j in 0..3:\n            break if j == 1\n            println(i * 10 + j)\n        println(\"outer\")\n    for i in 0..3:\n        continue if i == 1\n        println(i)\n",
+      "nodes": [
+        "for_expression"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/iteration/nested.fn"
+    },
+    {
+      "name": "iteration_order",
+      "source": "fn mark(n: Int) -> Int:\n    println(n)\n    n\nfn items() -> List(Int):\n    println(\"items\")\n    [4, 5]\nfn main():\n    for n in mark(0)..mark(3):\n        println(n)\n    for n in items():\n        println(n)\n",
+      "nodes": [
+        "for_expression"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/iteration/order.fn"
+    },
+    {
+      "name": "iteration_ranges",
+      "source": "fn main():\n    for n in 9223372036854775806..=9223372036854775807:\n        println(n)\n    for n in -9223372036854775808..-9223372036854775806:\n        println(n)\n    for n in 3..1:\n        println(\"wrong\")\n    for n in 2..2:\n        println(\"wrong\")\n    for n in 2..=2:\n        println(n)\n",
+      "nodes": [
+        "for_expression"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/iteration/ranges.fn"
+    },
+    {
+      "name": "iteration_values",
+      "source": "type Interval:\n    bounds: Range\nfn bounds() -> Range: 2..=3\nfn main():\n    let intervals = [Interval(0..2), Interval(bounds())]\n    for interval in intervals:\n        for value in interval.bounds:\n            println(value)\n    let captured = bounds()\n    let show = () ->\n        for value in captured:\n            println(value)\n    show()\n",
+      "nodes": [
+        "for_expression"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/iteration/values.fn"
+    },
+    {
+      "name": "iteration_with_loop",
+      "source": "fn step(n: Int) -> Result(Int, Int):\n    return Err(0) if n == 0\n    return Err(1) if n == 2\n    Ok(n + 10)\nfn execute() -> ():\n    for value in 0..4:\n        defer println(value)\n        with\n            number <- step(value)\n        do\n            println(number)\n        else\n            Err(0) -> continue\n            Err(1) -> break\n            Err(_) -> return ()\n        println(\"after\")\n    println(\"finished\")\nfn main(): execute()\n",
+      "nodes": [
+        "for_expression",
+        "with_expression",
+        "defer_statement",
+        "return_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/iteration/with_loop.fn"
+    },
+    {
+      "name": "with_cleanup",
+      "source": "fn fail() -> Result(Int, String): Err(\"bad\")\nfn forward() -> Result(Int, String):\n    defer println(\"forward cleanup\")\n    with\n        value <- fail()\n    do\n        println(\"wrong\")\n        Ok(value)\nfn recover() -> Int:\n    defer println(\"recover cleanup\")\n    with\n        value <- fail()\n    do\n        return value\n    else\n        Err(_) -> return 9\nfn main():\n    println(Result.is_err(forward()))\n    println(recover())\n",
+      "nodes": [
+        "with_expression",
+        "defer_statement",
+        "return_statement"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/with/cleanup.fn"
+    },
+    {
+      "name": "with_generic",
+      "source": "fn fallback(source: Result(a, Int), otherwise: a) -> a:\n    with\n        value <- source\n    do\n        value\n    else\n        Err(_) -> otherwise\nfn forward(source: Result(a, e)) -> Result(a, e):\n    with\n        value <- source\n    do\n        Ok(value)\nfn main():\n    println(fallback(Ok(1.25), 2.5))\n    println(fallback(Err(1), \"fallback\"))\n    let good: Result(Int, String) = Ok(4294967296)\n    println(Result.unwrap_or(forward(good), 0))\n    let failed: Result(Int, String) = Err(\"bad\")\n    match forward(failed):\n        Ok(value) -> println(value)\n        Err(error) -> println(error)\n",
+      "nodes": [
+        "with_expression"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/with/generic.fn"
+    },
+    {
+      "name": "with_guards",
+      "source": "fn guard(value: Bool) -> Bool:\n    println(\"guard\")\n    value\nfn execute() -> Int:\n    with\n        value <- failure()\n    do\n        value\n    else\n        Err(error) if guard(false) -> error\n        Err(error) if guard(true) -> error + 1\n        _ -> 0\nfn failure() -> Result(Int, Int): Err(4)\nfn main(): println(execute())\n",
+      "nodes": [
+        "with_expression"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/with/guards.fn"
+    },
+    {
+      "name": "with_heterogeneous",
+      "source": "type AuthFailure:\n    AuthError(message: String)\ntype LoadFailure:\n    LoadError(code: Int)\nfn auth(ok: Bool) -> Result(Int, AuthFailure):\n    println(\"auth\")\n    if ok: Ok(7) else: Err(AuthError(\"denied\"))\nfn load(id: Int, ok: Bool) -> Result(String, LoadFailure):\n    println(id)\n    if ok: Ok(\"done\") else: Err(LoadError(5))\nfn execute(auth_ok: Bool, load_ok: Bool) -> String:\n    with\n        id <- auth(auth_ok),\n        text <- load(id, load_ok)\n    do\n        text\n    else\n        Err(AuthError(message)) -> message\n        Err(LoadError(code)) -> \"failed {code}\"\nfn main():\n    println(execute(true, true))\n    println(execute(false, true))\n    println(execute(true, false))\n",
+      "nodes": [
+        "with_expression"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/with/heterogeneous.fn"
+    },
+    {
+      "name": "with_payloads",
+      "source": "fn source(ok: Bool) -> Result(Float, Float):\n    if ok: Ok(1.25) else: Err(-2.5)\nfn choose(ok: Bool) -> Float:\n    with\n        value <- source(ok)\n    do\n        value * 2.0\n    else\n        Err(error) -> error\nfn main():\n    println(choose(true))\n    println(choose(false))\n",
+      "nodes": [
+        "with_expression"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/with/payloads.fn"
+    },
+    {
+      "name": "with_scopes",
+      "source": "fn execute() -> Int:\n    let code = 99\n    with\n        code <- Ok(7),\n        value <- fail()\n    do\n        code + value\n    else\n        Err(error) -> code + error\nfn fail() -> Result(Int, Int): Err(5)\nfn main(): println(execute())\n",
+      "nodes": [
+        "with_expression"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/with/scopes.fn"
+    },
+    {
+      "name": "maps_basics",
+      "source": "fn main():\n    let empty: Map(String, Int) = Map.new()\n    println(Map.is_empty(empty))\n    println(Map.len(empty))\n    println(Option.is_none(Map.get(empty, \"absent\")))\n    println(Map.len(Map.delete(empty, \"absent\")))\n    println(List.len(Map.keys(empty)))\n    println(List.len(Map.values(empty)))\n    let original = %{\"a\": 1, \"b\": 2, \"a\": 3}\n    println(Map.len(original))\n    println(Option.unwrap_or(Map.get(original, \"a\"), 0))\n    println(Map.contains(original, \"b\"))\n    println(Map.contains(original, \"absent\"))\n    let updated = Map.put(original, \"a\", 9)\n    println(Option.unwrap_or(Map.get(original, \"a\"), 0))\n    println(Option.unwrap_or(Map.get(updated, \"a\"), 0))\n    println(List.get(Map.keys(updated), 0))\n    println(List.get(Map.keys(updated), 1))\n    let deleted = Map.delete(updated, \"a\")\n    println(Map.len(updated))\n    println(Map.len(deleted))\n    println(Option.is_none(Map.get(deleted, \"a\")))\n    let reinserted = Map.put(deleted, \"a\", 11)\n    println(List.get(Map.keys(reinserted), 0))\n    println(List.get(Map.keys(reinserted), 1))\n    println(List.get(Map.values(reinserted), 0))\n    println(List.get(Map.values(reinserted), 1))\n    println(Map.is_empty(Map.delete(%{1: 2}, 1)))\n",
+      "nodes": [
+        "map_literal"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/maps/basics.fn"
+    },
+    {
+      "name": "maps_keys",
+      "source": "fn main():\n    let text = %{\"\ud83c\udf3f key\": 1, \"quote\\\"key\": 2, \"\": 3}\n    let same = String.concat(\"\ud83c\udf3f \", \"key\")\n    println(Option.unwrap_or(Map.get(text, same), 0))\n    let changed = Map.put(text, same, 4)\n    println(Map.len(changed))\n    println(Option.unwrap_or(Map.get(changed, \"\ud83c\udf3f key\"), 0))\n    println(Option.unwrap_or(Map.get(text, same), 0))\n    println(Option.unwrap_or(Map.get(changed, \"quote\\\"key\"), 0))\n    println(Option.unwrap_or(Map.get(changed, \"\"), 0))\n    let integers = %{-9223372036854775808: \"min\", 9223372036854775807: \"max\", 4294967296: \"wide\", 0: \"zero\"}\n    println(Option.unwrap_or(Map.get(integers, -9223372036854775808), \"missing\"))\n    println(Option.unwrap_or(Map.get(integers, 9223372036854775807), \"missing\"))\n    println(Option.unwrap_or(Map.get(integers, 4294967296), \"missing\"))\n    println(Option.unwrap_or(Map.get(integers, 0), \"missing\"))\n    let flags = %{true: 4294967296, false: -4294967296}\n    println(Option.unwrap_or(Map.get(flags, true), 0))\n    println(Option.unwrap_or(Map.get(flags, false), 0))\n    println(List.head(Map.keys(flags)))\n",
+      "nodes": [
+        "map_literal"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/maps/keys.fn"
+    },
+    {
+      "name": "maps_order",
+      "source": "fn key(value: Int) -> Int:\n    println(value)\n    value\nfn value(value: Int) -> Int:\n    println(value)\n    value\nfn initial() -> Map(Int, Int):\n    println(\"map\")\n    %{1: 7}\nfn main():\n    let entries = %{key(1): value(10), key(2): value(20), key(1): value(30)}\n    println(List.get(Map.keys(entries), 0))\n    println(List.get(Map.keys(entries), 1))\n    println(Option.unwrap_or(Map.get(entries, 1), 0))\n    let changed = Map.put(initial(), key(1), value(40))\n    println(Option.unwrap_or(Map.get(changed, 1), 0))\n",
+      "nodes": [
+        "map_literal"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/maps/order.fn"
+    },
+    {
+      "name": "maps_record_update",
+      "source": "type Item:\n    first: Int\n    second: String\n    ratio: Float\n    callback: (Int) -> Int\nfn base() -> Item:\n    println(\"base\")\n    Item(1, \"original\", 1.25, (x) -> x + 1)\nfn integer() -> Int:\n    println(\"integer\")\n    42\nfn text() -> String:\n    println(\"text\")\n    \"changed\"\nfn main():\n    let original = base()\n    let changed = %{original | second: text(), first: integer()}\n    println(original.first)\n    println(original.second)\n    println(changed.first)\n    println(changed.second)\n    println(changed.ratio)\n    println(changed.callback(41))\n    let temporary = %{base() | ratio: 3.75}\n    println(temporary.first)\n    println(temporary.ratio)\n",
+      "nodes": [
+        "record_update"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/maps/record_update.fn"
+    },
+    {
+      "name": "maps_stress",
+      "source": "fn grow(n: Int, state: Map(Int, () -> Int)) -> Map(Int, () -> Int):\n    if n == 0:\n        state\n    else:\n        grow(n - 1, Map.put(state, n, () -> n + 4294967296))\nfn main():\n    let original: Map(Int, () -> Int) = %{}\n    let full = grow(256, original)\n    println(Map.len(original))\n    println(Map.len(full))\n    println(Option.unwrap_or(Map.get(full, 256), () -> 0)())\n    println(Option.unwrap_or(Map.get(full, 1), () -> 0)())\n    let replaced = Map.put(full, 256, () -> 7)\n    println(Option.unwrap_or(Map.get(full, 256), () -> 0)())\n    println(Option.unwrap_or(Map.get(replaced, 256), () -> 0)())\n    let deleted = Map.delete(replaced, 128)\n    println(Map.len(deleted))\n    println(Map.contains(full, 128))\n    println(Map.contains(deleted, 128))\n",
+      "nodes": [
+        "map_literal"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/maps/stress.fn"
+    },
+    {
+      "name": "maps_values",
+      "source": "type Item:\n    value: Float\nfn okay() -> Result(Int, String): Ok(9223372036854775807)\nfn broken() -> Result(Int, String): Err(\"stored failure\")\nfn main():\n    let floats = %{1: 1.25, 2: -2.5}\n    println(Option.unwrap_or(Map.get(floats, 1), 0.0))\n    println(List.get(Map.values(floats), 1))\n    let records = %{\"record\": Item(3.75)}\n    println(Option.unwrap_or(Map.get(records, \"record\"), Item(0.0)).value)\n    let callbacks = %{1: (x: Int) -> x + 1, 2: (x: Int) -> x * 2}\n    let action = Option.unwrap_or(Map.get(callbacks, 2), (x: Int) -> 0)\n    println(action(21))\n    println(List.head(Map.values(callbacks))(41))\n    let results = %{\"ok\": okay(), \"err\": broken()}\n    match Map.get(results, \"ok\"):\n        Some(Ok(value)) -> println(value)\n        _ -> println(0)\n    match Map.get(results, \"err\"):\n        Some(Err(message)) -> println(message)\n        _ -> println(\"missing\")\n    let units = %{1: ()}\n    println(Map.contains(units, 1))\n    let empty: Map(Int, String) = %{}\n    let maker: () -> Map(Int, String) = Map.new\n    println(Map.len(maker()))\n    let get: (Map(Int, String), Int) -> Option(String) = Map.get\n    println(Option.is_none(get(empty, 1)))\n",
+      "nodes": [
+        "map_literal"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/maps/values.fn"
+    },
+    {
+      "name": "workflow_queries",
+      "source": "type Name = String\nnewtype Id = Id(Int)\nfn unwrap(Id(value): Id) -> Int: value\ntype Choice = Int | String\nfn size(value:Choice)->Int:\n    match value:\n        number:Int -> number\n        _:String -> 0\ntype Entry:\n    count: Int\nfn workflow() -> Result(Int, String):\n    defer println(\"done\")\n    let original = Entry(0)\n    let updated = %{original | count: 1}\n    let values = %{\"x\": updated.count}\n    for index in 0..=1:\n        continue if index == 0\n        break\n    with\n        value <- Ok(Map.len(values))\n    do\n        Ok(value)\n    else\n        Err(message) -> Err(message)\nfn following() -> Int: 1\n",
+      "nodes": [
+        "for_expression",
+        "with_expression",
+        "map_literal",
+        "record_update",
+        "defer_statement",
+        "continue_expression",
+        "break_expression"
+      ],
+      "paths": [
+        ".//with_expression/with_bindings/with_binding",
+        ".//with_expression/with_handlers/match_arm"
+      ],
+      "rust_fixture": "editor/tree-sitter-fern/test/parity/queries.fn"
+    },
+    {
+      "name": "arithmetic_precedence",
+      "source": "fn power()->Int: -2 ** 2 + 1\n",
+      "nodes": [
+        "binary_expression",
+        "unary_expression"
+      ],
+      "paths": [
+        ".//binary_expression/expression/binary_expression/expression/unary_expression"
+      ]
     }
   ],
   "invalid": [
     {
       "name": "newtype_missing_close",
-      "source": "newtype Id = Id(Int\nfn after(): 0\n"
+      "source": "newtype Id = Id(Int\nfn after(): 0\n",
+      "error_ranges": [
+        [
+          "MISSING \")\"",
+          19,
+          19
+        ]
+      ]
     },
     {
       "name": "newtype_missing_payload",
-      "source": "newtype Id = Id()\nfn after(): 0\n"
+      "source": "newtype Id = Id()\nfn after(): 0\n",
+      "error_ranges": [
+        [
+          "MISSING identifier",
+          16,
+          16
+        ]
+      ]
     },
     {
       "name": "incomplete_guard",
-      "source": "fn broken(x: Int) if : 0\nfn after(): 0\n"
+      "source": "fn broken(x: Int) if : 0\nfn after(): 0\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          18,
+          20
+        ]
+      ]
     },
     {
       "name": "wrong_dedent",
-      "source": "fn broken():\n    if true:\n        1\n  2\nfn after(): 0\n"
+      "source": "fn broken():\n    if true:\n        1\n  2\nfn after(): 0\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          38,
+          39
+        ]
+      ]
     },
     {
       "name": "tab_indent",
-      "source": "fn broken():\n\t1\nfn after(): 0\n"
+      "source": "fn broken():\n\t1\nfn after(): 0\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          12,
+          13
+        ]
+      ]
     },
     {
       "name": "unclosed_parameter",
-      "source": "fn broken(:\nfn after(): 0\n"
+      "source": "fn broken(:\nfn after(): 0\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          0,
+          11
+        ]
+      ]
     },
     {
       "name": "missing_separator",
-      "source": "fn broken() 42\nfn after(): 0\n"
+      "source": "fn broken() 42\nfn after(): 0\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          0,
+          14
+        ]
+      ]
     },
     {
       "name": "deep_indent",
-      "source": "fn broken():\n    if true:\n        if true:\n            if true:\n                if true:\n                    if true:\n                        if true:\n                            if true:\n                                if true:\n                                    if true:\n                                        if true:\n                                            if true:\n                                                if true:\n                                                    if true:\n                                                        if true:\n                                                            if true:\n                                                                if true:\n                                                                    if true:\n                                                                        if true:\n                                                                            if true:\n                                                                                if true:\n                                                                                    if true:\n                                                                                        if true:\n                                                                                            if true:\n                                                                                                if true:\n                                                                                                    if true:\n                                                                                                        if true:\n                                                                                                            if true:\n                                                                                                                if true:\n                                                                                                                    if true:\n                                                                                                                        if true:\n                                                                                                                            if true:\n                                                                                                                                if true:\n                                                                                                                                    if true:\n                                                                                                                                        if true:\n                                                                                                                                            if true:\n                                                                                                                                                if true:\n                                                                                                                                                    if true:\n                                                                                                                                                        if true:\n                                                                                                                                                            if true:\n                                                                                                                                                                if true:\n                                                                                                                                                                    if true:\n                                                                                                                                                                        if true:\n                                                                                                                                                                            if true:\n                                                                                                                                                                                if true:\n                                                                                                                                                                                    if true:\n                                                                                                                                                                                        if true:\n                                                                                                                                                                                            if true:\n                                                                                                                                                                                                if true:\n                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        0\nfn after(): 0\n"
+      "source": "fn broken():\n    if true:\n        if true:\n            if true:\n                if true:\n                    if true:\n                        if true:\n                            if true:\n                                if true:\n                                    if true:\n                                        if true:\n                                            if true:\n                                                if true:\n                                                    if true:\n                                                        if true:\n                                                            if true:\n                                                                if true:\n                                                                    if true:\n                                                                        if true:\n                                                                            if true:\n                                                                                if true:\n                                                                                    if true:\n                                                                                        if true:\n                                                                                            if true:\n                                                                                                if true:\n                                                                                                    if true:\n                                                                                                        if true:\n                                                                                                            if true:\n                                                                                                                if true:\n                                                                                                                    if true:\n                                                                                                                        if true:\n                                                                                                                            if true:\n                                                                                                                                if true:\n                                                                                                                                    if true:\n                                                                                                                                        if true:\n                                                                                                                                            if true:\n                                                                                                                                                if true:\n                                                                                                                                                    if true:\n                                                                                                                                                        if true:\n                                                                                                                                                            if true:\n                                                                                                                                                                if true:\n                                                                                                                                                                    if true:\n                                                                                                                                                                        if true:\n                                                                                                                                                                            if true:\n                                                                                                                                                                                if true:\n                                                                                                                                                                                    if true:\n                                                                                                                                                                                        if true:\n                                                                                                                                                                                            if true:\n                                                                                                                                                                                                if true:\n                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if true:\n                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        0\nfn after(): 0\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          33667,
+          33668
+        ],
+        [
+          "ERROR",
+          34188,
+          34189
+        ],
+        [
+          "ERROR",
+          34713,
+          34714
+        ]
+      ]
     },
     {
       "name": "union_missing_member",
-      "source": "type Value = Int |\nfn after() -> Int: 1\n"
+      "source": "type Value = Int |\nfn after() -> Int: 1\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          17,
+          18
+        ]
+      ]
     },
     {
       "name": "union_leading_bar",
-      "source": "type Value = | Int\nfn after() -> Int: 1\n"
+      "source": "type Value = | Int\nfn after() -> Int: 1\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          13,
+          14
+        ]
+      ]
     },
     {
       "name": "union_missing_group",
-      "source": "type Value = (Int | String\nfn after() -> Int: 1\n"
+      "source": "type Value = (Int | String\nfn after() -> Int: 1\n",
+      "error_ranges": [
+        [
+          "MISSING \")\"",
+          26,
+          26
+        ]
+      ]
     },
     {
       "name": "typed_missing_type",
-      "source": "fn bad(value: Int):\n    match value:\n        n: -> n\nfn after() -> Int: 1\n"
+      "source": "fn bad(value: Int):\n    match value:\n        n: -> n\nfn after() -> Int: 1\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          46,
+          47
+        ]
+      ]
+    },
+    {
+      "name": "known_gap_for_missing_in",
+      "source": "fn bad(): for x [1,2]: println(x)\nfn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          8,
+          44
+        ],
+        [
+          "ERROR",
+          10,
+          36
+        ],
+        [
+          "ERROR",
+          14,
+          30
+        ]
+      ],
+      "known_recovery_gap": "Malformed inline control header absorbs the following function declaration.",
+      "expected_functions": [
+        "bad"
+      ]
+    },
+    {
+      "name": "range_missing_end",
+      "source": "fn bad(): for x in 0..: println(x)\nfn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "MISSING identifier",
+          22,
+          22
+        ]
+      ]
+    },
+    {
+      "name": "known_gap_with_missing_arrow",
+      "source": "fn bad(): with x Ok(1) do x\nfn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          0,
+          46
+        ],
+        [
+          "ERROR",
+          15,
+          44
+        ]
+      ],
+      "known_recovery_gap": "Malformed inline control header absorbs the following function declaration.",
+      "expected_functions": []
+    },
+    {
+      "name": "known_gap_with_missing_do",
+      "source": "fn bad(): with x <- Ok(1)\nfn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          0,
+          44
+        ],
+        [
+          "ERROR",
+          15,
+          42
+        ]
+      ],
+      "known_recovery_gap": "Malformed inline control header absorbs the following function declaration.",
+      "expected_functions": []
+    },
+    {
+      "name": "map_missing_colon",
+      "source": "fn bad():\n    let x = %{1 2}\nfn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          24,
+          27
+        ]
+      ]
+    },
+    {
+      "name": "update_missing_value",
+      "source": "fn bad():\n    let x = %{record | value: }\nfn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "MISSING identifier",
+          39,
+          39
+        ]
+      ]
+    },
+    {
+      "name": "defer_missing_expression",
+      "source": "fn bad(): defer\nfn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "MISSING identifier",
+          15,
+          15
+        ]
+      ]
+    },
+    {
+      "name": "condition_missing_arrow",
+      "source": "fn bad():\n    match:\n        true 1\nfn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          29,
+          35
+        ]
+      ]
     }
   ],
   "edits": [
@@ -461,6 +984,78 @@
       "source": "fn size(value: Int | String)->Int:\n    match value:\n        n: Int -> n\n        _: String -> 0\n",
       "old": "n: Int",
       "new": "n: Int if n > 0"
+    },
+    {
+      "name": "inclusive_range",
+      "source": "fn main(): for n in 0..3: println(n)\n",
+      "old": "..",
+      "new": "..=",
+      "rust_check": true,
+      "complete": true
+    },
+    {
+      "name": "loop_control",
+      "source": "fn main():\n    for n in 0..3:\n        break if n == 1\n",
+      "old": "break",
+      "new": "continue",
+      "rust_check": true,
+      "complete": true
+    },
+    {
+      "name": "map_entry",
+      "source": "fn main():\n    let x = %{1: 2}\n",
+      "old": "1: 2",
+      "new": "1: 2, 3: 4",
+      "rust_check": true,
+      "complete": true
+    },
+    {
+      "name": "record_update_field",
+      "source": "type Entry:\n    first: Int\n    second: Int\nfn main():\n    let base = Entry(1, 2)\n    let x = %{base | first: 2}\n",
+      "old": "first: 2",
+      "new": "second: 4",
+      "rust_check": true,
+      "complete": true
+    },
+    {
+      "name": "with_handler",
+      "source": "fn source()->Result(Int,String):Ok(1)\nfn main(): with x <- source() do println(x) else Err(_) -> ()\n",
+      "old": "Err(_)",
+      "new": "Err(error)",
+      "rust_check": true,
+      "complete": true
+    },
+    {
+      "name": "defer_action",
+      "source": "fn main():\n    defer println(\"first\")\n    println(\"body\")\n",
+      "old": "first",
+      "new": "second",
+      "rust_check": true,
+      "complete": true
+    },
+    {
+      "name": "condition_fallback",
+      "source": "fn main():\n    match:\n        true -> 1\n        _ -> 2\n",
+      "old": "_ -> 2",
+      "new": "_ -> 3",
+      "rust_check": true,
+      "complete": true
+    },
+    {
+      "name": "loop_dedent_callback",
+      "source": "fn choose()->()->Int:\n    for x in [1]:\n        return () -> x\n    () -> 0\n",
+      "old": "    () -> 0",
+      "new": "    () -> 2",
+      "rust_check": true,
+      "complete": false
+    },
+    {
+      "name": "else_dedent_boundary",
+      "source": "fn choose(x:Bool)->Int:\n    if x:\n        1\n    else:\n        2\nfn following()->Int:3\n",
+      "old": "        1",
+      "new": "        4",
+      "rust_check": true,
+      "complete": false
     }
   ]
 }

@@ -68,15 +68,16 @@ def wasm(tool, runtime, directory, copied, update):
 def queries(tool, directory):
     """Compile every editor query natively against a representative declaration source."""
     source = directory / "queries.fn"
-    source.write_text('type Name = String\nnewtype Id = Id(Int)\nfn unwrap(Id(v): Id) -> Int: v\n'
-                      'type Choice = Int | String\nfn size(value:Choice)->Int:\n    match value:\n'
-                      '        number:Int -> number\n        _:String -> 0\n')
+    source.write_text((GRAMMAR / "test/parity/queries.fn").read_text())
     for name in ["highlights", "outline", "indents", "brackets"]:
         result = command([tool, "query", ZED / (name + ".scm"), source], GRAMMAR)
         assert "capture:" in result.stdout, name + " has no captures"
         if name == "highlights":
             for capture, text in [("operator", "|"), ("variable", "number"),
-                                  ("variable", "_"), ("type", "Choice")]:
+                                  ("variable", "_"), ("type", "Choice"),
+                                  ("keyword", "for"), ("keyword", "with"), ("keyword", "defer"),
+                                  ("keyword", "continue"), ("keyword", "break"),
+                                  ("operator", "<-"), ("operator", "..="), ("property", "count")]:
                 pattern = rf"- {capture},[^\n]*text: `{re.escape(text)}`"
                 assert re.search(pattern, result.stdout), (capture, text, result.stdout)
         if name == "outline":
@@ -110,6 +111,8 @@ def main():
     command([sys.executable, ROOT / "scripts/test_editor_generator.py"])
     with tempfile.TemporaryDirectory(prefix="fern-editor-gate-") as temporary:
         directory = Path(temporary)
+        # The CLI caches by grammar name; never reuse another snapshot's Fern library.
+        os.environ["XDG_CACHE_HOME"] = str(directory / "cache")
         copied = generate(args.tree_sitter, directory, args.update)
         scanner(directory)
         command([args.tree_sitter, "test"], GRAMMAR)

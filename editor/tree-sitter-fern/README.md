@@ -6,19 +6,22 @@ Never edit generated `grammar.js`, parser sources/headers, queries or WASM by ha
 `just editor-support` renders the templates unconditionally; `--check` on the
 Python generator detects drift without writing.
 
-Decision84 verifies aliases, newtypes, finite unions, typed narrowing and ordinary function clauses, including
-qualified/generic/function types, constructor/list/tuple patterns, guards, colon
-and arrow bodies, and the prerequisite expressions and indentation. The finite
-corpus contains 38 accepted sources, 12 recovery cases and 13 incremental
-edits, plus the original simple-function golden tree. Each accepted source is
-checked by the Rust compiler. Native and WASM parsers must preserve declaration
-identities, source byte ranges and the following declaration after malformed input.
-All four Zed queries compile and execute; outline/highlight captures are checked.
+Decision84 verifies aliases, newtypes, unions, typed narrowing, function clauses,
+control flow and collection expressions. The corpus contains 69 accepted sources,
+including 29 unchanged executable native fixtures, 20 malformed cases and 22
+incremental edits. Every accepted source checks with the Rust compiler. Native
+and WASM trees agree on node structure and UTF-8 byte ranges. Four Zed queries
+execute against the same checked source fixture.
 
-This is a bounded editor checkpoint. Full actor/with/for/map/record-update syntax,
-complete text/interpolation/comment behavior and remaining Rust language forms
-still need corpus-backed implementation. Zed grammar registration and extension
-packaging are separate open work; a valid parser module does not prove installation.
+Seventeen malformed cases retain the following declaration. Three named recovery
+gaps still absorb it after a missing `in`, `<-` or `do` in an inline header. Their
+exact current ERROR ranges and surviving declarations remain executable oracles;
+they are not claimed as successful recovery. Post-dedent callback expressions,
+else/with nesting, map updates, ranges and operator precedence have explicit tests.
+
+This is a bounded editor checkpoint. Actor syntax, complete text/comment/Unicode
+behavior and other untested Rust forms remain open. Zed grammar registration and
+extension packaging are separate work; a valid parser does not prove installation.
 
 ## Pinned tools
 
@@ -57,7 +60,6 @@ From the repository root, with an already built Rust compiler:
 export TREE_SITTER_CLI="$TOOLS/tree-sitter"
 export TREE_SITTER_WASI_SDK_PATH="$TOOLS/wasi-sdk"
 export TREE_SITTER_WEB_RUNTIME="$TOOLS/web/web-tree-sitter.cjs"
-export XDG_CACHE_HOME="$TOOLS/cache"
 export FERN_RUST="$PWD/compiler-rs/target/debug/fern-rs"
 env -u LIBRARY_PATH just editor-support-compile
 env -u LIBRARY_PATH just editor-support-check
@@ -71,7 +73,9 @@ modules, loads each exact module with the web runtime, and executes native/WASM
 parity and incremental tests. The check recipe performs the same verification and
 requires exact equality with published artifacts. Every subprocess has a deadline;
 missing tools or the Rust oracle fail explicitly. No Fern C compiler/runtime build
-is needed. The gate also detects stale parser headers, not just `grammar.js`.
+is needed. The gate also detects stale parser headers, not just `grammar.js`. Each native
+driver uses a fresh per-run cache, preventing another checkout's same-named
+grammar library from supplying false parity evidence.
 
 The scanner uses Tree-sitter allocator lifecycle helpers, as explicitly allowed
 by Decision84/CLAUDE. It validates malformed incremental state without assertions,

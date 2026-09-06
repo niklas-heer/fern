@@ -7,21 +7,27 @@ const root = path.resolve(__dirname, '..');
 
 /** Require meaningful captures instead of merely accepting query syntax. */
 function checkQueries(language, Query, parser) {
-  const tree = parser.parse('type Name = String\nnewtype Id = Id(Int)\nfn unwrap(Id(value): Id) -> Int: value\n' +
-    'type Choice = Int | String\nfn size(value:Choice)->Int:\n    match value:\n' +
-    '        number:Int -> number\n        _:String -> 0\n');
+  const tree = parser.parse(fs.readFileSync(path.join(root, 'editor/tree-sitter-fern/test/parity/queries.fn'), 'utf8'));
+  assert(!tree.rootNode.hasError, 'query source must parse completely');
   const directory = path.join(root, 'editor/zed-fern/languages/fern');
   for (const name of ['highlights', 'outline', 'indents', 'brackets']) {
     const query = new Query(language, fs.readFileSync(path.join(directory, name + '.scm'), 'utf8'));
     const captures = query.captures(tree.rootNode);
     assert(captures.length > 0, name + ' must capture a representative source');
     if (name === 'outline') {
-      assert.deepEqual(captures.filter(c => c.name === 'name').map(c => c.node.text), ['Name', 'Id', 'unwrap', 'Choice', 'size']);
+      assert.deepEqual(captures.filter(c => c.name === 'name').map(c => c.node.text), ['Name', 'Id', 'unwrap', 'Choice', 'size', 'Entry', 'workflow', 'following']);
     }
     if (name === 'highlights') {
       assert(captures.some(c => c.node.text === 'unwrap' && c.name === 'function'));
       assert(captures.some(c => c.node.text === 'Id' && c.name.startsWith('type')));
       assert(captures.some(c => c.node.text === '|' && c.name === 'operator'));
+      for (const text of ['for', 'with', 'defer', 'continue', 'break']) {
+        assert(captures.some(c => c.name === 'keyword' && c.node.text === text), text);
+      }
+      for (const text of ['<-', '..=']) {
+        assert(captures.some(c => c.name === 'operator' && c.node.text === text), text);
+      }
+      assert(captures.some(c => c.name === 'property' && c.node.text === 'count'));
       for (const text of ['number', '_']) {
         assert(captures.some(c => c.name === 'variable' && c.node.text === text &&
           c.node.parent?.parent?.type === 'typed_pattern'), text + ': typed pattern binding');
@@ -39,6 +45,34 @@ function checkTypePaths(tree, test) {
     let nodes = tree.rootNode.descendantsOfType(first);
     for (const type of rest) nodes = nodes.flatMap(n => n.namedChildren.filter(c => c.type === type));
     assert(nodes.length > 0, test.name + ': ' + expected);
+  }
+}
+
+/** Match exact error locations while making the three known recovery gaps visible. */
+function checkErrors(tree, test) {
+  const pending = [tree.rootNode];
+  const ranges = new Map();
+  const byteIndex = index => Buffer.byteLength(test.source.slice(0, index));
+  while (pending.length) {
+    const node = pending.pop();
+    if (node.isError || node.isMissing) {
+      const quoted = node.isNamed ? node.type : JSON.stringify(node.type);
+      const kind = node.isMissing ? 'MISSING ' + quoted : 'ERROR';
+      const range = [kind, byteIndex(node.startIndex), byteIndex(node.endIndex)];
+      ranges.set(JSON.stringify(range), range);
+    }
+    for (const child of node.children) pending.push(child);
+  }
+  const actual = [...ranges.values()].sort((a, b) =>
+    a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1] || a[2] - b[2]);
+  assert.deepEqual(actual, test.error_ranges, test.name + ': error byte ranges');
+  const names = tree.rootNode.descendantsOfType('function_definition')
+    .map(n => n.childForFieldName('name')?.text);
+  if (test.known_recovery_gap) {
+    assert.deepEqual(names, test.expected_functions, test.name + ': known recovery gap');
+    assert(!names.includes('after'), test.name + ': update the gap contract after fixing recovery');
+  } else {
+    assert(names.includes('after'), test.name + ': recovery');
   }
 }
 
@@ -62,12 +96,11 @@ async function main() {
   for (const test of cases.invalid) {
     const tree = parser.parse(test.source);
     assert(tree.rootNode.hasError, test.name);
-    const recovered = tree.rootNode.descendantsOfType('function_definition');
-    assert(recovered.some(n => n.childForFieldName('name')?.text === 'after'), test.name + ': recovery');
+    checkErrors(tree, test);
     tree.delete();
   }
   checkQueries(language, Query, parser);
   parser.delete();
-  process.stdout.write(`Exact WASM artifact: ${cases.valid.length} accepted, ${cases.invalid.length} recovery, 4 executable queries\n`);
+  process.stdout.write(`Exact WASM artifact: ${cases.valid.length} accepted, ${cases.invalid.length} malformed (17 recovered, 3 known gaps), 4 executable queries\n`);
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
