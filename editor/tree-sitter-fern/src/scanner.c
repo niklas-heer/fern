@@ -5,7 +5,7 @@
 #include <string.h>
 
 /* Ordering is part of the grammar/scanner ABI. */
-enum TokenType { NEWLINE, INDENT, DEDENT };
+enum TokenType { NEWLINE, INDENT, DEDENT, TOP_LEVEL_FN, FN };
 #define INDENT_LEVELS 128
 #define COLUMN_MAX (1024u * 1024u)
 typedef struct {
@@ -109,6 +109,31 @@ static bool indentation(Scanner *scanner, TSLexer *lexer, const bool *valid, uin
     return false;
 }
 
+/** Recognize identifier starts without accepting a keyword prefix as a complete token. */
+static bool identifier_start(int32_t c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c >= 128;
+}
+
+/** Keep root declarations distinct from lambdas without consuming either identifier suffixes or trivia. */
+static bool function_keyword(TSLexer *lexer, const bool *valid) {
+    bool at_root = lexer->get_column(lexer) == 0;
+    lexer->advance(lexer, false);
+    if (lexer->lookahead != 'n') return false;
+    lexer->advance(lexer, false);
+    int32_t next = lexer->lookahead;
+    if (identifier_start(next) || (next >= '0' && next <= '9')) return false;
+    lexer->mark_end(lexer);
+    unsigned spaces = 0;
+    while ((lexer->lookahead == ' ' || lexer->lookahead == '\t') && spaces < COLUMN_MAX) {
+        lexer->advance(lexer, false);
+        spaces++;
+    }
+    bool declaration = at_root && identifier_start(lexer->lookahead);
+    if (declaration ? !valid[TOP_LEVEL_FN] : !valid[FN]) return false;
+    lexer->result_symbol = declaration ? TOP_LEVEL_FN : FN;
+    return true;
+}
+
 /** Scan only valid external tokens; blank/comment lines never change the indentation stack. */
 bool tree_sitter_fern_external_scanner_scan(void *payload, TSLexer *lexer, const bool *valid) {
     Scanner *scanner = payload;
@@ -121,6 +146,10 @@ bool tree_sitter_fern_external_scanner_scan(void *payload, TSLexer *lexer, const
     }
     if (lexer->lookahead == ' ' || lexer->lookahead == '\t' || lexer->lookahead == '#') return false;
     if (newline(lexer, valid)) return true;
-    return indentation(scanner, lexer, valid, lexer->get_column(lexer),
-                       lexer->get_column(lexer) == spaces);
+    if (indentation(scanner, lexer, valid, lexer->get_column(lexer),
+                    lexer->get_column(lexer) == spaces)) return true;
+    if ((valid[TOP_LEVEL_FN] || valid[FN]) && lexer->lookahead == 'f') {
+        return function_keyword(lexer, valid);
+    }
+    return false;
 }

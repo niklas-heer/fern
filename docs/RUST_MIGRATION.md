@@ -971,3 +971,11 @@ The full editor gate verifies 80 valid sources, 27 malformed cases and 27 increm
 edits across native and WASM parsers, four executable queries and strict Rust checks.
 Three named malformed-header recovery gaps and incomplete-call label completion
 remain open. The Zed revision is updated separately after committing the grammar.
+
+## Malformed-header editor recovery — 2026-09-06
+
+All three named inline for/with recovery gaps are closed, preserving the original
+malformed sources and genuine error/missing-token ranges. The expanded pinned gate
+passes 85 valid sources, all 33 malformed cases retaining the following declaration,
+and 30 incremental edits. Public, CRLF, blank-line, keyword-prefix and column-zero
+lambda boundaries are covered; scanner state and serialization limits are unchanged.

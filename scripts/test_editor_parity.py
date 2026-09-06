@@ -103,11 +103,7 @@ def invalid_cases(tool, directory, cases, wasm):
         recovered = tree.findall(".//function_definition/*[@field='name']")
         names = [node.text for node in recovered]
         assert error_ranges(tool, path, case["source"], wasm) == case["error_ranges"], case["name"]
-        if "known_recovery_gap" in case:
-            assert names == case["expected_functions"], (case["name"], names)
-            assert "after" not in names, case["name"]
-        else:
-            assert "after" in names, (case["name"], result.stdout)
+        assert "after" in names, (case["name"], result.stdout)
 
 
 def edited_cases(tool, directory, cases, wasm):
@@ -160,13 +156,17 @@ def main():
     args = options.parse_args()
     assert command([args.tree_sitter, "--version"]).stdout.strip() == "tree-sitter 0.26.12"
     cases = json.loads(CASES.read_text())
-    assert [len(cases[k]) for k in ["valid", "invalid", "edits"]] == [80, 27, 27]
+    assert [len(cases[k]) for k in ["valid", "invalid", "edits"]] == [85, 33, 30]
     assert all(len(case["source"].encode()) <= 1024 * 1024 for group in cases.values() for case in group)
     with tempfile.TemporaryDirectory(prefix="fern-editor-parity-") as temporary:
         directory = Path(temporary)
         # The CLI caches by grammar name; never reuse another snapshot's Fern library.
         os.environ["XDG_CACHE_HOME"] = str(directory / "cache")
         if args.rust:
+            # The scanner must reject fn followed by a Unicode identifier suffix.
+            # Full editor Unicode identifier syntax remains a separate profile extension.
+            rust_oracle(args.rust, directory, dict(name="scanner_unicode", complete=True,
+                source=(GRAMMAR / "test/parity/scanner_unicode.fn").read_text()))
             for case in cases["valid"]:
                 rust_oracle(args.rust, directory, case)
             for case in cases["edits"]:
@@ -175,7 +175,7 @@ def main():
         valid_cases(args.tree_sitter, directory, cases["valid"], args.wasm)
         invalid_cases(args.tree_sitter, directory, cases["invalid"], args.wasm)
         edited_cases(args.tree_sitter, directory, cases["edits"], args.wasm)
-    print(f"Editor {'WASM' if args.wasm else 'native'}: 80 valid, 27 malformed (24 recovered, 3 known gaps), 27 incremental cases")
+    print(f"Editor {'WASM' if args.wasm else 'native'}: 85 valid, 33 malformed (all recovered), 30 incremental cases")
 
 if __name__ == "__main__":
     main()

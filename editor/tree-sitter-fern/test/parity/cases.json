@@ -740,6 +740,49 @@
         "labeled_argument"
       ],
       "complete": true
+    },
+    {
+      "name": "recovery_public_boundary",
+      "source": "pub fn value()->Int:1\nfn main()->Int:value()\n",
+      "nodes": [
+        "function_definition"
+      ],
+      "complete": true
+    },
+    {
+      "name": "recovery_fn_prefixes",
+      "source": "fn fnvalue()->Int:1\nfn fn_name()->Int:fnvalue()\nfn main()->Int:fn_name()\n",
+      "nodes": [
+        "function_definition"
+      ],
+      "complete": true
+    },
+    {
+      "name": "recovery_root_lambda",
+      "source": "fn apply(action:()->Int)->Int:action()\nfn main()->Int:apply(\nfn()->7\n)\n",
+      "nodes": [
+        "function_definition",
+        "lambda_expression"
+      ],
+      "complete": true
+    },
+    {
+      "name": "recovery_root_type_fn",
+      "source": "fn apply(action:fn()->Int)->Int:action()\nfn main()->Int:apply(\nfn ()->7\n)\n",
+      "nodes": [
+        "function_definition",
+        "lambda_expression"
+      ],
+      "complete": true
+    },
+    {
+      "name": "recovery_commented_root_lambda",
+      "source": "fn apply(action:()->Int)->Int:action()\nfn main()->Int:apply(\nfn /* keep */ ()->7\n)\n",
+      "nodes": [
+        "lambda_expression",
+        "block_comment"
+      ],
+      "complete": true
     }
   ],
   "invalid": [
@@ -890,24 +933,10 @@
       "source": "fn bad(): for x [1,2]: println(x)\nfn after()->Int:1\n",
       "error_ranges": [
         [
-          "ERROR",
-          8,
-          44
-        ],
-        [
-          "ERROR",
-          10,
-          41
-        ],
-        [
-          "ERROR",
-          14,
-          30
+          "MISSING \"in\"",
+          15,
+          15
         ]
-      ],
-      "known_recovery_gap": "Malformed inline control header absorbs the following function declaration.",
-      "expected_functions": [
-        "bad"
       ]
     },
     {
@@ -926,18 +955,11 @@
       "source": "fn bad(): with x Ok(1) do x\nfn after()->Int:1\n",
       "error_ranges": [
         [
-          "ERROR",
-          0,
-          46
-        ],
-        [
-          "ERROR",
-          15,
-          44
+          "MISSING \"<-\"",
+          16,
+          16
         ]
-      ],
-      "known_recovery_gap": "Malformed inline control header absorbs the following function declaration.",
-      "expected_functions": []
+      ]
     },
     {
       "name": "known_gap_with_missing_do",
@@ -946,16 +968,9 @@
         [
           "ERROR",
           0,
-          44
-        ],
-        [
-          "ERROR",
-          15,
-          42
+          26
         ]
-      ],
-      "known_recovery_gap": "Malformed inline control header absorbs the following function declaration.",
-      "expected_functions": []
+      ]
     },
     {
       "name": "map_missing_colon",
@@ -1073,8 +1088,74 @@
       "error_ranges": [
         [
           "ERROR",
-          19,
+          20,
           21
+        ]
+      ]
+    },
+    {
+      "name": "known_gap_for_missing_in_public",
+      "source": "fn bad(): for x [1,2]: println(x)\npub fn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "MISSING \"in\"",
+          15,
+          15
+        ]
+      ]
+    },
+    {
+      "name": "known_gap_for_missing_in_crlf_blank",
+      "source": "fn bad(): for x [1,2]: println(x)\r\n\r\nfn after()->Int:1\r\n",
+      "error_ranges": [
+        [
+          "MISSING \"in\"",
+          15,
+          15
+        ]
+      ]
+    },
+    {
+      "name": "known_gap_with_missing_arrow_public",
+      "source": "fn bad(): with x Ok(1) do x\npub fn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "MISSING \"<-\"",
+          16,
+          16
+        ]
+      ]
+    },
+    {
+      "name": "known_gap_with_missing_arrow_crlf_blank",
+      "source": "fn bad(): with x Ok(1) do x\r\n\r\nfn after()->Int:1\r\n",
+      "error_ranges": [
+        [
+          "MISSING \"<-\"",
+          16,
+          16
+        ]
+      ]
+    },
+    {
+      "name": "known_gap_with_missing_do_public",
+      "source": "fn bad(): with x <- Ok(1)\npub fn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          0,
+          26
+        ]
+      ]
+    },
+    {
+      "name": "known_gap_with_missing_do_crlf_blank",
+      "source": "fn bad(): with x <- Ok(1)\r\n\r\nfn after()->Int:1\r\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          0,
+          29
         ]
       ]
     }
@@ -1269,6 +1350,30 @@
       "new": "left:2,right:_",
       "rust_check": true,
       "complete": true
+    },
+    {
+      "name": "recovery_public_boundary",
+      "source": "pub fn value()->Int:1\nfn main()->Int:value()\n",
+      "old": "pub fn value",
+      "new": "fn value",
+      "complete": true,
+      "rust_check": true
+    },
+    {
+      "name": "recovery_fn_prefixes",
+      "source": "fn fnvalue()->Int:1\nfn fn_name()->Int:fnvalue()\nfn main()->Int:fn_name()\n",
+      "old": "fn fn_name()->Int:fnvalue()",
+      "new": "fn fn_name()->Int:2",
+      "complete": true,
+      "rust_check": true
+    },
+    {
+      "name": "recovery_root_lambda",
+      "source": "fn apply(action:()->Int)->Int:action()\nfn main()->Int:apply(\nfn()->7\n)\n",
+      "old": "fn()->7",
+      "new": "fn ()->8",
+      "complete": true,
+      "rust_check": true
     }
   ]
 }

@@ -95,6 +95,14 @@ sources. Both WASM copies are 243,311 bytes, SHA256
 `69c118755c23ee56708e838fb6c1956a8214fb2d0b0c5760a715d92b1a46f88c`.
 The matching Zed grammar revision must be repinned after this grammar is committed.
 
+The recovery follow-on closes all three original inline-header gaps while preserving
+their source bytes. Hidden prefix reductions and contextual declaration/lambda `fn`
+tokens retain real missing-token/error nodes and all following declarations. The
+full native/WASM profile now verifies 85 valid, 33 malformed and 30 incremental
+cases, with scanner keyword boundaries and lookahead under the existing limits.
+Both WASM copies are 277,598 bytes, SHA256
+`27f01d3d422bad335369b4069fc86c7239b097180ba5f5dc710ed5aab3d12fef`.
+
 ### 83 Directional finite unions and typed narrowing
 * **Date**: 2026-09-06
 * **Status**: Accepted for the bounded first checkpoint

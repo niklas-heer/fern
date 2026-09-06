@@ -70,12 +70,7 @@ function checkErrors(tree, test) {
   assert.deepEqual(actual, test.error_ranges, test.name + ': error byte ranges');
   const names = tree.rootNode.descendantsOfType('function_definition')
     .map(n => n.childForFieldName('name')?.text);
-  if (test.known_recovery_gap) {
-    assert.deepEqual(names, test.expected_functions, test.name + ': known recovery gap');
-    assert(!names.includes('after'), test.name + ': update the gap contract after fixing recovery');
-  } else {
-    assert(names.includes('after'), test.name + ': recovery');
-  }
+  assert(names.includes('after'), test.name + ': recovery');
 }
 
 /** Load an explicit artifact; exercise positive/recovery sources without host FFI or parser caches. */
@@ -103,6 +98,6 @@ async function main() {
   }
   checkQueries(language, Query, parser);
   parser.delete();
-  process.stdout.write(`Exact WASM artifact: ${cases.valid.length} accepted, ${cases.invalid.length} malformed (24 recovered, 3 known gaps), 4 executable queries\n`);
+  process.stdout.write(`Exact WASM artifact: ${cases.valid.length} accepted, ${cases.invalid.length} malformed (all recovered), 4 executable queries\n`);
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

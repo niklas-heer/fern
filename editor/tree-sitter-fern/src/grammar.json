@@ -89,8 +89,27 @@
           ]
         },
         {
-          "type": "STRING",
-          "value": "fn"
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "ALIAS",
+              "content": {
+                "type": "SYMBOL",
+                "name": "_fn"
+              },
+              "named": false,
+              "value": "fn"
+            },
+            {
+              "type": "ALIAS",
+              "content": {
+                "type": "SYMBOL",
+                "name": "_top_level_fn"
+              },
+              "named": false,
+              "value": "fn"
+            }
+          ]
         },
         {
           "type": "FIELD",
@@ -1306,7 +1325,12 @@
             "type": "CHOICE",
             "members": [
               {
-                "type": "STRING",
+                "type": "ALIAS",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "_fn"
+                },
+                "named": false,
                 "value": "fn"
               },
               {
@@ -2215,7 +2239,12 @@
             "type": "CHOICE",
             "members": [
               {
-                "type": "STRING",
+                "type": "ALIAS",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "_fn"
+                },
+                "named": false,
                 "value": "fn"
               },
               {
@@ -2889,20 +2918,8 @@
       "type": "SEQ",
       "members": [
         {
-          "type": "STRING",
-          "value": "for"
-        },
-        {
-          "type": "FIELD",
-          "name": "pattern",
-          "content": {
-            "type": "SYMBOL",
-            "name": "pattern"
-          }
-        },
-        {
-          "type": "STRING",
-          "value": "in"
+          "type": "SYMBOL",
+          "name": "_for_binding"
         },
         {
           "type": "FIELD",
@@ -2923,6 +2940,27 @@
             "type": "SYMBOL",
             "name": "_body"
           }
+        }
+      ]
+    },
+    "_for_binding": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "for"
+        },
+        {
+          "type": "FIELD",
+          "name": "pattern",
+          "content": {
+            "type": "SYMBOL",
+            "name": "pattern"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "in"
         }
       ]
     },
@@ -3235,23 +3273,8 @@
       "type": "SEQ",
       "members": [
         {
-          "type": "STRING",
-          "value": "with"
-        },
-        {
           "type": "SYMBOL",
-          "name": "with_bindings"
-        },
-        {
-          "type": "REPEAT",
-          "content": {
-            "type": "SYMBOL",
-            "name": "_newline"
-          }
-        },
-        {
-          "type": "STRING",
-          "value": "do"
+          "name": "_with_header"
         },
         {
           "type": "FIELD",
@@ -3288,6 +3311,30 @@
               "type": "BLANK"
             }
           ]
+        }
+      ]
+    },
+    "_with_header": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "with"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "with_bindings"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_newline"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "do"
         }
       ]
     },
@@ -3378,6 +3425,23 @@
       "type": "SEQ",
       "members": [
         {
+          "type": "SYMBOL",
+          "name": "_with_assignment"
+        },
+        {
+          "type": "FIELD",
+          "name": "value",
+          "content": {
+            "type": "SYMBOL",
+            "name": "expression"
+          }
+        }
+      ]
+    },
+    "_with_assignment": {
+      "type": "SEQ",
+      "members": [
+        {
           "type": "FIELD",
           "name": "pattern",
           "content": {
@@ -3388,14 +3452,6 @@
         {
           "type": "STRING",
           "value": "<-"
-        },
-        {
-          "type": "FIELD",
-          "name": "value",
-          "content": {
-            "type": "SYMBOL",
-            "name": "expression"
-          }
         }
       ]
     },
@@ -3822,6 +3878,14 @@
     {
       "type": "SYMBOL",
       "name": "_dedent"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_top_level_fn"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_fn"
     }
   ],
   "inline": [],

@@ -8,15 +8,15 @@ Python generator detects drift without writing.
 
 Decision84 verifies aliases, newtypes, unions, typed narrowing, function clauses,
 control flow, collection expressions and source argument labels. The corpus contains
-80 accepted sources, including 29 executable native fixtures, 27 malformed cases and 27
+85 accepted sources, including 29 executable native fixtures, 33 malformed cases and 30
 incremental edits. Every accepted source checks with the Rust compiler. Native
 and WASM trees agree on node structure and UTF-8 byte ranges. Four Zed queries
 execute against the same checked source fixture.
 
-Twenty-four malformed cases retain the following declaration. Three named recovery
-gaps still absorb it after a missing `in`, `<-` or `do` in an inline header. Their
-exact current ERROR ranges and surviving declarations remain executable oracles;
-they are not claimed as successful recovery. Post-dedent callback expressions,
+All 33 malformed cases retain the following declaration. Missing `in` and `<-`
+produce genuine missing-token nodes; a missing `do` marks the broken declaration
+as an error while preserving its successor. Public declarations, CRLF/blank lines
+and column-zero lambdas have explicit boundary tests. Post-dedent callback expressions,
 else/with nesting, map updates, ranges and operator precedence have explicit tests.
 
 External labels on source patterns, calls and pipe holes have separate parameter
