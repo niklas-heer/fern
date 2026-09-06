@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import sys
@@ -67,10 +68,19 @@ def wasm(tool, runtime, directory, copied, update):
 def queries(tool, directory):
     """Compile every editor query natively against a representative declaration source."""
     source = directory / "queries.fn"
-    source.write_text('type Name = String\nnewtype Id = Id(Int)\nfn unwrap(Id(v): Id) -> Int: v\n')
+    source.write_text('type Name = String\nnewtype Id = Id(Int)\nfn unwrap(Id(v): Id) -> Int: v\n'
+                      'type Choice = Int | String\nfn size(value:Choice)->Int:\n    match value:\n'
+                      '        number:Int -> number\n        _:String -> 0\n')
     for name in ["highlights", "outline", "indents", "brackets"]:
         result = command([tool, "query", ZED / (name + ".scm"), source], GRAMMAR)
         assert "capture:" in result.stdout, name + " has no captures"
+        if name == "highlights":
+            for capture, text in [("operator", "|"), ("variable", "number"),
+                                  ("variable", "_"), ("type", "Choice")]:
+                pattern = rf"- {capture},[^\n]*text: `{re.escape(text)}`"
+                assert re.search(pattern, result.stdout), (capture, text, result.stdout)
+        if name == "outline":
+            assert "text: `Choice`" in result.stdout and "text: `size`" in result.stdout
 
 
 def web_runtime(path):

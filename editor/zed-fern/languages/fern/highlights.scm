@@ -2,7 +2,7 @@
 ["fn" "type" "newtype" "pub" "import" "as" "let" "if" "else" "match" "return"] @keyword
 ["and" "or" "not"] @keyword.operator
 ["true" "false"] @constant.builtin
-["+" "-" "*" "/" "%" "**" "==" "!=" "<" "<=" ">" ">=" "|>" "&&&" "|||" "^^^" "<<<" ">>>" "~~~" "=" "->" "?"] @operator
+["+" "-" "*" "/" "%" "**" "==" "!=" "<" "<=" ">" ">=" "|>" "&&&" "|||" "^^^" "<<<" ">>>" "~~~" "=" "->" "?" "|"] @operator
 ["(" ")" "[" "]" "{" "}"] @punctuation.bracket
 ["," ":" "." ".."] @punctuation.delimiter
 (integer_literal) @number

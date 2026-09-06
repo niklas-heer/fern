@@ -849,3 +849,9 @@ The checkpoint adds 87 Rust regressions, 27 native programs, 23 parsed atomic
 rejection cases and unit/main Result entry checks. The integrated gates cover
 1,006 Rust tests and 553 C tests. Constructor refinements, variance, implicit
 joins, lifted capabilities and complete editor grammar parity remain open.
+
+The pinned editor parser now includes union types and typed narrowing. Fourteen
+additional valid sources, four recovery cases and five incremental edits establish
+function-type precedence, subset patterns, module aliases and query captures. All
+38 accepted source trees agree between native and WASM parsers, with the Rust
+frontend checking their actual types. Other syntax and Zed packaging remain open.

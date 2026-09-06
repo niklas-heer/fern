@@ -63,7 +63,13 @@ def valid_cases(tool, directory, cases, wasm):
         result = parse(tool, path, wasm)
         assert result.returncode == 0, (case["name"], result.stdout, result.stderr)
         assert "ERROR" not in result.stdout and "MISSING" not in result.stdout, case["name"]
+        if wasm:
+            native = parse(tool, path, False)
+            assert native.returncode == 0 and native.stdout == result.stdout, case["name"]
         source_ranges(tool, path, case["source"], wasm)
+        tree = structured_tree(tool, path, wasm)
+        for expected in case.get("paths", []):
+            assert tree.find(expected) is not None, (case["name"], expected, result.stdout)
         for node in case["nodes"]:
             assert "(" + node in result.stdout, (case["name"], node, result.stdout)
 
@@ -82,7 +88,7 @@ def invalid_cases(tool, directory, cases, wasm):
 
 
 def edited_cases(tool, directory, cases, wasm):
-    """Compare fresh and incremental trees after eight fixed source edits, including UTF-8."""
+    """Compare fresh and incremental trees after fixed source edits, including UTF-8."""
     for case in cases:
         source, old, new = case["source"], case["old"], case["new"]
         at = source.index(old)
@@ -106,19 +112,23 @@ def main():
     args = options.parse_args()
     assert command([args.tree_sitter, "--version"]).stdout.strip() == "tree-sitter 0.26.12"
     cases = json.loads(CASES.read_text())
-    assert [len(cases[k]) for k in ["valid", "invalid", "edits"]] == [24, 8, 8]
+    assert [len(cases[k]) for k in ["valid", "invalid", "edits"]] == [38, 12, 13]
     assert all(len(case["source"].encode()) <= 1024 * 1024 for group in cases.values() for case in group)
     with tempfile.TemporaryDirectory(prefix="fern-editor-parity-") as temporary:
         directory = Path(temporary)
         if args.rust:
             for case in cases["valid"]:
-                path = directory / "rust_oracle.fn"
+                project = directory / case["name"]
+                project.mkdir()
+                for name, source in case.get("files", {}).items():
+                    (project / name).write_text(source)
+                path = project / "rust_oracle.fn"
                 path.write_text(case["source"] + "\nfn main(): ()\n")
                 command([args.rust, "check", str(path)])
         valid_cases(args.tree_sitter, directory, cases["valid"], args.wasm)
         invalid_cases(args.tree_sitter, directory, cases["invalid"], args.wasm)
         edited_cases(args.tree_sitter, directory, cases["edits"], args.wasm)
-    print(f"Editor {'WASM' if args.wasm else 'native'}: 24 valid, 8 recovery, 8 incremental cases")
+    print(f"Editor {'WASM' if args.wasm else 'native'}: 38 valid, 12 recovery, 13 incremental cases")
 
 if __name__ == "__main__":
     main()

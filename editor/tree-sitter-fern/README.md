@@ -6,10 +6,10 @@ Never edit generated `grammar.js`, parser sources/headers, queries or WASM by ha
 `just editor-support` renders the templates unconditionally; `--check` on the
 Python generator detects drift without writing.
 
-Decision84 verifies aliases, newtypes and ordinary function clauses, including
+Decision84 verifies aliases, newtypes, finite unions, typed narrowing and ordinary function clauses, including
 qualified/generic/function types, constructor/list/tuple patterns, guards, colon
 and arrow bodies, and the prerequisite expressions and indentation. The finite
-corpus contains 24 accepted sources, eight recovery cases and eight incremental
+corpus contains 38 accepted sources, 12 recovery cases and 13 incremental
 edits, plus the original simple-function golden tree. Each accepted source is
 checked by the Rust compiler. Native and WASM parsers must preserve declaration
 identities, source byte ranges and the following declaration after malformed input.

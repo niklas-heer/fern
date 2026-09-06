@@ -206,6 +206,7 @@ The design document is broader than the executable implementation. See
 Do not interpret the historical Gate A–D labels as language completion.
 
 - [x] Reproducible Tree-sitter aliases/newtypes/function-clause checkpoint: native/WASM accepted/recovery/incremental corpus, executable editor queries, bounded scanner and pinned generated artifacts (Decision 84).
+- [x] Extend the pinned editor grammar to finite unions, function-type precedence and typed narrowing; verify 38 accepted, 12 recovery and 13 incremental sources with native/WASM structural equivalence.
 - [ ] Complete Tree-sitter parity for remaining Rust syntax and verify Zed grammar registration/extension packaging.
 - [ ] Execute actor functions with suspension, typed messages/receive/timeouts, and descendant supervision lifecycle.
 - [x] Immutable native JSON parser/accessors/stringifier with exact numbers, Unicode validation and bounded resources (14,309 API checks, 24 budget checks and 6,000 numeric oracle cases in debug/release/sanitizer builds).
@@ -220,7 +221,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 
 ## Next Session Start Here
 
-For the active Rust migration, finish union editor grammar parity and bounded process/bootstrap workflows, then the remaining
+For the active Rust migration, finish bounded process/bootstrap workflows and remaining editor grammar parity, then the remaining
 specified syntax and native/stdlib parity.
 Control flow, closures, maps, function clauses and generic-body validation have
 verified checkpoints. Preserve the concrete type/ABI and native-output gates in
