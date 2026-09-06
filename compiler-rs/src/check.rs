@@ -103,6 +103,44 @@ pub fn check_library(program: &ast::Program) -> Checked<ir::Program> {
     pipeline(program, |_, _, _| Ok(())).map(|(ir, _)| ir)
 }
 
+/// Validate one source test scheme during ordinary checking, without editor metadata or a second pass.
+/// The resolved source name must select a nongeneric zero-argument Unit/Result(Unit,E) function.
+pub(crate) fn check_test(source: &ast::Program, name: &str) -> Checked<ir::Program> {
+    if name.len() > 65_536 {
+        return Err(Diagnostic::new(
+            Span::default(),
+            "test name exceeds source limit",
+        ));
+    }
+    pipeline(source, |program, _, signatures| {
+        let function = program
+            .functions
+            .iter()
+            .find(|function| function.name == name)
+            .ok_or_else(|| Diagnostic::new(Span::default(), "missing source test declaration"))?;
+        let signature = signatures
+            .get(name)
+            .ok_or_else(|| Diagnostic::new(function.span, "missing checked test signature"))?;
+        if !signature.generics.is_empty() {
+            return Err(Diagnostic::new(
+                function.span,
+                format!("test {name} cannot be generic"),
+            ));
+        }
+        if !signature.params.is_empty()
+            || !(signature.result == Type::Unit
+                || matches!(&signature.result, Type::Result(ok, _) if **ok == Type::Unit))
+        {
+            return Err(Diagnostic::new(
+                function.span,
+                format!("test {name} requires zero arguments and Unit or Result(Unit, E) result"),
+            ));
+        }
+        Ok(())
+    })
+    .map(|(ir, _)| ir)
+}
+
 /// Run optional source analysis only after the complete ordinary checker succeeds.
 fn pipeline<T>(
     source: &ast::Program,

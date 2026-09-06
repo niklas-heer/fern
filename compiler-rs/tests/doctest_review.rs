@@ -77,3 +77,25 @@ fn preparing_a_library_keeps_selected_main_imports_available_for_resolution() {
     let syntax = parse::parse(&prepared.source).unwrap();
     assert!(!syntax.functions.iter().any(|f| f.name == "main"));
 }
+
+#[test]
+fn forged_doc_entry_identity_or_captures_cannot_mutate_checked_ir() {
+    use fern_prototype::{check, doctest, ir, parse, Type};
+    for duplicate in [false, true] {
+        let mut program =
+            check::check_library(&parse::parse("fn example()->Int:0\n").unwrap()).unwrap();
+        if duplicate {
+            let mut extra = program.functions[0].clone();
+            extra.id = ir::FunctionId(1);
+            program.functions.push(extra);
+        } else {
+            program.functions[0].captures.push(ir::Param {
+                id: ir::LocalId(0),
+                ty: Type::Int,
+            });
+        }
+        let before = format!("{program:?}");
+        assert!(doctest::select_entry(&mut program, "example").is_err());
+        assert_eq!(format!("{program:?}"), before);
+    }
+}

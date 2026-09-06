@@ -78,7 +78,7 @@ impl Emitter<'_> {
         if signature.operation == Operation::ScalarContains {
             return self.scalar_contains(args, span, locals, depth);
         }
-        let symbol = runtime_symbol(&signature, args, span)?;
+        let symbol = self.test_runtime_symbol(runtime_symbol(&signature, args, span)?);
         if signature.operation == Operation::JsonObject {
             let map = self.expr(&args[0], locals, depth)?;
             let value = self.assign(

@@ -212,13 +212,30 @@ fn clean_pattern(text: &str, span: Span) -> Result<&str, Diagnostic> {
 /// Select the checked test entry by name while preserving all ordinary calls by FunctionId.
 /// Unit main's implicit final-value discard becomes an explicit Unit block before renaming.
 pub fn select_entry(program: &mut ir::Program, name: &str) -> Result<(), Diagnostic> {
-    if !program.functions.iter().any(|function| {
-        function.name == name && function.params.is_empty() && function.return_type == Type::Int
-    }) {
-        return Err(error(Span::default(), "missing checked doc test entry"));
+    let mut matches = program
+        .functions
+        .iter()
+        .filter(|function| function.name == name);
+    let valid = matches.next().is_some_and(|function| {
+        function.params.is_empty()
+            && function.captures.is_empty()
+            && function.return_type == Type::Int
+    });
+    if !valid || matches.next().is_some() {
+        return Err(error(
+            Span::default(),
+            "missing unique checked doc test entry",
+        ));
     }
+    rename_entry(program, name);
+    Ok(())
+}
+
+/// Rename one verified entry while preserving original main calls by resolved function identity.
+/// Callers must first verify that exactly one eligible selected function exists.
+pub(crate) fn rename_entry(program: &mut ir::Program, name: &str) {
     if name == "main" {
-        return Ok(());
+        return;
     }
     for function in &mut program.functions {
         if function.name == "main" {
@@ -239,7 +256,6 @@ pub fn select_entry(program: &mut ir::Program, name: &str) -> Result<(), Diagnos
             function.name = "main".into();
         }
     }
-    Ok(())
 }
 
 /// Attach extraction and transformation failures to a meaningful bounded source span.

@@ -764,3 +764,29 @@ Newtype checkpoint gates pass: 885 Rust tests, 550 C tests and the complete nati
 sanitizer, fuzz and documentation suites on macOS arm64. Editor support regeneration
 also passes; the existing manually maintained indentation grammar remains separate
 from the generated highlights and needs broader syntax parity.
+
+
+## Source-owned unit tests
+
+Normal `fern-rs test` now executes named test_ groups alongside documentation
+examples; --doc selects only documentation. Tests use real module/private scope,
+source anchors and independent native processes. Unit and Result(Unit,E) entries
+are eligible; generic, parameterized and other result signatures fail explicitly
+without skipping later tests. Eligibility uses one ordinary checker pipeline and
+only the selected source signature, avoiding unrelated editor metadata limits.
+
+The shared entry renamer preserves original main calls and rejects malformed public
+documentation entries before mutation. A dedicated QBE test mode rejects invocation
+of the resolved process-exit API through direct calls, helpers or function values;
+unused application exit functions and ordinary emission retain their semantics.
+This prevents successful process termination from bypassing remaining expectations.
+
+Fifteen Rust regressions cover discovery, generic specializations, source eligibility,
+large libraries, immutable failed selection, offline CLI behavior, emitter mode and
+newtype capability/error integration. Fifteen native cases plus import, directory
+and doc-only scenarios verify effects, real-main calls, failure continuation, cleanup,
+timeout/output limits, early exits and source preservation. Assertion libraries,
+benchmarks, coverage and watch remain separate work.
+
+Unit-runner checkpoint gates pass: 900 Rust tests, 550 C tests and the complete
+native, sanitizer, fuzz and documentation suites on macOS arm64.

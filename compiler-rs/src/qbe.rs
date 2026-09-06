@@ -29,6 +29,8 @@ mod numeric;
 mod runtime_calls;
 #[path = "qbe/tail.rs"]
 mod tail;
+#[path = "qbe/test_entry.rs"]
+mod test_entry;
 #[path = "qbe/with.rs"]
 mod with;
 
@@ -39,8 +41,19 @@ const STRING_RUN: usize = 512;
 /// Lower `program` to native-backend IL, rejecting inconsistent public IR.
 /// No source-name or AST type inference occurs here. Requires exactly one main.
 pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
+    emit_mode(program, false)
+}
+
+/// Lower a checked test entry, failing explicit process-exit calls instead of accepting early success.
+/// All ordinary typed-IR validation applies; the caller selects the test's entry beforehand.
+pub fn emit_test(program: &ir::Program) -> Result<String, Diagnostic> {
+    emit_mode(program, true)
+}
+
+/// Share executable validation while keeping test-only process behavior out of ordinary programs.
+fn emit_mode(program: &ir::Program, test_mode: bool) -> Result<String, Diagnostic> {
     ir::reject_probes(program)?;
-    emit_inner(program).map_err(|exit| match exit {
+    emit_inner(program, test_mode).map_err(|exit| match exit {
         Exit::Diagnostic(error) => error,
         Exit::Terminated => Diagnostic::new(
             Span::default(),
@@ -63,7 +76,7 @@ impl From<Diagnostic> for Exit {
 }
 
 /// Validate signatures and lower complete function bodies through their exit handlers.
-fn emit_inner(program: &ir::Program) -> Lowering<String> {
+fn emit_inner(program: &ir::Program, test_mode: bool) -> Lowering<String> {
     let layouts = nominal::layouts(&program.types)?;
     let mut functions = BTreeMap::new();
     let mut main = None;
@@ -100,6 +113,7 @@ fn emit_inner(program: &ir::Program) -> Lowering<String> {
     }
     let main = main.ok_or_else(|| invalid(Span::default(), "missing main function"))?;
     let mut emitter = Emitter {
+        test_mode,
         functions,
         layouts,
         output: String::new(),
@@ -165,6 +179,7 @@ fn expect_type(actual: Type, expected: Type, span: Span) -> Lowering<()> {
 }
 
 struct Emitter<'a> {
+    test_mode: bool,
     functions: BTreeMap<usize, &'a Function>,
     layouts: HashMap<Type, &'a ir::TypeLayout>,
     output: String,
@@ -225,6 +240,7 @@ impl Locals {
 impl Emitter<'_> {
     /// Append compiler-owned helper definitions once, including only used numeric adapters.
     fn support_helpers(&mut self, main: &Function) {
+        self.test_exit_helper();
         if self.output.contains("call $fern_rs_json_") {
             self.output.push_str(include_str!("qbe/json.ssa"));
         }

@@ -467,6 +467,7 @@ rust-check: rust-build
     python3 scripts/test_rust_stdlib.py
     python3 scripts/test_rust_json.py
     python3 scripts/test_rust_doctests.py
+    python3 scripts/test_rust_units.py
     python3 scripts/test_runtime_directory.py
     python3 scripts/test_runtime_json.py
     python3 scripts/test_rust_fuzz.py

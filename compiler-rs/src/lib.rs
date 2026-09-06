@@ -70,3 +70,5 @@ pub enum Constructor {
 }
 
 pub mod doctest;
+
+pub mod unit_test;

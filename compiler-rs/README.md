@@ -509,7 +509,25 @@ Each example has a default 10-second runtime limit, configurable with
 Standard input is closed. On Unix, the test owns a private process group that is
 terminated on completion, failure or timeout so descendants cannot hold output open.
 There are at most 256 examples, 64 KiB per example and 1 MiB per source overlay.
-General unit-test syntax, coverage and watch mode remain subsequent CLI work.
+Normal `fern-rs test` also runs source-owned unit functions as described below.
+Invoking System.exit fails both unit and documentation tests, so exit 0 cannot
+bypass later expectations. Normal application compilation remains unchanged.
+
+## Unit tests
+
+`fern-rs test [source.fn|directory]` runs zero-argument `test_` functions and
+fenced documentation examples. Tests return Unit or Result(Unit,E); normal Unit
+return and Ok pass, while Err, runtime faults and invalid test signatures fail.
+Later tests continue. Generic tests and Boolean/integer results are rejected.
+Imported functions run as tests only when their original source file is selected.
+
+Eligibility uses the selected reusable source scheme during one ordinary library
+check, before any concrete specialization can obscure generic parameters. Test
+selection preserves resolved calls to the real main. Native timeout, stream and
+process-group limits are shared with documentation execution; the combined suite
+is bounded to 256 tests. `--doc` selects only documentation examples. See
+[the test-runner contract](../docs/TEST_RUNNER.md) for limits and behavior.
+Assertion libraries, benchmark, coverage and watch modes remain separate work.
 
 ## Architecture
 
