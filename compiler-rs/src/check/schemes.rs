@@ -145,7 +145,9 @@ impl Inference {
                 }
                 Type::Result(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
                 Type::List(a) | Type::Option(a) => pending.push(a),
-                Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
+                Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => {
+                    pending.extend(args)
+                }
                 Type::Function(args, result) => {
                     pending.extend(args);
                     pending.push(result);
@@ -201,16 +203,17 @@ impl Checker<'_> {
             return Ok(());
         }
         let mut values = HashMap::new();
-        for (template, actual) in signature
+        let pairs = signature
             .params
             .iter()
             .zip(params)
             .chain([(&signature.result, result)])
-        {
+            .collect::<Vec<_>>();
+        for (template, actual) in &pairs {
             returns::charge_output(&self.inference, template, span)?;
             returns::charge_output(&self.inference, actual, span)?;
-            nominal::capture(template, actual, &mut values, 0)?;
         }
+        super::unions::capture_pairs(&pairs, &mut values)?;
         let arguments = signature
             .generics
             .iter()
@@ -269,7 +272,9 @@ impl Checker<'_> {
                 Type::Result(a, b) | Type::Map(a, b) => {
                     pending.extend([(*a, depth + 1), (*b, depth + 1)])
                 }
-                Type::Tuple(args) => pending.extend(args.into_iter().map(|t| (t, depth + 1))),
+                Type::Union(args) | Type::Tuple(args) => {
+                    pending.extend(args.into_iter().map(|t| (t, depth + 1)))
+                }
                 Type::Function(args, result) => {
                     pending.extend(args.into_iter().map(|t| (t, depth + 1)));
                     pending.push((*result, depth + 1));

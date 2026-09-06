@@ -452,6 +452,7 @@ rust-check: rust-build
     python3 scripts/test_rust_newtypes.py
     python3 scripts/test_rust_aliases.py
     python3 scripts/test_rust_namespaces.py
+    python3 scripts/test_rust_unions.py
     python3 scripts/test_rust_global_identity.py
     python3 scripts/test_rust_stdlib.py
     python3 scripts/test_rust_json.py

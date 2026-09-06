@@ -11,6 +11,13 @@ This document tracks major architectural and technical decisions made during the
 * **Context**: The old generator silently skipped the actual indentation grammar and could not derive aliases, newtypes or function clauses from C token names. Stale WASM copies and uncompiled query text did not establish editor correctness.
 * **Consequences**: The gate checks 24 accepted sources against Rust and native/WASM trees, eight bounded recovery cases, eight incremental edits, four executable queries, and scanner malformed-state/column/stack limits under sanitizers. The external scanner's explicit lifecycle exception permits Tree-sitter `ts_calloc`/`ts_free` and defensive reset/return guards instead of assertions on untrusted serialized state. All 128 indentation levels fit the 514-byte serialized state; columns are 32-bit and capped at 1 MiB. Generation checks every parser source/header plus both identical WASM copies; build output uses the canonical basename because it affects WASM metadata. Full Rust syntax parity and Zed extension registration/packaging remain open. The unavailable `/decision` skill is replaced by this established decision format.
 
+### 83 Directional finite unions and typed narrowing
+* **Date**: 2026-09-06
+* **Status**: Accepted for the bounded first checkpoint
+* **Decision**: I will implement canonical finite ordinary-type unions with directional member/subset conversions, typed binding/wildcard narrowing and full-width tagged GC envelopes. Exact unification remains symmetric; existing containers and function types remain invariant. Generic substitutions normalize before specialization and do not guess ambiguous membership.
+* **Context**: The union examples in DESIGN.md specify arguments and typed narrowing without defining principal union inference, constructor refinements, variance or lifted capabilities.
+* **Consequences**: Declared union contexts permit mixed branches and fresh literals; inferred heterogeneous joins remain errors. Narrow before operators, printing or Map-key use. Result-bearing alternatives retain handling and capture obligations. Normalization, assignment and coverage are bounded, including inactive public IR metadata. Constructor refinements, variance, implicit joins and lifted capabilities remain successors. See [the union contract](docs/UNIONS.md) for representation, limits and executable examples. The unavailable `/decision` skill is replaced by this established decision format.
+
 ### 82 Separate module type and value namespaces
 * **Date**: 2026-09-06
 * **Status**: Accepted for Rust migration completion

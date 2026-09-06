@@ -383,7 +383,7 @@ impl Budget {
                     stack.extend(args.iter().map(|a| (a, depth + 1)));
                     stack.push((result, depth + 1));
                 }
-                Type::Tuple(args) | Type::Named(_, args) => {
+                Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => {
                     if args.len() > 4096 {
                         return Err(limit());
                     }

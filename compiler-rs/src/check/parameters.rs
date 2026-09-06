@@ -193,6 +193,12 @@ fn constrain_pattern<'a>(
 ) -> Checked<()> {
     use ast::PatternKind::*;
     let expected = match &pattern.kind {
+        Typed { .. } => {
+            return Err(Diagnostic::new(
+                pattern.span,
+                "typed parameter subpatterns require an explicit enclosing annotation",
+            ))
+        }
         Bind(_) | Wildcard => return Ok(()),
         Int(_) => Type::Int,
         Bool(_) => Type::Bool,

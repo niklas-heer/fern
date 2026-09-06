@@ -1,0 +1,13 @@
+fn marked(n: Int) -> Int:
+    println(n)
+    n
+fn widen(x: Int | String) -> Bool | Int | String: x
+fn choose() -> Bool | Int | String:
+    defer println("cleanup")
+    let value: Int | String = marked(4294967296)
+    widen(value)
+fn main():
+    match choose():
+        n: Int -> println(n)
+        s: String -> println(s)
+        b: Bool -> println(b)

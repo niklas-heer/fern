@@ -170,7 +170,7 @@ impl Emitter<'_> {
             locals.define(pending.id.0, ty, value, state.span)?;
             state.bindings.push(pending.id.0);
         }
-        Ok(())
+        self.materialize_unions(state, locals)
     }
 
     /// Copy exact raw tuple words without narrowing Float, integer or captured values.

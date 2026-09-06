@@ -192,6 +192,10 @@ impl Expander<'_> {
                 Box::new(self.ty(a, values, span, depth + 1, nodes)?),
                 Box::new(self.ty(b, values, span, depth + 1, nodes)?),
             ),
+            Type::Union(args) => {
+                self.charge(crate::unions::cost(ty, span)?, span)?;
+                crate::unions::make(self.arguments(args, values, span, depth, nodes)?, span)?
+            }
             Type::Tuple(args) => Type::Tuple(self.arguments(args, values, span, depth, nodes)?),
             Type::Function(args, result) => Type::Function(
                 self.arguments(args, values, span, depth, nodes)?,

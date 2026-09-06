@@ -12,6 +12,7 @@ pub mod presentation;
 pub mod qbe;
 pub mod repl;
 pub mod runtime;
+pub(crate) mod unions;
 
 /// Source byte range, with an exclusive end offset.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -38,7 +39,7 @@ impl Diagnostic {
 }
 
 /// Semantic types; inference variables are eliminated before QBE lowering.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Type {
     /// Internal bottom type of control flow that never produces a value.
     Never,
@@ -49,6 +50,7 @@ pub enum Type {
     String,
     Unit,
     Native(crate::runtime::NativeType),
+    Union(Vec<Type>),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
     List(Box<Type>),

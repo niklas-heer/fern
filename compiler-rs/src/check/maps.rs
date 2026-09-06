@@ -26,14 +26,18 @@ impl Checker<'_> {
         let value = self.inference.fresh();
         let ty = Type::Map(Box::new(key.clone()), Box::new(value.clone()));
         self.constrain_result(&ty, expected, span)?;
+        let directional = self.directional_context(Some(&value), span)?;
         let mut checked = Vec::with_capacity(entries.len());
         for (k, v) in entries {
             let k = self
                 .expression_expected(k, Some(&key), depth)
                 .map_err(|e| super::closures::context(e, "map key"))?;
-            let v = self
-                .expression_expected(v, Some(&value), depth)
-                .map_err(|e| super::closures::context(e, "map value"))?;
+            let v = if directional {
+                self.expression_expected(v, Some(&value), depth)
+            } else {
+                self.expression_equal(v, &value, depth)
+            }
+            .map_err(|e| super::closures::context(e, "map value"))?;
             checked.push((k, v));
         }
         Ok((ir::ExprKind::Map(checked), ty))

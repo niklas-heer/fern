@@ -204,6 +204,8 @@ fn children(expr: &Expr) -> Vec<&Expr> {
         | ExprKind::Try(value)
         | ExprKind::Field { value, .. }
         | ExprKind::Wrap(value)
+        | ExprKind::UnionInject { value }
+        | ExprKind::UnionWiden { value }
         | ExprKind::Unwrap(value) => vec![value],
         ExprKind::Binary { left, right, .. }
         | ExprKind::Range {

@@ -146,6 +146,7 @@ fn substitute_match(
 ) -> Checked<()> {
     expression(value, expander)?;
     for arm in arms {
+        pattern(&mut arm.pattern, expander)?;
         if let Some(guard) = &mut arm.guard {
             expression(guard, expander)?;
         }
@@ -205,6 +206,40 @@ fn interpolate(parts: &mut [ast::StringPart], expander: &mut Expander<'_>) -> Ch
         if let ast::StringPart::Value(value) = part {
             expression(value, expander)?;
         }
+    }
+    Ok(())
+}
+
+/// Substitute typed pattern annotations without rewriting lexical binding identities.
+fn pattern(pattern: &mut ast::Pattern, expander: &mut Expander<'_>) -> Checked<()> {
+    match &mut pattern.kind {
+        ast::PatternKind::Typed {
+            pattern: inner,
+            annotation,
+        } => {
+            *annotation = expander.expand(annotation, pattern.span)?;
+            self::pattern(inner, expander)?;
+        }
+        ast::PatternKind::Tuple(fields) | ast::PatternKind::NamedConstructor { fields, .. } => {
+            for field in fields {
+                self::pattern(field, expander)?;
+            }
+        }
+        ast::PatternKind::List { prefix, rest } => {
+            for field in prefix {
+                self::pattern(field, expander)?;
+            }
+            if let Some(rest) = rest {
+                self::pattern(rest, expander)?;
+            }
+        }
+        ast::PatternKind::TupleRest { prefix, rest } => {
+            for field in prefix {
+                self::pattern(field, expander)?;
+            }
+            self::pattern(rest, expander)?;
+        }
+        _ => {}
     }
     Ok(())
 }

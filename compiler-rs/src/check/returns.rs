@@ -252,7 +252,7 @@ pub(super) fn has_infer(ty: &Type) -> bool {
                 pending.extend(args);
                 pending.push(result);
             }
-            Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
+            Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
             _ => {}
         }
     }
@@ -317,7 +317,7 @@ pub(super) fn charge_output(inference: &Inference, ty: &Type, span: Span) -> Che
                 pending.extend(args);
                 pending.push(result);
             }
-            Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
+            Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
             _ => {}
         }
     }

@@ -265,6 +265,10 @@ pub struct Pattern {
 
 #[derive(Clone, Debug)]
 pub enum PatternKind {
+    Typed {
+        pattern: Box<Pattern>,
+        annotation: Type,
+    },
     Tuple(Vec<Pattern>),
     List {
         prefix: Vec<Pattern>,

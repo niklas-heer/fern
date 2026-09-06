@@ -1,0 +1,7 @@
+fn classify(x: Unit | Int) -> Int:
+    match x:
+        _: Unit -> 0
+        n: Int -> n
+fn main():
+    println(classify(()))
+    println(classify(7))

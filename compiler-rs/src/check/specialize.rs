@@ -112,10 +112,13 @@ impl Driver<'_> {
         let function = &self.source.functions[template];
         let signature = &self.signatures[&function.name];
         let mut values = HashMap::new();
-        for (parameter, arg) in signature.params.iter().zip(args) {
-            nominal::capture(parameter, arg, &mut values, 0)?;
-        }
-        nominal::capture(&signature.result, result, &mut values, 0)?;
+        let pairs = signature
+            .params
+            .iter()
+            .zip(args)
+            .chain([(&signature.result, result)])
+            .collect::<Vec<_>>();
+        super::unions::capture_pairs(&pairs, &mut values)?;
         let arguments = signature
             .generics
             .iter()
@@ -307,6 +310,7 @@ fn substitute_match(
 ) -> Checked<()> {
     substitute_expr(value, values)?;
     for arm in arms {
+        substitute_pattern(&mut arm.pattern, values)?;
         if let Some(guard) = &mut arm.guard {
             substitute_expr(guard, values)?;
         }
@@ -366,6 +370,40 @@ fn substitute_string(parts: &mut [ast::StringPart], values: &HashMap<String, Typ
         if let ast::StringPart::Value(value) = part {
             substitute_expr(value, values)?;
         }
+    }
+    Ok(())
+}
+
+/// Substitute every source typed narrowing before concrete dispatch is reconstructed.
+fn substitute_pattern(pattern: &mut ast::Pattern, values: &HashMap<String, Type>) -> Checked<()> {
+    match &mut pattern.kind {
+        ast::PatternKind::Typed {
+            pattern: inner,
+            annotation,
+        } => {
+            *annotation = nominal::substitute(annotation, values)?;
+            substitute_pattern(inner, values)?;
+        }
+        ast::PatternKind::Tuple(fields) | ast::PatternKind::NamedConstructor { fields, .. } => {
+            for field in fields {
+                substitute_pattern(field, values)?;
+            }
+        }
+        ast::PatternKind::List { prefix, rest } => {
+            for field in prefix {
+                substitute_pattern(field, values)?;
+            }
+            if let Some(rest) = rest {
+                substitute_pattern(rest, values)?;
+            }
+        }
+        ast::PatternKind::TupleRest { prefix, rest } => {
+            for field in prefix {
+                substitute_pattern(field, values)?;
+            }
+            substitute_pattern(rest, values)?;
+        }
+        _ => {}
     }
     Ok(())
 }

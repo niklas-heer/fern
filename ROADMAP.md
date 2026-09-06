@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity under both C and Rust frontends on five pinned fixtures, literal paths and all compiler/library source
-- Rust migration: `just rust-check` passing (919 Rust tests, 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 21 entry/access programs, 9 controlled-fault cases, 210 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (1006 Rust tests, 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 27 union programs, 21 entry/access programs, 9 controlled-fault cases, 233 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
 
 ## Canonical Documents
 
@@ -106,6 +106,8 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Transparent scalar/generic type aliases with bounded capture-free expansion, module privacy, original source tooling and native execution (26 new Rust regressions, seven native programs and 12 invalid inputs).
 - [x] Distinct generic newtypes with unboxed full-width native representation, explicit projection/patterns, scalar capabilities, Result obligations and source tooling (45 Rust regressions, 13 native programs and 14 invalid cases).
 - [x] Independent module type/value declarations and visibility, selected/wildcard reexports, lexical receiver resolution and exact source navigation (19 Rust regressions, 12 native programs and 12 atomic invalid cases).
+- [x] Canonical finite unions, contextual member/subset conversion, typed narrowing and full-width native/REPL carriers, preserving generic equality and Result obligations (87 Rust regressions, 27 native programs, 23 atomic invalid cases and unit/main entry checks).
+- [ ] Union constructor refinements, variance, implicit joins and lifted capabilities.
 - [ ] Remaining function/type syntax and complete native-language audit.
 - [ ] Track semantic Result handling beyond local references (for example, inspecting a List(Result) length currently counts as handling its elements).
 
@@ -218,7 +220,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 
 ## Next Session Start Here
 
-For the active Rust migration, finish finite union types and editor grammar parity, then the remaining
+For the active Rust migration, finish union editor grammar parity and bounded process/bootstrap workflows, then the remaining
 specified syntax and native/stdlib parity.
 Control flow, closures, maps, function clauses and generic-body validation have
 verified checkpoints. Preserve the concrete type/ABI and native-output gates in

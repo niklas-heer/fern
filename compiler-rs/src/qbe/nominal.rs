@@ -4,6 +4,8 @@ use super::*;
 mod coverage;
 #[path = "sequence_patterns.rs"]
 mod sequences;
+#[path = "union_patterns.rs"]
+mod union_patterns;
 
 /// Index concrete named layouts, validating record metadata and referenced field types.
 pub(super) fn layouts(types: &[ir::TypeLayout]) -> Lowering<HashMap<Type, &ir::TypeLayout>> {
@@ -83,7 +85,7 @@ pub(super) fn resolved(
             }
             resolved(result, layouts, span, depth + 1)?;
         }
-        Type::Tuple(fields) => {
+        Type::Tuple(fields) | Type::Union(fields) => {
             for field in fields {
                 resolved(field, layouts, span, depth + 1)?;
             }
@@ -255,6 +257,9 @@ impl Emitter<'_> {
             return Err(invalid(span, "pattern nesting limit exceeded"));
         }
         match pattern {
+            Pattern::UnionSelect { narrowed, binding } => {
+                self.checked_union_pattern(ty, narrowed, binding.as_ref(), span)
+            }
             Pattern::Newtype(inner) => {
                 let payload = self.newtype_payload(ty, span)?;
                 Ok(Pattern::Newtype(Box::new(self.checked_pattern(
@@ -335,6 +340,7 @@ struct PatternState<'a> {
     failure: &'a str,
     bindings: Vec<usize>,
     pending: Vec<sequences::Pending>,
+    union_pending: Vec<union_patterns::Pending>,
     span: Span,
     depth: usize,
 }
@@ -357,10 +363,13 @@ impl Emitter<'_> {
                 return Err(invalid(arm.span, "unreachable match arm"));
             }
             let pattern = self.checked_pattern(&arm.pattern, &value.ty, arm.span, 0)?;
-            if covering
-                .iter()
-                .any(|row: &Vec<Pattern>| subsumes(&row[0], &pattern))
-            {
+            if self.covered_candidate(
+                std::slice::from_ref(&value.ty),
+                &covering,
+                std::slice::from_ref(&pattern),
+                &mut budget,
+                0,
+            )? {
                 return Err(invalid(arm.span, "unreachable duplicate match pattern"));
             }
             if let Some(guard) = &arm.guard {
@@ -403,7 +412,7 @@ impl Emitter<'_> {
             for (tag, fields) in variants.into_iter().enumerate() {
                 let mut specialized = Vec::new();
                 for row in rows {
-                    if let Some(mut head) = specialize(&row[0], tag, fields.len()) {
+                    if let Some(mut head) = specialize(&row[0], &types[0], tag, fields.len()) {
                         head.extend_from_slice(&row[1..]);
                         specialized.push(head);
                     }
@@ -428,6 +437,7 @@ impl Emitter<'_> {
     /// Enumerate finite constructors, modeling array lists as logical empty/cons values.
     fn coverage_variants(&self, ty: &Type) -> Option<Vec<Vec<Type>>> {
         match ty {
+            Type::Union(members) => Some(vec![vec![]; members.len()]),
             Type::Bool => Some(vec![vec![], vec![]]),
             Type::Unit => Some(vec![vec![]]),
             Type::Option(item) => Some(vec![vec![*item.clone()], vec![]]),
@@ -458,6 +468,7 @@ impl Emitter<'_> {
                 failure: &failure,
                 bindings: vec![],
                 pending: vec![],
+                union_pending: vec![],
                 span: arm.span,
                 depth,
             };
@@ -512,6 +523,7 @@ impl Emitter<'_> {
             failure: &failure,
             bindings: vec![],
             pending: vec![],
+            union_pending: vec![],
             span: value.span,
             depth,
         };
@@ -553,6 +565,9 @@ impl Emitter<'_> {
             return Err(invalid(state.span, "pattern lowering limit exceeded"));
         }
         match pattern {
+            Pattern::UnionSelect { narrowed, binding } => {
+                self.union_pattern(ty, narrowed, binding.as_ref(), value, state, locals)?;
+            }
             Pattern::List { prefix, rest } => {
                 self.list_pattern(prefix, rest.as_deref(), ty, value, state, locals)?
             }
@@ -660,8 +675,17 @@ fn catchall(pattern: &Pattern) -> bool {
 }
 
 /// Expand one matrix row into a chosen finite constructor, or discard mismatched rows.
-fn specialize(pattern: &Pattern, tag: usize, fields: usize) -> Option<Vec<Pattern>> {
+fn specialize(pattern: &Pattern, ty: &Type, tag: usize, fields: usize) -> Option<Vec<Pattern>> {
     match pattern {
+        Pattern::UnionSelect { narrowed, .. } => {
+            let Type::Union(members) = ty else {
+                return None;
+            };
+            members
+                .get(tag)
+                .filter(|member| crate::unions::members(narrowed).contains(member))
+                .map(|_| vec![])
+        }
         Pattern::List { prefix, rest } => sequences::specialize_list(prefix, rest.as_deref(), tag),
         Pattern::TupleRest { prefix, .. } if tag == 0 => {
             let mut expanded = prefix.clone();
@@ -695,6 +719,9 @@ fn subsumes(prior: &Pattern, next: &Pattern) -> bool {
             (ar.is_some() || (br.is_none() && a.len() == b.len()))
                 && a.len() <= b.len()
                 && a.iter().zip(b).all(|(a, b)| subsumes(a, b))
+        }
+        (Pattern::UnionSelect { narrowed: a, .. }, Pattern::UnionSelect { narrowed: b, .. }) => {
+            crate::unions::subset(b, a)
         }
         (Pattern::Newtype(a), Pattern::Newtype(b)) => subsumes(a, b),
         (Pattern::Wildcard | Pattern::Bind(_), _) => true,
@@ -735,6 +762,7 @@ impl Emitter<'_> {
             failure: &failure,
             bindings: vec![],
             pending: vec![],
+            union_pending: vec![],
             span,
             depth,
         };

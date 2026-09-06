@@ -31,6 +31,10 @@ mod runtime_calls;
 mod tail;
 #[path = "qbe/test_entry.rs"]
 mod test_entry;
+#[path = "qbe/union_validation.rs"]
+mod union_validation;
+#[path = "qbe/unions.rs"]
+mod unions;
 #[path = "qbe/with.rs"]
 mod with;
 
@@ -77,7 +81,9 @@ impl From<Diagnostic> for Exit {
 
 /// Validate signatures and lower complete function bodies through their exit handlers.
 fn emit_inner(program: &ir::Program, test_mode: bool) -> Lowering<String> {
+    union_validation::preflight(program)?;
     let layouts = nominal::layouts(&program.types)?;
+    union_validation::references(program, &layouts)?;
     let mut functions = BTreeMap::new();
     let mut main = None;
     for function in &program.functions {
@@ -156,6 +162,7 @@ fn scalar_width(ty: Type) -> char {
         | Type::Option(_)
         | Type::Result(_, _)
         | Type::Tuple(_)
+        | Type::Union(_)
         | Type::Native(_)
         | Type::Named(_, _)
         | Type::Function(_, _) => 'l',
@@ -380,8 +387,10 @@ impl Emitter<'_> {
             ExprKind::Invoke { callee, args } => {
                 self.invoke(callee, args, expr.span, locals, depth + 1)?
             }
-            ExprKind::Wrap(value) => self.newtype_expr(expr, value, true, locals, depth + 1)?,
-            ExprKind::Unwrap(value) => self.newtype_expr(expr, value, false, locals, depth + 1)?,
+            ExprKind::UnionInject { .. }
+            | ExprKind::UnionWiden { .. }
+            | ExprKind::Wrap(_)
+            | ExprKind::Unwrap(_) => self.conversion(expr, locals, depth + 1)?,
             ExprKind::CustomConstruct { tag, fields } => {
                 self.custom_construct(*tag, fields, &expr.ty, expr.span, locals, depth + 1)?
             }
@@ -987,6 +996,13 @@ fn concrete(ty: &Type, span: Span, depth: usize) -> Lowering<()> {
                 concrete(arg, span, depth + 1)?;
             }
             concrete(result, span, depth + 1)
+        }
+        Type::Union(members) => {
+            unions::canonical(members, span)?;
+            for member in members {
+                concrete(member, span, depth + 1)?;
+            }
+            Ok(())
         }
         Type::Tuple(args) | Type::Named(_, args) => {
             for arg in args {

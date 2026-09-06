@@ -238,7 +238,7 @@ impl Writer {
                     self.explicit.insert(name.clone());
                 }
             }
-            Type::Tuple(fields) | Type::Named(_, fields) => {
+            Type::Union(fields) | Type::Tuple(fields) | Type::Named(_, fields) => {
                 for field in fields {
                     self.collect(field, depth + 1)?;
                 }
@@ -282,6 +282,9 @@ impl Writer {
                     return Err(error("invalid nominal source type"));
                 }
             }
+            Type::Union(members) if !(2..=128).contains(&members.len()) => {
+                return Err(error("union presentation requires 2 to 128 members"));
+            }
             Type::Tuple(fields) if fields.is_empty() => {
                 return Err(error("empty tuple type must use Unit"))
             }
@@ -296,6 +299,7 @@ impl Writer {
     /// Render source type grammar, rejecting impossible/internal representations.
     fn ty(&mut self, ty: &Type, depth: usize) -> Result<()> {
         self.node(depth)?;
+        self.type_head(ty)?;
         match ty {
             Type::Never | Type::Infer(_) => {
                 Err(error("cannot present an unresolved internal type"))
@@ -308,6 +312,7 @@ impl Writer {
             Type::Unit => self.push("()"),
             Type::Native(native) => self.push(native.name()),
             Type::Generic(name) => self.generic(name),
+            Type::Union(members) => self.union(members, depth),
             Type::Tuple(fields) => {
                 if fields.is_empty() {
                     return Err(error("empty tuple type must use Unit"));
@@ -336,6 +341,24 @@ impl Writer {
                 Ok(())
             }
         }
+    }
+
+    /// Parenthesize only alternatives whose arrow or nested union needs an explicit boundary.
+    fn union(&mut self, members: &[Type], depth: usize) -> Result<()> {
+        for (index, member) in members.iter().enumerate() {
+            if index != 0 {
+                self.push(" | ")?;
+            }
+            let grouped = matches!(member, Type::Function(..) | Type::Union(_));
+            if grouped {
+                self.push("(")?;
+            }
+            self.ty(member, depth + 1)?;
+            if grouped {
+                self.push(")")?;
+            }
+        }
+        Ok(())
     }
 
     /// Render a fixed-arity compound without cloning its children.
@@ -420,6 +443,14 @@ impl Writer {
             return Err(error("pattern prefix limit exceeded"));
         }
         match &pattern.kind {
+            Typed {
+                pattern,
+                annotation,
+            } => {
+                self.pattern(pattern, depth + 1)?;
+                self.push(": ")?;
+                self.ty(annotation, depth + 1)
+            }
             Wildcard => self.push("_"),
             Bind(name) => self.binding(name),
             Int(value) => self.push(&value.to_string()),

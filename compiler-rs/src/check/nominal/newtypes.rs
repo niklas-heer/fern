@@ -193,7 +193,7 @@ pub(in crate::check) fn charge_newtype_type(
         }
         work.set(used);
         match ty {
-            Type::Named(_, xs) | Type::Tuple(xs) => pending.extend(xs),
+            Type::Union(xs) | Type::Named(_, xs) | Type::Tuple(xs) => pending.extend(xs),
             Type::Function(xs, result) => {
                 pending.extend(xs);
                 pending.push(result);

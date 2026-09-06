@@ -1,0 +1,8 @@
+fn choose(anchor: a, value: a | Int) -> Int:
+    match value:
+        _: a -> 1
+        _: Int -> 2
+fn main():
+    println(choose(3, 4))
+    println(choose("anchor", 4))
+    println(choose("anchor", "member"))

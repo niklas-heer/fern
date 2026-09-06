@@ -304,7 +304,7 @@ fn contains(ty: &Type, needle: &Type) -> bool {
                 pending.extend(args);
                 pending.push(result);
             }
-            Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
+            Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
             Type::List(a) | Type::Option(a) => pending.push(a),
             Type::Result(a, b) | Type::Map(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
             _ => {}
@@ -331,6 +331,7 @@ impl Generalization<'_> {
             Type::Option(a) => Type::Option(Box::new(self.ty(a)?)),
             Type::Result(a, b) => Type::Result(Box::new(self.ty(a)?), Box::new(self.ty(b)?)),
             Type::Map(a, b) => Type::Map(Box::new(self.ty(a)?), Box::new(self.ty(b)?)),
+            Type::Union(args) => crate::unions::make(self.types(args)?, Span::default())?,
             Type::Tuple(args) => Type::Tuple(self.types(args)?),
             Type::Named(name, args) => Type::Named(name.clone(), self.types(args)?),
             Type::Function(args, result) => {

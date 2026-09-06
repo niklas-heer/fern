@@ -23,6 +23,7 @@ mod schemes;
 mod sequences;
 mod shapes;
 mod specialize;
+mod unions;
 mod whole;
 mod with_flow;
 
@@ -52,6 +53,7 @@ struct Inference {
     ranks: Vec<u32>,
     probing: bool,
     whole_signature: bool,
+    specializing: bool,
     shapes: Vec<shapes::Obligation>,
     next_shape: usize,
     revision: usize,
@@ -213,8 +215,10 @@ fn signatures(
                 params: function
                     .params
                     .iter()
-                    .map(|param| clauses::parameter_type(param).clone())
-                    .collect(),
+                    .map(|param| {
+                        nominal::substitute(clauses::parameter_type(param), &HashMap::new())
+                    })
+                    .collect::<Checked<Vec<_>>>()?,
                 result,
                 generics,
                 dispatch: dispatch.contains(&function.name),
@@ -254,6 +258,11 @@ fn function_result(function: &ast::Function) -> Checked<Type> {
     if let Some(ty) = &function.return_type {
         validate_type(ty, function.span)?;
     }
+    let result = function
+        .return_type
+        .as_ref()
+        .map(|ty| nominal::substitute(ty, &HashMap::new()))
+        .transpose()?;
     if function.name == "main" {
         if !function.params.is_empty() {
             return Err(Diagnostic::new(
@@ -261,7 +270,7 @@ fn function_result(function: &ast::Function) -> Checked<Type> {
                 "main must take zero parameters",
             ));
         }
-        let ty = function.return_type.clone().unwrap_or(Type::Unit);
+        let ty = result.unwrap_or(Type::Unit);
         if !returns::main_result(&ty) {
             return Err(Diagnostic::new(
                 function.span,
@@ -270,7 +279,7 @@ fn function_result(function: &ast::Function) -> Checked<Type> {
         }
         Ok(ty)
     } else {
-        function.return_type.clone().ok_or_else(|| {
+        result.ok_or_else(|| {
             Diagnostic::new(
                 function.span,
                 "public functions require a return type annotation",
@@ -336,6 +345,10 @@ fn validate_type_structure(ty: &Type, span: Span, _aliases: bool) -> Checked<()>
             Type::List(inner) | Type::Option(inner) => pending.push((inner, depth + 1)),
             Type::Map(key, value) => { if !matches!(key.as_ref(), Type::Named(_, _)) { maps::validate_key(key, span, true)?; } pending.push((key, depth + 1)); pending.push((value, depth + 1)); }
             Type::Result(ok, err) => { pending.push((ok, depth + 1)); pending.push((err, depth + 1)); }
+            Type::Union(args) => {
+                if args.is_empty() || args.len() > 128 { return Err(Diagnostic::new(span, "union alternative limit exceeded")); }
+                pending.extend(args.iter().map(|a| (a, depth + 1)));
+            },
             Type::Tuple(args) | Type::Named(_, args) => pending.extend(args.iter().map(|a|(a, depth + 1))),
             Type::Range | Type::Native(_) | Type::Generic(_) | Type::Float | Type::Int | Type::Bool | Type::String | Type::Unit => {}
         }
@@ -386,6 +399,15 @@ impl Inference {
                     .collect::<Checked<Vec<_>>>()?,
                 Box::new(self.resolve_inner(result, span, depth + 1, budget)?),
             ),
+            Type::Union(args) => {
+                self.charge_union(ty, span)?;
+                crate::unions::make(
+                    args.iter()
+                        .map(|a| self.resolve_inner(a, span, depth + 1, budget))
+                        .collect::<Checked<Vec<_>>>()?,
+                    span,
+                )?
+            }
             Type::Tuple(args) => Type::Tuple(
                 args.iter()
                     .map(|a| self.resolve_inner(a, span, depth + 1, budget))
@@ -445,6 +467,7 @@ impl Inference {
                 }
                 Ok(())
             }
+            (Type::Union(xs), Type::Union(ys)) => self.unify_unions(xs, ys, span, context),
             (Type::Tuple(xs), Type::Tuple(ys)) if xs.len() == ys.len() => {
                 for (x, y) in xs.iter().zip(ys) {
                     self.unify(x, y, span, context)?;
@@ -487,7 +510,9 @@ impl Inference {
                     pending.extend(args);
                     pending.push(result);
                 }
-                Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
+                Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => {
+                    pending.extend(args)
+                }
                 _ => {}
             }
         }
@@ -542,7 +567,9 @@ impl Inference {
                     pending.extend(args);
                     pending.push(result);
                 }
-                Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
+                Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => {
+                    pending.extend(args)
+                }
                 _ => {}
             }
         }
@@ -557,6 +584,8 @@ impl Checker<'_> {
         self.inference.newtypes = self.registry.newtype_definitions();
         self.inference.newtype_work = self.registry.newtype_budget();
         let signature = &self.signatures[&function.name];
+        self.inference.specializing =
+            !signature.generics.is_empty() && !self.inference.template && !self.inference.probing;
         let id = signature.id;
         let return_type = function_result(function)?;
         self.function_return = return_type.clone();
@@ -664,16 +693,14 @@ impl Checker<'_> {
         let (kind, ty) = self.expression_kind(expr, expected, depth)?;
         let (kind, ty) = control::strict_divergence(kind, ty);
         returns::charge_output(&self.inference, &ty, expr.span)?;
-        if let Some(expected) = expected {
-            self.inference
-                .unify(&ty, expected, expr.span, "expression type")?;
-        }
-        self.observe_source(expr, &kind, &ty);
-        Ok(ir::Expr {
+        let value = ir::Expr {
             kind,
             ty,
             span: expr.span,
-        })
+        };
+        let value = self.assign_expression(value, expected)?;
+        self.observe_source(expr, &value.kind, &value.ty);
+        Ok(value)
     }
 
     /// Resolve expression forms while preserving the enclosing expected type.
@@ -859,11 +886,15 @@ impl Checker<'_> {
     ) -> Checked<TypedKind> {
         let element = self.inference.fresh();
         self.constrain_result(&Type::List(Box::new(element.clone())), expected, span)?;
+        let directional = self.directional_context(Some(&element), span)?;
         let mut checked = Vec::new();
         for value in values {
-            let value = self
-                .expression_expected(value, Some(&element), depth)
-                .map_err(|e| closures::context(e, "list element"))?;
+            let value = if directional {
+                self.expression_expected(value, Some(&element), depth)
+            } else {
+                self.expression_equal(value, &element, depth)
+            }
+            .map_err(|e| closures::context(e, "list element"))?;
             self.inference
                 .unify(&value.ty, &element, value.span, "list element")?;
             checked.push(value);
@@ -1103,23 +1134,26 @@ impl Checker<'_> {
         } else {
             None
         };
+        let directional = self.directional_context(expected, condition.span)?;
         let then_branch = self
             .expression_expected(then_branch, expected, depth)
             .map_err(|e| closures::context(e, "if branch"))?;
         let else_branch = else_branch
             .map(|branch| {
-                self.expression_expected(
-                    branch,
-                    expected.or(if then_branch.ty == Type::Never {
-                        None
-                    } else {
-                        Some(&then_branch.ty)
-                    }),
-                    depth,
-                )
-                .map_err(|e| closures::context(e, "if branch"))
+                let context = expected.or(if then_branch.ty == Type::Never {
+                    None
+                } else {
+                    Some(&then_branch.ty)
+                });
+                if !directional {
+                    if let Some(context) = context {
+                        return self.expression_equal(branch, context, depth);
+                    }
+                }
+                self.expression_expected(branch, context, depth)
             })
-            .transpose()?;
+            .transpose()
+            .map_err(|e| closures::context(e, "if branch"))?;
         let ty = if let Some(other) = &else_branch {
             self.inference
                 .unify(&other.ty, &then_branch.ty, other.span, "if branch")?;
@@ -1357,6 +1391,7 @@ impl Checker<'_> {
             return Err(Diagnostic::new(span, "match must be exhaustive"));
         }
         let value = self.expression(value, depth)?;
+        let directional = self.directional_context(expected, span)?;
         let ty = expected.cloned().unwrap_or_else(|| self.inference.fresh());
         let mut checked = Vec::new();
         for arm in arms {
@@ -1371,9 +1406,12 @@ impl Checker<'_> {
                 self.inference
                     .unify(&guard.ty, &Type::Bool, guard.span, "match guard")?;
             }
-            let body = self
-                .expression_expected(&arm.body, Some(&ty), depth)
-                .map_err(|e| closures::context(e, "match branch"))?;
+            let body = if directional {
+                self.expression_expected(&arm.body, Some(&ty), depth)
+            } else {
+                self.expression_equal(&arm.body, &ty, depth)
+            }
+            .map_err(|e| closures::context(e, "match branch"))?;
             self.scopes.pop();
             self.inference
                 .unify(&body.ty, &ty, body.span, "match branch")?;
@@ -1414,6 +1452,10 @@ impl Checker<'_> {
             ));
         }
         let (checked, expected) = match &pattern.kind {
+            Typed {
+                pattern: inner,
+                annotation,
+            } => return self.typed_pattern(inner, annotation, ty, names, pattern.span),
             Tuple(_) | List { .. } | TupleRest { .. } => {
                 return self.sequence_pattern(pattern, ty, names, depth)
             }
@@ -1682,7 +1724,9 @@ impl Checker<'_> {
             }
             ir::ExprKind::Invoke { callee, args } => self.finalize_invoke(callee, args)?,
             ir::ExprKind::Unary { op, value } => self.finalize_unary(*op, value)?,
-            ir::ExprKind::Wrap(value)
+            ir::ExprKind::UnionInject { value }
+            | ir::ExprKind::UnionWiden { value }
+            | ir::ExprKind::Wrap(value)
             | ir::ExprKind::Unwrap(value)
             | ir::ExprKind::Try(value)
             | ir::ExprKind::Field { value, .. } => self.finalize(value)?,
@@ -1711,7 +1755,7 @@ impl Checker<'_> {
             ir::ExprKind::Block(stmts) => self.finalize_block(stmts)?,
             _ => {}
         }
-        Ok(())
+        self.finalize_union_conversion(expr)
     }
 
     /// Normalize a computed callable before its ordered argument expressions.
@@ -1732,7 +1776,7 @@ impl Checker<'_> {
     fn finalize_match(
         &self,
         value: &mut ir::Expr,
-        arms: &mut [ir::MatchArm],
+        arms: &mut Vec<ir::MatchArm>,
         span: Span,
     ) -> Checked<()> {
         self.finalize(value)?;
@@ -1743,7 +1787,18 @@ impl Checker<'_> {
             }
             self.finalize(&mut arm.body)?;
         }
-        coverage::validate(&value.ty, arms, self.registry, span)
+        if self.inference.specializing {
+            let retained = coverage::retained(&value.ty, arms, self.registry, span, true)?;
+            let mut index = 0;
+            arms.retain(|_| {
+                let keep = retained[index];
+                index += 1;
+                keep
+            });
+            Ok(())
+        } else {
+            coverage::validate(&value.ty, arms, self.registry, span)
+        }
     }
 
     /// Finalize lazy branches and enforce discarded Result obligations on no-else paths.
@@ -2020,6 +2075,14 @@ fn fallible_bindings(
     bindings: &mut Vec<(usize, Span)>,
 ) -> Checked<()> {
     match pattern {
+        ir::Pattern::UnionSelect {
+            narrowed,
+            binding: Some(binding),
+        } => {
+            if registry.contains_result(narrowed)? {
+                bindings.push((binding.id.0, span));
+            }
+        }
         ir::Pattern::Newtype(inner) => {
             fallible_bindings(
                 inner,

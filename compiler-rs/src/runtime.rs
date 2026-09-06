@@ -4,7 +4,7 @@
 use crate::Type;
 
 /// Opaque runtime-owned handles; callers cannot inspect or construct their C fields.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NativeType {
     Panel,
     Table,

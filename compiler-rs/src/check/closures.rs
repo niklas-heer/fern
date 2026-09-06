@@ -49,7 +49,12 @@ impl Checker<'_> {
         let result = self.inference.fresh();
         let ty = Type::Function(types.clone(), Box::new(result.clone()));
         if let Some(expected) = expected {
-            self.inference.unify(&ty, expected, span, "lambda type")?;
+            let expected = self.inference.resolve(expected, span)?;
+            if matches!(expected, Type::Union(_)) {
+                self.union_context(&ty, &expected, span)?;
+            } else {
+                self.inference.unify(&ty, &expected, span, "lambda type")?;
+            }
         }
         let outer_count = self.local_count;
         self.scopes.push(HashMap::new());
@@ -257,6 +262,12 @@ impl Checker<'_> {
             }
             let actual = self.inference.resolve(result, span)?;
             let expected = self.inference.resolve(expected, span)?;
+            if matches!(actual, Type::Union(_)) {
+                return Ok(());
+            }
+            if matches!(expected, Type::Union(_)) {
+                return self.union_context(&actual, &expected, span);
+            }
             if matches!(actual, Type::Infer(_))
                 || matches!(expected, Type::Infer(_))
                 || std::mem::discriminant(&actual) == std::mem::discriminant(&expected)
@@ -286,14 +297,35 @@ impl Checker<'_> {
                 ),
             ));
         }
+        let exact: Vec<_> = params
+            .iter()
+            .map(|param| {
+                Ok(matches!(
+                    self.inference.resolve(param, span)?,
+                    Type::Infer(_)
+                ))
+            })
+            .collect::<Checked<_>>()?;
         let delayed: Vec<_> = args.iter().map(contains_lambda).collect();
+        let order = params
+            .iter()
+            .zip(&delayed)
+            .map(|(param, delayed)| {
+                let union = matches!(self.inference.resolve(param, span)?, Type::Union(_));
+                Ok(if *delayed { 2 } else { usize::from(union) })
+            })
+            .collect::<Checked<Vec<_>>>()?;
         let mut checked = vec![None; args.len()];
-        for phase in [false, true] {
+        for phase in 0..3 {
             for (index, (arg, param)) in args.iter().zip(params).enumerate() {
-                if delayed[index] == phase {
+                if order[index] == phase {
                     checked[index] = Some(
-                        self.expression_expected(arg, Some(param), depth)
-                            .map_err(|e| context(e, "call argument"))?,
+                        if exact[index] {
+                            self.expression_equal(arg, param, depth)
+                        } else {
+                            self.expression_expected(arg, Some(param), depth)
+                        }
+                        .map_err(|e| context(e, "call argument"))?,
                     );
                 }
             }

@@ -138,3 +138,66 @@ fn unboxed_layers_cannot_hide_private_editor_or_inference_nodes() {
             .contains(message));
     }
 }
+
+#[test]
+fn inactive_union_conversions_cannot_hide_private_nodes() {
+    for editor in [false, true] {
+        for widening in [false, true] {
+            let source = "fn unused()->Int | String: 1\nfn main(): ()\n";
+            let mut program = crate::check::check(&crate::parse::parse(source).unwrap()).unwrap();
+            let function = program
+                .functions
+                .iter_mut()
+                .find(|f| f.name == "unused")
+                .unwrap();
+            let leaf = function.body.clone();
+            let kind = if editor {
+                ExprKind::EditorHole {
+                    token: EditorHoleToken::new(),
+                    receiver: Box::new(leaf.clone()),
+                }
+            } else {
+                ExprKind::Probe {
+                    token: ProbeToken::new(0),
+                    children: vec![leaf.clone()],
+                    bindings: vec![],
+                }
+            };
+            let hidden = Box::new(Expr {
+                kind,
+                ty: leaf.ty.clone(),
+                span: leaf.span,
+            });
+            let kind = if widening {
+                ExprKind::UnionWiden { value: hidden }
+            } else {
+                ExprKind::UnionInject { value: hidden }
+            };
+            let conversion = Expr {
+                kind,
+                ty: leaf.ty.clone(),
+                span: leaf.span,
+            };
+            let returning = Expr {
+                kind: ExprKind::Return(Box::new(leaf)),
+                ty: Type::Never,
+                span: Span::default(),
+            };
+            function.body.kind =
+                ExprKind::Block(vec![Stmt::Expr(returning), Stmt::Expr(conversion)]);
+            let message = if editor {
+                "editor hole"
+            } else {
+                "inference probe"
+            };
+            assert!(reject_probes(&program)
+                .unwrap_err()
+                .message
+                .contains(message));
+            assert!(crate::qbe::emit(&program)
+                .unwrap_err()
+                .message
+                .contains(message));
+        }
+    }
+}

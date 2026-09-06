@@ -86,6 +86,12 @@ impl EditorHoleToken {
 
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    UnionInject {
+        value: Box<Expr>,
+    },
+    UnionWiden {
+        value: Box<Expr>,
+    },
     Wrap(Box<Expr>),
     Unwrap(Box<Expr>),
     /// Incomplete member result used only in isolated editor proof; never executable.
@@ -207,6 +213,10 @@ pub struct MatchArm {
 
 #[derive(Clone, Debug)]
 pub enum Pattern {
+    UnionSelect {
+        narrowed: Type,
+        binding: Option<Param>,
+    },
     Newtype(Box<Pattern>),
     Tuple(Vec<Pattern>),
     List {
@@ -321,7 +331,9 @@ pub(crate) fn children(expr: &Expr) -> Vec<&Expr> {
         ExprKind::Invoke { callee, args } => std::iter::once(callee.as_ref())
             .chain(args.iter())
             .collect(),
-        ExprKind::Wrap(value)
+        ExprKind::UnionInject { value }
+        | ExprKind::UnionWiden { value }
+        | ExprKind::Wrap(value)
         | ExprKind::Unwrap(value)
         | ExprKind::Return(value)
         | ExprKind::Defer(value)

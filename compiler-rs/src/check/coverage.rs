@@ -8,6 +8,7 @@ enum Head {
     Bool(bool),
     String(String),
     Variant(usize),
+    Selected(Vec<usize>),
     Unit,
     Nil,
     Cons,
@@ -27,7 +28,19 @@ pub(super) fn validate(
     registry: &Registry,
     span: Span,
 ) -> Checked<()> {
+    retained(subject, arms, registry, span, false).map(|_| ())
+}
+
+/// Concrete substitutions may merge alternatives after the rigid source body was validated.
+pub(super) fn retained(
+    subject: &Type,
+    arms: &[ir::MatchArm],
+    registry: &Registry,
+    span: Span,
+    prune: bool,
+) -> Checked<Vec<bool>> {
     let mut matrix = Vec::new();
+    let mut kept = Vec::new();
     let mut budget = 20_000;
     for arm in arms {
         bound_expansion(&arm.pattern, arm.span)?;
@@ -41,11 +54,16 @@ pub(super) fn validate(
             &mut budget,
             span,
         )? {
+            if prune {
+                kept.push(false);
+                continue;
+            }
             return Err(Diagnostic::new(
                 arm.span,
                 "unreachable match arm: previous unguarded patterns already cover it",
             ));
         }
+        kept.push(true);
         if arm.guard.is_none() {
             matrix.push(vec![pattern]);
         }
@@ -64,12 +82,23 @@ pub(super) fn validate(
             "match must be exhaustive; guards do not guarantee coverage",
         ));
     }
-    Ok(())
+    Ok(kept)
 }
 
 /// Convert resolved patterns into constructor matrices; binders behave as wildcards.
 fn lower(pattern: &ir::Pattern, ty: &Type, registry: &Registry, span: Span) -> Checked<Pattern> {
     Ok(match pattern {
+        ir::Pattern::UnionSelect { narrowed, .. } => {
+            let members = crate::unions::members(ty);
+            let selected = crate::unions::members(narrowed);
+            let tags = members
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| selected.contains(t))
+                .map(|(tag, _)| tag)
+                .collect();
+            Pattern::Specific(Head::Selected(tags), vec![Pattern::Any])
+        }
         ir::Pattern::Newtype(inner) => {
             lower_variant(0, std::slice::from_ref(inner.as_ref()), ty, registry, span)?
         }
@@ -227,6 +256,9 @@ fn useful(
         );
     }
     match &candidate[0] {
+        Pattern::Specific(Head::Selected(_), _) => {
+            useful_selected(matrix, candidate, types, registry, depth, budget, span)
+        }
         Pattern::Specific(head, fields) => {
             let payload = payload_types(&types[0], head, registry, span)?;
             let matrix = specialize(matrix, head, fields.len());
@@ -246,6 +278,30 @@ fn useful(
         }
         Pattern::Any => useful_any(matrix, candidate, types, registry, depth, budget, span),
     }
+}
+
+/// Explore a typed subset using the same finite constructor coverage rules.
+fn useful_selected(
+    matrix: &[Vec<Pattern>],
+    candidate: &[Pattern],
+    types: &[Type],
+    registry: &Registry,
+    depth: usize,
+    budget: &mut usize,
+    span: Span,
+) -> Checked<bool> {
+    let Pattern::Specific(Head::Selected(tags), fields) = &candidate[0] else {
+        unreachable!("selected candidate dispatched by useful");
+    };
+    for tag in tags {
+        charge_columns(candidate.len() + fields.len(), budget, span)?;
+        let mut candidate = candidate.to_vec();
+        candidate[0] = Pattern::Specific(Head::Variant(*tag), fields.clone());
+        if useful(matrix, &candidate, types, registry, depth, budget, span)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Remove unconstrained columns together so wide tuples do not consume nesting depth.
@@ -340,6 +396,8 @@ fn specialize(matrix: &[Vec<Pattern>], head: &Head, arity: usize) -> Vec<Vec<Pat
         .filter_map(|row| {
             let mut fields = match &row[0] {
                 Pattern::Any => vec![Pattern::Any; arity],
+                Pattern::Specific(Head::Selected(tags), fields)
+                    if matches!(head, Head::Variant(tag) if tags.contains(tag)) => fields.clone(),
                 Pattern::Specific(other, fields) if other == head => fields.clone(),
                 _ => return None,
             };
@@ -361,14 +419,16 @@ fn finite_heads(ty: &Type, registry: &Registry, span: Span) -> Checked<Option<He
             (Head::Nil, vec![]),
             (Head::Cons, vec![*element.clone(), ty.clone()]),
         ])),
-        Type::Tuple(_) | Type::Option(_) | Type::Result(..) | Type::Named(..) => Ok(Some(
-            registry
-                .variants(ty, span)?
-                .into_iter()
-                .enumerate()
-                .map(|(tag, fields)| (Head::Variant(tag), fields))
-                .collect(),
-        )),
+        Type::Union(_) | Type::Tuple(_) | Type::Option(_) | Type::Result(..) | Type::Named(..) => {
+            Ok(Some(
+                registry
+                    .variants(ty, span)?
+                    .into_iter()
+                    .enumerate()
+                    .map(|(tag, fields)| (Head::Variant(tag), fields))
+                    .collect(),
+            ))
+        }
         _ => Ok(None),
     }
 }

@@ -1,0 +1,13 @@
+fn show(x: Int | Float | Bool | Unit) -> Unit:
+    match x:
+        n: Int -> println(n)
+        f: Float -> println(f)
+        b: Bool -> println(b)
+        _: Unit -> println("unit")
+fn main():
+    show(-9223372036854775808)
+    show(9223372036854775807)
+    show(1.25)
+    show(false)
+    show(true)
+    show(())

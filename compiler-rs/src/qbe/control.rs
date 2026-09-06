@@ -24,6 +24,8 @@ impl Emitter<'_> {
             ExprKind::Field { value, .. }
             | ExprKind::Try(value)
             | ExprKind::Wrap(value)
+            | ExprKind::UnionInject { value }
+            | ExprKind::UnionWiden { value }
             | ExprKind::Unwrap(value)
             | ExprKind::Unary { value, .. } => vec![value],
             ExprKind::Call { args, .. } => args.iter().collect(),

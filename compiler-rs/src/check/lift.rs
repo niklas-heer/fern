@@ -162,7 +162,9 @@ pub(super) fn children_mut(expr: &mut ir::Expr) -> Vec<&mut ir::Expr> {
         Invoke { callee, args } => std::iter::once(callee.as_mut())
             .chain(args.iter_mut())
             .collect(),
-        Wrap(value)
+        UnionInject { value }
+        | UnionWiden { value }
+        | Wrap(value)
         | Unwrap(value)
         | Return(value)
         | Defer(value)

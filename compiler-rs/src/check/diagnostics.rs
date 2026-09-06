@@ -55,6 +55,7 @@ impl Budget {
         Some(match ty {
             Type::Generic(name) => Type::Generic(self.name(source_generic(name))?),
             Type::Named(name, args) => Type::Named(self.name(name)?, self.types(args, depth)?),
+            Type::Union(args) => Type::Union(self.types(args, depth)?),
             Type::Tuple(args) => Type::Tuple(self.types(args, depth)?),
             Type::Function(args, result) => Type::Function(
                 self.types(args, depth)?,

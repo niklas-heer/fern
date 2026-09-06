@@ -139,6 +139,7 @@ fn source_parser(source: &str, record: bool) -> ParseResult<Parser> {
         position: 0,
         depth: 0,
         guard_arrow: None,
+        type_arm_boundary: None,
         type_spans: record.then(Vec::new),
         member_hole: None,
     })
@@ -1138,6 +1139,7 @@ struct Parser {
     position: usize,
     depth: usize,
     guard_arrow: Option<usize>,
+    type_arm_boundary: Option<usize>,
     type_spans: Option<Vec<Span>>,
     member_hole: Option<HoleSite>,
 }
@@ -1664,7 +1666,7 @@ impl Parser {
         }
         self.depth += 1;
         let start = self.current().span.start;
-        let result = self.type_value();
+        let result = self.union_type();
         self.depth -= 1;
         if result.is_ok() {
             if let Some(spans) = &mut self.type_spans {
@@ -1675,6 +1677,25 @@ impl Parser {
             }
         }
         result
+    }
+
+    /// Preserve written union members; semantic normalization follows alias resolution.
+    fn union_type(&mut self) -> ParseResult<Type> {
+        let first = self.type_value()?;
+        if !self.eat(&Kind::Bar) {
+            return Ok(first);
+        }
+        let mut members = vec![first];
+        loop {
+            if members.len() >= 128 {
+                return Err(self.error("union alternative limit exceeded"));
+            }
+            members.push(self.type_value()?);
+            if !self.eat(&Kind::Bar) {
+                break;
+            }
+        }
+        Ok(Type::Union(members))
     }
 
     /// Parse primitive, nominal, and generic types without resolving declarations.
@@ -1751,7 +1772,7 @@ impl Parser {
     /// Distinguish structural tuple/group types from right-associative function signatures.
     fn tuple_type(&mut self) -> ParseResult<Type> {
         let (mut fields, comma) = self.parenthesized_types()?;
-        if self.eat(&Kind::Arrow) {
+        if self.type_arm_boundary != Some(self.depth) && self.eat(&Kind::Arrow) {
             return Ok(Type::Function(fields, Box::new(self.ty()?)));
         }
         Ok(if fields.is_empty() {
@@ -2582,7 +2603,7 @@ impl Parser {
             if block && self.eat(&Kind::Dedent) {
                 break;
             }
-            let pattern = self.pattern()?;
+            let pattern = self.typed_pattern()?;
             let guard = if self.word("if") {
                 self.take();
                 Some(self.guard_expression()?)
@@ -2699,6 +2720,48 @@ impl Parser {
         self.guard_arrow = separator;
         let result = self.expr(0);
         self.guard_arrow = previous;
+        result
+    }
+
+    /// Typed match binders narrow values without changing parameter annotation parsing.
+    fn typed_pattern(&mut self) -> ParseResult<Pattern> {
+        let pattern = self.pattern()?;
+        if !self.eat(&Kind::Colon) {
+            return Ok(pattern);
+        }
+        let annotation = self.pattern_annotation()?;
+        let span = Span {
+            start: pattern.span.start,
+            end: self.tokens[self.position - 1].span.end,
+        };
+        Ok(Pattern {
+            kind: PatternKind::Typed {
+                pattern: Box::new(pattern),
+                annotation,
+            },
+            span,
+        })
+    }
+
+    /// Try full function type syntax, then protect a grouped annotation's arm delimiter.
+    fn pattern_annotation(&mut self) -> ParseResult<Type> {
+        let position = self.position;
+        let depth = self.depth;
+        let spans = self.type_spans.as_ref().map_or(0, Vec::len);
+        if let Ok(ty) = self.ty() {
+            if self.current().kind == Kind::Arrow || self.word("if") {
+                return Ok(ty);
+            }
+        }
+        self.position = position;
+        self.depth = depth;
+        if let Some(recorded) = &mut self.type_spans {
+            recorded.truncate(spans);
+        }
+        let previous = self.type_arm_boundary;
+        self.type_arm_boundary = Some(depth + 1);
+        let result = self.ty();
+        self.type_arm_boundary = previous;
         result
     }
 

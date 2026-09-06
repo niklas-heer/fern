@@ -1,0 +1,4 @@
+fn select(x: a, y: a | String) -> a: x
+fn main():
+    println(select(3, "ignored"))
+    println(select(false, "ignored"))

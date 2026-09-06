@@ -1050,6 +1050,14 @@ fn type_text(ty: &Type) -> Result<String> {
                 .join(", "),
             type_text(result)?
         ),
+        Type::Union(members) => members
+            .iter()
+            .map(|ty| match ty {
+                Type::Function(..) | Type::Union(_) => Ok(format!("({})", type_text(ty)?)),
+                _ => type_text(ty),
+            })
+            .collect::<Result<Vec<_>>>()?
+            .join(" | "),
         Type::Tuple(fields) => tuple_text(
             fields
                 .iter()
@@ -1115,6 +1123,14 @@ fn pattern_text(pattern: &Pattern) -> String {
             fields.len(),
         ),
         PatternKind::Wildcard => "_".into(),
+        PatternKind::Typed {
+            pattern,
+            annotation,
+        } => format!(
+            "{}: {}",
+            pattern_text(pattern),
+            type_text(annotation).expect("parsed pattern annotation has source syntax")
+        ),
         PatternKind::Bind(name) => name.clone(),
         PatternKind::Int(value) => value.to_string(),
         PatternKind::Bool(value) => value.to_string(),
@@ -1586,6 +1602,7 @@ fn clear_statements(statements: &mut [Stmt]) {
 fn clear_pattern(pattern: &mut Pattern) {
     pattern.span = Span::default();
     match &mut pattern.kind {
+        PatternKind::Typed { pattern, .. } => clear_pattern(pattern),
         PatternKind::NamedConstructor { fields, .. } | PatternKind::Tuple(fields) => {
             for field in fields {
                 clear_pattern(field);

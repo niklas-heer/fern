@@ -961,7 +961,7 @@ fn qualify_type(ty: &mut Type, names: &Names) -> Result<(), Error> {
             }
             qualify_type(result, names)?;
         }
-        Type::Tuple(fields) => {
+        Type::Union(fields) | Type::Tuple(fields) => {
             for field in fields {
                 qualify_type(field, names)?;
             }
@@ -1401,6 +1401,13 @@ fn pattern(
     let original = pattern.span;
     shift(&mut pattern.span, offset);
     match &mut pattern.kind {
+        ast::PatternKind::Typed {
+            pattern: inner,
+            annotation,
+        } => {
+            qualify_type(annotation, names).map_err(|e| at_span(e, original))?;
+            pattern_binding(inner, names, bound, offset)?;
+        }
         ast::PatternKind::List { prefix, rest } => {
             for field in prefix {
                 pattern_binding(field, names, bound, offset)?;

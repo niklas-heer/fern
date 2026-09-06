@@ -599,3 +599,8 @@ The Rust frontend also compiles `scripts/check_style.fn`. Run
 to compare its native diagnostics, severity, file counts and exits with Python.
 This gate is included in `just rust-check`; full bootstrap workflow parity remains
 tracked in the roadmap.
+
+Finite ordinary-type unions now support declared member/subset conversions and
+typed match narrowing in native execution and the REPL. Full-width payloads retain
+nominal and generic identity. Existing containers stay invariant; inferred joins
+and lifted operators remain separate work. See [the union contract](../docs/UNIONS.md).

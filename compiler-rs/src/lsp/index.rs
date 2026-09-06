@@ -583,6 +583,7 @@ impl<'a> Index<'a> {
     ) -> Option<()> {
         self.charge(1, depth)?;
         match &pattern.kind {
+            ast::PatternKind::Typed { pattern, .. } => self.pattern(pattern, locals, depth + 1)?,
             ast::PatternKind::Bind(name) => {
                 locals.insert(name.clone(), pattern.span);
                 if self.contains(pattern.span) {

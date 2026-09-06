@@ -218,12 +218,15 @@ pub(super) fn reject_discards(
     registry: &nominal::Registry,
 ) -> Checked<()> {
     match pattern {
+        ir::Pattern::Wildcard if matches!(ty, Type::Union(_)) => {
+            control::pattern_discards(pattern, ty, span, registry)
+        }
         ir::Pattern::Newtype(inner) => {
             control::pattern_discards(inner, &registry.newtype_inner(ty, span)?, span, registry)
         }
-        ir::Pattern::List { .. } | ir::Pattern::TupleRest { .. } => {
-            control::pattern_discards(pattern, ty, span, registry)
-        }
+        ir::Pattern::UnionSelect { .. }
+        | ir::Pattern::List { .. }
+        | ir::Pattern::TupleRest { .. } => control::pattern_discards(pattern, ty, span, registry),
         ir::Pattern::Tuple(fields) if fields.is_empty() => Ok(()),
         ir::Pattern::Tuple(fields) | ir::Pattern::Variant { tag: 0, fields } => {
             let variants = registry.variants(ty, span)?;

@@ -1,0 +1,8 @@
+newtype UserId = UserId(Int)
+fn inspect(value: Int | UserId) -> Int:
+    match value:
+        raw: Int -> raw
+        wrapped: UserId -> wrapped.0 + 1
+fn main():
+    println(inspect(4294967296))
+    println(inspect(UserId(4294967296)))

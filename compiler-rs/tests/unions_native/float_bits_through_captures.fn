@@ -1,0 +1,7 @@
+fn capture(value: Float | Int) -> () -> Float:
+    () -> match value:
+        number: Float -> number
+        integer: Int -> 0.0
+fn main():
+    let f = capture(-0.0)
+    println(1.0 / f() < 0.0)

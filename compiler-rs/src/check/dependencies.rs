@@ -239,6 +239,7 @@ impl<'a> Walker<'a, '_> {
     /// Bind every nested payload/rest name without interpreting constructors as value calls.
     fn pattern(&mut self, pattern: &'a ast::Pattern) {
         match &pattern.kind {
+            ast::PatternKind::Typed { pattern, .. } => self.pending.push(Task::Pattern(pattern)),
             ast::PatternKind::Bind(name) => self.pending.push(Task::Name(name, pattern.span)),
             ast::PatternKind::Constructor {
                 binding: Some(name),

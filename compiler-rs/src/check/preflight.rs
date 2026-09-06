@@ -37,7 +37,7 @@ impl Budget {
                     pending.extend(args);
                     pending.push(result);
                 }
-                Type::Tuple(args) => pending.extend(args),
+                Type::Union(args) | Type::Tuple(args) => pending.extend(args),
                 Type::List(a) | Type::Option(a) => pending.push(a),
                 Type::Result(a, b) | Type::Map(a, b) => {
                     pending.push(a);
@@ -59,6 +59,14 @@ impl Budget {
                 ));
             }
             let bytes = match &pattern.kind {
+                ast::PatternKind::Typed {
+                    pattern: inner,
+                    annotation,
+                } => {
+                    self.ty(annotation, pattern.span)?;
+                    pending.push((inner, depth + 1));
+                    0
+                }
                 ast::PatternKind::List { prefix, rest } => {
                     self.sequence(prefix, rest.as_deref(), &mut pending, depth, pattern.span)?;
                     0

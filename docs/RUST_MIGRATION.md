@@ -830,3 +830,22 @@ scenario verifies continuation and final failure without invoking project builds
 This is diagnostic and source-portability parity. Full build/test/git/CLI workflow
 parity, bounded native process execution and the default-checker switch remain
 open. Python remains the shipping quality gate.
+
+
+## Finite unions and typed narrowing
+
+Ordinary-type unions now normalize after alias expansion and generic substitution,
+including singleton collapse. Declared assignment contexts insert checked member
+or subset conversions. Repeated generic equations and inferred branch joins stay
+exact, independent of argument order. Typed match binders and wildcards narrow
+members or subsets, with guards and generic specialization preserving coverage.
+
+Native tagged carriers preserve all 64 payload bits and remap subset tags after
+single evaluation. REPL carriers retain member identity and bounded storage.
+Result handling, module namespaces, source tooling, test entries and private IR
+validation all include unions. See [the contract](UNIONS.md) and Decision 83.
+
+The checkpoint adds 87 Rust regressions, 27 native programs, 23 parsed atomic
+rejection cases and unit/main Result entry checks. The integrated gates cover
+1,006 Rust tests and 553 C tests. Constructor refinements, variance, implicit
+joins, lifted capabilities and complete editor grammar parity remain open.

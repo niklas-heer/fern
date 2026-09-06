@@ -1,0 +1,7 @@
+fn observe(n: Int) -> Int:
+    println(n)
+    n
+fn select(x: Int | String, y: Int | String) -> Unit: ()
+fn exit() -> Int:
+    select(return observe(7), observe(99))
+fn main(): println(exit())

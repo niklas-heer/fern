@@ -1,0 +1,6 @@
+type Box:
+    value: Int
+fn empty() -> List(a | Box): []
+fn main():
+    let values: List(Int | Box) = empty()
+    println(List.len(values))

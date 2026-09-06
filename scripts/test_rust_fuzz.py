@@ -40,9 +40,10 @@ def main():
     corpus += sorted((ROOT / "compiler-rs/tests/aliases").glob("*.fn"))
     corpus += sorted((ROOT / "compiler-rs/tests/newtypes_native").glob("*.fn"))
     corpus += sorted((ROOT / "compiler-rs/tests/json_values/valid").glob("*.fn"))
+    corpus += sorted((ROOT / "compiler-rs/tests/unions_native").glob("*.fn"))
     sources = [path.read_text() for path in corpus]
     sources.extend(case[0] for case in BOUNDARY_CASES.values())
-    tokens = ["(", ")", "[", "]", ":", "\n", "    ", '"', "🌿", "\\", "?", "None", "if", "#"]
+    tokens = ["(", ")", "[", "]", ":", "\n", "    ", '"', "🌿", "\\", "?", "None", "if", "#", "|"]
     rng = random.Random(SEED)
     accepted = 0
     with tempfile.TemporaryDirectory(prefix="fern-rust-fuzz-") as temporary:

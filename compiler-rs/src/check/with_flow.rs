@@ -23,6 +23,7 @@ impl Checker<'_> {
                 "with handler expansion limit exceeded",
             ));
         }
+        let directional = self.directional_context(expected, span)?;
         let result = expected.cloned().unwrap_or_else(|| self.inference.fresh());
         let outer = self.scopes.clone();
         self.scopes.push(HashMap::new());
@@ -32,7 +33,12 @@ impl Checker<'_> {
             None => self.expression_expected(body, Some(&result), depth)?,
         };
         self.scopes = outer;
-        let handlers = self.with_handlers(&mut steps, arms, &result, span, depth)?;
+        let context = if directional { Some(&result) } else { None };
+        let handlers = self.with_handlers(&mut steps, arms, context, span, depth)?;
+        for handler in &handlers {
+            self.inference
+                .unify(&handler.body.ty, &result, span, "with branch")?;
+        }
         let ty = if body.ty == Type::Never && handlers.iter().all(|h| h.body.ty == Type::Never) {
             Type::Never
         } else {
@@ -83,7 +89,7 @@ impl Checker<'_> {
         &mut self,
         steps: &mut [ir::WithStep],
         arms: Option<&[ast::MatchArm]>,
-        result: &Type,
+        result: Option<&Type>,
         span: Span,
         depth: usize,
     ) -> Checked<Vec<ir::WithHandler>> {
@@ -139,7 +145,7 @@ impl Checker<'_> {
         arms: &[ast::MatchArm],
         patterns: &[ast::Pattern],
         used: &mut [bool],
-        result: &Type,
+        result: Option<&Type>,
         span: Span,
         depth: usize,
     ) -> Checked<ir::WithHandler> {
@@ -172,7 +178,7 @@ impl Checker<'_> {
             kind: ast::ExprKind::Name(name),
             span,
         };
-        let checked = self.matching(&subject, &selected, Some(result), span, depth);
+        let checked = self.matching(&subject, &selected, result, span, depth);
         self.scopes.pop();
         let (kind, ty) = checked?;
         Ok(ir::WithHandler {
@@ -282,6 +288,7 @@ fn compatible(pattern: &ast::Pattern, ty: &Type, registry: &nominal::Registry) -
         return Ok(true);
     }
     Ok(match &pattern.kind {
+        Typed { annotation, .. } => crate::unions::subset(annotation, ty),
         Wildcard | Bind(_) => true,
         Int(_) => *ty == Type::Int,
         Bool(_) => *ty == Type::Bool,

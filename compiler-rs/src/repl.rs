@@ -16,6 +16,13 @@ enum Value {
     Map(Rc<Vec<(Value, Value)>>),
     Sum(usize, Rc<Vec<Value>>),
     Closure(Rc<ClosureValue>),
+    Union(Rc<UnionValue>),
+}
+/// Keep the active semantic member because raw newtype payloads cannot identify their type.
+#[derive(Clone, Debug, PartialEq)]
+struct UnionValue {
+    member: Type,
+    value: Value,
 }
 /// Closures retain their originating program because later entries can renumber functions.
 #[derive(Clone, Debug)]
@@ -156,6 +163,12 @@ impl Machine {
         match &expr.kind {
             EditorHole { .. } => Err(fault("editor hole cannot enter executable IR")),
             Probe { .. } => Err(fault("inference probe cannot enter executable IR")),
+            UnionInject { value } => {
+                let member = value.ty.clone();
+                let value = self.expression(value)?;
+                Ok(Value::Union(Rc::new(UnionValue { member, value })))
+            }
+            UnionWiden { value } => self.expression(value),
             Wrap(value) | Unwrap(value) => self.expression(value),
             Return(value) => Err(Failure::Return(self.expression(value)?)),
             Break => Err(Failure::Break),
@@ -495,6 +508,7 @@ fn integer_power(mut base: i64, exponent: i64) -> Eval<i64> {
 /// Render interactive values without exposing internal pointers.
 fn display(value: &Value) -> String {
     match value {
+        Value::Union(value) => display(&value.value),
         Value::Int(n) => n.to_string(),
         Value::Float(n) => float_text(*n),
         Value::Bool(v) => v.to_string(),
@@ -520,6 +534,11 @@ fn display(value: &Value) -> String {
 /// Spell common semantic types for interactive results.
 fn type_name(ty: &Type) -> String {
     match ty {
+        Type::Union(members) => members
+            .iter()
+            .map(type_name)
+            .collect::<Vec<_>>()
+            .join(" | "),
         Type::Function(args, result) => format!(
             "({}) -> {}",
             args.iter().map(type_name).collect::<Vec<_>>().join(", "),
@@ -577,6 +596,14 @@ fn graph_budget<'a>(values: impl Iterator<Item = &'a Value>) -> Result<(), Strin
     while let Some(value) = pending.pop() {
         count += 1;
         match value {
+            Value::Union(value) => {
+                if seen.insert(Rc::as_ptr(value) as usize) {
+                    let (type_bytes, type_nodes) = storage::type_size(&value.member)?;
+                    bytes = bytes.saturating_add(std::mem::size_of::<UnionValue>() + type_bytes);
+                    count = count.saturating_add(type_nodes);
+                    pending.push(&value.value);
+                }
+            }
             Value::Json(value) => json.add(value, &mut bytes, &mut count)?,
             Value::String(s) => {
                 if seen.insert(Rc::as_ptr(s) as usize) {
@@ -647,6 +674,9 @@ fn display_typed(
     match (value, ty) {
         (Value::Map(entries), Type::Map(key, value)) => {
             display_map(entries, key, value, syntax, layouts, budget)
+        }
+        (Value::Union(value), Type::Union(_)) => {
+            display_typed(&value.value, &value.member, syntax, layouts, budget)
         }
         (Value::List(values), Type::List(ty)) => {
             let mut shown = values

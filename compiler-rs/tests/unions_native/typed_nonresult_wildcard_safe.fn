@@ -1,0 +1,7 @@
+fn inspect(x: Int | Result(Int, String)) -> Unit:
+    match x:
+        _: Int -> ()
+        result: Result(Int, String) -> match result:
+            Ok(n) -> println(n)
+            Err(message) -> println(message)
+fn main(): inspect(7)

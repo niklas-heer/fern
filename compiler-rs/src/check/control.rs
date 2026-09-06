@@ -84,6 +84,7 @@ impl Checker<'_> {
                 "condition match requires a final wildcard arm",
             ));
         }
+        let directional = self.directional_context(expected, span)?;
         let result = expected.cloned().unwrap_or_else(|| self.inference.fresh());
         let mut checked = Vec::new();
         for (index, arm) in arms.iter().enumerate() {
@@ -95,7 +96,11 @@ impl Checker<'_> {
                 .as_ref()
                 .map(|c| self.expression_expected(c, Some(&Type::Bool), depth))
                 .transpose()?;
-            let body = self.expression_expected(&arm.body, Some(&result), depth)?;
+            let body = if directional {
+                self.expression_expected(&arm.body, Some(&result), depth)?
+            } else {
+                self.expression_equal(&arm.body, &result, depth)?
+            };
             checked.push((condition, body));
         }
         let (_, mut tail) = checked.pop().expect("nonempty conditional arms checked");
@@ -247,6 +252,8 @@ pub(super) fn strict_divergence(kind: ir::ExprKind, ty: Type) -> TypedKind {
         For {
             iterable: value, ..
         }
+        | UnionInject { value }
+        | UnionWiden { value }
         | Wrap(value)
         | Unwrap(value)
         | Return(value)
@@ -298,6 +305,15 @@ pub(super) fn pattern_discards(
     registry: &nominal::Registry,
 ) -> Checked<()> {
     match pattern {
+        ir::Pattern::UnionSelect {
+            narrowed,
+            binding: None,
+        } if registry.contains_result(narrowed)? => {
+            return Err(Diagnostic::new(
+                span,
+                "Result payload cannot be discarded by a typed wildcard pattern",
+            ));
+        }
         ir::Pattern::Newtype(inner) => {
             pattern_discards(inner, &registry.newtype_inner(ty, span)?, span, registry)?;
         }

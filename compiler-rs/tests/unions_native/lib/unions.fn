@@ -1,0 +1,2 @@
+pub type Choice = Int | String
+pub fn Choice(value: Choice) -> Choice: value

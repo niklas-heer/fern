@@ -85,7 +85,9 @@ impl<'a> CodeBudget<'a> {
                 self.pending.push(Part::Expr(callee));
                 self.expressions(args);
             }
-            Wrap(value)
+            UnionInject { value }
+            | UnionWiden { value }
+            | Wrap(value)
             | Unwrap(value)
             | Return(value)
             | Defer(value)
@@ -189,7 +191,9 @@ impl<'a> CodeBudget<'a> {
                 self.bytes += name.len();
                 self.pending.extend(args.iter().map(Part::Type));
             }
-            Type::Tuple(args) => self.pending.extend(args.iter().map(Part::Type)),
+            Type::Union(args) | Type::Tuple(args) => {
+                self.pending.extend(args.iter().map(Part::Type))
+            }
             Type::Generic(name) => self.bytes += name.len(),
             _ => {}
         }
@@ -198,6 +202,12 @@ impl<'a> CodeBudget<'a> {
     fn pattern(&mut self, pattern: &'a ir::Pattern) {
         self.bytes += std::mem::size_of::<ir::Pattern>();
         match pattern {
+            ir::Pattern::UnionSelect { narrowed, binding } => {
+                self.pending.push(Part::Type(narrowed));
+                if let Some(binding) = binding {
+                    self.pending.push(Part::Type(&binding.ty));
+                }
+            }
             ir::Pattern::Newtype(inner) => self.pending.push(Part::Pattern(inner)),
             ir::Pattern::List { prefix, rest } => {
                 self.pending.extend(prefix.iter().map(Part::Pattern));
@@ -216,6 +226,26 @@ impl<'a> CodeBudget<'a> {
             _ => {}
         }
     }
+}
+
+/// Include semantic union member trees retained by their immutable runtime carrier.
+pub(super) fn type_size(ty: &Type) -> Result<(usize, usize), String> {
+    let mut budget = CodeBudget {
+        pending: vec![Part::Type(ty)],
+        bytes: 0,
+        count: 0,
+    };
+    while let Some(part) = budget.pending.pop() {
+        let Part::Type(ty) = part else {
+            unreachable!("type walker enqueues only types");
+        };
+        budget.count += 1;
+        budget.ty(ty);
+        if budget.bytes > 16 * 1024 * 1024 || budget.count + budget.pending.len() > 200_000 {
+            return Err("interactive value storage limit exceeded".into());
+        }
+    }
+    Ok((budget.bytes, budget.count))
 }
 
 #[cfg(test)]

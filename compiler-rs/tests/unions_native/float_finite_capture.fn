@@ -1,0 +1,6 @@
+fn capture(value: Float | Int) -> () -> Float:
+    () -> match value:
+        number: Float -> number
+        integer: Int -> 0.0
+fn main():
+    println(capture(1.25)())

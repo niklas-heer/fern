@@ -58,6 +58,20 @@ impl Machine {
             return Err(fault("interactive pattern depth limit exceeded"));
         }
         Ok(match (pattern, value) {
+            (UnionSelect { narrowed, binding }, Value::Union(carrier)) => {
+                if !crate::unions::members(narrowed).contains(&carrier.member) {
+                    return Ok(false);
+                }
+                if let Some(binding) = binding {
+                    let selected = if matches!(narrowed, Type::Union(_)) {
+                        value
+                    } else {
+                        &carrier.value
+                    };
+                    bindings.push(Binding::Value(binding.id, selected));
+                }
+                true
+            }
             (Newtype(inner), value) => self.collect_pattern(inner, value, bindings, depth + 1)?,
             (Wildcard, _) => true,
             (Bind(id), value) => {

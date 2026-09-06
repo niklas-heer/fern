@@ -1,0 +1,7 @@
+newtype Chain = Chain(Int | Chain)
+fn leaf(x: Chain) -> Int:
+    match x.0:
+        n: Int -> n
+        next: Chain -> leaf(next)
+fn main():
+    println(leaf(Chain(Chain(4294967296))))

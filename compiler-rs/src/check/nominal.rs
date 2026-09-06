@@ -164,6 +164,10 @@ impl Registry {
                     pending.extend(args);
                     pending.push(result);
                 }
+                Type::Union(args) => {
+                    crate::unions::charge(&self.newtype_work, ty, span)?;
+                    pending.extend(args);
+                }
                 Type::Tuple(args) => pending.extend(args),
                 Type::List(t) | Type::Option(t) => pending.push(t),
                 Type::Map(a, b) => {
@@ -352,6 +356,7 @@ impl Registry {
     /// Resolve constructor payload types for builtin and nominal sums.
     pub(super) fn variants(&self, ty: &Type, span: Span) -> Checked<Vec<Vec<Type>>> {
         match ty {
+            Type::Union(members) => Ok(members.iter().map(|ty| vec![ty.clone()]).collect()),
             Type::Tuple(fields) => Ok(vec![fields.clone()]),
             Type::Option(a) => Ok(vec![vec![(**a).clone()], vec![]]),
             Type::Result(a, b) => Ok(vec![vec![(**a).clone()], vec![(**b).clone()]]),
@@ -383,7 +388,7 @@ impl Registry {
                     pending.push(*key);
                     pending.push(*value);
                 }
-                Type::Tuple(fields) => pending.extend(fields),
+                Type::Union(fields) | Type::Tuple(fields) => pending.extend(fields),
                 Type::List(a) | Type::Option(a) => pending.push(*a),
                 Type::Named(..) => pending.extend(
                     self.layout(&ty, Span::default())?
@@ -432,7 +437,7 @@ impl Registry {
                     pending.extend(args.iter().cloned());
                     pending.push((**result).clone());
                 }
-                Type::Tuple(fields) => pending.extend(fields.iter().cloned()),
+                Type::Union(fields) | Type::Tuple(fields) => pending.extend(fields.iter().cloned()),
                 Type::List(a) | Type::Option(a) => pending.push((**a).clone()),
                 Type::Result(a, b) | Type::Map(a, b) => {
                     pending.push((**a).clone());
@@ -463,7 +468,7 @@ pub(super) fn generics(types: impl IntoIterator<Item = Type>) -> Vec<String> {
                 pending.extend(args);
                 pending.push(*result);
             }
-            Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
+            Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
             Type::List(a) | Type::Option(a) => pending.push(*a),
             Type::Result(a, b) | Type::Map(a, b) => {
                 pending.push(*a);
@@ -507,6 +512,12 @@ fn substitute_inner(
                 .collect::<Checked<Vec<_>>>()?,
             Box::new(substitute_inner(result, values, depth + 1, budget, expand)?),
         ),
+        Type::Union(args) => crate::unions::make(
+            args.iter()
+                .map(|a| substitute_inner(a, values, depth + 1, budget, expand))
+                .collect::<Checked<Vec<_>>>()?,
+            Span::default(),
+        )?,
         Type::Tuple(args) => Type::Tuple(
             args.iter()
                 .map(|a| substitute_inner(a, values, depth + 1, budget, expand))
@@ -556,6 +567,9 @@ pub(super) fn capture(
             Span::default(),
             "generic specialization type depth exceeded",
         ));
+    }
+    if matches!(template, Type::Union(_)) {
+        return super::unions::capture(template, actual, values, depth);
     }
     match (template, actual) {
         (Type::Generic(n), ty) => {
@@ -615,7 +629,7 @@ fn validate_layout_type(ty: &Type, span: Span) -> Checked<()> {
             ));
         }
         match ty {
-            Type::Tuple(args) | Type::Named(_, args) => {
+            Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => {
                 pending.extend(args.iter().map(|t| (t, depth + 1)))
             }
             Type::List(a) | Type::Option(a) => pending.push((a, depth + 1)),
