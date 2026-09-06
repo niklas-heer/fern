@@ -100,6 +100,8 @@ pub enum FunctionSyntax {
 }
 #[derive(Clone, Debug)]
 pub struct Param {
+    /// Optional explicit external label; a simple binder supplies its default label.
+    pub label: Option<ArgumentLabel>,
     pub pattern: Pattern,
     pub annotation: Option<Type>,
     pub span: Span,
@@ -133,14 +135,15 @@ pub enum ExprKind {
     GlobalCall {
         name: String,
         resolved: String,
-        args: Vec<Expr>,
+        args: Vec<Argument>,
     },
     GlobalPipe {
         value: Box<Expr>,
         name: String,
         resolved: String,
-        args: Vec<Expr>,
+        args: Vec<Argument>,
         position: usize,
+        label: Option<ArgumentLabel>,
     },
     Unit,
     List(Vec<Expr>),
@@ -178,8 +181,9 @@ pub enum ExprKind {
     Pipe {
         value: Box<Expr>,
         name: String,
-        args: Vec<Expr>,
+        args: Vec<Argument>,
         position: usize,
+        label: Option<ArgumentLabel>,
     },
     Field {
         value: Box<Expr>,
@@ -204,11 +208,11 @@ pub enum ExprKind {
     },
     Apply {
         callee: Box<Expr>,
-        args: Vec<Expr>,
+        args: Vec<Argument>,
     },
     Call {
         name: String,
-        args: Vec<Expr>,
+        args: Vec<Argument>,
     },
     If {
         condition: Box<Expr>,
@@ -216,6 +220,51 @@ pub enum ExprKind {
         else_branch: Option<Box<Expr>>,
     },
     Block(Vec<Stmt>),
+}
+
+/// One source argument label, independent of variable or module name resolution.
+#[derive(Clone, Debug)]
+pub struct ArgumentLabel {
+    pub name: String,
+    pub span: Span,
+}
+
+/// Preserve the written order and complete source anchor of one call argument.
+#[derive(Clone, Debug)]
+pub struct Argument {
+    pub label: Option<ArgumentLabel>,
+    pub value: Expr,
+    pub span: Span,
+}
+
+impl Argument {
+    /// Wrap an existing expression as an unlabeled argument without copying it.
+    pub fn positional(value: Expr) -> Self {
+        Self {
+            span: value.span,
+            value,
+            label: None,
+        }
+    }
+}
+impl std::ops::Deref for Argument {
+    type Target = Expr;
+    /// Borrow the value for expression-only visitors; label-aware consumers inspect metadata explicitly.
+    fn deref(&self) -> &Expr {
+        &self.value
+    }
+}
+impl std::ops::DerefMut for Argument {
+    /// Mutate a value without replacing its source argument label or written position.
+    fn deref_mut(&mut self) -> &mut Expr {
+        &mut self.value
+    }
+}
+impl From<Expr> for Argument {
+    /// Construct an explicitly positional argument from an expression.
+    fn from(value: Expr) -> Self {
+        Self::positional(value)
+    }
 }
 
 /// One immutable record replacement, retained in source evaluation order.

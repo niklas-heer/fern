@@ -469,6 +469,7 @@ mod tests {
             ..Inference::default()
         };
         let signature = Signature {
+            labels: Vec::new(),
             id: ir::FunctionId(0),
             params: vec![],
             result: Type::Unit,

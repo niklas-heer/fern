@@ -15,7 +15,7 @@ fn name(n: &str) -> Expr {
 fn call(n: &str, args: Vec<Expr>) -> Expr {
     e(ExprKind::Call {
         name: n.into(),
-        args,
+        args: args.into_iter().map(Argument::positional).collect(),
     })
 }
 fn generic(n: &str) -> Type {
@@ -34,6 +34,7 @@ fn function(n: &str, params: Vec<(&str, Type)>, ty: Type, body: Expr) -> Functio
         params: params
             .into_iter()
             .map(|(n, ty)| Param {
+                label: None,
                 pattern: Pattern {
                     kind: PatternKind::Bind(n.into()),
                     span: Span::default(),

@@ -1,0 +1,6 @@
+fn choose(first,second):first
+fn apply(value:a,action:(a)->b)->b:action(value)
+fn main():
+    println(choose(second:false,first:9223372036854775807))
+    println(apply(action:(x)->x+1,value:41))
+    println(apply(action:(x)->x,value:"🌿"))

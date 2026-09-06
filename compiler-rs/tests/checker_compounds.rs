@@ -25,7 +25,7 @@ fn name(n: &str) -> Expr {
 fn call(n: &str, args: Vec<Expr>) -> Expr {
     e(ExprKind::Call {
         name: n.into(),
-        args,
+        args: args.into_iter().map(Argument::positional).collect(),
     })
 }
 fn list(items: Vec<Expr>) -> Expr {
@@ -169,6 +169,7 @@ fn declared_function_arguments_constrain_compound_literals() {
         call("Result.unwrap_or", vec![name("r"), int()]),
     );
     accept.params.push(Param {
+        label: None,
         pattern: Pattern {
             kind: PatternKind::Bind("r".into()),
             span: Span::default(),
@@ -618,6 +619,7 @@ fn unused_result_parameters_and_wrapped_result_bindings_are_errors() {
     ] {
         let mut ignore = function("ignore", Type::Unit, unit());
         ignore.params.push(Param {
+            label: None,
             pattern: Pattern {
                 kind: PatternKind::Bind("r".into()),
                 span: Span::default(),
@@ -693,6 +695,7 @@ fn unused_result_pattern_payload_and_catchall_bindings_are_errors() {
 fn using_or_returning_result_parameters_and_pattern_payloads_is_allowed() {
     let mut passthrough = function("passthrough", result(Type::Int, Type::String), name("r"));
     passthrough.params.push(Param {
+        label: None,
         pattern: Pattern {
             kind: PatternKind::Bind("r".into()),
             span: Span::default(),

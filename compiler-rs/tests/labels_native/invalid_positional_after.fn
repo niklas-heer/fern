@@ -1,0 +1,2 @@
+fn f(left:Int,right:Int)->Int:left+right
+fn main():println(f(right:1,2))

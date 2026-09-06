@@ -122,6 +122,10 @@ pub fn resolved_signature(
         if index > 0 {
             writer.push(", ")?;
         }
+        if let Some(label) = &param.label {
+            writer.name(&label.name, false)?;
+            writer.push(" ")?;
+        }
         writer.pattern(&param.pattern, 0)?;
         writer.push(": ")?;
         writer.ty(ty, 0)?;
@@ -185,6 +189,10 @@ impl Writer {
             return Err(error("function parameter limit exceeded"));
         }
         for param in &function.params {
+            if let Some(label) = &param.label {
+                self.name(&label.name, false)?;
+                self.push(" ")?;
+            }
             self.pattern(&param.pattern, 0)?;
             if let Some(ty) = &param.annotation {
                 self.collect(ty, 0)?;

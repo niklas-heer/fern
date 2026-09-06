@@ -1,0 +1,4 @@
+fn f(value:Int)->Int:value
+fn main():
+    let call=f
+    println(call(value:1))

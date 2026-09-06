@@ -231,12 +231,8 @@ impl Renderer<'_> {
             .params
             .iter()
             .map(|param| match &param.annotation {
-                Some(ty) => Ok(format!(
-                    "{}: {}",
-                    pattern_text(&param.pattern),
-                    type_text(ty)?
-                )),
-                None => Ok(pattern_text(&param.pattern)),
+                Some(ty) => Ok(format!("{}: {}", parameter_text(param), type_text(ty)?)),
+                None => Ok(parameter_text(param)),
             })
             .collect::<Result<Vec<_>>>()?;
         let mut header = format!(
@@ -774,19 +770,24 @@ impl Renderer<'_> {
         &self,
         value: &Expr,
         name: &str,
-        args: &[Expr],
-        position: usize,
+        args: &[ast::Argument],
+        slot: (usize, &Option<ast::ArgumentLabel>),
         indent: usize,
         span: Span,
     ) -> Result<Vec<Line>> {
+        let (position, label) = slot;
         let mut args = args.to_vec();
         if position > args.len() {
             return Err(Diagnostic::new(span, "invalid pipe placeholder position"));
         }
         args.insert(
             position,
-            Expr {
-                kind: ExprKind::Name("_".into()),
+            ast::Argument {
+                label: label.clone(),
+                value: Expr {
+                    kind: ExprKind::Name("_".into()),
+                    span,
+                },
                 span,
             },
         );
@@ -806,21 +807,53 @@ impl Renderer<'_> {
                 name,
                 args,
                 position,
+                label,
             }
             | ExprKind::GlobalPipe {
                 value,
                 name,
                 args,
                 position,
+                label,
                 ..
-            } => self.pipe(value, name, args, *position, indent, expression.span),
+            } => self.pipe(
+                value,
+                name,
+                args,
+                (*position, label),
+                indent,
+                expression.span,
+            ),
             _ => unreachable!("pipe formatter receives a pipe expression"),
         }
     }
 
     /// Keep compact calls inline and give embedded suites their own argument layout.
-    fn call(&self, callee: &str, args: &[Expr], indent: usize, span: Span) -> Result<Vec<Line>> {
-        self.delimited_values(&format!("{callee}("), ")", args, indent, span, false)
+    fn call(
+        &self,
+        callee: &str,
+        args: &[ast::Argument],
+        indent: usize,
+        span: Span,
+    ) -> Result<Vec<Line>> {
+        let rendered = args
+            .iter()
+            .map(|arg| {
+                let mut lines = self.expression(&arg.value, indent + 1)?;
+                if let (Some(label), Some(first)) = (&arg.label, lines.first_mut()) {
+                    first.text = format!("{}: {}", label.name, first.text);
+                }
+                Ok(lines)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.delimited_lines(
+            (&format!("{callee}("), ")"),
+            rendered,
+            &args.iter().map(|a| a.span).collect::<Vec<_>>(),
+            indent,
+            span,
+            false,
+        )
     }
 
     /// Preserve tuple identity and close embedded suites before argument separators.
@@ -837,7 +870,28 @@ impl Renderer<'_> {
             .iter()
             .map(|arg| self.expression(arg, indent + 1))
             .collect::<Result<Vec<_>>>()?;
-        let singleton = tuple && args.len() == 1;
+        self.delimited_lines(
+            (open, close),
+            arguments,
+            &args.iter().map(|a| a.span).collect::<Vec<_>>(),
+            indent,
+            span,
+            tuple,
+        )
+    }
+
+    /// Close delimited suites after preserving each source argument's rendered lines.
+    fn delimited_lines(
+        &self,
+        delimiters: (&str, &str),
+        arguments: Vec<Vec<Line>>,
+        spans: &[Span],
+        indent: usize,
+        span: Span,
+        tuple: bool,
+    ) -> Result<Vec<Line>> {
+        let (open, close) = delimiters;
+        let singleton = tuple && spans.len() == 1;
         if arguments.iter().all(|lines| lines.len() == 1) {
             let mut text = arguments
                 .iter()
@@ -860,7 +914,7 @@ impl Renderer<'_> {
                 if argument.len() == 1 {
                     argument[0].text.push(',');
                 } else {
-                    argument.push(line(indent + 1, ",", args[index].span.end));
+                    argument.push(line(indent + 1, ",", spans[index].end));
                 }
             }
             lines.extend(argument);
@@ -870,7 +924,13 @@ impl Renderer<'_> {
     }
 
     /// Parenthesize arbitrary callees so lambda bodies cannot capture the invocation suffix.
-    fn apply(&self, callee: &Expr, args: &[Expr], indent: usize, span: Span) -> Result<Vec<Line>> {
+    fn apply(
+        &self,
+        callee: &Expr,
+        args: &[ast::Argument],
+        indent: usize,
+        span: Span,
+    ) -> Result<Vec<Line>> {
         let callee = self.expression(callee, indent + 1)?;
         if callee.len() == 1 {
             return self.call(&format!("({})", callee[0].text), args, indent, span);
@@ -1361,6 +1421,7 @@ fn structural(mut program: ast::Program) -> String {
         function.span = Span::default();
         for param in &mut function.params {
             param.span = Span::default();
+            clear_label(&mut param.label);
             clear_pattern(&mut param.pattern);
         }
         if let Some(guard) = &mut function.guard {
@@ -1414,11 +1475,15 @@ fn clear_expression(expression: &mut Expr) {
         | ExprKind::For { .. }
         | ExprKind::With { .. }
         | ExprKind::If { .. }) => clear_control(kind),
-        ExprKind::Pipe { value, args, .. } | ExprKind::GlobalPipe { value, args, .. } => {
+        ExprKind::Pipe {
+            value, args, label, ..
+        }
+        | ExprKind::GlobalPipe {
+            value, args, label, ..
+        } => {
+            clear_label(label);
             clear_expression(value);
-            for arg in args {
-                clear_expression(arg);
-            }
+            args.iter_mut().for_each(clear_argument);
         }
         ExprKind::Lambda { params, body } => {
             for param in params {
@@ -1428,9 +1493,7 @@ fn clear_expression(expression: &mut Expr) {
         }
         ExprKind::Apply { callee, args } => {
             clear_expression(callee);
-            for arg in args {
-                clear_expression(arg);
-            }
+            args.iter_mut().for_each(clear_argument);
         }
         ExprKind::Interpolate(parts) | ExprKind::MultilineString(parts) => {
             for part in parts {
@@ -1439,13 +1502,11 @@ fn clear_expression(expression: &mut Expr) {
                 }
             }
         }
-        ExprKind::Call { args, .. }
-        | ExprKind::GlobalCall { args, .. }
-        | ExprKind::Tuple(args)
-        | ExprKind::List(args) => {
-            for argument in args {
-                clear_expression(argument);
-            }
+        ExprKind::Call { args, .. } | ExprKind::GlobalCall { args, .. } => {
+            args.iter_mut().for_each(clear_argument);
+        }
+        ExprKind::Tuple(args) | ExprKind::List(args) => {
+            args.iter_mut().for_each(clear_expression);
         }
         ExprKind::Match { value, arms } => clear_match(value, arms),
         ExprKind::Map(pairs) => clear_pairs(pairs),
@@ -1629,4 +1690,27 @@ fn clear_pattern(pattern: &mut Pattern) {
 /// Preserve singleton tuple syntax while rendering positional fields.
 fn tuple_text(fields: String, count: usize) -> String {
     format!("({fields}{})", if count == 1 { "," } else { "" })
+}
+
+/// Preserve explicit external labels independently of the pattern's local bindings.
+fn parameter_text(param: &ast::Param) -> String {
+    let pattern = pattern_text(&param.pattern);
+    match &param.label {
+        Some(label) => format!("{} {pattern}", label.name),
+        None => pattern,
+    }
+}
+
+/// Remove only lexical locations before formatter syntax-equivalence comparison.
+fn clear_label(label: &mut Option<ast::ArgumentLabel>) {
+    if let Some(label) = label {
+        label.span = Span::default();
+    }
+}
+
+/// Keep argument labels and written order while erasing their source positions.
+fn clear_argument(arg: &mut ast::Argument) {
+    arg.span = Span::default();
+    clear_label(&mut arg.label);
+    clear_expression(&mut arg.value);
 }

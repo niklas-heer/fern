@@ -90,7 +90,12 @@ fn loader_preserves_source_spellings_and_resolved_declaration_identity() {
         let (name, resolved, kind) = match &value.kind {
             ExprKind::GlobalName { name, resolved } => (name, resolved, 0),
             ExprKind::GlobalCall { name, resolved, .. } => (name, resolved, 1),
-            ExprKind::GlobalPipe { name, resolved, .. } => (name, resolved, 2),
+            ExprKind::GlobalPipe {
+                label: None,
+                name,
+                resolved,
+                ..
+            } => (name, resolved, 2),
             other => panic!("{other:?}"),
         };
         assert_eq!(name, "m.value");
@@ -143,6 +148,7 @@ fn public_global_ast_nodes_validate_both_names_and_recursive_children() {
             args: vec![],
         },
         ExprKind::GlobalPipe {
+            label: None,
             name: "x".into(),
             resolved: "main".into(),
             args: vec![],

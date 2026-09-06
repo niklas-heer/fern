@@ -249,7 +249,7 @@ impl Budget {
             } => {
                 self.charge(name.len(), expr.span)?;
                 self.charge(resolved.len(), expr.span)?;
-                pending.extend(args.iter().map(|e| (e, depth + 1)));
+                pending.extend(args.iter().map(|e| (&e.value, depth + 1)));
             }
             ast::ExprKind::GlobalPipe {
                 name,
@@ -261,18 +261,18 @@ impl Budget {
                 self.charge(name.len(), expr.span)?;
                 self.charge(resolved.len(), expr.span)?;
                 pending.push((value, depth + 1));
-                pending.extend(args.iter().map(|e| (e, depth + 1)));
+                pending.extend(args.iter().map(|e| (&e.value, depth + 1)));
             }
             ast::ExprKind::Pipe {
                 value, name, args, ..
             } => {
                 self.charge(name.len(), expr.span)?;
                 pending.push((value, depth + 1));
-                pending.extend(args.iter().map(|e| (e, depth + 1)));
+                pending.extend(args.iter().map(|e| (&e.value, depth + 1)));
             }
             ast::ExprKind::Call { name, args } => {
                 self.charge(name.len(), expr.span)?;
-                pending.extend(args.iter().map(|e| (e, depth + 1)));
+                pending.extend(args.iter().map(|e| (&e.value, depth + 1)));
             }
             _ => return Ok(false),
         }
@@ -349,6 +349,7 @@ impl Budget {
         let mut pending = vec![(expr, 0)];
         while let Some((expr, depth)) = pending.pop() {
             self.expression_node(expr.span, depth)?;
+            self.argument_metadata(expr)?;
             if self.iteration(expr, &mut pending, depth)? {
                 continue;
             }
@@ -371,7 +372,7 @@ impl Budget {
                 }
                 ast::ExprKind::Apply { callee, args } => {
                     pending.push((callee, depth + 1));
-                    pending.extend(args.iter().map(|a| (a, depth + 1)));
+                    pending.extend(args.iter().map(|a| (&a.value, depth + 1)));
                 }
                 ast::ExprKind::Name(n) | ast::ExprKind::String(n) => {
                     self.charge(n.len(), expr.span)?
@@ -430,6 +431,7 @@ pub(super) fn check(program: &ast::Program) -> Checked<()> {
     for function in &program.functions {
         budget.charge(function.name.len(), function.span)?;
         for param in &function.params {
+            budget.label(&param.label)?;
             budget.pattern(&param.pattern)?;
             if let Some(ty) = &param.annotation {
                 budget.ty(ty, param.span)?;
@@ -545,4 +547,43 @@ fn newtypes(program: &ast::Program, budget: &mut Budget) -> Checked<()> {
         budget.ty(&decl.inner, decl.inner_span)?;
     }
     Ok(())
+}
+
+impl Budget {
+    /// Charge caller-owned label text before cloning or validating a signature interface.
+    fn label(&mut self, label: &Option<ast::ArgumentLabel>) -> Checked<()> {
+        if let Some(label) = label {
+            self.charge(label.name.len(), label.span)?;
+            if label.name.is_empty()
+                || label.name.chars().any(|c| {
+                    c.is_ascii() && !(c.is_ascii_alphanumeric() || c == '_') || c.is_whitespace()
+                })
+            {
+                return Err(Diagnostic::new(label.span, "invalid argument label"));
+            }
+        }
+        Ok(())
+    }
+
+    /// Bound written arguments and pipe metadata even in inactive caller-created source ASTs.
+    fn argument_metadata(&mut self, expr: &ast::Expr) -> Checked<()> {
+        let args = match &expr.kind {
+            ast::ExprKind::Pipe { args, label, .. }
+            | ast::ExprKind::GlobalPipe { args, label, .. } => {
+                self.label(label)?;
+                args
+            }
+            ast::ExprKind::Call { args, .. }
+            | ast::ExprKind::GlobalCall { args, .. }
+            | ast::ExprKind::Apply { args, .. } => args,
+            _ => return Ok(()),
+        };
+        if args.len() > MAX_PARAMETERS {
+            return Err(Diagnostic::new(expr.span, "call argument limit exceeded"));
+        }
+        for arg in args {
+            self.label(&arg.label)?;
+        }
+        Ok(())
+    }
 }

@@ -1,0 +1,9 @@
+fn choose(enabled true:Bool)->Int:1
+fn choose(enabled false:Bool)->Int:0
+fn route(request Some(value):Option(Int))->Int:value
+fn route(request None:Option(Int))->Int:0
+fn main():
+    println(choose(enabled:true))
+    println(choose(enabled:false))
+    println(route(request:Some(42)))
+    println(route(request:None))

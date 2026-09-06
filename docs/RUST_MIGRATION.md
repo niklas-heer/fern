@@ -891,3 +891,14 @@ text preflight happens before opening a target. The REPL keeps the same text
 policy and its stricter storage budget, with the safe File-drop limitation stated
 in [the IO contract](FILE_TEXT_IO.md). Native fault injection and source programs
 cover late failures, exact limits, complete output and preserved preflight targets.
+
+## Source argument labels — 2026-09-06
+
+Direct source calls resolve optional labels against original parameter interfaces,
+including external pattern names, module aliases and function clauses. Arguments
+execute once in written order; pipe inputs execute first. The formatter and source
+signature presentation retain labels. [The label contract](LABELED_CALLS.md)
+records positional compatibility, erased callable interfaces and the remaining
+mandatory-enforcement/navigation/editor work. The complete checkpoint passes
+1037 Rust tests on macOS arm64 and 1038 on Linux arm64, plus four native labeled
+programs and four atomic invalid-output checks on both platforms.

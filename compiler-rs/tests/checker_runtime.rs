@@ -115,6 +115,7 @@ fn every_direct_registry_contract_instantiates_into_checked_ir() {
             .iter()
             .enumerate()
             .map(|(i, ty)| ast::Param {
+                label: None,
                 pattern: ast::Pattern {
                     kind: ast::PatternKind::Bind(format!("arg{i}")),
                     span: Span::default(),
@@ -130,6 +131,7 @@ fn every_direct_registry_contract_instantiates_into_checked_ir() {
                 kind: ast::ExprKind::Name(format!("arg{index}")),
                 span: Span::default(),
             })
+            .map(ast::Argument::positional)
             .collect();
         let probe = ast::Function {
             public: false,

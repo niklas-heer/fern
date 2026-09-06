@@ -19,8 +19,16 @@ impl Checker<'_> {
                 resolved,
                 args,
                 position,
+                label,
                 ..
-            } => self.pipe(value, (resolved, true), args, *position, span, depth),
+            } => self.pipe(
+                value,
+                (resolved, true),
+                args,
+                (*position, label),
+                span,
+                depth,
+            ),
             _ => unreachable!("only global source references reach this dispatcher"),
         }
     }

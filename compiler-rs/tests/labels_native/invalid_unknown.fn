@@ -1,0 +1,2 @@
+fn f(value:Int)->Int:value
+fn main():println(f(other:1))

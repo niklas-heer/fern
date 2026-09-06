@@ -164,6 +164,7 @@ fn signatures(
         signatures.insert(
             function.name.clone(),
             Signature {
+                labels: labels::parameters(function),
                 id: ir::FunctionId(index),
                 params,
                 result,

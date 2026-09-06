@@ -28,6 +28,7 @@ pub(super) fn normalize(program: &ast::Program) -> Checked<Normalized<'_>> {
         }
         let group = &program.functions[start..index];
         let result = validate_group(group)?;
+        let labels = labels::group(group)?;
         if group.len() == 1
             && first.guard.is_none()
             && first
@@ -37,7 +38,7 @@ pub(super) fn normalize(program: &ast::Program) -> Checked<Normalized<'_>> {
         {
             functions.push(first.clone());
         } else {
-            functions.push(lower(group, result));
+            functions.push(lower(group, result, labels));
             dispatch.insert(first.name.clone());
         }
     }
@@ -109,13 +110,18 @@ fn validate_group(group: &[ast::Function]) -> Checked<Option<Type>> {
 }
 
 /// Build a single match dispatch without adding a function or cleanup boundary.
-fn lower(group: &[ast::Function], result: Option<Type>) -> ast::Function {
+fn lower(
+    group: &[ast::Function],
+    result: Option<Type>,
+    labels: Vec<Option<ast::ArgumentLabel>>,
+) -> ast::Function {
     let mut function = group[0].clone();
     function.params = function
         .params
         .iter()
         .enumerate()
         .map(|(index, param)| ast::Param {
+            label: labels[index].clone(),
             pattern: ast::Pattern {
                 kind: ast::PatternKind::Bind(format!("$clause_arg{index}")),
                 span: param.span,

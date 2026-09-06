@@ -1,0 +1,16 @@
+fn subtract(left:Int,right:Int)->Int:left-right
+fn mark()->Int:
+    println("unexpected")
+    0
+fn early()->Int:
+    defer println("cleanup")
+    subtract(right:return 9,left:mark())
+fn failure()->Result(Int,String):Err("stop")
+fn run()->Result(Int,String):
+    defer println("result cleanup")
+    Ok(subtract(right:failure()?,left:mark()))
+fn main():
+    println(early())
+    match run():
+        Ok(value)->println(value)
+        Err(error)->println(error)

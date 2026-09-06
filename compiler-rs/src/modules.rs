@@ -717,6 +717,9 @@ fn qualify_function(
         if let Some(ty) = &mut param.annotation {
             qualify_type(ty, visible).map_err(|e| at_span(e, param.span))?;
         }
+        if let Some(label) = &mut param.label {
+            shift(&mut label.span, offset);
+        }
         pattern(&mut param.pattern, visible, &mut bound, offset)?;
         shift(&mut param.span, offset);
     }
@@ -1031,22 +1034,30 @@ fn rewrite(
     mark_global(&mut expr.kind, names, prefixes, scopes).map_err(|e| at_span(e, original))?;
     match &mut expr.kind {
         ast::ExprKind::Name(_) | ast::ExprKind::GlobalName { .. } => {}
-        ast::ExprKind::Pipe { value, args, .. } | ast::ExprKind::GlobalPipe { value, args, .. } => {
+        ast::ExprKind::Pipe {
+            value, args, label, ..
+        }
+        | ast::ExprKind::GlobalPipe {
+            value, args, label, ..
+        } => {
+            if let Some(label) = label {
+                shift(&mut label.span, offset);
+            }
             rewrite(value, names, prefixes, scopes, offset)?;
-            rewrite_values(args, names, prefixes, scopes, offset)?;
+            rewrite_arguments(args, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Lambda { params, body } => {
             rewrite_lambda(params, body, names, prefixes, scopes, offset)?
         }
         ast::ExprKind::Apply { callee, args } => {
             rewrite(callee, names, prefixes, scopes, offset)?;
-            rewrite_values(args, names, prefixes, scopes, offset)?;
+            rewrite_arguments(args, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {
             rewrite_string(parts, names, prefixes, scopes, offset)?
         }
         ast::ExprKind::Call { args, .. } | ast::ExprKind::GlobalCall { args, .. } => {
-            rewrite_values(args, names, prefixes, scopes, offset)?;
+            rewrite_arguments(args, names, prefixes, scopes, offset)?;
         }
         ast::ExprKind::Tuple(values) | ast::ExprKind::List(values) => {
             rewrite_values(values, names, prefixes, scopes, offset)?;
@@ -1247,6 +1258,24 @@ fn rewrite_update(
 }
 
 /// Rewrite ordered expression children without changing their lexical scope.
+fn rewrite_arguments(
+    args: &mut [ast::Argument],
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    for arg in args {
+        shift(&mut arg.span, offset);
+        if let Some(label) = &mut arg.label {
+            shift(&mut label.span, offset);
+        }
+        rewrite(&mut arg.value, names, prefixes, scopes, offset)?;
+    }
+    Ok(())
+}
+
+/// Rewrite ordered collection elements.
 fn rewrite_values(
     values: &mut [ast::Expr],
     names: &Names,
@@ -1488,12 +1517,14 @@ fn mark_global(
             name,
             args,
             position,
+            label,
         } => ast::ExprKind::GlobalPipe {
             value,
             name,
             resolved,
             args,
             position,
+            label,
         },
         _ => unreachable!("only named references reach global marking"),
     };

@@ -11,6 +11,7 @@ mod diagnostics;
 pub mod editor;
 mod globals;
 mod iteration;
+mod labels;
 mod lift;
 mod maps;
 mod nominal;
@@ -37,6 +38,7 @@ type Checked<T> = Result<T, Diagnostic>;
 type TypedKind = (ir::ExprKind, Type);
 
 struct Signature {
+    labels: Vec<Option<ast::ArgumentLabel>>,
     id: ir::FunctionId,
     params: Vec<Type>,
     result: Type,
@@ -211,6 +213,7 @@ fn signatures(
         signatures.insert(
             function.name.clone(),
             Signature {
+                labels: labels::parameters(function),
                 id: ir::FunctionId(index),
                 params: function
                     .params
@@ -740,12 +743,7 @@ impl Checker<'_> {
             | ast::ExprKind::GlobalPipe { .. }) => {
                 self.resolved_global(kind, expected, expr.span, depth + 1)?
             }
-            ast::ExprKind::Pipe {
-                value,
-                name,
-                args,
-                position,
-            } => self.pipe(value, (name, false), args, *position, expr.span, depth + 1)?,
+            ast::ExprKind::Pipe { .. } => self.source_pipe(expr, depth + 1)?,
             ast::ExprKind::Field { .. } => self.source_field(expr, depth + 1)?,
             ast::ExprKind::Name(name) => self.name(name, expr.span)?,
             ast::ExprKind::Tuple(values) => self.tuple(values, expected, expr.span, depth + 1)?,
@@ -1301,7 +1299,7 @@ impl Checker<'_> {
     fn call(
         &mut self,
         name: &str,
-        args: &[ast::Expr],
+        args: &[ast::Argument],
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
@@ -1312,7 +1310,7 @@ impl Checker<'_> {
     fn construct(
         &mut self,
         constructor: Constructor,
-        args: &[ast::Expr],
+        args: &[ast::Argument],
         expected: Option<&Type>,
         span: Span,
         depth: usize,
@@ -1566,7 +1564,7 @@ impl Checker<'_> {
     fn custom_construct(
         &mut self,
         name: &str,
-        args: &[ast::Expr],
+        args: &[ast::Argument],
         expected: Option<&Type>,
         span: Span,
         depth: usize,

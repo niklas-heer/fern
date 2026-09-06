@@ -21,7 +21,7 @@ fn name(n: &str) -> Expr {
 fn call(n: &str, args: Vec<Expr>) -> Expr {
     expr(ExprKind::Call {
         name: n.into(),
-        args,
+        args: args.into_iter().map(Argument::positional).collect(),
     })
 }
 fn block(stmts: Vec<Stmt>) -> Expr {
@@ -115,6 +115,7 @@ fn rejects_invalid_program_signatures() {
     rejects(vec![fun("main", Some(Type::Bool), boolean())], "main");
     let mut f = main_fn(int());
     f.params.push(Param {
+        label: None,
         pattern: Pattern {
             kind: PatternKind::Bind("x".into()),
             span: Span::default(),
@@ -126,6 +127,7 @@ fn rejects_invalid_program_signatures() {
     let mut f = fun("helper", Some(Type::Int), int());
     f.params = vec![
         Param {
+            label: None,
             pattern: Pattern {
                 kind: PatternKind::Bind("x".into()),
                 span: Span::default()
@@ -147,6 +149,7 @@ fn validates_function_return_and_call_contracts() {
     rejects(vec![fun("main", Some(Type::Int), string())], "expected Int");
     let mut f = fun("helper", Some(Type::Int), name("x"));
     f.params.push(Param {
+        label: None,
         pattern: Pattern {
             kind: PatternKind::Bind("x".into()),
             span: Span::default(),

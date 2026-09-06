@@ -366,6 +366,12 @@ impl<'a> Walker<'a, '_> {
         }
     }
 
+    /// Queue source-written argument values; labels introduce no dependency edges.
+    fn arguments(&mut self, args: &'a [ast::Argument]) {
+        self.pending
+            .extend(args.iter().rev().map(|arg| Task::Expression(&arg.value)));
+    }
+
     /// Queue explicit global edges independently of canonical-prefix local bindings.
     fn global(&mut self, expr: &'a ast::Expr) -> Checked<bool> {
         use ast::ExprKind::*;
@@ -373,7 +379,7 @@ impl<'a> Walker<'a, '_> {
             GlobalName { resolved, .. } => self.global_reference(resolved, expr.span)?,
             GlobalCall { resolved, args, .. } => {
                 self.global_reference(resolved, expr.span)?;
-                self.pending.extend(args.iter().rev().map(Task::Expression));
+                self.arguments(args);
             }
             GlobalPipe {
                 value,
@@ -382,7 +388,7 @@ impl<'a> Walker<'a, '_> {
                 ..
             } => {
                 self.global_reference(resolved, expr.span)?;
-                self.pending.extend(args.iter().rev().map(Task::Expression));
+                self.arguments(args);
                 self.pending.push(Task::Expression(value));
             }
             _ => return Ok(false),
@@ -400,17 +406,17 @@ impl<'a> Walker<'a, '_> {
             Name(name) => self.reference(name, expr.span)?,
             Call { name, args } => {
                 self.reference(name, expr.span)?;
-                self.pending.extend(args.iter().rev().map(Task::Expression));
+                self.arguments(args);
             }
             Pipe {
                 value, name, args, ..
             } => {
                 self.reference(name, expr.span)?;
-                self.pending.extend(args.iter().rev().map(Task::Expression));
+                self.arguments(args);
                 self.pending.push(Task::Expression(value));
             }
             Apply { callee, args } => {
-                self.pending.extend(args.iter().rev().map(Task::Expression));
+                self.arguments(args);
                 self.pending.push(Task::Expression(callee));
             }
             Tuple(values) | List(values) => self

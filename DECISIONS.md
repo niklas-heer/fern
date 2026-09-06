@@ -4,6 +4,13 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 90 Preserve source label interfaces and written argument evaluation order
+* **Date**: 2026-09-06
+* **Status**: Accepted; optional-label checkpoint implemented, mandatory enforcement next
+* **Decision**: I will resolve direct source-call labels against original declaration interfaces, keeping external names distinct from pattern bindings and evaluating arguments once in written order. Reordered calls use typed local temporaries before parameter-order reads.
+* **Context**: Decision7 requires readable calls, but reordering source expressions changes side effects and error propagation. Clause normalization, module aliases and generic specialization must not substitute synthetic names or call-site types for the source interface.
+* **Consequences**: Positional arguments precede labeled arguments; duplicate, unknown, missing and multiply supplied positions are errors. Explicit external pattern names use `fn choose(enabled true: Bool)`. Structural function values, lambdas, runtime/compiler builtins and constructors retain positional interfaces and reject labels. Phase A accepts existing positional source calls; the next phase requires labels for exact Bool and repeated identical finalized declared scheme types. Pipe inputs run first and once. Formatter/module/presentation metadata preserve source labels; label-token navigation and editor grammar parity remain open. See [the label contract](docs/LABELED_CALLS.md). The unavailable `/decision` skill is replaced by this established format.
+
 ### 88 Complete file-text IO before publishing successful Results
 * **Date**: 2026-09-06
 * **Status**: Accepted for native and interactive text IO

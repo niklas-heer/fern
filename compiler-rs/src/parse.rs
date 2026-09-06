@@ -1,8 +1,8 @@
 //! Independent, bounded lexer and recursive-descent parser for the prototype.
 mod recovery;
 use crate::ast::{
-    BinaryOp, Expr, ExprKind, Field, Function, FunctionSyntax, Import, MatchArm, Param, Pattern,
-    PatternKind, Program, Stmt, TypeDecl, UnaryOp, Variant,
+    Argument, ArgumentLabel, BinaryOp, Expr, ExprKind, Field, Function, FunctionSyntax, Import,
+    MatchArm, Param, Pattern, PatternKind, Program, Stmt, TypeDecl, UnaryOp, Variant,
 };
 use crate::{Constructor, Diagnostic, Span, Type};
 pub(crate) use recovery::{recover_member, HoleSite};
@@ -1603,6 +1603,7 @@ impl Parser {
             if self.eat(&Kind::Right) {
                 break;
             }
+            let label = self.parameter_label()?;
             let pattern = self.pattern()?;
             let annotation = if self.eat(&Kind::Colon) {
                 Some(self.ty()?)
@@ -1611,6 +1612,7 @@ impl Parser {
             };
             let span = pattern.span;
             params.push(Param {
+                label,
                 pattern,
                 annotation,
                 span,
@@ -1621,6 +1623,39 @@ impl Parser {
             }
         }
         Ok(params)
+    }
+
+    /// An external label is an identifier followed by another pattern start, not ':' or ','.
+    fn parameter_label(&mut self) -> ParseResult<Option<ArgumentLabel>> {
+        let Kind::Name(name) = self.current().kind.clone() else {
+            return Ok(None);
+        };
+        let next = self.tokens.get(self.position + 1).map(|token| &token.kind);
+        let starts = matches!(
+            next,
+            Some(
+                Kind::Name(_)
+                    | Kind::Number(_)
+                    | Kind::Text(_)
+                    | Kind::Minus
+                    | Kind::Left
+                    | Kind::LeftBracket
+            )
+        );
+        if !starts
+            || matches!(
+                name.as_str(),
+                "Some" | "None" | "Ok" | "Err" | "true" | "false"
+            )
+        {
+            return Ok(None);
+        }
+        // A constructor immediately followed by '(' belongs to its pattern.
+        if matches!(next, Some(Kind::Left)) && name.chars().next().is_some_and(char::is_uppercase) {
+            return Ok(None);
+        }
+        let span = self.take().span;
+        Ok(Some(ArgumentLabel { name, span }))
     }
 
     /// Try one bounded type annotation; an arrow without a following type-colon begins a body.
@@ -2370,20 +2405,32 @@ impl Parser {
         )
     }
 
-    /// Parse positional call arguments after their opening delimiter.
-    fn arguments(&mut self) -> ParseResult<(Vec<Expr>, usize, usize)> {
+    /// Parse source-ordered positional and labeled arguments after their opening delimiter.
+    fn arguments(&mut self) -> ParseResult<(Vec<Argument>, usize, usize)> {
         let mut args = Vec::new();
         let mut depth = 1;
+        let mut labeled = false;
         for _ in 0..self.tokens.len() {
             if self.current().kind == Kind::Right {
                 return Ok((args, self.take().span.end, depth));
             }
+            let start = self.current().span.start;
+            let label = self.argument_label();
+            if label.is_none() && labeled {
+                return Err(self.error("positional arguments must precede labeled arguments"));
+            }
+            labeled |= label.is_some();
             let arg = self.expr(0)?;
             depth = depth.max(arg.depth);
-            args.push(arg.node);
-            if self.current().kind == Kind::Colon {
-                return Err(self.error("labeled arguments are unsupported in the Rust prototype"));
-            }
+            let span = Span {
+                start,
+                end: arg.node.span.end,
+            };
+            args.push(Argument {
+                label,
+                value: arg.node,
+                span,
+            });
             if !self.eat(&Kind::Comma) {
                 let end = self
                     .expect(Kind::Right, "expected ',' or ')' after argument")?
@@ -2393,6 +2440,23 @@ impl Parser {
             }
         }
         Err(self.error("unterminated call arguments"))
+    }
+
+    /// Consume a label only when an identifier is immediately followed by ':'.
+    fn argument_label(&mut self) -> Option<ArgumentLabel> {
+        let Kind::Name(name) = self.current().kind.clone() else {
+            return None;
+        };
+        if !self
+            .tokens
+            .get(self.position + 1)
+            .is_some_and(|token| token.kind == Kind::Colon)
+        {
+            return None;
+        }
+        let span = self.take().span;
+        self.take();
+        Some(ArgumentLabel { name, span })
     }
 
     /// Parse embedded expressions using the ordinary grammar and one shared depth bound.
@@ -3299,15 +3363,18 @@ fn pipe(left: Parsed, right: Parsed) -> ParseResult<Parsed> {
         ));
     }
     let position = positions.first().copied().unwrap_or(0);
-    if !positions.is_empty() {
-        args.remove(position);
-    }
+    let label = if !positions.is_empty() {
+        args.remove(position).label
+    } else {
+        None
+    };
     expression(
         ExprKind::Pipe {
             value: Box::new(left.node),
             name,
             args,
             position,
+            label,
         },
         span,
         depth,

@@ -218,10 +218,12 @@ pub(super) fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Typ
         ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {
             substitute_string(parts, values)?;
         }
-        ast::ExprKind::Call { args, .. }
-        | ast::ExprKind::GlobalCall { args, .. }
-        | ast::ExprKind::Tuple(args)
-        | ast::ExprKind::List(args) => {
+        ast::ExprKind::Call { args, .. } | ast::ExprKind::GlobalCall { args, .. } => {
+            for arg in args {
+                substitute_expr(arg, values)?;
+            }
+        }
+        ast::ExprKind::Tuple(args) | ast::ExprKind::List(args) => {
             for arg in args {
                 substitute_expr(arg, values)?;
             }

@@ -111,7 +111,7 @@ impl Checker<'_> {
     pub(super) fn apply(
         &mut self,
         callee: &ast::Expr,
-        args: &[ast::Expr],
+        args: &[ast::Argument],
         expected: Option<&Type>,
         span: Span,
         depth: usize,
@@ -146,11 +146,12 @@ impl Checker<'_> {
     fn invoke(
         &mut self,
         callee: ir::Expr,
-        args: &[ast::Expr],
+        args: &[ast::Argument],
         expected: Option<&Type>,
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
+        labels::positional(args)?;
         if callee.ty == Type::Never {
             return Ok((callee.kind, Type::Never));
         }
@@ -193,7 +194,7 @@ impl Checker<'_> {
     pub(super) fn call_expected(
         &mut self,
         name: &str,
-        args: &[ast::Expr],
+        args: &[ast::Argument],
         expected: Option<&Type>,
         span: Span,
         depth: usize,
@@ -223,11 +224,14 @@ impl Checker<'_> {
     pub(super) fn global_call(
         &mut self,
         name: &str,
-        args: &[ast::Expr],
+        args: &[ast::Argument],
         expected: Option<&Type>,
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
+        if !self.signatures.contains_key(name) {
+            labels::positional(args)?;
+        }
         if self.registry.is_alias(name)
             && !self.signatures.contains_key(name)
             && self.registry.constructor(name).is_none()
@@ -245,8 +249,18 @@ impl Checker<'_> {
         }
         let (target, params, result) = self.resolve_callable(name, span)?;
         self.constrain_result(&result, expected, span)?;
-        let args = self.call_arguments(args, &params, span, depth)?;
-        Ok((ir::ExprKind::Call { target, args }, result))
+        let order = if let Some(signature) = self.signatures.get(name) {
+            labels::order(args, &signature.labels, span)?
+        } else {
+            (0..args.len()).collect()
+        };
+        let written = if self.signatures.contains_key(name) {
+            order.iter().map(|index| params[*index].clone()).collect()
+        } else {
+            params
+        };
+        let args = self.call_arguments(args, &written, span, depth)?;
+        Ok(self.ordered_call(target, args, &order, result, span))
     }
 
     /// Feed compatible result context into arguments; report outer shape errors after argument errors.
@@ -282,7 +296,7 @@ impl Checker<'_> {
     /// Gather ordinary argument constraints before lambdas while retaining source evaluation order.
     fn call_arguments(
         &mut self,
-        args: &[ast::Expr],
+        args: &[ast::Argument],
         params: &[Type],
         span: Span,
         depth: usize,
@@ -306,7 +320,7 @@ impl Checker<'_> {
                 ))
             })
             .collect::<Checked<_>>()?;
-        let delayed: Vec<_> = args.iter().map(contains_lambda).collect();
+        let delayed: Vec<_> = args.iter().map(|arg| contains_lambda(arg)).collect();
         let order = params
             .iter()
             .zip(&delayed)
@@ -473,14 +487,14 @@ fn contains_lambda(expr: &ast::Expr) -> bool {
             contains_lambda(value) || fields.iter().any(|f| contains_lambda(&f.value))
         }
         ast::ExprKind::Apply { callee, args } => {
-            contains_lambda(callee) || args.iter().any(contains_lambda)
+            contains_lambda(callee) || args.iter().any(|arg| contains_lambda(arg))
         }
-        ast::ExprKind::Call { args, .. }
-        | ast::ExprKind::GlobalCall { args, .. }
-        | ast::ExprKind::Tuple(args)
-        | ast::ExprKind::List(args) => args.iter().any(contains_lambda),
+        ast::ExprKind::Call { args, .. } | ast::ExprKind::GlobalCall { args, .. } => {
+            args.iter().any(|arg| contains_lambda(arg))
+        }
+        ast::ExprKind::Tuple(args) | ast::ExprKind::List(args) => args.iter().any(contains_lambda),
         ast::ExprKind::Pipe { value, args, .. } | ast::ExprKind::GlobalPipe { value, args, .. } => {
-            contains_lambda(value) || args.iter().any(contains_lambda)
+            contains_lambda(value) || args.iter().any(|arg| contains_lambda(arg))
         }
         ast::ExprKind::Return(value)
         | ast::ExprKind::Defer(value)

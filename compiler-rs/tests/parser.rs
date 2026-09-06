@@ -71,7 +71,6 @@ fn rejects_malformed_and_unsupported_input() {
         ("fn main(): \"x\\q\"", "escape"),
         ("fn main(): \"hi {name\"", "unterminated"),
         ("fn main(): {1, 2}", "unsupported"),
-        ("fn main(): foo(label: 1)", "labeled"),
         ("fn main(): 9223372036854775808", "range"),
         ("fn main(): 1.5.5", "unsupported"),
         ("fn main(): @", "unsupported"),

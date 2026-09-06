@@ -1,0 +1,7 @@
+fn mark(name:String,value:Int)->Int:
+    println(name)
+    value
+fn subtract(left:Int,right:Int)->Int:left-right
+fn main():
+    println(subtract(right:mark("R",2),left:mark("L",9)))
+    println(mark("P",9) |> subtract(right:mark("R",2),left:_))

@@ -147,6 +147,14 @@ impl<'a> Index<'a> {
             }
             let mut locals = Bindings::new();
             for param in &function.params {
+                if param
+                    .label
+                    .as_ref()
+                    .is_some_and(|label| index.contains(label.span))
+                {
+                    index.blocked = true;
+                    index.token = None;
+                }
                 index.pattern(&param.pattern, &mut locals, 0)?;
             }
             if let Some(guard) = &function.guard {
@@ -650,11 +658,11 @@ impl<'a> Index<'a> {
             E::GlobalName { resolved, .. } => self.reference(resolved, expression.span, locals),
             E::GlobalCall { resolved, args, .. } => {
                 self.reference(resolved, expression.span, locals);
-                self.values(args, locals, depth)?;
+                self.arguments(args, locals, depth)?;
             }
             E::Call { name, args } => {
                 self.reference(name, expression.span, locals);
-                self.values(args, locals, depth)?;
+                self.arguments(args, locals, depth)?;
             }
             E::Block(statements) => self.block(statements, locals, depth + 1)?,
             E::Match { value, arms } => {
@@ -691,7 +699,25 @@ impl<'a> Index<'a> {
         }
         Some(())
     }
-    /// Visit ordered expression children while preserving their surrounding scope.
+    /// Visit written arguments without interpreting labels as lexical names.
+    fn arguments(&mut self, args: &[ast::Argument], locals: &Bindings, depth: usize) -> Option<()> {
+        for arg in args {
+            if arg
+                .label
+                .as_ref()
+                .is_some_and(|label| self.contains(label.span))
+            {
+                self.blocked = true;
+                self.target = None;
+                self.token = None;
+                return Some(());
+            }
+            self.expression(&arg.value, locals, depth + 1)?;
+        }
+        Some(())
+    }
+
+    /// Visit collection elements while preserving their surrounding scope.
     fn values(&mut self, values: &[ast::Expr], locals: &Bindings, depth: usize) -> Option<()> {
         for value in values {
             self.expression(value, locals, depth + 1)?;
@@ -862,7 +888,7 @@ impl<'a> Index<'a> {
             }
             E::Apply { callee, args } => {
                 self.expression(callee, locals, depth)?;
-                self.values(args, locals, depth)?;
+                self.arguments(args, locals, depth)?;
             }
             E::List(values) | E::Tuple(values) => self.values(values, locals, depth)?,
             E::Map(pairs) => {
@@ -880,7 +906,7 @@ impl<'a> Index<'a> {
             E::Pipe { value, args, .. } | E::GlobalPipe { value, args, .. } => {
                 self.pipe_reference(expression, locals);
                 self.expression(value, locals, depth)?;
-                self.values(args, locals, depth)?;
+                self.arguments(args, locals, depth)?;
             }
             E::If {
                 condition,

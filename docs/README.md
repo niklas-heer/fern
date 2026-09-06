@@ -25,6 +25,7 @@ This folder contains project-level reference documents. Use this file as the can
 
 - [`COMPATIBILITY_POLICY.md`](COMPATIBILITY_POLICY.md): compatibility/deprecation guarantees
 - [`STDLIB_API_REFERENCE.md`](STDLIB_API_REFERENCE.md): stable stdlib API signatures
+- [`LABELED_CALLS.md`](LABELED_CALLS.md): source interfaces, evaluation order and enforcement progress
 - [`FILE_TEXT_IO.md`](FILE_TEXT_IO.md): complete bounded UTF-8 reads and fallible write completion
 - [`PROCESS_EXECUTION.md`](PROCESS_EXECUTION.md): bounded literal argv, stream limits and process cleanup
 - [`MEMORY_MANAGEMENT.md`](MEMORY_MANAGEMENT.md): memory model plan and rationale

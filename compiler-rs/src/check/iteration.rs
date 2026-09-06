@@ -81,7 +81,7 @@ impl Checker<'_> {
     pub(super) fn enumerate_receiver(
         &mut self,
         receiver: &str,
-        args: &[ast::Expr],
+        args: &[ast::Argument],
         expected: Option<&Type>,
         span: Span,
         depth: usize,
@@ -95,7 +95,7 @@ impl Checker<'_> {
     pub(super) fn enumerate_value(
         &mut self,
         value: ir::Expr,
-        args: &[ast::Expr],
+        args: &[ast::Argument],
         expected: Option<&Type>,
         span: Span,
     ) -> Checked<TypedKind> {

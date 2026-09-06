@@ -45,10 +45,10 @@ pub(super) fn expression(expr: &mut ast::Expr, expander: &mut Expander<'_>) -> C
         ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {
             interpolate(parts, expander)?
         }
-        ast::ExprKind::Call { args, .. }
-        | ast::ExprKind::GlobalCall { args, .. }
-        | ast::ExprKind::Tuple(args)
-        | ast::ExprKind::List(args) => {
+        ast::ExprKind::Call { args, .. } | ast::ExprKind::GlobalCall { args, .. } => {
+            arguments(args, expander)?
+        }
+        ast::ExprKind::Tuple(args) | ast::ExprKind::List(args) => {
             for arg in args {
                 expression(arg, expander)?;
             }
@@ -240,6 +240,14 @@ fn pattern(pattern: &mut ast::Pattern, expander: &mut Expander<'_>) -> Checked<(
             self::pattern(rest, expander)?;
         }
         _ => {}
+    }
+    Ok(())
+}
+
+/// Substitute argument expression annotations without changing external labels.
+fn arguments(args: &mut [ast::Argument], expander: &mut Expander<'_>) -> Checked<()> {
+    for arg in args {
+        expression(&mut arg.value, expander)?;
     }
     Ok(())
 }
