@@ -183,3 +183,33 @@ fn escaped_output_holder_times_out_without_detached_rust_readers() {
         threads
     );
 }
+
+#[test]
+fn header_and_declared_length_boundaries_never_publish_partial_payloads() {
+    for bytes in [
+        b"FERN_TEST 1 N 0 18446744073709551615 1\n".as_slice(),
+        b"FERN_TEST 1 N 0 1 18446744073709551615\n".as_slice(),
+        b"FERN_TEST 1 N 0 10 0\nshort\nFERN_TEST_END 1\n".as_slice(),
+        b"FERN_TEST 1 N 0 0 0\n\nFERN_TEST_END 1\nextra".as_slice(),
+        b"FERN_TEST 1 N 0 0 0 extra\n\nFERN_TEST_END 1\n".as_slice(),
+    ] {
+        assert!(decode(bytes).is_err());
+    }
+    assert!(decode(&vec![b'x'; FRAME_MAX + 1]).is_err());
+    for status in [128, 127, 65535, usize::MAX] {
+        assert!(decode(&frame("N", &status.to_string(), b"", b"")).is_err());
+    }
+}
+
+#[test]
+fn complete_exit_status_domain_and_embedded_protocol_bytes_are_preserved() {
+    for code in 0..=255 {
+        let raw = code * 256;
+        let captured = decode(&frame("N", &raw.to_string(), b"", b"")).unwrap();
+        assert_eq!(captured.status.code(), Some(code));
+    }
+    let payload = b"FERN_TEST 1 N 0 0 0\n\nFERN_TEST_END 1\n\0\xff";
+    let captured = decode(&frame("N", "0", payload, payload)).unwrap();
+    assert_eq!(captured.stdout, payload);
+    assert_eq!(captured.stderr, payload);
+}

@@ -1,4 +1,6 @@
 //! Process-based native backend: no C pointers or unsafe Rust cross the boundary.
+mod linker_flags;
+use linker_flags::parse as parse_linker_flags;
 #[cfg(unix)]
 use std::os::unix::fs::DirBuilderExt;
 use std::{
@@ -115,55 +117,6 @@ fn package_flags(packages: &[&str]) -> Result<Vec<OsString>, String> {
         .collect())
 }
 
-/// Decode pkg-config's shell-escaped `flags` into literal argv words.
-/// Only quoting and escapes are recognized: variable/command expansion never occurs.
-fn parse_linker_flags(flags: &str) -> Result<Vec<OsString>, String> {
-    let mut chars = flags.chars();
-    let mut words = Vec::new();
-    let mut word = String::new();
-    let mut quote = None;
-    let mut started = false;
-    while let Some(character) = chars.next() {
-        match (quote, character) {
-            (Some('\''), '\'') | (Some('"'), '"') => quote = None,
-            (None, '\'' | '"') => {
-                quote = Some(character);
-                started = true;
-            }
-            (Some('\''), _) => word.push(character),
-            (_, '\\') => {
-                let next = chars
-                    .next()
-                    .ok_or("pkg-config linker flags end in an escape")?;
-                if quote == Some('"') && !matches!(next, '$' | '`' | '"' | '\\' | '\n') {
-                    word.push('\\');
-                }
-                if next != '\n' {
-                    word.push(next);
-                    started = true;
-                }
-            }
-            (None, c) if c.is_whitespace() => {
-                if started {
-                    words.push(OsString::from(std::mem::take(&mut word)));
-                    started = false;
-                }
-            }
-            _ => {
-                word.push(character);
-                started = true;
-            }
-        }
-    }
-    if quote.is_some() {
-        return Err("pkg-config linker flags contain an unterminated quote".into());
-    }
-    if started {
-        words.push(word.into());
-    }
-    Ok(words)
-}
-
 /// Match the reference compiler's static GC linkage when the archive is available.
 fn gc_flags() -> Result<Vec<OsString>, String> {
     if let Ok(output) = Command::new("pkg-config")
@@ -225,6 +178,64 @@ pub fn compile(il: &str, workspace: &Workspace) -> Result<PathBuf, String> {
 mod tests {
     use super::parse_linker_flags;
     use std::ffi::OsString;
+
+    #[test]
+    fn linker_paths_preserve_non_ascii_whitespace() {
+        assert_eq!(
+            parse_linker_flags("-L/opt/a\u{a0}b -lssl").unwrap(),
+            vec![OsString::from("-L/opt/a\u{a0}b"), OsString::from("-lssl")]
+        );
+    }
+
+    #[test]
+    fn linker_boundaries_reject_nul_and_aggregate_excess_before_publication() {
+        for flags in [
+            "-Lgood \0bad".to_string(),
+            "x".repeat(65537),
+            "x".repeat(16385),
+            "'' ".repeat(4097),
+        ] {
+            assert!(
+                parse_linker_flags(&flags).is_err(),
+                "accepted malformed/oversized argv"
+            );
+        }
+    }
+
+    #[test]
+    fn linker_exact_limits_are_valid() {
+        assert_eq!(parse_linker_flags(&"x".repeat(16384)).unwrap().len(), 1);
+        assert_eq!(parse_linker_flags(&"'' ".repeat(4096)).unwrap().len(), 4096);
+        let flags = format!("{} ", "x".repeat(16383)).repeat(4);
+        assert_eq!(flags.len(), 65536);
+        assert_eq!(parse_linker_flags(&flags).unwrap().len(), 4);
+    }
+
+    #[test]
+    fn linker_word_limits_count_utf8_bytes_and_discard_late_failure() {
+        let exact = format!("{}λ", "x".repeat(16382));
+        assert_eq!(
+            parse_linker_flags(&exact).unwrap(),
+            vec![OsString::from(&exact)]
+        );
+        assert!(parse_linker_flags(&format!("ok {}λ", "x".repeat(16383))).is_err());
+        assert!(parse_linker_flags("ok 'unfinished").is_err());
+    }
+
+    #[test]
+    fn linker_single_quoted_literal_roundtrips() {
+        let alphabet = [
+            'a', ' ', '\t', '\n', '\r', '\u{a0}', 'λ', '\\', '\'', '"', '$', '`', '*', ';',
+        ];
+        for offset in 0..alphabet.len() {
+            let word: String = alphabet.iter().cycle().skip(offset).take(32).collect();
+            let quoted = format!("'{}'", word.replace('\'', "'\"'\"'"));
+            assert_eq!(
+                parse_linker_flags(&quoted).unwrap(),
+                vec![OsString::from(word)]
+            );
+        }
+    }
 
     #[test]
     fn linker_words_preserve_escaped_quoted_and_literal_shell_characters() {

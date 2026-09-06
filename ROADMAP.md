@@ -52,6 +52,7 @@ Status: Complete for the bounded prototype; `mise run check`, `mise run rust-che
 - [x] Lock all three Python reference-script dependency graphs and reject metadata drift before execution.
 - [x] Preserve quoted native compiler flags and pkg-config paths through bounded literal decoding; cover all build helpers and 128 generated argument roundtrips.
 - [x] Add the strict incremental Rust lint policy and initial-path fix, with 17 negative/two positive lint contracts, three fixture tests, ten Criterion phase smoke cases and the review-guidance adoption matrix (Decision107).
+- [x] Audit native linker-argument and test-frame boundaries under strict lints; preserve Unicode paths, reject malformed/oversized records and validate complete status/payload domains.
 - [ ] Extend audited strict modules and collect quiet-host comparative phase measurements.
 - [x] Verify the combined environment/compiler gates on macOS and freshly provisioned Linux tools: full Rust/native/C/cache/docs gates, 1409/1410 nextest tests without skips, 23 workflow/flag/lock tests, lint contracts and Criterion smoke.
 

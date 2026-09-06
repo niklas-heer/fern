@@ -19,7 +19,7 @@ This document tracks major architectural and technical decisions made during the
 * **Consequences**: Adopt eight MSRV-compatible package Clippy restrictions, production panic restrictions,
 and a stricter audited source-directory module. Test lint names and enforcement with
 real offline negative crates. Keep validated bounded arithmetic narrowly documented.
-Reject oversized initial source paths before allocation/filesystem lookup.
+Reject oversized initial source paths before allocation/filesystem lookup. Later audited native linker and frame modules receive the same restrictions. Preserve nonbreaking-space path bytes with ASCII shell delimiters; reject NUL and over-budget linker records/words/argument counts before parser allocation. Checked frame access/conversion preserves the existing protocol and lifecycle, including all 256 exit codes; no frame semantic defect was found.
 
 Add Criterion 0.5.1 in an independent unpublished developer workspace with an exact
 Rust1.75-tested dependency lock. Measure parsing, checking, QBE emission and actual

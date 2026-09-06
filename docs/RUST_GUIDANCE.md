@@ -30,10 +30,10 @@ Decision106 separately verified nextest, Bacon check/Clippy and a watchexec
 source-change dispatch; nextest does not replace documentation tests.
 The combined macOS/Linux integration also passed the complete Rust/native/C
 quality gates, native cache/ownership suite and documentation checks. Nextest ran
-1409 tests on macOS and1410 on Linux, all passing without skips; three Rust
+1409 tests on macOS and 1410 on Linux, all passing without skips; three Rust
 documentation tests ran separately. Linux provisioned the pinned mise/Python/uv
-tools and rust-src successfully. The workflow gate includes23 task, literal-flag
-and script-lock checks; Criterion fixtures and all10 smoke phases pass on both.
+tools and rust-src successfully. The workflow gate includes 23 task, literal-flag
+and script-lock checks; Criterion fixtures and all 10 smoke phases pass on both.
 
 ## Enforced lint policy
 
@@ -44,8 +44,8 @@ require a compiler upgrade. [Cargo reference](https://doc.rust-lang.org/cargo/re
 | --- | --- |
 | Entire compiler package | Deny `dbg_macro`, `todo`, `unimplemented`, `exit`, `unchecked_duration_subtraction`, `unused_peekable`, `redundant_clone`, `or_fun_call`. All-target Clippy passes. |
 | Production library and binary | Deny `panic` and `panic_in_result_fn` via `cfg_attr(not(test), ...)`; intentional test assertions/panics remain available. |
-| Source-directory input boundary | Deny `pedantic`, `nursery`, `unwrap_used`, `expect_used`, `indexing_slicing`, `as_conversions`, `unreachable`, `string_slice`, `arithmetic_side_effects`. This is an audited first module, not a claim of whole-compiler compliance. |
-| Narrow allowances | Discovery counter/depth arithmetic has explicit small bounds (8193 and 33); one documented function allowance preserves those validated operations. Explicit caller visibility has a separate `redundant_pub_crate` allowance. No crate-wide group allowance masks failures. |
+| Source-directory, native linker-argument and test-frame boundaries | Deny `pedantic`, `nursery`, `unwrap_used`, `expect_used`, `indexing_slicing`, `as_conversions`, `unreachable`, `string_slice`, `arithmetic_side_effects`. These are audited boundary modules, not a claim of whole-compiler compliance. |
+| Narrow allowances | Discovery counter/depth arithmetic has explicit small bounds (8193 and 33); one documented function allowance preserves those validated operations. The frame decoder has a documented small-offset allowance (header under 128 bytes and two streams up to 256 KiB); explicit caller visibility has a separate `redundant_pub_crate` allowance. No crate-wide group allowance masks failures. |
 
 The policy test compiles 17 deliberately bad, dependency-free temporary crates
 under the selected toolchain and checks each expected diagnostic, then compiles
@@ -128,3 +128,27 @@ records a development run with possible concurrent host activity. Backend
 replacement evaluation, CLI parity, actors, recursive Result proofs and future
 JSON features retain their own tests and decisions. No optional tool installation
 or platform test that was not actually run is counted as completed here.
+
+## Native boundary follow-up
+
+The strict module policy now also covers literal linker-argument parsing and
+native test-frame decoding. The linker parser rejects NUL before constructing
+argv, bounds input to 65,536 bytes, words to 16,384 UTF-8 bytes and output to
+4,096 arguments, and preserves non-ASCII whitespace in literal Unix paths.
+Only unquoted ASCII space/tab/newline delimit words. Existing shell-compatible
+double-quote escapes, quoted whitespace and empty arguments remain unchanged.
+Late malformed input returns an error without publishing a partial argv.
+
+These are parser allocation/work limits; the existing `pkg-config` subprocess
+still uses `Command::output`. This follow-up does not claim to impose a deadline
+or bounded stream capture on that external producer. The mise Bash decoder and
+native-bootstrap metadata decoder have their own explicitly documented quoting
+contracts and are not silently substituted for the linker parser.
+
+The frame audit found no status or wire-layout defect. It replaces indexing and
+an unchecked cast with guarded access and checked conversion, retaining a narrow
+arithmetic allowance: header length is below 128 and each stream is at most
+256 KiB, so payload offsets fit even a 32-bit `usize`. Tests cover all 256 normal
+exit codes, exact stream limits, binary payloads containing protocol markers,
+truncated/trailing records and extreme declared lengths/status values. Process
+ownership, reaping, timeout transport and the fault ABI remain unchanged.

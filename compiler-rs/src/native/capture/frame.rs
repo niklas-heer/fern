@@ -1,4 +1,8 @@
 //! Strict version-one framing; no native test payload can impersonate metadata.
+#![deny(clippy::pedantic, clippy::nursery)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+#![deny(clippy::as_conversions, clippy::unreachable, clippy::string_slice)]
+#![deny(clippy::arithmetic_side_effects)]
 use super::{Captured, FRAME_MAX, OUTPUT_MAX};
 use std::os::unix::process::ExitStatusExt;
 
@@ -24,7 +28,8 @@ fn status(code: usize) -> Result<std::process::ExitStatus, String> {
     if code > 65535 || (code & 255 != 0 && (code > 255 || signal == 0 || signal > SIGNAL_MAX)) {
         return Err("invalid test supervisor native status".into());
     }
-    Ok(std::process::ExitStatus::from_raw(code as i32))
+    let raw = i32::try_from(code).map_err(|_| "invalid test supervisor native status")?;
+    Ok(std::process::ExitStatus::from_raw(raw))
 }
 
 /// Map discriminated helper failures without conflating ordinary native exit125.
@@ -44,6 +49,8 @@ fn failure(code: usize) -> Result<Captured, String> {
 }
 
 /// Validate header, exact binary lengths, trailer and EOF before publishing values.
+// Header <128 bytes and each stream <=OUTPUT_MAX, so offsets fit even a 32-bit usize.
+#[allow(clippy::arithmetic_side_effects)]
 pub(super) fn decode(bytes: &[u8]) -> Result<Captured, String> {
     let end = bytes
         .iter()
@@ -53,15 +60,15 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Captured, String> {
     if bytes.len() > FRAME_MAX {
         return Err("test supervisor frame limit exceeded".into());
     }
-    let header =
-        std::str::from_utf8(&bytes[..end]).map_err(|_| "invalid test supervisor header")?;
+    let header = std::str::from_utf8(bytes.get(..end).ok_or("invalid test supervisor header")?)
+        .map_err(|_| "invalid test supervisor header")?;
     let words: Vec<_> = header.split(' ').collect();
-    if words.len() != 6 || words[0] != "FERN_TEST" || words[1] != "1" {
+    let ["FERN_TEST", "1", kind, code, out, err] = words.as_slice() else {
         return Err("incompatible test supervisor protocol".into());
-    }
-    let code = number(words[3])?;
-    let out = number(words[4])?;
-    let err = number(words[5])?;
+    };
+    let code = number(code)?;
+    let out = number(out)?;
+    let err = number(err)?;
     if out > OUTPUT_MAX || err > OUTPUT_MAX {
         return Err("doc test output limit exceeded".into());
     }
@@ -70,11 +77,17 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Captured, String> {
     if bytes.get(tail..) != Some(b"\nFERN_TEST_END 1\n") {
         return Err("incomplete or trailing test supervisor record".into());
     }
-    match words[2] {
+    match *kind {
         "N" => Ok(Captured {
             status: status(code)?,
-            stdout: bytes[payload..payload + out].to_vec(),
-            stderr: bytes[payload + out..tail].to_vec(),
+            stdout: bytes
+                .get(payload..payload + out)
+                .ok_or("incomplete test stdout")?
+                .to_vec(),
+            stderr: bytes
+                .get(payload + out..tail)
+                .ok_or("incomplete test stderr")?
+                .to_vec(),
         }),
         "E" => failure(code),
         _ => Err("invalid test supervisor record kind".into()),
