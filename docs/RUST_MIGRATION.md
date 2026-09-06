@@ -1329,3 +1329,13 @@ JSON programs and twenty-eight atomic invalid programs. Seven runtime ABI fixtur
 pass debug/release/sanitizer profiles. Full C checks, the native checker workflow,
 compiler fuzz smoke and documentation gates also pass. Union codecs and general
 traits remain separate; see [the wire contract](JSON_TYPED_CODECS.md).
+
+
+## Zed newtype grammar pin — 2026-09-06
+
+The local Zed package now pins grammar revision
+5b02ec61136eac8f07afc8a09817f702542fcc05. Exact package inputs pass the locked
+extension tests, 102 valid/38 malformed/41 incremental grammar cases, native/WASM
+queries and reproducible hostile-path archive checks. Actual Zed1.18.0 startup
+passes in compiler-override and discovery modes with derived-newtype codec source.
+This is local package/LSP verification, not remote publication or GUI formatting.

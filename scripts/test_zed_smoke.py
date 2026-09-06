@@ -15,9 +15,10 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = '''type Item derive(Json):
-    count:Int
-fn encoded()->Result(String,json.Error):json.encode(Item(3))
+SOURCE = '''newtype Count derive(Json) = Count(Int)
+type Item derive(Json):
+    count:Count
+fn encoded()->Result(String,json.Error):json.encode(Item(Count(3)))
 type Choice = Int | String
 fn size(value:Choice)->Int:
     match value:

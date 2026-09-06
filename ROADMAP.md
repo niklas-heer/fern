@@ -245,7 +245,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [x] Support regular recursive JSON records through finite indexed plans, with a charged finite-value proof and native/REPL depth boundaries (Decision101 J5a).
 - [x] Derive transparent JSON codecs for newtypes, preserving full-width payloads without wrapper allocations and distinguishing nullable fields from optional fields (Decision101 J5b).
 - [x] Verify newtype derivation syntax, the 32-trait limit, recovery, queries and incremental edits in native/WASM editor grammar (102 valid, 38 malformed and 41 edits).
-- [ ] Repin and verify the Zed package after the newtype derivation grammar commit.
+- [x] Repin Zed to the newtype grammar commit 5b02ec6; verify reproducible packages, 102/38/41 grammar cases and actual-editor LSP startup in override/discovery modes.
 - [x] Extend typed JSON with conditional generic codec requirements, exact specialization, private template boundaries and phantom-field semantics (Decision101 J5c; 13 native programs, 22 atomic invalids, native/REPL parity).
 - [x] Implement explicitly derived tagged JSON sums, finite constructor-choice proof and shared native/REPL resource accounting (Decision103 J6a).
 - [ ] Implement disjoint union codecs and general/custom Json traits (J6b–J7).
