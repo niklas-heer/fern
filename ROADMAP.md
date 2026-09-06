@@ -250,6 +250,8 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [x] Implement explicitly derived tagged JSON sums, finite constructor-choice proof and shared native/REPL resource accounting (Decision103 J6a).
 - [x] Implement conservative disjoint JSON unions, allocation-free member selection and whole-union conditional requirements (Decision103 J6b).
 - [ ] Complete deeper union discrimination, inline compound decoder targets and general/custom Json traits (J6c–J7).
+- [x] Reassess QBE/Cranelift using current primary sources and an independent native AOT experiment; correct the original QBE rationale (Decision109).
+- [ ] Trial a supported Cranelift backend through shared lowering and complete native/ABI/debug/performance gates before a default decision.
 - [x] Reserve an ABI-permitted Apple arm64 QBE scratch register, verify swaps/calls/spills and independent native outputs, and preserve generic Linux assembly (Decision104).
 - [x] Remove newly written executable races from native capture tests; preserve timeout/stream/descendant coverage and add 160 concurrent per-run output/status assertions.
 - [x] Retain direct-child ownership through native unit/doc test cleanup and validate the framed safe-Rust adapter (Decision102).

@@ -1,0 +1,92 @@
+{
+  "qbe-1": {
+    "build_to_object_median_ms": 41.0515625262633,
+    "backend_median_ms": 2.903708489611745,
+    "run_10m_steps_median_ms": 18.1715,
+    "object_bytes": 440,
+    "executable_bytes": 33528,
+    "link_ms_single": 62.9358331207186,
+    "answer": "2783892466536392950"
+  },
+  "clif108-none-1": {
+    "build_to_object_median_ms": 3.906916594132781,
+    "backend_median_ms": 3.906916594132781,
+    "run_10m_steps_median_ms": 18.099,
+    "object_bytes": 384,
+    "executable_bytes": 33536,
+    "link_ms_single": 75.07720799185336,
+    "answer": "2783892466536392950"
+  },
+  "clif108-speed-1": {
+    "build_to_object_median_ms": 2.6476875646039844,
+    "backend_median_ms": 2.6476875646039844,
+    "run_10m_steps_median_ms": 21.239500000000003,
+    "object_bytes": 384,
+    "executable_bytes": 33536,
+    "link_ms_single": 64.79362491518259,
+    "answer": "2783892466536392950"
+  },
+  "clif135-none-1": {
+    "build_to_object_median_ms": 2.582937479019165,
+    "backend_median_ms": 2.582937479019165,
+    "run_10m_steps_median_ms": 18.1405,
+    "object_bytes": 408,
+    "executable_bytes": 33536,
+    "link_ms_single": 65.96908415667713,
+    "answer": "2783892466536392950"
+  },
+  "clif135-speed-1": {
+    "build_to_object_median_ms": 2.6609794003888965,
+    "backend_median_ms": 2.6609794003888965,
+    "run_10m_steps_median_ms": 18.166,
+    "object_bytes": 408,
+    "executable_bytes": 33536,
+    "link_ms_single": 62.06295802257955,
+    "answer": "2783892466536392950"
+  },
+  "qbe-200": {
+    "build_to_object_median_ms": 69.86664608120918,
+    "backend_median_ms": 9.856916614808142,
+    "run_10m_steps_median_ms": 18.0105,
+    "object_bytes": 20632,
+    "executable_bytes": 57320,
+    "link_ms_single": 62.49237502925098,
+    "answer": "2783892466536392950"
+  },
+  "clif108-none-200": {
+    "build_to_object_median_ms": 9.614854119718075,
+    "backend_median_ms": 9.614854119718075,
+    "run_10m_steps_median_ms": 18.345,
+    "object_bytes": 17384,
+    "executable_bytes": 40608,
+    "link_ms_single": 62.69879196770489,
+    "answer": "2783892466536392950"
+  },
+  "clif108-speed-200": {
+    "build_to_object_median_ms": 13.104208977892995,
+    "backend_median_ms": 13.104208977892995,
+    "run_10m_steps_median_ms": 21.1985,
+    "object_bytes": 18184,
+    "executable_bytes": 40608,
+    "link_ms_single": 63.06929187849164,
+    "answer": "2783892466536392950"
+  },
+  "clif135-none-200": {
+    "build_to_object_median_ms": 9.710895945318043,
+    "backend_median_ms": 9.710895945318043,
+    "run_10m_steps_median_ms": 18.601,
+    "object_bytes": 17408,
+    "executable_bytes": 40608,
+    "link_ms_single": 62.98383302055299,
+    "answer": "2783892466536392950"
+  },
+  "clif135-speed-200": {
+    "build_to_object_median_ms": 12.041603913530707,
+    "backend_median_ms": 12.041603913530707,
+    "run_10m_steps_median_ms": 18.168999999999997,
+    "object_bytes": 17408,
+    "executable_bytes": 40608,
+    "link_ms_single": 62.31050007045269,
+    "answer": "2783892466536392950"
+  }
+}
