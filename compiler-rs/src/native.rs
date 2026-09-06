@@ -1,4 +1,4 @@
-//! Process-based native backend: no C pointers or unsafe Rust cross the boundary.
+//! Native object linking and QBE process adaptation share private artifact ownership.
 mod linker_flags;
 mod package_path;
 use linker_flags::parse as parse_linker_flags;
@@ -157,6 +157,35 @@ fn gc_flags() -> Result<Vec<OsString>, String> {
 /// Compile checked QBE in a private workspace and retain the resulting executable there.
 pub fn compile(il: &str, workspace: &Workspace) -> Result<PathBuf, String> {
     let backend = component("FERN_QBE", "fern-qbe")?;
+    let runtime = runtime_archive()?;
+    let source = workspace.file("program.ssa");
+    let assembly = workspace.file("program.s");
+    let object = workspace.file("program.o");
+    fs::write(&source, il).map_err(|e| e.to_string())?;
+    execute(Command::new(backend).arg(&source).arg(&assembly), "QBE")?;
+    let compiler = env::var_os("CC").unwrap_or_else(|| "cc".into());
+    execute(
+        Command::new(compiler)
+            .arg("-c")
+            .arg(&assembly)
+            .arg("-o")
+            .arg(&object),
+        "assembly",
+    )?;
+    link_object(&object, &runtime, workspace)
+}
+
+/// Accept backend-produced object bytes without resolving QBE or invoking an assembler.
+#[cfg(feature = "cranelift")]
+pub fn compile_object(bytes: &[u8], workspace: &Workspace) -> Result<PathBuf, String> {
+    let runtime = runtime_archive()?;
+    let object = workspace.file("program.o");
+    fs::write(&object, bytes).map_err(|error| format!("cannot write object: {error}"))?;
+    link_object(&object, &runtime, workspace)
+}
+
+/// Resolve and validate the common runtime before executing native tools.
+fn runtime_archive() -> Result<PathBuf, String> {
     let runtime = component("FERN_RUNTIME_LIB", "libfern_runtime.a")?;
     if !runtime.is_file() {
         return Err(format!(
@@ -164,24 +193,16 @@ pub fn compile(il: &str, workspace: &Workspace) -> Result<PathBuf, String> {
             runtime.display()
         ));
     }
-    let source = workspace.file("program.ssa");
-    let assembly = workspace.file("program.s");
-    let object = workspace.file("program.o");
+    Ok(runtime)
+}
+
+/// Link one compiler-owned object into the same workspace for atomic caller publication.
+fn link_object(object: &Path, runtime: &Path, workspace: &Workspace) -> Result<PathBuf, String> {
     let executable = workspace.file("program");
-    fs::write(&source, il).map_err(|e| e.to_string())?;
-    execute(Command::new(backend).arg(&source).arg(&assembly), "QBE")?;
     let compiler = env::var_os("CC").unwrap_or_else(|| "cc".into());
     execute(
-        Command::new(&compiler)
-            .arg("-c")
-            .arg(&assembly)
-            .arg("-o")
-            .arg(&object),
-        "assembly",
-    )?;
-    execute(
-        Command::new(&compiler)
-            .arg(&object)
+        Command::new(compiler)
+            .arg(object)
             .arg(runtime)
             .args(gc_flags()?)
             .args(package_flags(&["sqlite3", "openssl"])?)

@@ -50,6 +50,38 @@ void fern_println_int(int64_t n) {
 }
 
 /**
+ * Keep variadic platform ABI details behind a fixed double argument.
+ * @param n Any IEEE double, including signed zero, infinities and NaNs.
+ * @return No value; write the existing round-trip format to stdout.
+ */
+void fern_print_float(double n) {
+    printf("%.17g", n);
+}
+
+/**
+ * Print one Float line through a fixed-signature native boundary.
+ * @param n Any IEEE double; no finite-only precondition applies.
+ * @return No value; append exactly one newline after the formatted number.
+ */
+void fern_println_float(double n) {
+    printf("%.17g\n", n);
+}
+
+/**
+ * Format a Float into bounded GC storage without exposing a variadic compiler ABI.
+ * @param n Any IEEE double; use the same host format as existing Fern interpolation.
+ * @return A GC-managed NUL-terminated string; allocation must succeed.
+ */
+char* fern_float_to_str(double n) {
+    char* result = FERN_ALLOC(32);
+    assert(result != NULL);
+    int written = snprintf(result, 32, "%.17g", n);
+    assert(written >= 0 && written < 32);
+    (void)written;
+    return result;
+}
+
+/**
  * Print a string to stdout (no newline).
  * @param s The null-terminated string to print.
  */

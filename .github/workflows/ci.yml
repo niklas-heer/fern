@@ -10,6 +10,11 @@ jobs:
   build-and-test:
     name: Build and Test
     runs-on: ${{ matrix.os }}
+    env:
+      # Keep full native/backend test artifacts within hosted runner disk budgets.
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -68,6 +73,9 @@ jobs:
 
       - name: Validate experimental Rust frontend
         run: mise run rust-check
+
+      - name: Validate Cranelift backend and native output
+        run: mise run rust-cranelift-check
 
       - name: Verify Rust lint policy and phase benchmarks
         run: |

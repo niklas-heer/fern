@@ -1,9 +1,17 @@
-//! QBE lowering uses only checked types and resolved symbol identities.
+//! Shared native lowering uses checked types and resolved symbol identities.
+//! QBE serialization remains an adapter over the same structured machine program.
+use crate::machine::{
+    self, BinaryOp as MachineBinary, Buffer, Comparison, DataValue, LoadKind, Operand,
+    Operation as NativeOperation, Scalar, Statement, UnaryOp as MachineUnary,
+};
 use crate::{
     ast::{BinaryOp, UnaryOp},
     ir::{self, Builtin, CallTarget, Expr, ExprKind, Function, MatchArm, Pattern, Stmt},
     Constructor, Diagnostic, Span, Type,
 };
+#[path = "qbe/helpers.rs"]
+mod helpers;
+use helpers::{machine_width, native_operand};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[path = "qbe/boundaries.rs"]
 mod boundaries;
@@ -45,22 +53,31 @@ mod actor_backend;
 
 const MAX_DEPTH: usize = 128;
 const MAX_NODES: usize = 200_000;
-const STRING_RUN: usize = 512;
 
 /// Lower `program` to native-backend IL, rejecting inconsistent public IR.
 /// No source-name or AST type inference occurs here. Requires exactly one main.
 pub fn emit(program: &ir::Program) -> Result<String, Diagnostic> {
-    emit_mode(program, false)
+    lower(program).map(|program| program.to_qbe())
 }
 
 /// Lower a checked test entry, failing explicit process-exit calls instead of accepting early success.
 /// All ordinary typed-IR validation applies; the caller selects the test's entry beforehand.
 pub fn emit_test(program: &ir::Program) -> Result<String, Diagnostic> {
+    lower_test(program).map(|program| program.to_qbe())
+}
+
+/// Lower checked semantic IR once for both native backends, preserving all runtime boundaries.
+pub fn lower(program: &ir::Program) -> Result<machine::Program, Diagnostic> {
+    emit_mode(program, false)
+}
+
+/// Lower a test entry with explicit process-exit rejection for either native backend.
+pub fn lower_test(program: &ir::Program) -> Result<machine::Program, Diagnostic> {
     emit_mode(program, true)
 }
 
 /// Share executable validation while keeping test-only process behavior out of ordinary programs.
-fn emit_mode(program: &ir::Program, test_mode: bool) -> Result<String, Diagnostic> {
+fn emit_mode(program: &ir::Program, test_mode: bool) -> Result<machine::Program, Diagnostic> {
     ir::reject_probes(program)?;
     crate::json_codec::validate_program(program)?;
     let lowered = actor_backend::prepare(program);
@@ -100,7 +117,7 @@ fn emit_inner(
     test_mode: bool,
     actors: actor_backend::Plan,
     layouts: HashMap<Type, &ir::TypeLayout>,
-) -> Lowering<String> {
+) -> Lowering<machine::Program> {
     let mut functions = BTreeMap::new();
     let mut main = None;
     for function in &program.functions {
@@ -143,8 +160,11 @@ fn emit_inner(
         }
     }
     emitter.support_helpers(main);
-    emitter.data.push_str(&emitter.output);
-    Ok(emitter.data)
+    emitter.data.extend(&emitter.output);
+    emitter
+        .data
+        .finish()
+        .map_err(|message| invalid(Span::default(), &message))
 }
 
 /// Initialize emission state only after source signatures and nominal layouts are validated.
@@ -161,8 +181,8 @@ fn new_emitter<'a>(
         codec_data_bytes: 0,
         functions,
         layouts,
-        output: String::new(),
-        data: String::new(),
+        output: Buffer::new(),
+        data: Buffer::new(),
         strings: 0,
         nodes: 0,
         maps_used: false,
@@ -227,8 +247,8 @@ struct Emitter<'a> {
     test_mode: bool,
     functions: BTreeMap<usize, &'a Function>,
     layouts: HashMap<Type, &'a ir::TypeLayout>,
-    output: String,
-    data: String,
+    output: Buffer,
+    data: Buffer,
     strings: usize,
     nodes: usize,
     maps_used: bool,
@@ -243,7 +263,7 @@ struct Emitter<'a> {
 
 struct Locals {
     tail: Option<tail::TailLoop>,
-    stack_allocations: String,
+    stack_allocations: Buffer,
     values: BTreeMap<usize, (Type, String)>,
     defined: BTreeSet<usize>,
     count: usize,
@@ -286,41 +306,40 @@ impl Emitter<'_> {
     /// Append compiler-owned helper definitions once, including only used numeric adapters.
     fn support_helpers(&mut self, main: &Function) {
         self.test_exit_helper();
-        if self.output.contains("call $fern_rs_json_") {
-            self.output.push_str(include_str!("qbe/json.ssa"));
+        if self.output.calls("fern_rs_json_object") || self.output.calls("fern_rs_json_members") {
+            helpers::json(&mut self.output);
         }
-        self.output.push_str(include_str!("qbe/control.ssa"));
-        self.output.push_str(include_str!("qbe/fault.ssa"));
-        self.output.push_str(if self.actors.active {
-            include_str!("qbe/actor_fault_tail.ssa")
+        helpers::control(&mut self.output);
+        helpers::fault(&mut self.output);
+        if self.actors.active {
+            helpers::actor_fault_tail(&mut self.output);
         } else {
-            include_str!("qbe/fault_tail.ssa")
-        });
+            helpers::fault_tail(&mut self.output);
+        }
         if self.numeric_used {
-            self.output.push_str(include_str!("qbe/numeric.ssa"));
+            helpers::numeric(&mut self.output);
         }
         if self.float_contains_used {
-            self.output.push_str(include_str!("qbe/float_contains.ssa"));
+            helpers::float_contains(&mut self.output);
         }
         if self.enumerate_used {
-            self.output.push_str(include_str!("qbe/iteration.ssa"));
+            helpers::iteration(&mut self.output);
         }
         if self.list_access_used {
-            self.output.push_str(include_str!("qbe/list_access.ssa"));
+            helpers::list_access(&mut self.output);
         }
         if self.repeat_used {
-            self.output.push_str(include_str!("qbe/repeat.ssa"));
+            helpers::repeat(&mut self.output);
         }
         if self.slice_used {
-            self.output.push_str(include_str!("qbe/slice.ssa"));
+            helpers::slice(&mut self.output);
         }
         self.main_wrapper(main);
-        self.float_print_helpers();
         if self.pattern_tail_used {
-            self.output.push_str(include_str!("qbe/pattern_tail.ssa"));
+            helpers::pattern_tail(&mut self.output);
         }
         if self.maps_used {
-            self.output.push_str(include_str!("qbe/maps.ssa"));
+            helpers::maps(&mut self.output);
         }
     }
 
@@ -328,7 +347,7 @@ impl Emitter<'_> {
     fn function(&mut self, function: &Function) -> Lowering<()> {
         let mut locals = Locals {
             tail: None,
-            stack_allocations: String::new(),
+            stack_allocations: Buffer::new(),
             values: BTreeMap::new(),
             defined: BTreeSet::new(),
             count: function.local_count,
@@ -338,9 +357,12 @@ impl Emitter<'_> {
             label: 0,
             current: "@start".into(),
         };
-        let mut params = vec!["l %env".to_owned(), "l %fault".to_owned()];
+        let mut params = vec![
+            (Scalar::I64, "%env".to_owned()),
+            (Scalar::I64, "%fault".to_owned()),
+        ];
         if self.actors.managed.contains(&function.id.0) {
-            params.push("l %exec".into());
+            params.push((Scalar::I64, "%exec".into()));
         }
         for param in &function.params {
             let value = format!("%v{}", param.id.0);
@@ -350,17 +372,32 @@ impl Emitter<'_> {
                 value.clone(),
                 function.body.span,
             )?;
-            params.push(format!("{} {value}", self.width(param.ty.clone())));
+            params.push((machine_width(self.width(param.ty.clone())), value));
         }
-        self.output.push_str(&format!(
-            "function {} $f{}({}) {{\n@start\n",
-            self.width(function.return_type.clone()),
-            function.id.0,
-            params.join(", ")
-        ));
+        self.output.begin(
+            &format!("$f{}", function.id.0),
+            Some(machine_width(self.width(function.return_type.clone()))),
+            params.clone(),
+            false,
+        );
+        self.output.statement(Statement::Label("@start".to_owned()));
         let entry = self.output.len();
         self.load_captures(function, &mut locals)?;
-        self.output.push_str("    %return_slot =l alloc8 8\n    %defer_head =l alloc8 8\n    storel 0, %defer_head\n");
+        self.output.statement(Statement::Assign {
+            destination: "%return_slot".to_owned(),
+            ty: Scalar::I64,
+            operation: NativeOperation::StackAlloc { bytes: 8, align: 8 },
+        });
+        self.output.statement(Statement::Assign {
+            destination: "%defer_head".to_owned(),
+            ty: Scalar::I64,
+            operation: NativeOperation::StackAlloc { bytes: 8, align: 8 },
+        });
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand("0"),
+            address: native_operand("%defer_head"),
+        });
         if function.body.ty != Type::Never
             && (function.return_type != Type::Unit || function.name != "main")
         {
@@ -377,7 +414,7 @@ impl Emitter<'_> {
             Err(error) => return Err(error),
         }
         self.finish_function(&mut locals);
-        self.output.insert_str(entry, &locals.stack_allocations);
+        self.output.insert(entry, &locals.stack_allocations);
         Ok(())
     }
 
@@ -388,20 +425,76 @@ impl Emitter<'_> {
             return;
         }
         self.output
-            .push_str("export function w $fern_main() {\n@start\n    %fault =l alloc8 8\n    storel 0, %fault\n");
-        self.output.push_str(&format!(
-            "    %exit ={} call $f{}(l 0, l %fault)\n",
-            self.width(main.return_type.clone()),
-            main.id.0
-        ));
-        self.output.push_str("    %code =l loadl %fault\n    %failed =w cnel %code, 0\n    jnz %failed, @failed, @success\n@failed\n    call $fern_rs_report_fault(l %code)\n    ret 1\n@success\n");
+            .begin("$fern_main", Some(Scalar::I32), vec![], true);
+        self.output.statement(Statement::Label("@start".to_owned()));
+        self.output.statement(Statement::Assign {
+            destination: "%fault".to_owned(),
+            ty: Scalar::I64,
+            operation: NativeOperation::StackAlloc { bytes: 8, align: 8 },
+        });
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand("0"),
+            address: native_operand("%fault"),
+        });
+        self.output.statement(Statement::Assign {
+            destination: "%exit".to_owned(),
+            ty: machine_width(self.width(main.return_type.clone())),
+            operation: NativeOperation::Call {
+                callee: native_operand(&format!("$f{}", main.id.0)),
+                args: vec![
+                    (Scalar::I64, native_operand("0")),
+                    (Scalar::I64, native_operand("%fault")),
+                ],
+                variadic: None,
+            },
+        });
+        self.output.statement(Statement::Assign {
+            destination: "%code".to_owned(),
+            ty: Scalar::I64,
+            operation: NativeOperation::Load(LoadKind::I64, native_operand("%fault")),
+        });
+        self.output.statement(Statement::Assign {
+            destination: "%failed".to_owned(),
+            ty: Scalar::I32,
+            operation: NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::Ne, Scalar::I64),
+                native_operand("%code"),
+                native_operand("0"),
+            ),
+        });
+        self.output.statement(Statement::Branch {
+            condition: native_operand("%failed"),
+            then_label: "@failed".to_owned(),
+            else_label: "@success".to_owned(),
+        });
+        self.output
+            .statement(Statement::Label("@failed".to_owned()));
+        self.output
+            .statement(Statement::Effect(NativeOperation::Call {
+                callee: native_operand("$fern_rs_report_fault"),
+                args: vec![(Scalar::I64, native_operand("%code"))],
+                variadic: None,
+            }));
+        self.output
+            .statement(Statement::Return(Some(native_operand("1"))));
+        self.output
+            .statement(Statement::Label("@success".to_owned()));
         if main.return_type.clone() == Type::Int {
+            self.output.statement(Statement::Assign {
+                destination: "%status".to_owned(),
+                ty: Scalar::I32,
+                operation: NativeOperation::Unary(MachineUnary::Copy, native_operand("%exit")),
+            });
             self.output
-                .push_str("    %status =w copy %exit\n    ret %status\n}\n");
+                .statement(Statement::Return(Some(native_operand("%status"))));
+            self.output.end();
         } else if matches!(main.return_type, Type::Result(_, _)) {
             self.result_main_exit();
         } else {
-            self.output.push_str("    ret 0\n}\n");
+            self.output
+                .statement(Statement::Return(Some(native_operand("0"))));
+            self.output.end();
         }
     }
 
@@ -586,7 +679,10 @@ impl Emitter<'_> {
             self.assign(
                 locals,
                 Type::Float,
-                &format!("cast {}", value.to_bits() as i64),
+                NativeOperation::Unary(
+                    MachineUnary::Cast,
+                    native_operand(&(value.to_bits() as i64).to_string()),
+                ),
             ),
         )
     }
@@ -601,27 +697,9 @@ impl Emitter<'_> {
         }
         let name = format!("$str{}", self.strings);
         self.strings += 1;
-        self.data.push_str(&format!("data {name} = {{ "));
-        let bytes = value.as_bytes();
-        let mut index = 0;
-        while index < bytes.len() {
-            let start = index;
-            while index < bytes.len()
-                && index - start < STRING_RUN
-                && (32..=126).contains(&bytes[index])
-                && !matches!(bytes[index], b'"' | b'\\')
-            {
-                index += 1;
-            }
-            if index > start {
-                self.data
-                    .push_str(&format!("b \"{}\", ", &value[start..index]));
-            } else {
-                self.data.push_str(&format!("b {}, ", bytes[index]));
-                index += 1;
-            }
-        }
-        self.data.push_str("b 0 }\n");
+        let mut bytes = value.as_bytes().to_vec();
+        bytes.push(0);
+        self.data.data(&name, vec![DataValue::Bytes(bytes)]);
         Ok(name)
     }
 
@@ -641,28 +719,42 @@ impl Emitter<'_> {
         expect_type(value.ty.clone(), expected.clone(), value.span)?;
         let value = self.expr(value, locals, depth)?;
         let instruction = match op {
-            UnaryOp::Negate if expected == Type::Float => format!("neg {value}"),
-            UnaryOp::Negate => format!("sub 0, {value}"),
-            UnaryOp::Not => format!("ceqw {value}, 0"),
-            UnaryOp::BitNot => format!("xor {value}, -1"),
+            UnaryOp::Negate if expected == Type::Float => {
+                NativeOperation::Unary(MachineUnary::Neg, native_operand(&(value)))
+            }
+            UnaryOp::Negate => NativeOperation::Binary(
+                MachineBinary::Sub,
+                native_operand("0"),
+                native_operand(&(value)),
+            ),
+            UnaryOp::Not => NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::Eq, Scalar::I32),
+                native_operand(&(value)),
+                native_operand("0"),
+            ),
+            UnaryOp::BitNot => NativeOperation::Binary(
+                MachineBinary::Xor,
+                native_operand(&(value)),
+                native_operand("-1"),
+            ),
         };
-        Ok((
-            expected.clone(),
-            self.assign(locals, expected, &instruction),
-        ))
+        Ok((expected.clone(), self.assign(locals, expected, instruction)))
     }
 
     /// Emit a scalar instruction `instruction`, assigning a fresh SSA value of `ty`.
-    fn assign(&mut self, locals: &mut Locals, ty: Type, instruction: &str) -> String {
+    fn assign(&mut self, locals: &mut Locals, ty: Type, instruction: NativeOperation) -> String {
         let result = locals.temporary();
-        self.output
-            .push_str(&format!("    {result} ={} {instruction}\n", self.width(ty)));
+        self.output.statement(Statement::Assign {
+            destination: result.clone(),
+            ty: machine_width(self.width(ty)),
+            operation: instruction,
+        });
         result
     }
 
     /// Emit the block `label` and record its actual predecessor identity.
     fn start_block(&mut self, locals: &mut Locals, label: &str) {
-        self.output.push_str(&format!("{label}\n"));
+        self.output.statement(Statement::Label((label).to_string()));
         locals.current = label.to_owned();
     }
 
@@ -736,13 +828,16 @@ impl Emitter<'_> {
             ));
         }
         let mut arguments = if matches!(target, CallTarget::Function(_)) {
-            vec!["l 0".into(), "l %fault".into()]
+            vec![
+                (Scalar::I64, Operand::Int(0)),
+                (Scalar::I64, native_operand("%fault")),
+            ]
         } else {
             Vec::new()
         };
         if let CallTarget::Function(id) = target {
             if self.actors.managed.contains(&id.0) {
-                arguments.push("l %exec".into());
+                arguments.push((Scalar::I64, native_operand("%exec")));
             }
         }
         for (arg, expected) in args.iter().zip(params) {
@@ -754,17 +849,28 @@ impl Emitter<'_> {
                 CallTarget::Builtin(Builtin::Print | Builtin::Println)
             ) && expected == Type::Bool
             {
-                value = self.assign(locals, Type::Int, &format!("extuw {value}"));
+                value = self.assign(
+                    locals,
+                    Type::Int,
+                    NativeOperation::Unary(
+                        MachineUnary::ExtUw,
+                        native_operand(&(value).to_string()),
+                    ),
+                );
                 abi = 'l';
             }
-            arguments.push(format!("{abi} {value}"));
+            arguments.push((machine_width(abi), native_operand(&value)));
         }
-        let instruction = format!("call ${symbol}({})", arguments.join(", "));
+        let instruction = NativeOperation::Call {
+            callee: native_operand(&format!("${}", symbol)),
+            args: arguments.clone(),
+            variadic: None,
+        };
         let value = if result == Type::Unit {
-            self.output.push_str(&format!("    {instruction}\n"));
+            self.output.statement(Statement::Effect(instruction));
             "0".into()
         } else {
-            self.assign(locals, result.clone(), &instruction)
+            self.assign(locals, result.clone(), instruction)
         };
         if matches!(target, CallTarget::Function(_)) {
             self.guard_fault(locals);
@@ -914,17 +1020,39 @@ impl Emitter<'_> {
             let value = self.assign(
                 locals,
                 Type::String,
-                &format!("call $fern_str_concat(l {lhs}, l {rhs})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_str_concat"),
+                    args: vec![
+                        (Scalar::I64, native_operand(lhs)),
+                        (Scalar::I64, native_operand(rhs)),
+                    ],
+                    variadic: None,
+                },
             );
             return (Type::String, value);
         }
         let value = self.assign(
             locals,
             Type::Bool,
-            &format!("call $fern_str_eq(l {lhs}, l {rhs})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_str_eq"),
+                args: vec![
+                    (Scalar::I64, native_operand(lhs)),
+                    (Scalar::I64, native_operand(rhs)),
+                ],
+                variadic: None,
+            },
         );
         let value = if op == BinaryOp::Ne {
-            self.assign(locals, Type::Bool, &format!("ceqw {value}, 0"))
+            self.assign(
+                locals,
+                Type::Bool,
+                NativeOperation::Binary(
+                    MachineBinary::Compare(Comparison::Eq, Scalar::I32),
+                    native_operand(&(value)),
+                    native_operand("0"),
+                ),
+            )
         } else {
             value
         };
@@ -951,8 +1079,11 @@ impl Emitter<'_> {
         } else {
             (&merge, &rhs_label, 1)
         };
-        self.output
-            .push_str(&format!("    jnz {lhs}, {on_true}, {on_false}\n"));
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(lhs)),
+            then_label: (on_true).to_string(),
+            else_label: (on_false).to_string(),
+        });
         self.start_block(locals, &rhs_label);
         let mut incoming = vec![(before, shortcut.to_string())];
         let rhs = self.expr(right, locals, depth);
@@ -981,8 +1112,11 @@ impl Emitter<'_> {
         let else_label = locals.label();
         let merge = locals.label();
         let mut incoming = Vec::new();
-        self.output
-            .push_str(&format!("    jnz {test}, {then_label}, {else_label}\n"));
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(test)),
+            then_label: (then_label).to_string(),
+            else_label: (else_label).to_string(),
+        });
         self.start_block(locals, &then_label);
         let then_value = self.position_expr(then_branch, locals, depth, tail);
         self.incoming(then_value, &mut incoming, &merge, locals)?;
@@ -998,40 +1132,29 @@ impl Emitter<'_> {
 }
 
 /// Select the scalar opcode from a checked operator and operand type.
-fn binary_instruction(op: BinaryOp, operand: Type) -> String {
-    let base = match op {
-        BinaryOp::Add => "add",
-        BinaryOp::Subtract => "sub",
-        BinaryOp::Multiply => "mul",
-        BinaryOp::Divide => "div",
-        BinaryOp::Remainder => "rem",
-        BinaryOp::BitAnd => "and",
-        BinaryOp::BitOr => "or",
-        BinaryOp::BitXor => "xor",
-        BinaryOp::ShiftLeft => "shl",
-        BinaryOp::ShiftRight => "sar",
-        BinaryOp::Power => unreachable!("power requires dedicated lowering"),
-        BinaryOp::Eq => "ceq",
-        BinaryOp::Ne => "cne",
-        BinaryOp::Lt => "cslt",
-        BinaryOp::Le => "csle",
-        BinaryOp::Gt => "csgt",
-        BinaryOp::Ge => "csge",
-        BinaryOp::And | BinaryOp::Or => unreachable!("logical operators use branch lowering"),
+fn binary_instruction(op: BinaryOp, operand: Type) -> MachineBinary {
+    let cmp = match op {
+        BinaryOp::Add => return MachineBinary::Add,
+        BinaryOp::Subtract => return MachineBinary::Sub,
+        BinaryOp::Multiply => return MachineBinary::Mul,
+        BinaryOp::Divide => return MachineBinary::Div,
+        BinaryOp::Remainder => return MachineBinary::Rem,
+        BinaryOp::BitAnd => return MachineBinary::And,
+        BinaryOp::BitOr => return MachineBinary::Or,
+        BinaryOp::BitXor => return MachineBinary::Xor,
+        BinaryOp::ShiftLeft => return MachineBinary::Shl,
+        BinaryOp::ShiftRight => return MachineBinary::Sar,
+        BinaryOp::Eq => Comparison::Eq,
+        BinaryOp::Ne => Comparison::Ne,
+        BinaryOp::Lt => Comparison::SLt,
+        BinaryOp::Le => Comparison::SLe,
+        BinaryOp::Gt => Comparison::SGt,
+        BinaryOp::Ge => Comparison::SGe,
+        BinaryOp::Power | BinaryOp::And | BinaryOp::Or => {
+            unreachable!("operator requires dedicated lowering")
+        }
     };
-    let base = if operand == Type::Float {
-        base.replace("cs", "c")
-    } else {
-        base.to_owned()
-    };
-    if matches!(
-        op,
-        BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
-    ) {
-        format!("{base}{}", scalar_width(operand))
-    } else {
-        base
-    }
+    MachineBinary::Compare(cmp, machine_width(scalar_width(operand)))
 }
 
 /// Reject unresolved or excessively nested types before choosing any ABI layout.
@@ -1200,9 +1323,17 @@ impl Emitter<'_> {
     /// Widen Boolean/Unit values before storing them in runtime payload slots.
     fn payload(&mut self, locals: &mut Locals, ty: &Type, value: String) -> String {
         if matches!(self.representation(ty), Type::Bool | Type::Unit) {
-            self.assign(locals, Type::Int, &format!("extuw {value}"))
+            self.assign(
+                locals,
+                Type::Int,
+                NativeOperation::Unary(MachineUnary::ExtUw, native_operand(&(value))),
+            )
         } else if *self.representation(ty) == Type::Float {
-            self.assign(locals, Type::Int, &format!("cast {value}"))
+            self.assign(
+                locals,
+                Type::Int,
+                NativeOperation::Unary(MachineUnary::Cast, native_operand(&(value))),
+            )
         } else {
             value
         }
@@ -1211,9 +1342,17 @@ impl Emitter<'_> {
     /// Narrow payload loads to the checked scalar width without changing pointer values.
     fn unpack(&mut self, locals: &mut Locals, ty: &Type, value: String) -> String {
         if matches!(self.representation(ty), Type::Bool | Type::Unit) {
-            self.assign(locals, ty.clone(), &format!("copy {value}"))
+            self.assign(
+                locals,
+                ty.clone(),
+                NativeOperation::Unary(MachineUnary::Copy, native_operand(&(value))),
+            )
         } else if *self.representation(ty) == Type::Float {
-            self.assign(locals, Type::Float, &format!("cast {value}"))
+            self.assign(
+                locals,
+                Type::Float,
+                NativeOperation::Unary(MachineUnary::Cast, native_operand(&(value))),
+            )
         } else {
             value
         }
@@ -1234,15 +1373,28 @@ impl Emitter<'_> {
         let list = self.assign(
             locals,
             ty.clone(),
-            &format!("call $fern_list_with_capacity(l {})", items.len().max(1)),
+            NativeOperation::Call {
+                callee: native_operand("$fern_list_with_capacity"),
+                args: vec![(
+                    Scalar::I64,
+                    native_operand(&(items.len().max(1)).to_string()),
+                )],
+                variadic: None,
+            },
         );
         for item in items {
             expect_type(item.ty.clone(), *item_type.clone(), item.span)?;
             let value = self.expr(item, locals, depth)?;
             let value = self.payload(locals, &item.ty, value);
-            self.output.push_str(&format!(
-                "    call $fern_list_push_mut(l {list}, l {value})\n"
-            ));
+            self.output
+                .statement(Statement::Effect(NativeOperation::Call {
+                    callee: native_operand("$fern_list_push_mut"),
+                    args: vec![
+                        (Scalar::I64, native_operand(&(list).to_string())),
+                        (Scalar::I64, native_operand(&(value))),
+                    ],
+                    variadic: None,
+                }));
         }
         Ok((ty.clone(), list))
     }
@@ -1279,7 +1431,15 @@ impl Emitter<'_> {
         };
         Ok((
             ty.clone(),
-            self.assign(locals, ty.clone(), &format!("call ${symbol}(l {payload})")),
+            self.assign(
+                locals,
+                ty.clone(),
+                NativeOperation::Call {
+                    callee: native_operand(&format!("${}", symbol)),
+                    args: vec![(Scalar::I64, native_operand(&(payload)))],
+                    variadic: None,
+                },
+            ),
         ))
     }
 
@@ -1304,19 +1464,31 @@ impl Emitter<'_> {
             expect_type(arg.ty.clone(), expected, arg.span)?;
             let value = self.expr(arg, locals, depth)?;
             let payload = self.payload(locals, &arg.ty, value);
-            arguments.push(format!("l {payload}"));
+            arguments.push((Scalar::I64, native_operand(&payload)));
         }
         let raw = self.assign(
             locals,
             Type::Int,
-            &format!("call ${symbol}({})", arguments.join(", ")),
+            NativeOperation::Call {
+                callee: native_operand(&format!("${}", symbol)),
+                args: arguments.clone(),
+                variadic: None,
+            },
         );
         let mut value = self.unpack(locals, &result, raw);
         if matches!(
             target,
             CallTarget::Builtin(Builtin::OptionIsNone | Builtin::ResultIsErr)
         ) {
-            value = self.assign(locals, Type::Bool, &format!("ceqw {value}, 0"));
+            value = self.assign(
+                locals,
+                Type::Bool,
+                NativeOperation::Binary(
+                    MachineBinary::Compare(Comparison::Eq, Scalar::I32),
+                    native_operand(&(value).to_string()),
+                    native_operand("0"),
+                ),
+            );
         }
         Ok((result, value))
     }
@@ -1344,43 +1516,33 @@ impl Emitter<'_> {
         let tag = self.assign(
             locals,
             Type::Bool,
-            &format!("call $fern_result_is_ok(l {result})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_result_is_ok"),
+                args: vec![(Scalar::I64, native_operand(&(result).to_string()))],
+                variadic: None,
+            },
         );
         let success = locals.label();
         let failure = locals.label();
-        self.output
-            .push_str(&format!("    jnz {tag}, {success}, {failure}\n"));
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(tag)),
+            then_label: (success).to_string(),
+            else_label: (failure).to_string(),
+        });
         self.start_block(locals, &failure);
         self.save_return(&result, locals);
         self.start_block(locals, &success);
         let payload = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_result_unwrap(l {result})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_result_unwrap"),
+                args: vec![(Scalar::I64, native_operand(&(result).to_string()))],
+                variadic: None,
+            },
         );
         let value = self.unpack(locals, ok, payload);
         Ok((*ok.clone(), value))
-    }
-}
-
-impl Emitter<'_> {
-    /// Print doubles with round-trip precision through the system variadic C ABI.
-    fn float_print_helpers(&mut self) {
-        if !self.output.contains("call $fern_print_float")
-            && !self.output.contains("call $fern_println_float")
-        {
-            return;
-        }
-        self.data
-            .push_str("data $fern_rs_float_fmt = { b \"%.17g\", b 0 }\n");
-        self.data
-            .push_str("data $fern_rs_float_line_fmt = { b \"%.17g\", b 10, b 0 }\n");
-        for (name, format) in [
-            ("fern_print_float", "fern_rs_float_fmt"),
-            ("fern_println_float", "fern_rs_float_line_fmt"),
-        ] {
-            self.output.push_str(&format!("function ${name}(d %x) {{\n@start\n    call $printf(l ${format}, ..., d %x)\n    ret\n}}\n"));
-        }
     }
 }
 
@@ -1403,14 +1565,26 @@ impl Emitter<'_> {
                 Type::Int => self.assign(
                     locals,
                     Type::String,
-                    &format!("call $fern_int_to_str(l {value})"),
+                    NativeOperation::Call {
+                        callee: native_operand("$fern_int_to_str"),
+                        args: vec![(Scalar::I64, native_operand(&(value)))],
+                        variadic: None,
+                    },
                 ),
                 Type::Bool => {
-                    let value = self.assign(locals, Type::Int, &format!("extuw {value}"));
+                    let value = self.assign(
+                        locals,
+                        Type::Int,
+                        NativeOperation::Unary(MachineUnary::ExtUw, native_operand(&(value))),
+                    );
                     self.assign(
                         locals,
                         Type::String,
-                        &format!("call $fern_bool_to_str(l {value})"),
+                        NativeOperation::Call {
+                            callee: native_operand("$fern_bool_to_str"),
+                            args: vec![(Scalar::I64, native_operand(&(value)))],
+                            variadic: None,
+                        },
                     )
                 }
                 Type::Float => self.float_string(value, locals, part.span)?,
@@ -1419,7 +1593,14 @@ impl Emitter<'_> {
             text = self.assign(
                 locals,
                 Type::String,
-                &format!("call $fern_str_concat(l {text}, l {value})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_str_concat"),
+                    args: vec![
+                        (Scalar::I64, native_operand(&(text).to_string())),
+                        (Scalar::I64, native_operand(&(value))),
+                    ],
+                    variadic: None,
+                },
             );
         }
         Ok((Type::String, text))
@@ -1427,12 +1608,16 @@ impl Emitter<'_> {
 
     /// Format an IEEE double into a bounded GC allocation with round-trip precision.
     fn float_string(&mut self, value: String, locals: &mut Locals, span: Span) -> Lowering<String> {
-        let format = self.string("%.17g", span)?;
-        let buffer = self.assign(locals, Type::String, "call $fern_alloc(l 32)");
-        self.output.push_str(&format!(
-            "    call $snprintf(l {buffer}, l 32, l {format}, ..., d {value})\n"
-        ));
-        Ok(buffer)
+        let _ = span;
+        Ok(self.assign(
+            locals,
+            Type::String,
+            NativeOperation::Call {
+                callee: native_operand("$fern_float_to_str"),
+                args: vec![(Scalar::F64, native_operand(&value))],
+                variadic: None,
+            },
+        ))
     }
 }
 
@@ -1445,4 +1630,48 @@ fn private_expression(expr: &Expr) -> Exit {
         _ => "invalid private expression",
     };
     invalid(expr.span, message)
+}
+
+#[cfg(test)]
+mod machine_lowering_tests {
+    use super::*;
+
+    #[test]
+    fn shared_lowering_preserves_qbe_and_typed_entry() {
+        let program = ir::Program {
+            types: vec![],
+            functions: vec![Function {
+                mailbox: None,
+                captures: vec![],
+                id: ir::FunctionId(0),
+                name: "main".into(),
+                return_type: Type::Int,
+                body: Expr {
+                    kind: ExprKind::Int(42),
+                    ty: Type::Int,
+                    span: Span::default(),
+                },
+                params: vec![],
+                local_count: 0,
+            }],
+        };
+        let machine = lower(&program).unwrap();
+        assert_eq!(machine.to_qbe(), emit(&program).unwrap());
+        let main = machine
+            .functions
+            .iter()
+            .find(|function| function.name == "$f0")
+            .unwrap();
+        assert_eq!(main.result, Some(Scalar::I64));
+        assert_eq!(
+            main.params,
+            vec![(Scalar::I64, "%env".into()), (Scalar::I64, "%fault".into())]
+        );
+        assert!(main.body.iter().any(|statement| matches!(statement,
+            Statement::Store { kind: LoadKind::I64, value: Operand::Int(42), address: Operand::Temp(name) } if name == "return_slot"
+        )));
+        assert!(machine.functions.iter().any(|function| function.export
+            && function.name == "$fern_main"
+            && function.result == Some(Scalar::I32)));
+    }
 }

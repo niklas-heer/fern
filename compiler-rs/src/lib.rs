@@ -4,17 +4,21 @@
 #![cfg_attr(not(test), deny(clippy::panic, clippy::panic_in_result_fn))]
 pub mod ast;
 pub mod check;
+#[cfg(feature = "cranelift")]
+pub mod cranelift;
 pub mod documentation;
 pub mod format;
 pub mod ir;
 pub mod json_codec;
 pub mod lsp;
+pub mod machine;
 pub mod modules;
 pub mod parse;
 pub mod presentation;
 pub mod qbe;
 pub mod repl;
 pub mod runtime;
+pub mod runtime_abi;
 pub(crate) mod unions;
 
 /// Source byte range, with an exclusive end offset.

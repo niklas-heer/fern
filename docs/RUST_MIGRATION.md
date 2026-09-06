@@ -6,6 +6,43 @@ C while language and tooling parity are developed. The original
 [evaluation](RUST_FRONTEND_EVALUATION.md) is a snapshot of the initial scalar
 prototype; its measurements do not describe the expanded compiler.
 
+## Shared native lowering and experimental Cranelift — 2026-09-06
+
+The Rust frontend now lowers checked language semantics into one structured
+machine representation. QBE serialization and the optional Cranelift object
+backend consume the same operations, preserving the existing closure, tail-call,
+fault/defer, actor and JSON descriptor paths. Compiler-owned helper routines are
+structured Rust builders; no parser translates emitted QBE text into Cranelift.
+Float printing and interpolation use fixed-signature runtime calls so generated
+code does not depend on a variadic calling-convention workaround.
+
+```sh
+mise run rust-cranelift-build
+./bin/fern-rs-cranelift run --backend=cranelift examples/tiny_cli.fn
+./bin/fern-rs-cranelift build --backend=cranelift examples/tiny_cli.fn -o hello-cranelift
+mise run rust-cranelift-check
+```
+
+The separate executable leaves the ordinary `bin/fern-rs` available. QBE remains
+the default, even when the feature is built. Backend selection currently applies
+to `build` and `run`; `emit`, source tests and preview packaging retain their
+QBE contracts. The experimental feature pins Cranelift 0.135.1 under the dated
+nightly and checked-in Cargo lockfile (Decision112).
+
+A selected Cranelift build emits the native object directly and does not invoke
+QBE or an assembler. Final linking still requires the host toolchain, Fern's C
+runtime and native libraries. The C reference compiler, native supervisor,
+Tree-sitter C parser/scanner and Python correctness oracles have separate roles;
+changing code generators does not replace them.
+
+The complete Cranelift feature gate passes on macOS ARM64 and Linux ARM64,
+including 293 independent native output oracles per platform, feature Clippy
+and Rust tests (1,559 on macOS; 1,562 on Linux). Targeted tests cover mixed
+integer/Float ABI arguments, loop phis, relocations and forced-GC retention. Source-level debugger acceptance,
+controlled end-to-end performance measurements and default promotion remain open.
+See [the backend assessment](BACKEND_REASSESSMENT.md) for current scope and the
+acceptance policy. Earlier checkpoint counts below remain historical records.
+
 ## Collections and error values — 2026-09-05
 
 - Recursive concrete `List(T)`, `Option(T)`, and `Result(T, E)` types, including

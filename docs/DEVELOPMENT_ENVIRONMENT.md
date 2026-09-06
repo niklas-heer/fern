@@ -32,8 +32,9 @@ its rustfmt, Clippy and rust-src components for direct Cargo commands too.
 Fern no longer promises Rust 1.75 compatibility. Cargo's numeric `rust-version =
 "1.100"` is a coarse minimum check; it cannot encode a nightly date and does not
 promise support for an untested stable compiler. The dated nightly is the
-supported build policy. Edition 2021 and standard-library-only production
-dependencies remain unchanged. [Cargo version semantics](https://doc.rust-lang.org/cargo/reference/rust-version.html)
+supported build policy. Edition 2021 is unchanged. The default compiler uses
+the standard library; Decision112 adds pinned optional Cranelift dependencies
+for native code generation. [Cargo version semantics](https://doc.rust-lang.org/cargo/reference/rust-version.html)
 
 Install your editor's Rust Analyzer extension (for VS Code,
 `rust-lang.rust-analyzer`; Zed includes Rust support), and launch it from the
@@ -117,7 +118,9 @@ Cargo-generate and cargo-seek do not serve
 an existing project workflow. The [Rust guidance review](RUST_GUIDANCE.md) records the lint policy and the
 separate Criterion developer package. Run `mise run rust-lint-policy` and
 `mise run rust-bench-smoke` for its required CI checks, and `mise run rust-bench`
-for optional statistical measurements. The compiler has no application dependencies.
+for optional statistical measurements. The default compiler has no application
+dependencies; `mise run rust-cranelift-check` enables and checks the optional,
+locked native backend dependencies described in [the backend guide](BACKEND_REASSESSMENT.md).
 
 ## Reproducibility boundaries
 

@@ -280,6 +280,11 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [ ] Complete deeper union discrimination and general/custom Json traits (J6c–J7).
 - [x] Reassess QBE/Cranelift using current primary sources and an independent native AOT experiment; correct the original QBE rationale (Decision109).
 - [ ] Trial a supported Cranelift backend through shared lowering and complete native/ABI/debug/performance gates before a default decision.
+- [x] Extract shared typed machine lowering and replace handwritten QBE helper text with structured Rust builders; preserve existing QBE boundary tests (Decision112).
+- [x] Add canonical native signatures, fixed Float runtime boundaries and explicit Cranelift build/run selection; selected builds emit objects without invoking QBE or an assembler.
+- [x] Preserve the complete default Rust/QBE gate on macOS/Linux ARM64 after shared lowering (1,548/1,551 Cargo tests, native and packaging/workflow oracles, 192 fuzz mutations).
+- [x] Revalidate the full C quality and documentation gates on macOS/Linux ARM64; add Cranelift native acceptance to the Linux/macOS CI matrix with bounded test artifact profiles.
+- [x] Pass the complete Cranelift feature gate on macOS/Linux ARM64: 293 independent native output oracles per platform, 1,559/1,562 Cargo tests, feature Clippy, and mixed-argument ABI, relocation, phi and forced-GC regressions. Source debugger, controlled performance, x86-64 and default-promotion gates remain separate.
 - [x] Reserve an ABI-permitted Apple arm64 QBE scratch register, verify swaps/calls/spills and independent native outputs, and preserve generic Linux assembly (Decision104).
 - [x] Remove newly written executable races from native capture tests; preserve timeout/stream/descendant coverage and add 160 concurrent per-run output/status assertions.
 - [x] Retain direct-child ownership through native unit/doc test cleanup and validate the framed safe-Rust adapter (Decision102).

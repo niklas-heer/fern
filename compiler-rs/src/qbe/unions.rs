@@ -90,18 +90,53 @@ impl Emitter<'_> {
         payload: &str,
         locals: &mut Locals,
     ) -> String {
-        let value = self.assign(locals, Type::Int, "call $fern_alloc(l 16)");
-        let address = self.assign(locals, Type::Int, &format!("add {value}, 8"));
-        self.output.push_str(&format!(
-            "    storel {tag}, {value}\n    storel {payload}, {address}\n"
-        ));
+        let value = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Call {
+                callee: native_operand("$fern_alloc"),
+                args: vec![(Scalar::I64, native_operand("16"))],
+                variadic: None,
+            },
+        );
+        let address = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(&(value)),
+                native_operand("8"),
+            ),
+        );
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(tag),
+            address: native_operand(&(value)),
+        });
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(payload),
+            address: native_operand(&(address)),
+        });
         value
     }
 
     /// Read payload bits only after the caller established a matching union member tag.
     pub(super) fn union_payload(&mut self, value: &str, locals: &mut Locals) -> String {
-        let address = self.assign(locals, Type::Int, &format!("add {value}, 8"));
-        self.assign(locals, Type::Int, &format!("loadl {address}"))
+        let address = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(value),
+                native_operand("8"),
+            ),
+        );
+        self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(&(address))),
+        )
     }
 
     /// Preserve aliases while remapping to a checked target subset or superset; identical types alias.
@@ -115,7 +150,11 @@ impl Emitter<'_> {
         if source == target {
             return Ok(value.to_owned());
         }
-        let actual = self.assign(locals, Type::Int, &format!("loadl {value}"));
+        let actual = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(value)),
+        );
         let merged = locals.label();
         let mut incoming = vec![];
         for (old, member) in crate::unions::members(source).iter().enumerate() {
@@ -127,15 +166,26 @@ impl Emitter<'_> {
             };
             let yes = locals.label();
             let no = locals.label();
-            let test = self.assign(locals, Type::Bool, &format!("ceql {actual}, {old}"));
-            self.output
-                .push_str(&format!("    jnz {test}, {yes}, {no}\n"));
+            let test = self.assign(
+                locals,
+                Type::Bool,
+                NativeOperation::Binary(
+                    MachineBinary::Compare(Comparison::Eq, Scalar::I64),
+                    native_operand(&(actual).to_string()),
+                    native_operand(&(old).to_string()),
+                ),
+            );
+            self.output.statement(Statement::Branch {
+                condition: native_operand(&(test)),
+                then_label: (yes).to_string(),
+                else_label: (no).to_string(),
+            });
             self.start_block(locals, &yes);
             self.incoming(Ok(new.to_string()), &mut incoming, &merged, locals)?;
             self.start_block(locals, &no);
         }
         // Safe IR only constructs validated member tags; subset callers have already tested them.
-        self.output.push_str("    hlt\n");
+        self.output.statement(Statement::Trap);
         let (_, tag) = self.join(Type::Int, incoming, &merged, locals)?;
         let payload = self.union_payload(value, locals);
         Ok(self.union_envelope(&tag, &payload, locals))

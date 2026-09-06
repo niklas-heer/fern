@@ -91,13 +91,25 @@ impl Emitter<'_> {
         let length = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_list_len(l {value})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_list_len"),
+                args: vec![(Scalar::I64, native_operand(value))],
+                variadic: None,
+            },
         );
-        let op = if rest.is_some() { "csgel" } else { "ceql" };
+        let op = if rest.is_some() {
+            Comparison::SGe
+        } else {
+            Comparison::Eq
+        };
         let test = self.assign(
             locals,
             Type::Bool,
-            &format!("{op} {length}, {}", prefix.len()),
+            NativeOperation::Binary(
+                MachineBinary::Compare(op, Scalar::I64),
+                native_operand(&length),
+                Operand::Int(prefix.len() as i64),
+            ),
         );
         self.require_pattern(&test, state.failure, locals);
         for (index, pattern) in prefix.iter().enumerate() {
@@ -107,7 +119,14 @@ impl Emitter<'_> {
             let raw = self.assign(
                 locals,
                 Type::Int,
-                &format!("call $fern_list_get(l {value}, l {index})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_list_get"),
+                    args: vec![
+                        (Scalar::I64, native_operand(value)),
+                        (Scalar::I64, native_operand(&(index).to_string())),
+                    ],
+                    variadic: None,
+                },
             );
             let field = self.unpack(locals, item, raw);
             state.depth += 1;
@@ -157,10 +176,14 @@ impl Emitter<'_> {
                     self.assign(
                         locals,
                         pending.owner.clone(),
-                        &format!(
-                            "call $fern_rs_pattern_tail(l {}, l {})",
-                            pending.value, pending.offset
-                        ),
+                        NativeOperation::Call {
+                            callee: native_operand("$fern_rs_pattern_tail"),
+                            args: vec![
+                                (Scalar::I64, native_operand(&(pending.value).to_string())),
+                                (Scalar::I64, native_operand(&(pending.offset).to_string())),
+                            ],
+                            variadic: None,
+                        },
                     )
                 };
                 (pending.owner, value)
@@ -192,26 +215,49 @@ impl Emitter<'_> {
         let value = self.assign(
             locals,
             ty.clone(),
-            &format!("call $fern_alloc(l {})", 8 * (suffix.len() + 1)),
+            NativeOperation::Call {
+                callee: native_operand("$fern_alloc"),
+                args: vec![(
+                    Scalar::I64,
+                    native_operand(&(8 * (suffix.len() + 1)).to_string()),
+                )],
+                variadic: None,
+            },
         );
-        self.output.push_str(&format!("    storel 0, {value}\n"));
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand("0"),
+            address: native_operand(&(value)),
+        });
         for index in 0..suffix.len() {
             let source = self.assign(
                 locals,
                 Type::Int,
-                &format!(
-                    "add {}, {}",
-                    pending.value,
-                    8 * (pending.offset + index + 1)
+                NativeOperation::Binary(
+                    MachineBinary::Add,
+                    native_operand(&(pending.value).to_string()),
+                    native_operand(&(8 * (pending.offset + index + 1)).to_string()),
                 ),
             );
-            let raw = self.assign(locals, Type::Int, &format!("loadl {source}"));
+            let raw = self.assign(
+                locals,
+                Type::Int,
+                NativeOperation::Load(LoadKind::I64, native_operand(&(source))),
+            );
             let dest = self.assign(
                 locals,
                 Type::Int,
-                &format!("add {value}, {}", 8 * (index + 1)),
+                NativeOperation::Binary(
+                    MachineBinary::Add,
+                    native_operand(&(value).to_string()),
+                    native_operand(&(8 * (index + 1)).to_string()),
+                ),
             );
-            self.output.push_str(&format!("    storel {raw}, {dest}\n"));
+            self.output.statement(Statement::Store {
+                kind: LoadKind::I64,
+                value: native_operand(&(raw)),
+                address: native_operand(&(dest)),
+            });
         }
         Ok((ty, value))
     }

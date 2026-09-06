@@ -27,7 +27,14 @@ impl Emitter<'_> {
         let value = self.assign(
             locals,
             expr.ty.clone(),
-            &format!("call $fern_json_codec_{name}(l {root}, l {value})"),
+            NativeOperation::Call {
+                callee: native_operand(&format!("$fern_json_codec_{}", name)),
+                args: vec![
+                    (Scalar::I64, native_operand(&(root))),
+                    (Scalar::I64, native_operand(&(value))),
+                ],
+                variadic: None,
+            },
         );
         Ok((expr.ty.clone(), value))
     }
@@ -94,19 +101,22 @@ impl Emitter<'_> {
                 let children =
                     self.codec_children(unique, &format!("{prefix}_v{tag}"), &variant.fields);
                 let name = self.string(&variant.wire_tag, span)?;
-                rows.push(format!(
-                    "l {name}, l {}, l {children}",
-                    variant.fields.len()
-                ));
+                rows.extend([
+                    DataValue::Word(native_operand(&name)),
+                    DataValue::Word(Operand::Int(variant.fields.len() as i64)),
+                    DataValue::Word(native_operand(&children)),
+                ]);
             }
-            self.data.push_str(&format!(
-                "data {prefix}_variants = {{ {} }}\n",
-                rows.join(", ")
-            ));
-            self.data.push_str(&format!(
-                "data {prefix} = {{ l 12, l {}, l {prefix}_variants, l 0 }}\n",
-                variants.len()
-            ));
+            self.data.data(&format!("{prefix}_variants"), rows);
+            self.data.data(
+                &(prefix).to_string(),
+                vec![
+                    DataValue::Word(native_operand("12")),
+                    DataValue::Word(native_operand(&(variants.len()).to_string())),
+                    DataValue::Word(native_operand(&format!("{}_variants", prefix))),
+                    DataValue::Word(native_operand("0")),
+                ],
+            );
             return Ok(());
         }
         let (tag, children) = descriptor(kind);
@@ -114,22 +124,26 @@ impl Emitter<'_> {
         let mut names = Vec::new();
         if let Kind::Record(fields) = kind {
             for field in fields {
-                names.push(format!("l {}", self.string(&field.name, span)?));
+                names.push(DataValue::Word(native_operand(
+                    &self.string(&field.name, span)?,
+                )));
             }
         }
         let names = if names.is_empty() {
             "0".into()
         } else {
-            self.data.push_str(&format!(
-                "data {prefix}_names = {{ {} }}\n",
-                names.join(", ")
-            ));
+            self.data.data(&format!("{prefix}_names"), names);
             format!("{prefix}_names")
         };
-        self.data.push_str(&format!(
-            "data {prefix} = {{ l {tag}, l {}, l {child_data}, l {names} }}\n",
-            children.len()
-        ));
+        self.data.data(
+            &(prefix).to_string(),
+            vec![
+                DataValue::Word(native_operand(&(tag).to_string())),
+                DataValue::Word(native_operand(&(children.len()).to_string())),
+                DataValue::Word(native_operand(&(child_data))),
+                DataValue::Word(native_operand(&(names))),
+            ],
+        );
         Ok(())
     }
     /// Emit a bounded descriptor pointer array after aggregate output reservation.
@@ -139,11 +153,9 @@ impl Emitter<'_> {
         }
         let refs = ids
             .iter()
-            .map(|id| format!("l $json_codec_{unique}_{id}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        self.data
-            .push_str(&format!("data {prefix}_children = {{ {refs} }}\n"));
+            .map(|id| DataValue::Word(native_operand(&format!("$json_codec_{unique}_{id}"))))
+            .collect();
+        self.data.data(&format!("{prefix}_children"), refs);
         format!("{prefix}_children")
     }
 }

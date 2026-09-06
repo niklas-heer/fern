@@ -30,6 +30,15 @@ void fern_print_int(int64_t n);
  */
 void fern_println_int(int64_t n);
 
+/** Print an IEEE double with 17 significant digits, preserving the existing Fern format. */
+void fern_print_float(double n);
+
+/** Print an IEEE double with the same format followed by a newline. */
+void fern_println_float(double n);
+
+/** Return a GC-managed, NUL-terminated IEEE double representation (at most 31 bytes). */
+char* fern_float_to_str(double n);
+
 /**
  * Print a string to stdout (no newline).
  * @param s The null-terminated string to print.

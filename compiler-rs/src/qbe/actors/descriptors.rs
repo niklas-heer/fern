@@ -28,8 +28,10 @@ impl Emitter<'_> {
                 .transpose()?
                 .unwrap_or_else(|| "0".into());
             let identity = if self.actors.entries.contains_key(&id) {
-                self.data
-                    .push_str(&format!("data $actor_identity{id} = {{ l {id} }}\n"));
+                self.data.data(
+                    &format!("$actor_identity{}", id),
+                    vec![DataValue::Word(native_operand(&(id).to_string()))],
+                );
                 format!("$actor_identity{id}")
             } else {
                 format!("$f{id}")
@@ -40,7 +42,17 @@ impl Emitter<'_> {
             } else {
                 (format!("$actor_callback{id}"), "0".into())
             };
-            self.data.push_str(&format!("data $actor_descriptor{id} = {{ l {identity}, l {step}, l {select}, l {}, l {captures}, l {mailbox} }}\n", function.captures.len()));
+            self.data.data(
+                &format!("$actor_descriptor{}", id),
+                vec![
+                    DataValue::Word(native_operand(&(identity))),
+                    DataValue::Word(native_operand(&(step))),
+                    DataValue::Word(native_operand(&(select))),
+                    DataValue::Word(native_operand(&(function.captures.len()).to_string())),
+                    DataValue::Word(native_operand(&(captures))),
+                    DataValue::Word(native_operand(&(mailbox))),
+                ],
+            );
             table.push(format!("$actor_descriptor{id}"));
             self.actor_callback(function, selector);
         }
@@ -53,21 +65,40 @@ impl Emitter<'_> {
         let id = function.id.0;
         let target = self.actors.entries.get(&id).copied().unwrap_or(id);
         let generated = self.actors.steps.contains_key(&target);
-        self.output.push_str(&format!(
-            "function l $actor_callback{id}(l %exec, l %env{}) {{\n@start\n",
-            if selector { ", l %payload" } else { "" }
-        ));
+        let mut params = vec![(Scalar::I64, "%exec".into()), (Scalar::I64, "%env".into())];
+        if selector {
+            params.push((Scalar::I64, "%payload".into()));
+        }
+        self.output.begin(
+            &format!("$actor_callback{id}"),
+            Some(Scalar::I64),
+            params,
+            false,
+        );
+        self.output.statement(Statement::Label("@start".to_owned()));
         if !selector
             && (!function.params.is_empty() || (!generated && function.return_type != Type::Unit))
         {
-            self.output.push_str("    ret 3\n}\n");
+            self.output
+                .statement(Statement::Return(Some(native_operand("3"))));
+            self.output.end();
             return;
         }
-        self.output
-            .push_str("    %fault =l call $fern_managed_fault(l %exec)\n");
-        let mut args = vec!["l %env".to_owned(), "l %fault".to_owned()];
+        self.output.statement(Statement::Assign {
+            destination: "%fault".to_owned(),
+            ty: Scalar::I64,
+            operation: NativeOperation::Call {
+                callee: native_operand("$fern_managed_fault"),
+                args: vec![(Scalar::I64, native_operand("%exec"))],
+                variadic: None,
+            },
+        });
+        let mut args = vec![
+            (Scalar::I64, native_operand("%env")),
+            (Scalar::I64, native_operand("%fault")),
+        ];
         if self.actors.managed.contains(&target) {
-            args.push("l %exec".into());
+            args.push((Scalar::I64, native_operand("%exec")));
         }
         if selector {
             let ty = &function.params[0].ty;
@@ -75,24 +106,45 @@ impl Emitter<'_> {
             let value = if width == 'l' {
                 "%payload"
             } else {
-                self.output.push_str(&format!(
-                    "    %decoded ={width} {} %payload\n",
-                    if width == 'd' { "cast" } else { "copy" }
-                ));
+                self.output.statement(Statement::Assign {
+                    destination: "%decoded".into(),
+                    ty: machine_width(width),
+                    operation: NativeOperation::Unary(
+                        if width == 'd' {
+                            MachineUnary::Cast
+                        } else {
+                            MachineUnary::Copy
+                        },
+                        native_operand("%payload"),
+                    ),
+                });
                 "%decoded"
             };
-            args.push(format!("{width} {value}"));
+            args.push((machine_width(width), native_operand(value)));
         }
         if generated || selector {
-            self.output.push_str(&format!(
-                "    %status =l call $f{target}({})\n    ret %status\n}}\n",
-                args.join(", ")
-            ));
+            self.output.statement(Statement::Assign {
+                destination: "%status".to_owned(),
+                ty: Scalar::I64,
+                operation: NativeOperation::Call {
+                    callee: native_operand(&format!("$f{}", target)),
+                    args: args.clone(),
+                    variadic: None,
+                },
+            });
+            self.output
+                .statement(Statement::Return(Some(native_operand("%status"))));
+            self.output.end();
         } else {
-            self.output.push_str(&format!(
-                "    call $f{target}({})\n    ret 2\n}}\n",
-                args.join(", ")
-            ));
+            self.output
+                .statement(Statement::Effect(NativeOperation::Call {
+                    callee: native_operand(&format!("$f{}", target)),
+                    args: args.clone(),
+                    variadic: None,
+                }));
+            self.output
+                .statement(Statement::Return(Some(native_operand("2"))));
+            self.output.end();
         }
     }
 
@@ -128,9 +180,15 @@ impl Emitter<'_> {
         } else {
             "0".into()
         };
-        self.data.push_str(&format!(
-            "data $actor_type{id} = {{ l {kind}, l {count}, l {child_array}, l {arities} }}\n"
-        ));
+        self.data.data(
+            &format!("$actor_type{}", id),
+            vec![
+                DataValue::Word(native_operand(&(kind).to_string())),
+                DataValue::Word(native_operand(&(count).to_string())),
+                DataValue::Word(native_operand(&(child_array))),
+                DataValue::Word(native_operand(&(arities))),
+            ],
+        );
         Ok(format!("$actor_type{id}"))
     }
 
@@ -179,11 +237,9 @@ impl Emitter<'_> {
         }
         let entries = values
             .iter()
-            .map(|value| format!("l {value}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        self.data
-            .push_str(&format!("data ${name} = {{ {entries} }}\n"));
+            .map(|value| DataValue::Word(native_operand(value)))
+            .collect();
+        self.data.data(&format!("${name}"), entries);
         format!("${name}")
     }
 }

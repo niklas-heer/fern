@@ -2,9 +2,51 @@
 
 Recommendation: pursue a current, supported Cranelift AOT backend as a measured second backend, then decide whether to make it the default after Fern's full native acceptance corpus passes. Keep QBE as the working reference during that migration. Rust is a good implementation language for either choice; it does not require a Rust code generator. Cranelift is probably the alternative the user remembers.
 
-Current status: the assessment and isolated scalar AOT prototype are complete; a Cranelift backend integrated with Fern's shared lowering is not implemented. QBE remains the working backend. Decision111 now selects nightly-2026-09-06 for Fern, removing the old toolchain-policy obstacle; it does not implement or select Cranelift. Bounded native actors (105A) are implemented separately, while generalized suspension and supervision remain open.
+Current status: Fern now has shared typed machine lowering and an integrated, optional Cranelift AOT backend (Decision112). QBE remains the default and reference backend. The complete feature gate passes on macOS ARM64 and Linux ARM64: 293 independent native output oracles on each platform, feature-enabled formatting/Clippy/Rust tests, and targeted mixed-argument ABI, relocation, loop and forced-GC retention tests. The Cranelift-built Fern style checker also passes strict checks on macOS. The default Rust/QBE regression gate passes on both ARM64 platforms, including native libraries, actors, JSON, packaging, workflow oracles and 192 source mutations. These local gate runs disabled Cargo incremental artifacts and compiler/test debug information to fit available disk space; generated Fern code still uses the documented Cranelift settings. Source-level debugger acceptance, controlled end-to-end performance measurements and default promotion remain open. Bounded native actors (105A) are implemented separately, while generalized suspension and supervision remain open.
 
 The experiment below was run on 2026-09-06 before that toolchain change. Its dependencies, tools and measurements remain historical evidence. The original local prototype files and raw measurements are under `/tmp/fern-backend-research`; those temporary paths are not installed project components.
+
+## Run the integrated trial
+
+```sh
+mise run rust-cranelift-build
+./bin/fern-rs-cranelift run --backend=cranelift examples/tiny_cli.fn
+./bin/fern-rs-cranelift build --backend=cranelift examples/tiny_cli.fn -o hello-cranelift
+mise run rust-cranelift-check
+```
+
+The build task uses the pinned mise environment and `cargo --locked --features
+cranelift`, prepares the native runtime/reference helpers, and copies the compiler
+to `bin/fern-rs-cranelift`. The ordinary `bin/fern-rs` stays in place. QBE remains
+the default in either executable; select Cranelift explicitly for `build` or
+`run`. `emit`, native source tests and preview packaging retain their existing
+QBE workflows. The check task runs feature-enabled Clippy/Rust tests and the
+independent backend corpus in `scripts/test_cranelift_backend.py`.
+
+A selected Cranelift invocation produces a native object without executing QBE
+or an assembler. It still links Fern's C runtime and native libraries with the
+host linker. The C reference frontend, runtime, supervisor and generated editor
+parser are not removed by this integration; Python remains in developer oracles.
+The change moves native code generation into Rust, not every repository component.
+
+## What remains outside Rust
+
+The September 2026 source inventory separates authored implementation from
+third-party and generated code:
+
+| Component | Current role | Migration boundary |
+| --- | --- | --- |
+| Legacy C compiler, about 23,000 lines | Shipping default and reference | Rust CLI/tooling/default-install parity and promotion |
+| Authored C runtime, about 11,000 lines | Heap values, JSON, actors, IO and platform services | A separate runtime port preserving layouts, GC roots and resource contracts |
+| Vendored QBE | Reference code generator | Can retire after Cranelift default acceptance |
+| Generated editor parser and headers, about 90,000 lines | Tree-sitter editor integration | Generated C is the editor ecosystem's output format |
+| Boehm GC, SQLite, OpenSSL and other native libraries | Runtime dependencies | Remain native dependencies even if callers are rewritten in Rust |
+| Native supervisors and bootstrap helpers | Child ownership, cleanup and cached tools | Separate platform implementation and safety audit |
+| Python tooling | Independent expected-output oracles, generators and developer checks | No Python interpreter is required to execute compiled Fern programs |
+
+The intended Rust compiler migration and a runtime with no C dependencies are
+different deliverables. Rewriting independent test oracles solely to change a
+repository language percentage would not establish either one.
 
 ## What changed in the original rationale
 
@@ -20,17 +62,17 @@ At the 2026-09-06 assessment, the verified current Cranelift release was0.135.1,
 
 Historical Cranelift0.108.2/Wasmtime21.0.2 has a1.75 workspace minimum;0.109.1/Wasmtime22.0.1 moves to1.76. I compiled0.108.2 on1.75 only after pinning an old transitive indexmap version: unconstrained contemporary dependency resolution selected an edition2024 dependency that old Cargo cannot parse. This is concrete evidence that an old version number alone is not a maintained toolchain policy. Do not adopt that unsupported2024 release merely to preserve1.75. [Wasmtime21 manifest](https://raw.githubusercontent.com/bytecodealliance/wasmtime/v21.0.2/Cargo.toml), [Wasmtime22 manifest](https://raw.githubusercontent.com/bytecodealliance/wasmtime/v22.0.1/Cargo.toml).
 
-Decision111 adopts the user's requested dated nightly, so preserving a1.75 frontend no longer motivates a separate modern-Rust helper. The integrated trial still needs an explicit backend dependency and maintenance policy, with a bounded shared representation and the acceptance gates below. Wasmtime publishes monthly releases and a defined support/LTS policy; adopt an upgrade owner and supported release window, rather than assuming Cranelift's API is permanently stable. [Support policy](https://docs.wasmtime.dev/stability-release.html).
+Decision111 adopts the user's requested dated nightly. Decision112 pins the optional Cranelift crates to0.135.1 and records transitive inputs in Cargo.lock; the default Cargo feature set retains its standard-library-only dependency policy. Backend maintenance follows the upstream supported release window: review upstream releases/security notices, update the Cranelift crate family together, commit the refreshed lockfile, and rerun both native backend gates before adopting an update. Unsupported historical pins are comparison evidence only, never a compatibility strategy. Wasmtime publishes monthly releases and a defined support/LTS policy; Cranelift's API is not assumed permanently stable. [Support policy](https://docs.wasmtime.dev/stability-release.html).
 
 ## Concrete integration issues
 
 At the pre-actor assessment checkpoint, Fern had approximately6315 lines of Rust QBE emitter/helpers, not just instruction printing. They implement full-width heap payloads, nominal/newtype/union layouts, closures, manual self-tail-call elimination, dynamic defers, fault propagation, checked indexing, JSON codec descriptors, public typed-IR validation and source-owned test exit behavior. Most of that must remain backend-independent and must not be reimplemented inconsistently in two emitters.
 
-Extract a bounded lower-level control-flow/ABI representation after shared typed-IR validation and semantic lowering. Have QBE and Cranelift consume it. Do not parse emitted QBE text into Cranelift as the enduring architecture. The shared representation should explicitly describe scalar widths, C and Fern call signatures, hidden environment/fault arguments, block terminators, immutable data, relocations, scratch slots, source locations and GC-visible pointer lifetimes. Keep all existing fault/defer/tail semantics and independent expected-output tests.
+The implemented shared representation records scalar widths, typed operations/call arguments, hidden environment/fault parameters, block terminators, immutable data, relocations and scratch allocations after semantic validation. Both backends consume it directly. Existing compiler-owned helpers are structured Rust builders rather than emitted-text input to another parser. Source locations and debugger variable mappings remain future work; GC-visible pointer lifetimes and complete runtime ABI behavior require the acceptance gates below. Keep independent expected-output tests for all existing fault/defer/tail semantics.
 
 Cranelift's object backend writes ELF, COFF and Mach-O directly, removing Fern's separate assembly subprocess. Linking the existing C runtime and its libraries remains necessary. A compiler built with Cranelift does not automatically link Rust std or Cranelift into every Fern application. Cross compilation still needs the correct runtime libraries, SDK and linker. The object backend explicitly rejects Wasm output: Wasmtime compiling Wasm into native code is a different direction from Fern targeting browser Wasm. A future browser backend still needs its own Wasm/runtime design. [Object backend implementation](https://raw.githubusercontent.com/bytecodealliance/wasmtime/v48.0.1/cranelift/object/src/backend.rs).
 
-Current Fern Float printing/interpolation helpers emit variadic `printf`/`snprintf` calls. Cranelift has an open general variadic-support issue. Before porting these paths, use small fixed-signature C runtime wrappers or demonstrate correct target-specific lowering on every supported platform. Do not assume a ordinary fixed signature reproduces Apple variadic conventions. [Upstream varargs issue](https://github.com/bytecodealliance/wasmtime/issues/1030).
+The integrated trial replaces generated Float `printf`/`snprintf` calls with fixed-signature C runtime wrappers for printing and string conversion. Cranelift has an open general variadic-support issue; keeping those calls inside C lets the host compiler implement its variadic ABI. Verify the wrappers and resulting native Float behavior on every supported platform. A fixed signature alone must never be assumed to reproduce Apple variadic conventions. [Upstream varargs issue](https://github.com/bytecodealliance/wasmtime/issues/1030).
 
 Cranelift has an explicit AppleAarch64 calling convention and its AArch64 allocatable register environment excludes reserved x18, with x16/x17 scratch registers. That is encouraging evidence, not a substitute for Fern's new no-x18 and scalar-clobber regression. The Decision104 defect in Fern's QBE vendor is concrete; it remains unproven that it caused the original sampled checker crash. [Calling conventions](https://raw.githubusercontent.com/bytecodealliance/wasmtime/v48.0.1/cranelift/codegen/src/isa/call_conv.rs), [AArch64 implementation](https://raw.githubusercontent.com/bytecodealliance/wasmtime/v48.0.1/cranelift/codegen/src/isa/aarch64/abi.rs), [Apple ABI](https://developer.apple.com/documentation/xcode/writing-arm64-code-for-apple-platforms).
 
@@ -69,7 +111,7 @@ Local experimental artifacts (not installed project components):
 
 ## Acceptance and benchmark plan before changing the default
 
-1. With the dated-nightly toolchain policy accepted in Decision111, pin the supported Cranelift dependency policy and implement the trial. Add an explicit experimental backend selection; preserve a single semantic frontend and existing QBE path. Establish typed fixed-signature runtime calls before any broad port.
+1. Preserve the Decision112 optional dependency pins, single shared semantic lowering and explicit experimental backend selection. Keep the QBE path and fixed-signature Float adapters while verifying the integrated trial. The implementation alone does not complete the following acceptance gates.
 2. Run the full native Fern oracle corpus independently through both backends on AppleARM64 and LinuxARM64, then Linuxx86-64. Include full-width Int extrema, Float negative zero/NaN, Bool, more than eight arguments, mixed C ABI arguments, closures/environment/fault pointers, tuples, JSON values/codecs, nominal and unboxed newtypes, unions and relocation/PIC cases. Retain expected outputs; differential agreement alone is insufficient.
 3. Pin all cleanup/failure contracts: first fault, argument evaluation order, defer LIFO including failing cleanup, HOF callbacks, Try/Return, Result main, source test exit interception, checked collection bounds, and million-iteration constant-stack recursion. Stress Boehm-visible pointers in captures/records/collections across allocations and C calls. Every malformed public IR/resource-bound regression must remain rejected before backend execution.
 4. Require real debugger acceptance: source breakpoint, correct line after branch/closure, stack through Fern and C calls, and documented variable visibility on LLDB/GDB. If full debug support is deferred, state its exact level instead of describing the switch as solving debugging.

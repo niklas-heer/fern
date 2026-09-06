@@ -12,8 +12,11 @@ impl Locals {
     /// Reserve fixed scratch storage in the entry block, not on a repeated dynamic edge.
     pub(super) fn stack_slot(&mut self) -> String {
         let name = self.temporary();
-        self.stack_allocations
-            .push_str(&format!("    {name} =l alloc8 8\n"));
+        self.stack_allocations.statement(Statement::Assign {
+            destination: (name).to_string(),
+            ty: Scalar::I64,
+            operation: NativeOperation::StackAlloc { bytes: 8, align: 8 },
+        });
         name
     }
 }
@@ -29,14 +32,21 @@ impl Emitter<'_> {
             let slot = locals.stack_slot();
             let (_, value) = Self::local(param.id, function.body.span, locals)?;
             let value = self.payload(locals, &param.ty, value);
-            self.output
-                .push_str(&format!("    storel {value}, {slot}\n"));
+            self.output.statement(Statement::Store {
+                kind: LoadKind::I64,
+                value: native_operand(&(value)),
+                address: native_operand(&(slot)),
+            });
             slots.push(slot);
         }
-        self.output.push_str("    jmp @recur\n");
+        self.output.statement(Statement::Jump("@recur".to_owned()));
         self.start_block(locals, "@recur");
         for (param, slot) in function.params.iter().zip(&slots) {
-            let raw = self.assign(locals, Type::Int, &format!("loadl {slot}"));
+            let raw = self.assign(
+                locals,
+                Type::Int,
+                NativeOperation::Load(LoadKind::I64, native_operand(&(slot).to_string())),
+            );
             let value = self.unpack(locals, &param.ty, raw);
             locals.values.insert(param.id.0, (param.ty.clone(), value));
         }
@@ -156,10 +166,13 @@ impl Emitter<'_> {
             return Err(invalid(span, "self-tail parameter count mismatch"));
         }
         for (slot, value) in tail.slots.iter().zip(values) {
-            self.output
-                .push_str(&format!("    storel {value}, {slot}\n"));
+            self.output.statement(Statement::Store {
+                kind: LoadKind::I64,
+                value: native_operand(&(value)),
+                address: native_operand(&(slot).to_string()),
+            });
         }
-        self.output.push_str("    jmp @recur\n");
+        self.output.statement(Statement::Jump("@recur".to_owned()));
         Err(Exit::Terminated)
     }
 }

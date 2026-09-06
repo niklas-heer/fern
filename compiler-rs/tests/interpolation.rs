@@ -9,7 +9,9 @@ fn interpolates_scalars_and_arithmetic_with_original_spans() {
     let il = compile(source);
     assert!(il.contains("fern_int_to_str"));
     assert!(il.contains("fern_bool_to_str"));
-    assert!(il.contains("snprintf"));
+    // Both backends now use the fixed Float ABI; variadic calls stay in the runtime.
+    assert!(il.contains("call $fern_float_to_str(d "));
+    assert!(!il.contains("snprintf"));
     let source = "fn main(): println(\"🌿 {missing}\")\n";
     let error = check::check(&parse::parse(source).unwrap()).unwrap_err();
     assert_eq!(&source[error.span.start..error.span.end], "missing");

@@ -161,7 +161,11 @@ impl Emitter<'_> {
         let length = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_list_len(l {collection})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_list_len"),
+                args: vec![(Scalar::I64, native_operand(&(collection).to_string()))],
+                variadic: None,
+            },
         );
         let output = if matches!(builtin, Builtin::ListMap | Builtin::ListFilter) {
             self.higher_list_output(&length, result, locals)
@@ -173,7 +177,14 @@ impl Emitter<'_> {
         let raw = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_list_get(l {collection}, l {})", flow.index),
+            NativeOperation::Call {
+                callee: native_operand("$fern_list_get"),
+                args: vec![
+                    (Scalar::I64, native_operand(&(collection).to_string())),
+                    (Scalar::I64, native_operand(&(flow.index).to_string())),
+                ],
+                variadic: None,
+            },
         );
         let element = self.unpack(locals, item, raw.clone());
         let mut callback_args = Vec::new();
@@ -190,10 +201,17 @@ impl Emitter<'_> {
             locals,
         );
         self.start_block(locals, &flow.step);
-        self.output.push_str(&format!(
-            "    {} =l add {}, 1\n    jmp {}\n",
-            flow.next, flow.index, flow.head
-        ));
+        self.output.statement(Statement::Assign {
+            destination: (flow.next).to_string(),
+            ty: Scalar::I64,
+            operation: NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(&(flow.index).to_string()),
+                native_operand("1"),
+            ),
+        });
+        self.output
+            .statement(Statement::Jump((flow.head).to_string()));
         self.start_block(locals, &flow.exhausted);
         match builtin {
             Builtin::ListMap | Builtin::ListFilter => output,
@@ -204,13 +222,33 @@ impl Emitter<'_> {
 
     /// Runtime list capacity must be positive even when mapping an empty collection.
     fn higher_list_output(&mut self, length: &str, result: &Type, locals: &mut Locals) -> String {
-        let empty = self.assign(locals, Type::Bool, &format!("ceql {length}, 0"));
+        let empty = self.assign(
+            locals,
+            Type::Bool,
+            NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::Eq, Scalar::I64),
+                native_operand(length),
+                native_operand("0"),
+            ),
+        );
         let extra = self.payload(locals, &Type::Bool, empty);
-        let capacity = self.assign(locals, Type::Int, &format!("add {length}, {extra}"));
+        let capacity = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(length),
+                native_operand(&(extra)),
+            ),
+        );
         self.assign(
             locals,
             result.clone(),
-            &format!("call $fern_list_with_capacity(l {capacity})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_list_with_capacity"),
+                args: vec![(Scalar::I64, native_operand(&(capacity)))],
+                variadic: None,
+            },
         )
     }
 
@@ -224,32 +262,50 @@ impl Emitter<'_> {
         values: &[String],
         locals: &mut Locals,
     ) {
-        self.output.push_str(&format!("    jmp {}\n", flow.head));
+        self.output
+            .statement(Statement::Jump((flow.head).to_string()));
         self.start_block(locals, &flow.head);
-        self.output.push_str(&format!(
-            "    {} =l phi {} 0, {} {}\n",
-            flow.index, flow.entry, flow.step, flow.next
-        ));
+        self.output.statement(Statement::Assign {
+            destination: (flow.index).to_string(),
+            ty: Scalar::I64,
+            operation: NativeOperation::Phi(vec![
+                ((flow.entry).to_string(), native_operand("0")),
+                (
+                    (flow.step).to_string(),
+                    native_operand(&(flow.next).to_string()),
+                ),
+            ]),
+        });
         if builtin == Builtin::ListFold {
-            self.output.push_str(&format!(
-                "    {} ={} phi {} {}, {} {}\n",
-                flow.accumulator,
-                self.width(result.clone()),
-                flow.entry,
-                values[1],
-                flow.step,
-                flow.accumulated
-            ));
+            self.output.statement(Statement::Assign {
+                destination: (flow.accumulator).to_string(),
+                ty: machine_width(self.width(result.clone())),
+                operation: NativeOperation::Phi(vec![
+                    (
+                        (flow.entry).to_string(),
+                        native_operand(&(values[1]).to_string()),
+                    ),
+                    (
+                        (flow.step).to_string(),
+                        native_operand(&(flow.accumulated).to_string()),
+                    ),
+                ]),
+            });
         }
         let available = self.assign(
             locals,
             Type::Bool,
-            &format!("csltl {}, {length}", flow.index),
+            NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::SLt, Scalar::I64),
+                native_operand(&(flow.index).to_string()),
+                native_operand(length),
+            ),
         );
-        self.output.push_str(&format!(
-            "    jnz {available}, {}, {}\n",
-            flow.body, flow.exhausted
-        ));
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(available)),
+            then_label: (flow.body).to_string(),
+            else_label: (flow.exhausted).to_string(),
+        });
         self.start_block(locals, &flow.body);
     }
 
@@ -266,37 +322,57 @@ impl Emitter<'_> {
         match builtin {
             Builtin::ListMap => {
                 let payload = self.payload(locals, callback_result, mapped.into());
-                self.output.push_str(&format!(
-                    "    call $fern_list_push_mut(l {output}, l {payload})\n    jmp {}\n",
-                    flow.step
-                ));
+                self.output
+                    .statement(Statement::Effect(NativeOperation::Call {
+                        callee: native_operand("$fern_list_push_mut"),
+                        args: vec![
+                            (Scalar::I64, native_operand(output)),
+                            (Scalar::I64, native_operand(&(payload))),
+                        ],
+                        variadic: None,
+                    }));
+                self.output
+                    .statement(Statement::Jump((flow.step).to_string()));
             }
             Builtin::ListFold => {
-                self.output.push_str(&format!(
-                    "    {} ={} copy {mapped}\n    jmp {}\n",
-                    flow.accumulated,
-                    self.width(callback_result.clone()),
-                    flow.step
-                ));
+                self.output.statement(Statement::Assign {
+                    destination: (flow.accumulated).to_string(),
+                    ty: machine_width(self.width(callback_result.clone())),
+                    operation: NativeOperation::Unary(MachineUnary::Copy, native_operand(mapped)),
+                });
+                self.output
+                    .statement(Statement::Jump((flow.step).to_string()));
             }
             Builtin::ListFilter => {
                 let retain = locals.label();
-                self.output
-                    .push_str(&format!("    jnz {mapped}, {retain}, {}\n", flow.step));
+                self.output.statement(Statement::Branch {
+                    condition: native_operand(mapped),
+                    then_label: (retain).to_string(),
+                    else_label: (flow.step).to_string(),
+                });
                 self.start_block(locals, &retain);
-                self.output.push_str(&format!(
-                    "    call $fern_list_push_mut(l {output}, l {raw})\n    jmp {}\n",
-                    flow.step
-                ));
+                self.output
+                    .statement(Statement::Effect(NativeOperation::Call {
+                        callee: native_operand("$fern_list_push_mut"),
+                        args: vec![
+                            (Scalar::I64, native_operand(output)),
+                            (Scalar::I64, native_operand(raw)),
+                        ],
+                        variadic: None,
+                    }));
+                self.output
+                    .statement(Statement::Jump((flow.step).to_string()));
             }
-            Builtin::ListAll => self.output.push_str(&format!(
-                "    jnz {mapped}, {}, {}\n",
-                flow.step, flow.found
-            )),
-            _ => self.output.push_str(&format!(
-                "    jnz {mapped}, {}, {}\n",
-                flow.found, flow.step
-            )),
+            Builtin::ListAll => self.output.statement(Statement::Branch {
+                condition: native_operand(mapped),
+                then_label: (flow.step).to_string(),
+                else_label: (flow.found).to_string(),
+            }),
+            _ => self.output.statement(Statement::Branch {
+                condition: native_operand(mapped),
+                then_label: (flow.found).to_string(),
+                else_label: (flow.step).to_string(),
+            }),
         }
     }
 
@@ -310,27 +386,44 @@ impl Emitter<'_> {
         locals: &mut Locals,
     ) -> String {
         let empty = if builtin == Builtin::ListFind {
-            self.assign(locals, result.clone(), "call $fern_result_err(l 0)")
+            self.assign(
+                locals,
+                result.clone(),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_result_err"),
+                    args: vec![(Scalar::I64, native_operand("0"))],
+                    variadic: None,
+                },
+            )
         } else {
             u8::from(builtin == Builtin::ListAll).to_string()
         };
-        self.output.push_str(&format!("    jmp {}\n", flow.merge));
+        self.output
+            .statement(Statement::Jump((flow.merge).to_string()));
         self.start_block(locals, &flow.found);
         let found = if builtin == Builtin::ListFind {
             self.assign(
                 locals,
                 result.clone(),
-                &format!("call $fern_result_ok(l {raw})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_result_ok"),
+                    args: vec![(Scalar::I64, native_operand(raw))],
+                    variadic: None,
+                },
             )
         } else {
             u8::from(builtin == Builtin::ListAny).to_string()
         };
-        self.output.push_str(&format!("    jmp {}\n", flow.merge));
+        self.output
+            .statement(Statement::Jump((flow.merge).to_string()));
         self.start_block(locals, &flow.merge);
         self.assign(
             locals,
             result.clone(),
-            &format!("phi {} {empty}, {} {found}", flow.exhausted, flow.found),
+            NativeOperation::Phi(vec![
+                ((flow.exhausted).to_string(), native_operand(&(empty))),
+                ((flow.found).to_string(), native_operand(&(found))),
+            ]),
         )
     }
 
@@ -351,7 +444,11 @@ impl Emitter<'_> {
         let raw = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_result_unwrap(l {original})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_result_unwrap"),
+                args: vec![(Scalar::I64, native_operand(&(original).to_string()))],
+                variadic: None,
+            },
         );
         if builtin == Builtin::ResultUnwrapOrElse {
             self.unpack(locals, result, raw)
@@ -370,7 +467,11 @@ impl Emitter<'_> {
                 self.assign(
                     locals,
                     result.clone(),
-                    &format!("call $fern_result_ok(l {packed})"),
+                    NativeOperation::Call {
+                        callee: native_operand("$fern_result_ok"),
+                        args: vec![(Scalar::I64, native_operand(&(packed)))],
+                        variadic: None,
+                    },
                 )
             }
         }
@@ -393,23 +494,34 @@ impl Emitter<'_> {
         let tag = self.assign(
             locals,
             Type::Bool,
-            &format!("call $fern_result_is_ok(l {original})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_result_is_ok"),
+                args: vec![(Scalar::I64, native_operand(&(original).to_string()))],
+                variadic: None,
+            },
         );
         let success = locals.label();
         let failure = locals.label();
         let merge = locals.label();
-        self.output
-            .push_str(&format!("    jnz {tag}, {success}, {failure}\n"));
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(tag)),
+            then_label: (success).to_string(),
+            else_label: (failure).to_string(),
+        });
         self.start_block(locals, &success);
         let ok = self.higher_sum_success(builtin, args, values, result, locals);
         let ok_end = locals.current.clone();
-        self.output.push_str(&format!("    jmp {merge}\n"));
+        self.output.statement(Statement::Jump((merge).to_string()));
         self.start_block(locals, &failure);
         let err = if builtin == Builtin::ResultUnwrapOrElse {
             let raw = self.assign(
                 locals,
                 Type::Int,
-                &format!("call $fern_result_unwrap(l {original})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_result_unwrap"),
+                    args: vec![(Scalar::I64, native_operand(&(original).to_string()))],
+                    variadic: None,
+                },
             );
             let payload = self.unpack(locals, &params[0], raw);
             self.invoke_values(
@@ -422,7 +534,7 @@ impl Emitter<'_> {
             original.clone()
         };
         let err_end = locals.current.clone();
-        self.output.push_str(&format!("    jmp {merge}\n"));
+        self.output.statement(Statement::Jump((merge).to_string()));
         self.start_block(locals, &merge);
         if *result == Type::Unit {
             "0".into()
@@ -430,7 +542,10 @@ impl Emitter<'_> {
             self.assign(
                 locals,
                 result.clone(),
-                &format!("phi {ok_end} {ok}, {err_end} {err}"),
+                NativeOperation::Phi(vec![
+                    ((ok_end), native_operand(&(ok))),
+                    ((err_end), native_operand(&(err))),
+                ]),
             )
         }
     }

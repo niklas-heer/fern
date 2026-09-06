@@ -106,7 +106,14 @@ impl Emitter<'_> {
         let map = self.assign(
             locals,
             ty.clone(),
-            &format!("call $fern_list_with_capacity(l {})", entries.len().max(1)),
+            NativeOperation::Call {
+                callee: native_operand("$fern_list_with_capacity"),
+                args: vec![(
+                    Scalar::I64,
+                    native_operand(&(entries.len().max(1)).to_string()),
+                )],
+                variadic: None,
+            },
         );
         for (key, value) in entries {
             expect_type(key.ty.clone(), key_type.clone(), key.span)?;
@@ -116,9 +123,17 @@ impl Emitter<'_> {
             let value = self.expr(value, locals, depth)?;
             let value = self.payload(locals, value_type, value);
             let index = self.map_index(&map, &key, key_type, locals);
-            self.output.push_str(&format!(
-                "    call $fern_rs_map_literal_put(l {map}, l {key}, l {value}, l {index})\n"
-            ));
+            self.output
+                .statement(Statement::Effect(NativeOperation::Call {
+                    callee: native_operand("$fern_rs_map_literal_put"),
+                    args: vec![
+                        (Scalar::I64, native_operand(&(map).to_string())),
+                        (Scalar::I64, native_operand(&(key).to_string())),
+                        (Scalar::I64, native_operand(&(value))),
+                        (Scalar::I64, native_operand(&(index))),
+                    ],
+                    variadic: None,
+                }));
         }
         Ok((ty.clone(), map))
     }
@@ -138,7 +153,15 @@ impl Emitter<'_> {
         if builtin == Builtin::MapNew {
             return Ok((
                 output.clone(),
-                self.assign(locals, output, "call $fern_list_with_capacity(l 1)"),
+                self.assign(
+                    locals,
+                    output,
+                    NativeOperation::Call {
+                        callee: native_operand("$fern_list_with_capacity"),
+                        args: vec![(Scalar::I64, native_operand("1"))],
+                        variadic: None,
+                    },
+                ),
             ));
         }
         let mut values = Vec::new();
@@ -149,18 +172,41 @@ impl Emitter<'_> {
         let (key, _) = types(&args[0].ty, &self.layouts, span)?;
         let map = &values[0];
         let instruction = match builtin {
-            Builtin::MapLen => format!("call $fern_list_len(l {map})"),
+            Builtin::MapLen => NativeOperation::Call {
+                callee: native_operand("$fern_list_len"),
+                args: vec![(Scalar::I64, native_operand(&(map).to_string()))],
+                variadic: None,
+            },
             Builtin::MapIsEmpty => {
-                let len = self.assign(locals, Type::Int, &format!("call $fern_list_len(l {map})"));
-                format!("ceql {len}, 0")
+                let len = self.assign(
+                    locals,
+                    Type::Int,
+                    NativeOperation::Call {
+                        callee: native_operand("$fern_list_len"),
+                        args: vec![(Scalar::I64, native_operand(&(map).to_string()))],
+                        variadic: None,
+                    },
+                );
+                NativeOperation::Binary(
+                    MachineBinary::Compare(Comparison::Eq, Scalar::I64),
+                    native_operand(&(len)),
+                    native_operand("0"),
+                )
             }
-            Builtin::MapKeys | Builtin::MapValues => format!(
-                "call $fern_rs_map_project(l {map}, l {})",
-                if builtin == Builtin::MapKeys { 0 } else { 8 }
-            ),
+            Builtin::MapKeys | Builtin::MapValues => NativeOperation::Call {
+                callee: native_operand("$fern_rs_map_project"),
+                args: vec![
+                    (Scalar::I64, native_operand(&(map).to_string())),
+                    (
+                        Scalar::I64,
+                        Operand::Int(if builtin == Builtin::MapKeys { 0 } else { 8 }),
+                    ),
+                ],
+                variadic: None,
+            },
             _ => self.map_keyed_call(builtin, &values, key, locals),
         };
-        Ok((output.clone(), self.assign(locals, output, &instruction)))
+        Ok((output.clone(), self.assign(locals, output, instruction)))
     }
 
     /// Select a key-aware lookup and preserve full-width stored payloads.
@@ -170,18 +216,42 @@ impl Emitter<'_> {
         values: &[String],
         key_type: &Type,
         locals: &mut Locals,
-    ) -> String {
+    ) -> NativeOperation {
         let map = &values[0];
         let key = &values[1];
         let index = self.map_index(map, key, key_type, locals);
         match builtin {
-            Builtin::MapGet => format!("call $fern_rs_map_get(l {map}, l {index})"),
-            Builtin::MapPut => format!(
-                "call $fern_rs_map_put(l {map}, l {key}, l {}, l {index})",
-                values[2]
+            Builtin::MapGet => NativeOperation::Call {
+                callee: native_operand("$fern_rs_map_get"),
+                args: vec![
+                    (Scalar::I64, native_operand(&(map).to_string())),
+                    (Scalar::I64, native_operand(&(index))),
+                ],
+                variadic: None,
+            },
+            Builtin::MapPut => NativeOperation::Call {
+                callee: native_operand("$fern_rs_map_put"),
+                args: vec![
+                    (Scalar::I64, native_operand(&(map).to_string())),
+                    (Scalar::I64, native_operand(&(key).to_string())),
+                    (Scalar::I64, native_operand(&(values[2]).to_string())),
+                    (Scalar::I64, native_operand(&(index))),
+                ],
+                variadic: None,
+            },
+            Builtin::MapDelete => NativeOperation::Call {
+                callee: native_operand("$fern_rs_map_delete"),
+                args: vec![
+                    (Scalar::I64, native_operand(&(map).to_string())),
+                    (Scalar::I64, native_operand(&(index))),
+                ],
+                variadic: None,
+            },
+            Builtin::MapContains => NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::SGe, Scalar::I64),
+                native_operand(&(index)),
+                native_operand("0"),
             ),
-            Builtin::MapDelete => format!("call $fern_rs_map_delete(l {map}, l {index})"),
-            Builtin::MapContains => format!("csgel {index}, 0"),
             _ => unreachable!("map signature validated"),
         }
     }
@@ -196,7 +266,14 @@ impl Emitter<'_> {
         self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_rs_map_index_{suffix}(l {map}, l {key})"),
+            NativeOperation::Call {
+                callee: native_operand(&format!("$fern_rs_map_index_{}", suffix)),
+                args: vec![
+                    (Scalar::I64, native_operand(map)),
+                    (Scalar::I64, native_operand(key)),
+                ],
+                variadic: None,
+            },
         )
     }
 }

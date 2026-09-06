@@ -418,6 +418,25 @@ cargo build --locked --manifest-path compiler-rs/Cargo.toml
 cp compiler-rs/target/debug/fern-rs bin/fern-rs
 '''
 
+[tasks.rust-cranelift-build]
+description = "Build the experimental Cranelift compiler alongside the QBE compiler"
+depends = ["debug"]
+run = '''
+mise run _build-rust-backend
+cargo build --locked --manifest-path compiler-rs/Cargo.toml --features cranelift
+cp compiler-rs/target/debug/fern-rs bin/fern-rs-cranelift
+'''
+
+[tasks.rust-cranelift-check]
+description = "Check the Cranelift feature and independent native backend corpus"
+depends = ["rust-cranelift-build"]
+run = '''
+mise run rust-fmt
+cargo clippy --locked --manifest-path compiler-rs/Cargo.toml --all-targets --features cranelift -- -D warnings
+cargo test --locked --manifest-path compiler-rs/Cargo.toml --features cranelift
+python3 scripts/test_cranelift_backend.py --compiler bin/fern-rs-cranelift
+'''
+
 [tasks.zed-extension-check]
 description = "Fern zed extension check"
 run = '''

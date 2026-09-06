@@ -38,7 +38,11 @@ impl Emitter<'_> {
                 continue;
             }
             self.start_block(locals, &target.label);
-            let raw = self.assign(locals, Type::Int, &format!("loadl {}", target.slot));
+            let raw = self.assign(
+                locals,
+                Type::Int,
+                NativeOperation::Load(LoadKind::I64, native_operand(&(target.slot).to_string())),
+            );
             let value = self.unpack(locals, &handler.error.ty, raw);
             locals.define(
                 handler.error.id.0,
@@ -124,22 +128,36 @@ impl Emitter<'_> {
             let tag = self.assign(
                 locals,
                 Type::Bool,
-                &format!("call $fern_result_is_ok(l {value})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_result_is_ok"),
+                    args: vec![(Scalar::I64, native_operand(&(value).to_string()))],
+                    variadic: None,
+                },
             );
-            self.output
-                .push_str(&format!("    jnz {tag}, {good}, {bad}\n"));
+            self.output.statement(Statement::Branch {
+                condition: native_operand(&(tag)),
+                then_label: (good).to_string(),
+                else_label: (bad).to_string(),
+            });
             self.start_block(locals, &bad);
             if let Some(index) = step.error_handler {
                 let target = &mut targets[index];
                 let error = self.assign(
                     locals,
                     Type::Int,
-                    &format!("call $fern_result_unwrap(l {value})"),
+                    NativeOperation::Call {
+                        callee: native_operand("$fern_result_unwrap"),
+                        args: vec![(Scalar::I64, native_operand(&(value).to_string()))],
+                        variadic: None,
+                    },
                 );
-                self.output.push_str(&format!(
-                    "    storel {error}, {}\n    jmp {}\n",
-                    target.slot, target.label
-                ));
+                self.output.statement(Statement::Store {
+                    kind: LoadKind::I64,
+                    value: native_operand(&(error)),
+                    address: native_operand(&(target.slot).to_string()),
+                });
+                self.output
+                    .statement(Statement::Jump((target.label).to_string()));
                 target.reachable = true;
             } else {
                 self.save_return(&value, locals);
@@ -148,7 +166,11 @@ impl Emitter<'_> {
             let raw = self.assign(
                 locals,
                 Type::Int,
-                &format!("call $fern_result_unwrap(l {value})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_result_unwrap"),
+                    args: vec![(Scalar::I64, native_operand(&(value).to_string()))],
+                    variadic: None,
+                },
             );
             let item_value = self.unpack(locals, item, raw);
             self.bind_irrefutable(

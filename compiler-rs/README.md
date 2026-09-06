@@ -1,8 +1,10 @@
 # Experimental Rust frontend
 
-An independent, dependency-free Rust frontend for evaluating Fern's next compiler
-architecture. The shipping `fern` compiler remains C. This prototype implements a
-bounded subset; it is not a replacement for the current compiler.
+An independent Rust frontend for evaluating Fern's next compiler architecture.
+The default Cargo feature set uses only the standard library; an optional
+Cranelift feature adds a direct native object backend. The shipping `fern`
+compiler remains C. This prototype implements a bounded subset; it is not a
+replacement for the current compiler.
 
 ## Run it
 
@@ -10,8 +12,9 @@ Install the [native build dependencies](../BUILD.md), then run `mise install`
 from the repository root. Fern uses **nightly-2026-09-06** with Cargo, rustfmt,
 Clippy and rust-src; `rust-toolchain.toml` selects the same pin for direct Cargo
 commands. The numeric Cargo requirement `1.100` is a minimum version check,
-not a stable MSRV promise. Edition 2021 and standard-library-only production
-dependencies remain unchanged. From the repository root:
+not a stable MSRV promise. The Rust frontend uses edition 2021. Decision112
+permits pinned production dependencies for the optional Cranelift backend.
+From the repository root:
 
 ```sh
 mise run rust-build
@@ -25,6 +28,39 @@ mise run rust-build
 ./bin/fern-rs fmt source.fn
 mise run rust-check
 ```
+
+## Try the Cranelift backend
+
+Build the experimental feature into a separate executable:
+
+```sh
+mise run rust-cranelift-build
+./bin/fern-rs-cranelift build --backend=cranelift examples/tiny_cli.fn -o hello-cranelift
+./hello-cranelift
+./bin/fern-rs-cranelift run --backend=cranelift examples/tiny_cli.fn
+mise run rust-cranelift-check
+```
+
+QBE remains the default, including in this feature-enabled executable. The
+`--backend=cranelift` option applies only to `build` and `run`; `emit` continues
+to expose QBE IL. An ordinary build without the Cargo feature reports an explicit
+error if Cranelift is requested. Native unit/documentation tests and preview
+packaging retain their existing QBE workflow.
+
+The selected backend writes native objects in Rust without invoking QBE or an
+assembler. A host linker, the existing C runtime and its native libraries remain
+required. This does not make Fern's runtime or repository entirely Rust-based.
+The mise build also prepares the QBE and test helpers so the same executable can
+run the reference workflow. It copies the feature-enabled compiler to
+`bin/fern-rs-cranelift`, leaving `bin/fern-rs` in place.
+
+Cranelift dependencies are pinned to 0.135.1 with transitive versions in
+`compiler-rs/Cargo.lock`. See [the backend assessment](../docs/BACKEND_REASSESSMENT.md)
+for the supported-update policy, acceptance gates and remaining debugger and
+performance work. Integration is experimental; do not interpret the older scalar
+benchmark as an end-to-end result for this compiler.
+
+## Command behavior
 
 Global `--quiet`, `--verbose` and `--color=auto|always|never` controls work before
 or after the command. Quiet suppresses compiler/test summaries and prompts while
@@ -42,8 +78,10 @@ cargo test --locked --offline --manifest-path compiler-rs/Cargo.toml
 cargo run --locked --offline --manifest-path compiler-rs/Cargo.toml -- check examples/tiny_cli.fn
 ```
 
-`check` and `emit` use only Rust. `build` and `run` require `fern-qbe`,
-`libfern_runtime.a`, a host C compiler, and the existing runtime's native libraries.
+`check` and `emit` use only Rust. The default QBE `build` and `run` paths require
+`fern-qbe`, `libfern_runtime.a`, a host C compiler, and the existing runtime's native
+libraries. Selecting Cranelift removes the QBE and assembler execution stages;
+runtime discovery and final native linking use the same contract.
 Development binaries locate the helper and archive beside `fern-rs`, then in the
 development checkout. [Relocatable preview bundles](../docs/RUST_PREVIEW_PACKAGING.md)
 use sibling components and disable implicit checkout fallback when the preview
@@ -589,11 +627,15 @@ Assertion libraries, benchmark, coverage and watch modes remain separate work.
 ```text
 UTF-8 module graph → Rust lexer/parser → qualified source AST
             → name/type checking → typed IR (Type, FunctionId, LocalId)
-            → QBE text → fern-qbe process → assembly
-            → host C compiler/linker + existing C runtime → executable
+            → shared typed machine IR (control flow, values, calls, data)
+                → QBE text → fern-qbe process → assembly → object
+                → optional Cranelift → native object
+            → host linker + existing C runtime → executable
 ```
 
-The emitter consumes only typed IR. It never reconstructs a string's type from
+Semantic lowering consumes only typed IR. Both native backends consume the same
+validated machine operations; Cranelift does not parse emitted QBE text. Lowering
+never reconstructs a string's type from
 its register width or variable spelling. Int and String both use QBE `l`, while
 their semantic types stay distinct. Resolved function/local IDs separate source
 names from generated symbols. An exported `fern_main` wrapper adapts Fern's
@@ -621,7 +663,9 @@ packages explicit built components for use after relocation.
 ## Evaluation and maintenance
 
 Run `mise run rust-check` for format, clippy, Rust tests, and native differential
-fixtures. CI runs it on Linux and macOS. Run `mise run check` for the existing C gates.
+fixtures. CI runs it on Linux and macOS. Run `mise run rust-cranelift-check`
+for the optional feature and its independent native corpus, and `mise run check`
+for the existing C gates.
 Native fixtures specify exact stdout and exit status independently of C. Known C
 backend differences are named in the manifest and reported; they do not relax
 Rust's expected output. Seeded generated programs exercise the shared subset.

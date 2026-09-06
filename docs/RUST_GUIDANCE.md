@@ -1,7 +1,9 @@
-# Rust guidance adoption (Decisions107 and111)
+# Rust guidance adoption (Decisions107,111 and112)
 
 Fern uses **nightly-2026-09-06**, safe owned representations and a
-standard-library-only compiler. Decision111 supersedes the earlier Rust 1.75
+standard-library-only default compiler. Decision112 adds optional pinned
+Cranelift code-generation dependencies and a dedicated feature acceptance gate.
+Decision111 supersedes the earlier Rust 1.75
 preservation policy at the user's request; the numeric Cargo floor is 1.100,
 with no stable MSRV promise. Edition 2021 remains unchanged. The original
 Decision107 checkpoint added strict incremental lint checks and an independently

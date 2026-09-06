@@ -9,8 +9,20 @@ impl Emitter<'_> {
         locals: &mut Locals,
     ) -> Lowering<()> {
         for (index, capture) in function.captures.iter().enumerate() {
-            let address = self.assign(locals, Type::Int, &format!("add %env, {}", 8 * (index + 1)));
-            let raw = self.assign(locals, Type::Int, &format!("loadl {address}"));
+            let address = self.assign(
+                locals,
+                Type::Int,
+                NativeOperation::Binary(
+                    MachineBinary::Add,
+                    native_operand("%env"),
+                    native_operand(&(8 * (index + 1)).to_string()),
+                ),
+            );
+            let raw = self.assign(
+                locals,
+                Type::Int,
+                NativeOperation::Load(LoadKind::I64, native_operand(&(address))),
+            );
             let value = self.unpack(locals, &capture.ty, raw);
             locals.define(capture.id.0, capture.ty.clone(), value, function.body.span)?;
         }
@@ -53,23 +65,40 @@ impl Emitter<'_> {
         let object = self.assign(
             locals,
             ty.clone(),
-            &format!("call $fern_alloc(l {})", 8 * (values.len() + 1)),
+            NativeOperation::Call {
+                callee: native_operand("$fern_alloc"),
+                args: vec![(
+                    Scalar::I64,
+                    native_operand(&(8 * (values.len() + 1)).to_string()),
+                )],
+                variadic: None,
+            },
         );
         let identity = if self.actors.entries.contains_key(&id.0) {
             format!("actor_identity{}", id.0)
         } else {
             format!("f{}", id.0)
         };
-        self.output
-            .push_str(&format!("    storel ${identity}, {object}\n"));
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(&format!("${}", identity)),
+            address: native_operand(&(object)),
+        });
         for (index, value) in values.iter().enumerate() {
             let address = self.assign(
                 locals,
                 Type::Int,
-                &format!("add {object}, {}", 8 * (index + 1)),
+                NativeOperation::Binary(
+                    MachineBinary::Add,
+                    native_operand(&(object).to_string()),
+                    native_operand(&(8 * (index + 1)).to_string()),
+                ),
             );
-            self.output
-                .push_str(&format!("    storel {value}, {address}\n"));
+            self.output.statement(Statement::Store {
+                kind: LoadKind::I64,
+                value: native_operand(&(value).to_string()),
+                address: native_operand(&(address)),
+            });
         }
         Ok((ty, object))
     }
@@ -110,18 +139,29 @@ impl Emitter<'_> {
         result: &Type,
         locals: &mut Locals,
     ) -> String {
-        let code = self.assign(locals, Type::Int, &format!("loadl {closure}"));
-        let mut arguments = vec![format!("l {closure}"), "l %fault".into()];
+        let code = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(closure)),
+        );
+        let mut arguments = vec![
+            (Scalar::I64, native_operand(closure)),
+            (Scalar::I64, native_operand("%fault")),
+        ];
         arguments.extend(
             args.iter()
-                .map(|(ty, value)| format!("{} {value}", self.width(ty.clone()))),
+                .map(|(ty, value)| (machine_width(self.width(ty.clone())), native_operand(value))),
         );
-        let instruction = format!("call {code}({})", arguments.join(", "));
+        let instruction = NativeOperation::Call {
+            callee: native_operand(&(code)),
+            args: arguments.clone(),
+            variadic: None,
+        };
         let value = if *result == Type::Unit {
-            self.output.push_str(&format!("    {instruction}\n"));
+            self.output.statement(Statement::Effect(instruction));
             "0".into()
         } else {
-            self.assign(locals, result.clone(), &instruction)
+            self.assign(locals, result.clone(), instruction)
         };
         self.guard_fault(locals);
         value

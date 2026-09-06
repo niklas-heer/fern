@@ -159,9 +159,20 @@ impl Emitter<'_> {
         let bytes = (fields.len() + 1)
             .checked_mul(8)
             .ok_or_else(|| invalid(span, "allocation size overflow"))?;
-        let value = self.assign(locals, ty.clone(), &format!("call $fern_alloc(l {bytes})"));
-        self.output
-            .push_str(&format!("    storel {tag}, {value}\n"));
+        let value = self.assign(
+            locals,
+            ty.clone(),
+            NativeOperation::Call {
+                callee: native_operand("$fern_alloc"),
+                args: vec![(Scalar::I64, native_operand(&(bytes).to_string()))],
+                variadic: None,
+            },
+        );
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(&(tag).to_string()),
+            address: native_operand(&(value)),
+        });
         for (index, (field, expected)) in fields.iter().zip(expected).enumerate() {
             expect_type(field.ty.clone(), expected, field.span)?;
             let payload = self.expr(field, locals, depth)?;
@@ -169,10 +180,17 @@ impl Emitter<'_> {
             let address = self.assign(
                 locals,
                 Type::Int,
-                &format!("add {value}, {}", 8 * (index + 1)),
+                NativeOperation::Binary(
+                    MachineBinary::Add,
+                    native_operand(&(value).to_string()),
+                    native_operand(&(8 * (index + 1)).to_string()),
+                ),
             );
-            self.output
-                .push_str(&format!("    storel {payload}, {address}\n"));
+            self.output.statement(Statement::Store {
+                kind: LoadKind::I64,
+                value: native_operand(&(payload)),
+                address: native_operand(&(address)),
+            });
         }
         Ok((ty.clone(), value))
     }
@@ -218,9 +236,17 @@ impl Emitter<'_> {
         let address = self.assign(
             locals,
             Type::Int,
-            &format!("add {value}, {}", 8 * (index + 1)),
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(value),
+                native_operand(&(8 * (index + 1)).to_string()),
+            ),
         );
-        let raw = self.assign(locals, Type::Int, &format!("loadl {address}"));
+        let raw = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(&(address))),
+        );
         self.unpack(locals, ty, raw)
     }
 
@@ -532,7 +558,7 @@ impl Emitter<'_> {
         if partial {
             self.incoming(Ok("0".into()), &mut incoming, &merge, locals)?;
         } else {
-            self.output.push_str("    hlt\n");
+            self.output.statement(Statement::Trap);
         }
         self.join(ty, incoming, &merge, locals)
     }
@@ -581,7 +607,8 @@ impl Emitter<'_> {
         self.pattern_branch(&pattern, &value.ty, &scrutinee, &mut state, locals)?;
         self.materialize_rests(&mut state, locals)?;
         let bound = locals.values.clone();
-        self.output.push_str(&format!("    jmp {success}\n"));
+        self.output
+            .statement(Statement::Jump((success).to_string()));
         locals.values = outer;
         self.start_block(locals, &failure);
         match self.expr(otherwise, locals, depth) {
@@ -597,8 +624,11 @@ impl Emitter<'_> {
     /// Branch to the next arm on failure, preserving a fresh successful predecessor.
     fn require_pattern(&mut self, test: &str, failure: &str, locals: &mut Locals) {
         let success = locals.label();
-        self.output
-            .push_str(&format!("    jnz {test}, {success}, {failure}\n"));
+        self.output.statement(Statement::Branch {
+            condition: native_operand(test),
+            then_label: (success).to_string(),
+            else_label: (failure).to_string(),
+        });
         self.start_block(locals, &success);
     }
 
@@ -661,18 +691,42 @@ impl Emitter<'_> {
     /// Test a concrete custom discriminant or the shared heap Result tag convention.
     fn variant_test(&mut self, ty: &Type, tag: usize, value: &str, locals: &mut Locals) -> String {
         if matches!(ty, Type::Named(_, _) | Type::Tuple(_)) {
-            let actual = self.assign(locals, Type::Int, &format!("loadl {value}"));
-            self.assign(locals, Type::Bool, &format!("ceql {actual}, {tag}"))
+            let actual = self.assign(
+                locals,
+                Type::Int,
+                NativeOperation::Load(LoadKind::I64, native_operand(value)),
+            );
+            self.assign(
+                locals,
+                Type::Bool,
+                NativeOperation::Binary(
+                    MachineBinary::Compare(Comparison::Eq, Scalar::I64),
+                    native_operand(&(actual)),
+                    native_operand(&(tag).to_string()),
+                ),
+            )
         } else {
             let is_ok = self.assign(
                 locals,
                 Type::Bool,
-                &format!("call $fern_result_is_ok(l {value})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_result_is_ok"),
+                    args: vec![(Scalar::I64, native_operand(value))],
+                    variadic: None,
+                },
             );
             if tag == 0 {
                 is_ok
             } else {
-                self.assign(locals, Type::Bool, &format!("ceqw {is_ok}, 0"))
+                self.assign(
+                    locals,
+                    Type::Bool,
+                    NativeOperation::Binary(
+                        MachineBinary::Compare(Comparison::Eq, Scalar::I32),
+                        native_operand(&(is_ok)),
+                        native_operand("0"),
+                    ),
+                )
             }
         }
     }
@@ -692,7 +746,11 @@ impl Emitter<'_> {
             let raw = self.assign(
                 locals,
                 Type::Int,
-                &format!("call $fern_result_unwrap(l {value})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_result_unwrap"),
+                    args: vec![(Scalar::I64, native_operand(value))],
+                    variadic: None,
+                },
             );
             self.unpack(locals, ty, raw)
         }
@@ -707,15 +765,30 @@ impl Emitter<'_> {
         locals: &mut Locals,
     ) -> Lowering<String> {
         let instruction = match pattern {
-            Pattern::Int(integer) => format!("ceql {value}, {integer}"),
-            Pattern::Bool(boolean) => format!("ceqw {value}, {}", u8::from(*boolean)),
+            Pattern::Int(integer) => NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::Eq, Scalar::I64),
+                native_operand(value),
+                native_operand(&(integer).to_string()),
+            ),
+            Pattern::Bool(boolean) => NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::Eq, Scalar::I32),
+                native_operand(value),
+                native_operand(&(u8::from(*boolean)).to_string()),
+            ),
             Pattern::String(text) => {
                 let text = self.string(text, span)?;
-                format!("call $fern_str_eq(l {value}, l {text})")
+                NativeOperation::Call {
+                    callee: native_operand("$fern_str_eq"),
+                    args: vec![
+                        (Scalar::I64, native_operand(value)),
+                        (Scalar::I64, native_operand(&(text))),
+                    ],
+                    variadic: None,
+                }
             }
             _ => return Err(invalid(span, "unnormalized pattern in scalar lowering")),
         };
-        Ok(self.assign(locals, Type::Bool, &instruction))
+        Ok(self.assign(locals, Type::Bool, instruction))
     }
 }
 
@@ -819,9 +892,10 @@ impl Emitter<'_> {
         };
         self.pattern_branch(&pattern, ty, value, &mut state, locals)?;
         self.materialize_rests(&mut state, locals)?;
-        self.output.push_str(&format!("    jmp {success}\n"));
+        self.output
+            .statement(Statement::Jump((success).to_string()));
         self.start_block(locals, &failure);
-        self.output.push_str("    hlt\n");
+        self.output.statement(Statement::Trap);
         self.start_block(locals, &success);
         Ok(())
     }

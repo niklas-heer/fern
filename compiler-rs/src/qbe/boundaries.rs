@@ -39,10 +39,16 @@ impl Emitter<'_> {
         let raw = self.assign(
             locals,
             Type::Int,
-            &format!(
-                "call $fern_rs_list_access(l %fault, l {list}, l {index}, w {})",
-                u8::from(head)
-            ),
+            NativeOperation::Call {
+                callee: native_operand("$fern_rs_list_access"),
+                args: vec![
+                    (Scalar::I64, native_operand("%fault")),
+                    (Scalar::I64, native_operand(&(list))),
+                    (Scalar::I64, native_operand(&(index))),
+                    (Scalar::I32, native_operand(&(u8::from(head)).to_string())),
+                ],
+                variadic: None,
+            },
         );
         self.guard_fault(locals);
         let value = self.unpack(locals, item, raw);
@@ -68,7 +74,15 @@ impl Emitter<'_> {
         let value = self.assign(
             locals,
             Type::String,
-            &format!("call $fern_rs_string_repeat(l %fault, l {source}, l {count})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_rs_string_repeat"),
+                args: vec![
+                    (Scalar::I64, native_operand("%fault")),
+                    (Scalar::I64, native_operand(&(source))),
+                    (Scalar::I64, native_operand(&(count))),
+                ],
+                variadic: None,
+            },
         );
         self.guard_fault(locals);
         Ok((Type::String, value))
@@ -78,10 +92,44 @@ impl Emitter<'_> {
     pub(super) fn result_main_exit(&mut self) {
         const MESSAGE: &str = "fern: main returned Err";
         let bytes = MESSAGE.len() + 1;
-        self.data.push_str(&format!(
-            "data $fern_rs_main_error = {{ b \"{MESSAGE}\", b 10 }}\n"
-        ));
-        self.output.push_str(&format!("    %ok =w call $fern_result_is_ok(l %exit)\n    jnz %ok, @ok, @err\n@ok\n    ret 0\n@err\n    call $write(w 2, l $fern_rs_main_error, l {bytes})\n    ret 1\n}}\n"));
+        self.data.data(
+            "$fern_rs_main_error",
+            vec![
+                DataValue::Bytes(MESSAGE.as_bytes().to_vec()),
+                DataValue::Bytes(vec![10]),
+            ],
+        );
+        self.output.statement(Statement::Assign {
+            destination: "%ok".to_owned(),
+            ty: Scalar::I32,
+            operation: NativeOperation::Call {
+                callee: native_operand("$fern_result_is_ok"),
+                args: vec![(Scalar::I64, native_operand("%exit"))],
+                variadic: None,
+            },
+        });
+        self.output.statement(Statement::Branch {
+            condition: native_operand("%ok"),
+            then_label: "@ok".to_owned(),
+            else_label: "@err".to_owned(),
+        });
+        self.output.statement(Statement::Label("@ok".to_owned()));
+        self.output
+            .statement(Statement::Return(Some(native_operand("0"))));
+        self.output.statement(Statement::Label("@err".to_owned()));
+        self.output
+            .statement(Statement::Effect(NativeOperation::Call {
+                callee: native_operand("$write"),
+                args: vec![
+                    (Scalar::I32, native_operand("2")),
+                    (Scalar::I64, native_operand("$fern_rs_main_error")),
+                    (Scalar::I64, native_operand(&(bytes).to_string())),
+                ],
+                variadic: None,
+            }));
+        self.output
+            .statement(Statement::Return(Some(native_operand("1"))));
+        self.output.end();
     }
 }
 
@@ -107,7 +155,16 @@ impl Emitter<'_> {
         let value = self.assign(
             locals,
             Type::String,
-            &format!("call $fern_rs_string_slice(l %fault, l {source}, l {start}, l {end})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_rs_string_slice"),
+                args: vec![
+                    (Scalar::I64, native_operand("%fault")),
+                    (Scalar::I64, native_operand(&(source))),
+                    (Scalar::I64, native_operand(&(start))),
+                    (Scalar::I64, native_operand(&(end))),
+                ],
+                variadic: None,
+            },
         );
         self.guard_fault(locals);
         Ok((Type::String, value))
@@ -116,41 +173,70 @@ impl Emitter<'_> {
 
 impl Emitter<'_> {
     /// Reject invalid external UTF-8 before splitting can allocate or fail inside C.
-    pub(super) fn split_guard(&mut self, arguments: &[String], locals: &mut Locals) {
+    pub(super) fn split_guard(&mut self, arguments: &[(Scalar, Operand)], locals: &mut Locals) {
         let valid = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_str_split_is_valid({})", arguments.join(", ")),
+            NativeOperation::Call {
+                callee: native_operand("$fern_str_split_is_valid"),
+                args: arguments.to_vec(),
+                variadic: None,
+            },
         );
         let resume = locals.label();
         let invalid = locals.label();
-        self.output
-            .push_str(&format!("    jnz {valid}, {resume}, {invalid}\n"));
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(valid)),
+            then_label: (resume).to_string(),
+            else_label: (invalid).to_string(),
+        });
         self.start_block(locals, &invalid);
-        self.output
-            .push_str("    storel 7, %fault\n    storel 0, %return_slot\n    jmp @return\n");
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand("7"),
+            address: native_operand("%fault"),
+        });
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand("0"),
+            address: native_operand("%return_slot"),
+        });
+        self.output.statement(Statement::Jump("@return".to_owned()));
         self.start_block(locals, &resume);
     }
 }
 
 impl Emitter<'_> {
     /// Bound decimal text before native classification so a size fault drains Fern defers.
-    pub(super) fn decimal_guard(&mut self, arguments: &[String], locals: &mut Locals) {
+    pub(super) fn decimal_guard(&mut self, arguments: &[(Scalar, Operand)], locals: &mut Locals) {
         let valid = self.assign(
             locals,
             Type::Int,
-            &format!(
-                "call $fern_str_decimal_size_is_valid({})",
-                arguments.join(", ")
-            ),
+            NativeOperation::Call {
+                callee: native_operand("$fern_str_decimal_size_is_valid"),
+                args: arguments.to_vec(),
+                variadic: None,
+            },
         );
         let resume = locals.label();
         let invalid = locals.label();
-        self.output
-            .push_str(&format!("    jnz {valid}, {resume}, {invalid}\n"));
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(valid)),
+            then_label: (resume).to_string(),
+            else_label: (invalid).to_string(),
+        });
         self.start_block(locals, &invalid);
-        self.output
-            .push_str("    storel 5, %fault\n    storel 0, %return_slot\n    jmp @return\n");
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand("5"),
+            address: native_operand("%fault"),
+        });
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand("0"),
+            address: native_operand("%return_slot"),
+        });
+        self.output.statement(Statement::Jump("@return".to_owned()));
         self.start_block(locals, &resume);
     }
 }

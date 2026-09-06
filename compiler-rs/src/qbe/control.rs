@@ -58,19 +58,35 @@ impl Emitter<'_> {
         } else {
             self.payload(locals, &locals.return_type.clone(), value.into())
         };
-        self.output.push_str(&format!(
-            "    storel {payload}, %return_slot\n    jmp @return\n"
-        ));
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(&(payload)),
+            address: native_operand("%return_slot"),
+        });
+        self.output.statement(Statement::Jump("@return".to_owned()));
     }
 
     /// Flush only this function's dynamic cleanup stack and restore its typed return ABI.
     pub(super) fn finish_function(&mut self, locals: &mut Locals) {
         self.start_block(locals, "@return");
         self.output
-            .push_str("    call $fern_rs_run_defers(l %defer_head, l %fault)\n");
-        let raw = self.assign(locals, Type::Int, "loadl %return_slot");
+            .statement(Statement::Effect(NativeOperation::Call {
+                callee: native_operand("$fern_rs_run_defers"),
+                args: vec![
+                    (Scalar::I64, native_operand("%defer_head")),
+                    (Scalar::I64, native_operand("%fault")),
+                ],
+                variadic: None,
+            }));
+        let raw = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand("%return_slot")),
+        );
         let value = self.unpack(locals, &locals.return_type.clone(), raw);
-        self.output.push_str(&format!("    ret {value}\n}}\n\n"));
+        self.output
+            .statement(Statement::Return(Some(native_operand(&(value)))));
+        self.output.end();
     }
 
     /// Route explicit returns through the same cleanup path as implicit return and Try.
@@ -99,10 +115,44 @@ impl Emitter<'_> {
             value.span,
         )?;
         let closure = self.expr(value, locals, depth)?;
-        let previous = self.assign(locals, Type::Int, "loadl %defer_head");
-        let node = self.assign(locals, Type::Int, "call $fern_alloc(l 16)");
-        let link = self.assign(locals, Type::Int, &format!("add {node}, 8"));
-        self.output.push_str(&format!("    storel {closure}, {node}\n    storel {previous}, {link}\n    storel {node}, %defer_head\n"));
+        let previous = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand("%defer_head")),
+        );
+        let node = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Call {
+                callee: native_operand("$fern_alloc"),
+                args: vec![(Scalar::I64, native_operand("16"))],
+                variadic: None,
+            },
+        );
+        let link = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(&(node)),
+                native_operand("8"),
+            ),
+        );
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(&(closure)),
+            address: native_operand(&(node)),
+        });
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(&(previous)),
+            address: native_operand(&(link)),
+        });
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(&(node)),
+            address: native_operand("%defer_head"),
+        });
         Ok((Type::Unit, "0".into()))
     }
 
@@ -117,7 +167,7 @@ impl Emitter<'_> {
         match outcome {
             Ok(value) => {
                 incoming.push((locals.current.clone(), value));
-                self.output.push_str(&format!("    jmp {merge}\n"));
+                self.output.statement(Statement::Jump((merge).to_string()));
             }
             Err(Exit::Terminated) => {}
             Err(error) => return Err(error),
@@ -143,11 +193,10 @@ impl Emitter<'_> {
             incoming[0].1.clone()
         } else {
             let operands = incoming
-                .iter()
-                .map(|(label, value)| format!("{label} {value}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            self.assign(locals, ty.clone(), &format!("phi {operands}"))
+                .into_iter()
+                .map(|(label, value)| (label, native_operand(&value)))
+                .collect();
+            self.assign(locals, ty.clone(), NativeOperation::Phi(operands))
         };
         Ok((ty, value))
     }

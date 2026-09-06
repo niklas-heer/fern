@@ -94,15 +94,16 @@ outside the source checkout.
 
 ## Where the project stands
 
-Both compiler paths use QBE and the native runtime. The Rust frontend adds
+Default builds use QBE and the native runtime. The Rust frontend adds
 features including validating JSON, derived codecs and
 [bounded typed actor execution](docs/RUST_ACTORS.md). The default C frontend
 retains its legacy JSON compatibility API and explicit mailbox primitives.
 
 Generalized actor suspension, typed supervision, actor REPL/FernSim parity and
-HTTP serving remain open. Cranelift has an
-[experimental feasibility assessment](docs/BACKEND_REASSESSMENT.md); it is not
-an integrated backend yet. The [readiness checklist](docs/RELEASE_READINESS.md)
+HTTP serving remain open. An opt-in
+[Cranelift backend](docs/BACKEND_REASSESSMENT.md) now emits native objects through
+the shared compiler pipeline; QBE remains the default while acceptance continues.
+The [readiness checklist](docs/RELEASE_READINESS.md)
 defines the current feature boundaries; [DESIGN.md](DESIGN.md) also includes
 planned features. Syntax and APIs are subject to the
 [compatibility policy](docs/COMPATIBILITY_POLICY.md).

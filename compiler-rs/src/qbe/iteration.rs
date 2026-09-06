@@ -31,7 +31,15 @@ impl Emitter<'_> {
         expect_type(end.ty.clone(), Type::Int, end.span)?;
         let start = self.expr(start, locals, depth)?;
         let end = self.expr(end, locals, depth)?;
-        let value = self.assign(locals, Type::Range, "call $fern_alloc(l 24)");
+        let value = self.assign(
+            locals,
+            Type::Range,
+            NativeOperation::Call {
+                callee: native_operand("$fern_alloc"),
+                args: vec![(Scalar::I64, native_operand("24"))],
+                variadic: None,
+            },
+        );
         self.store_field(&value, 0, &start, locals);
         self.store_field(&value, 8, &end, locals);
         self.store_field(&value, 16, &u8::from(inclusive).to_string(), locals);
@@ -46,15 +54,38 @@ impl Emitter<'_> {
         raw: &str,
         locals: &mut Locals,
     ) {
-        let address = self.assign(locals, Type::Int, &format!("add {value}, {offset}"));
-        self.output
-            .push_str(&format!("    storel {raw}, {address}\n"));
+        let address = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(value),
+                native_operand(&(offset).to_string()),
+            ),
+        );
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(raw),
+            address: native_operand(&(address)),
+        });
     }
 
     /// Read an audited internal layout field as raw bits for later typed unpacking.
     pub(super) fn raw_field(&mut self, value: &str, offset: usize, locals: &mut Locals) -> String {
-        let address = self.assign(locals, Type::Int, &format!("add {value}, {offset}"));
-        self.assign(locals, Type::Int, &format!("loadl {address}"))
+        let address = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(value),
+                native_operand(&(offset).to_string()),
+            ),
+        );
+        self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(&(address))),
+        )
     }
 
     /// Jump to the innermost loop without draining this function's deferred callbacks.
@@ -69,7 +100,7 @@ impl Emitter<'_> {
             .last()
             .ok_or_else(|| invalid(span, "loop control outside loop"))?;
         let target = if next { &targets.next } else { &targets.done };
-        self.output.push_str(&format!("    jmp {target}\n"));
+        self.output.statement(Statement::Jump((target).to_string()));
         Err(Exit::Terminated)
     }
 
@@ -101,7 +132,9 @@ impl Emitter<'_> {
         locals.loops.pop();
         locals.values = outer;
         match outcome {
-            Ok(_) => self.output.push_str(&format!("    jmp {}\n", flow.next)),
+            Ok(_) => self
+                .output
+                .statement(Statement::Jump((flow.next).to_string())),
             Err(Exit::Terminated) => {}
             Err(error) => return Err(error),
         }
@@ -124,7 +157,11 @@ impl Emitter<'_> {
                 self.assign(
                     locals,
                     Type::Int,
-                    &format!("call $fern_list_len(l {collection})"),
+                    NativeOperation::Call {
+                        callee: native_operand("$fern_list_len"),
+                        args: vec![(Scalar::I64, native_operand(collection))],
+                        variadic: None,
+                    },
                 ),
                 "0".into(),
             )
@@ -139,24 +176,60 @@ impl Emitter<'_> {
             end,
             inclusive,
         };
-        self.output.push_str(&format!(
-            "    storel {start}, {}\n    jmp {}\n",
-            flow.slot, flow.head
-        ));
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(&(start)),
+            address: native_operand(&(flow.slot).to_string()),
+        });
+        self.output
+            .statement(Statement::Jump((flow.head).to_string()));
         self.start_block(locals, &flow.head);
-        let index = self.assign(locals, Type::Int, &format!("loadl {}", flow.slot));
-        let before = self.assign(locals, Type::Bool, &format!("csltl {index}, {}", flow.end));
-        let within = self.assign(locals, Type::Bool, &format!("cslel {index}, {}", flow.end));
+        let index = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(&(flow.slot).to_string())),
+        );
+        let before = self.assign(
+            locals,
+            Type::Bool,
+            NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::SLt, Scalar::I64),
+                native_operand(&(index)),
+                native_operand(&(flow.end).to_string()),
+            ),
+        );
+        let within = self.assign(
+            locals,
+            Type::Bool,
+            NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::SLe, Scalar::I64),
+                native_operand(&(index)),
+                native_operand(&(flow.end).to_string()),
+            ),
+        );
         let inclusive = self.assign(
             locals,
             Type::Bool,
-            &format!("and {within}, {}", flow.inclusive),
+            NativeOperation::Binary(
+                MachineBinary::And,
+                native_operand(&(within)),
+                native_operand(&(flow.inclusive).to_string()),
+            ),
         );
-        let available = self.assign(locals, Type::Bool, &format!("or {before}, {inclusive}"));
-        self.output.push_str(&format!(
-            "    jnz {available}, {}, {}\n",
-            flow.body, flow.done
-        ));
+        let available = self.assign(
+            locals,
+            Type::Bool,
+            NativeOperation::Binary(
+                MachineBinary::Or,
+                native_operand(&(before)),
+                native_operand(&(inclusive)),
+            ),
+        );
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(available)),
+            then_label: (flow.body).to_string(),
+            else_label: (flow.done).to_string(),
+        });
         self.start_block(locals, &flow.body);
         flow
     }
@@ -170,19 +243,38 @@ impl Emitter<'_> {
         item: &Type,
         locals: &mut Locals,
     ) -> String {
-        let index = self.assign(locals, Type::Int, &format!("loadl {}", flow.slot));
+        let index = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(&(flow.slot).to_string())),
+        );
         if *ty == Type::Range {
             return index;
         }
         let raw = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_list_get(l {collection}, l {index})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_list_get"),
+                args: vec![
+                    (Scalar::I64, native_operand(collection)),
+                    (Scalar::I64, native_operand(&(index))),
+                ],
+                variadic: None,
+            },
         );
         if matches!(ty, Type::Map(_, _)) {
             let key = self.raw_field(&raw, 0, locals);
             let value = self.raw_field(&raw, 8, locals);
-            let tuple = self.assign(locals, item.clone(), "call $fern_alloc(l 24)");
+            let tuple = self.assign(
+                locals,
+                item.clone(),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_alloc"),
+                    args: vec![(Scalar::I64, native_operand("24"))],
+                    variadic: None,
+                },
+            );
             self.store_field(&tuple, 0, "0", locals);
             self.store_field(&tuple, 8, &key, locals);
             self.store_field(&tuple, 16, &value, locals);
@@ -195,18 +287,42 @@ impl Emitter<'_> {
     /// Test the endpoint before incrementing, so inclusive i64::MAX cannot overflow.
     fn iteration_increment(&mut self, flow: &Iteration, locals: &mut Locals) {
         self.start_block(locals, &flow.next);
-        let index = self.assign(locals, Type::Int, &format!("loadl {}", flow.slot));
-        let at_end = self.assign(locals, Type::Bool, &format!("ceql {index}, {}", flow.end));
-        self.output.push_str(&format!(
-            "    jnz {at_end}, {}, {}\n",
-            flow.done, flow.increment
-        ));
+        let index = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(&(flow.slot).to_string())),
+        );
+        let at_end = self.assign(
+            locals,
+            Type::Bool,
+            NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::Eq, Scalar::I64),
+                native_operand(&(index)),
+                native_operand(&(flow.end).to_string()),
+            ),
+        );
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(at_end)),
+            then_label: (flow.done).to_string(),
+            else_label: (flow.increment).to_string(),
+        });
         self.start_block(locals, &flow.increment);
-        let next = self.assign(locals, Type::Int, &format!("add {index}, 1"));
-        self.output.push_str(&format!(
-            "    storel {next}, {}\n    jmp {}\n",
-            flow.slot, flow.head
-        ));
+        let next = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(&(index)),
+                native_operand("1"),
+            ),
+        );
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(&(next)),
+            address: native_operand(&(flow.slot).to_string()),
+        });
+        self.output
+            .statement(Statement::Jump((flow.head).to_string()));
     }
 
     /// Materialize index/item tuples using raw payload bits for every element type.
@@ -229,7 +345,11 @@ impl Emitter<'_> {
         let value = self.assign(
             locals,
             result.clone(),
-            &format!("call $fern_rs_list_enumerate(l {value})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_rs_list_enumerate"),
+                args: vec![(Scalar::I64, native_operand(&(value)))],
+                variadic: None,
+            },
         );
         Ok((result, value))
     }

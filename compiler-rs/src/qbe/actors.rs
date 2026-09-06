@@ -91,7 +91,15 @@ impl Emitter<'_> {
                 let value = self.assign(
                     locals,
                     ty.clone(),
-                    &format!("call $fern_managed_spawn(l %exec, l {entry}, l {descriptor})"),
+                    NativeOperation::Call {
+                        callee: native_operand("$fern_managed_spawn"),
+                        args: vec![
+                            (Scalar::I64, native_operand("%exec")),
+                            (Scalar::I64, native_operand(&(entry))),
+                            (Scalar::I64, native_operand(&(descriptor))),
+                        ],
+                        variadic: None,
+                    },
                 );
                 self.guard_fault(locals);
                 Ok((ty, value))
@@ -110,9 +118,16 @@ impl Emitter<'_> {
                 let result = self.assign(
                     locals,
                     ty.clone(),
-                    &format!(
-                        "call $fern_managed_send(l %exec, l {pid}, l {value}, l {descriptor})"
-                    ),
+                    NativeOperation::Call {
+                        callee: native_operand("$fern_managed_send"),
+                        args: vec![
+                            (Scalar::I64, native_operand("%exec")),
+                            (Scalar::I64, native_operand(&(pid))),
+                            (Scalar::I64, native_operand(&(value))),
+                            (Scalar::I64, native_operand(&(descriptor))),
+                        ],
+                        variadic: None,
+                    },
                 );
                 self.guard_fault(locals);
                 Ok((ty, result))
@@ -136,7 +151,14 @@ impl Emitter<'_> {
                 self.assign(
                     locals,
                     Type::Int,
-                    &format!("call $fern_managed_continue(l %exec, l {entry})"),
+                    NativeOperation::Call {
+                        callee: native_operand("$fern_managed_continue"),
+                        args: vec![
+                            (Scalar::I64, native_operand("%exec")),
+                            (Scalar::I64, native_operand(&(entry))),
+                        ],
+                        variadic: None,
+                    },
                 )
             }
             Operation::Register {
@@ -151,7 +173,20 @@ impl Emitter<'_> {
                     .map(|e| self.expr(e, locals, depth))
                     .transpose()?
                     .unwrap_or_else(|| "0".into());
-                self.assign(locals, Type::Int, &format!("call $fern_managed_receive(l %exec, l {selector}, l {timeout}, l {duration})"))
+                self.assign(
+                    locals,
+                    Type::Int,
+                    NativeOperation::Call {
+                        callee: native_operand("$fern_managed_receive"),
+                        args: vec![
+                            (Scalar::I64, native_operand("%exec")),
+                            (Scalar::I64, native_operand(&(selector))),
+                            (Scalar::I64, native_operand(&(timeout))),
+                            (Scalar::I64, native_operand(&(duration))),
+                        ],
+                        variadic: None,
+                    },
+                )
             }
             Operation::Select { value, arms } => {
                 return self.matching_mode(value, arms, locals, depth, false, true)
@@ -163,36 +198,192 @@ impl Emitter<'_> {
 
     /// Preserve main's result/fault precedence before the scheduler can execute queued work.
     pub(super) fn actor_main(&mut self, main: &Function) {
-        self.output.push_str("export function w $fern_main() {\n@start\n    %fault =l alloc8 8\n    storel 0, %fault\n");
-        self.output.push_str(&format!(
-            "    %exec =l call $fern_managed_new(l %fault, l $actor_functions, l {})\n",
-            self.functions.len()
-        ));
-        self.output.push_str("    %initialized =w cnel %exec, 0\n    jnz %initialized, @entry, @initial_failed\n@initial_failed\n    %initial_code =l loadl %fault\n    call $fern_rs_report_fault(l %initial_code)\n    ret 1\n@entry\n");
-        let context = if self.actors.managed.contains(&main.id.0) {
-            ", l %exec"
-        } else {
-            ""
-        };
-        self.output.push_str(&format!(
-            "    %exit ={} call $f{}(l 0, l %fault{context})\n",
-            self.width(main.return_type.clone()),
-            main.id.0
-        ));
-        self.output.push_str("    %before =l loadl %fault\n    %bad =w cnel %before, 0\n    jnz %bad, @stopped, @main_ok\n@main_ok\n");
-        if matches!(main.return_type, Type::Result(_, _)) {
-            self.output.push_str("    %actor_ok =l call $fern_result_is_ok(l %exit)\n    %actor_is_ok =w cnel %actor_ok, 0\n    jnz %actor_is_ok, @drain, @stopped\n");
-        } else {
-            self.output.push_str("    jmp @drain\n");
+        self.output
+            .begin("$fern_main", Some(Scalar::I32), vec![], true);
+        self.output.statement(Statement::Label("@start".to_owned()));
+        self.output.statement(Statement::Assign {
+            destination: "%fault".to_owned(),
+            ty: Scalar::I64,
+            operation: NativeOperation::StackAlloc { bytes: 8, align: 8 },
+        });
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand("0"),
+            address: native_operand("%fault"),
+        });
+        self.output.statement(Statement::Assign {
+            destination: "%exec".to_owned(),
+            ty: Scalar::I64,
+            operation: NativeOperation::Call {
+                callee: native_operand("$fern_managed_new"),
+                args: vec![
+                    (Scalar::I64, native_operand("%fault")),
+                    (Scalar::I64, native_operand("$actor_functions")),
+                    (
+                        Scalar::I64,
+                        native_operand(&(self.functions.len()).to_string()),
+                    ),
+                ],
+                variadic: None,
+            },
+        });
+        self.output.statement(Statement::Assign {
+            destination: "%initialized".to_owned(),
+            ty: Scalar::I32,
+            operation: NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::Ne, Scalar::I64),
+                native_operand("%exec"),
+                native_operand("0"),
+            ),
+        });
+        self.output.statement(Statement::Branch {
+            condition: native_operand("%initialized"),
+            then_label: "@entry".to_owned(),
+            else_label: "@initial_failed".to_owned(),
+        });
+        self.output
+            .statement(Statement::Label("@initial_failed".to_owned()));
+        self.output.statement(Statement::Assign {
+            destination: "%initial_code".to_owned(),
+            ty: Scalar::I64,
+            operation: NativeOperation::Load(LoadKind::I64, native_operand("%fault")),
+        });
+        self.output
+            .statement(Statement::Effect(NativeOperation::Call {
+                callee: native_operand("$fern_rs_report_fault"),
+                args: vec![(Scalar::I64, native_operand("%initial_code"))],
+                variadic: None,
+            }));
+        self.output
+            .statement(Statement::Return(Some(native_operand("1"))));
+        self.output.statement(Statement::Label("@entry".to_owned()));
+        let mut arguments = vec![
+            (Scalar::I64, Operand::Int(0)),
+            (Scalar::I64, native_operand("%fault")),
+        ];
+        if self.actors.managed.contains(&main.id.0) {
+            arguments.push((Scalar::I64, native_operand("%exec")));
         }
-        self.output.push_str("@drain\n    call $fern_managed_run(l %exec)\n    jmp @stopped\n@stopped\n    call $fern_managed_stop(l %exec)\n    %code =l loadl %fault\n    %failed =w cnel %code, 0\n    jnz %failed, @failed, @success\n@failed\n    call $fern_rs_report_fault(l %code)\n    ret 1\n@success\n");
+        self.output.statement(Statement::Assign {
+            destination: "%exit".to_owned(),
+            ty: machine_width(self.width(main.return_type.clone())),
+            operation: NativeOperation::Call {
+                callee: native_operand(&format!("$f{}", main.id.0)),
+                args: arguments,
+                variadic: None,
+            },
+        });
+        self.output.statement(Statement::Assign {
+            destination: "%before".to_owned(),
+            ty: Scalar::I64,
+            operation: NativeOperation::Load(LoadKind::I64, native_operand("%fault")),
+        });
+        self.output.statement(Statement::Assign {
+            destination: "%bad".to_owned(),
+            ty: Scalar::I32,
+            operation: NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::Ne, Scalar::I64),
+                native_operand("%before"),
+                native_operand("0"),
+            ),
+        });
+        self.output.statement(Statement::Branch {
+            condition: native_operand("%bad"),
+            then_label: "@stopped".to_owned(),
+            else_label: "@main_ok".to_owned(),
+        });
+        self.output
+            .statement(Statement::Label("@main_ok".to_owned()));
+        if matches!(main.return_type, Type::Result(_, _)) {
+            self.output.statement(Statement::Assign {
+                destination: "%actor_ok".to_owned(),
+                ty: Scalar::I64,
+                operation: NativeOperation::Call {
+                    callee: native_operand("$fern_result_is_ok"),
+                    args: vec![(Scalar::I64, native_operand("%exit"))],
+                    variadic: None,
+                },
+            });
+            self.output.statement(Statement::Assign {
+                destination: "%actor_is_ok".to_owned(),
+                ty: Scalar::I32,
+                operation: NativeOperation::Binary(
+                    MachineBinary::Compare(Comparison::Ne, Scalar::I64),
+                    native_operand("%actor_ok"),
+                    native_operand("0"),
+                ),
+            });
+            self.output.statement(Statement::Branch {
+                condition: native_operand("%actor_is_ok"),
+                then_label: "@drain".to_owned(),
+                else_label: "@stopped".to_owned(),
+            });
+        } else {
+            self.output.statement(Statement::Jump("@drain".to_owned()));
+        }
+        self.output.statement(Statement::Label("@drain".to_owned()));
+        self.output
+            .statement(Statement::Effect(NativeOperation::Call {
+                callee: native_operand("$fern_managed_run"),
+                args: vec![(Scalar::I64, native_operand("%exec"))],
+                variadic: None,
+            }));
+        self.output
+            .statement(Statement::Jump("@stopped".to_owned()));
+        self.output
+            .statement(Statement::Label("@stopped".to_owned()));
+        self.output
+            .statement(Statement::Effect(NativeOperation::Call {
+                callee: native_operand("$fern_managed_stop"),
+                args: vec![(Scalar::I64, native_operand("%exec"))],
+                variadic: None,
+            }));
+        self.output.statement(Statement::Assign {
+            destination: "%code".to_owned(),
+            ty: Scalar::I64,
+            operation: NativeOperation::Load(LoadKind::I64, native_operand("%fault")),
+        });
+        self.output.statement(Statement::Assign {
+            destination: "%failed".to_owned(),
+            ty: Scalar::I32,
+            operation: NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::Ne, Scalar::I64),
+                native_operand("%code"),
+                native_operand("0"),
+            ),
+        });
+        self.output.statement(Statement::Branch {
+            condition: native_operand("%failed"),
+            then_label: "@failed".to_owned(),
+            else_label: "@success".to_owned(),
+        });
+        self.output
+            .statement(Statement::Label("@failed".to_owned()));
+        self.output
+            .statement(Statement::Effect(NativeOperation::Call {
+                callee: native_operand("$fern_rs_report_fault"),
+                args: vec![(Scalar::I64, native_operand("%code"))],
+                variadic: None,
+            }));
+        self.output
+            .statement(Statement::Return(Some(native_operand("1"))));
+        self.output
+            .statement(Statement::Label("@success".to_owned()));
         if main.return_type == Type::Int {
+            self.output.statement(Statement::Assign {
+                destination: "%status".to_owned(),
+                ty: Scalar::I32,
+                operation: NativeOperation::Unary(MachineUnary::Copy, native_operand("%exit")),
+            });
             self.output
-                .push_str("    %status =w copy %exit\n    ret %status\n}\n");
+                .statement(Statement::Return(Some(native_operand("%status"))));
+            self.output.end();
         } else if matches!(main.return_type, Type::Result(_, _)) {
             self.result_main_exit();
         } else {
-            self.output.push_str("    ret 0\n}\n");
+            self.output
+                .statement(Statement::Return(Some(native_operand("0"))));
+            self.output.end();
         }
     }
 }

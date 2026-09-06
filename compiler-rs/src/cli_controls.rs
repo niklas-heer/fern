@@ -35,7 +35,7 @@ impl Controls {
                     output.extend(arguments);
                     break;
                 }
-                Some("-o" | "--output" | "--timeout") => {
+                Some("-o" | "--output" | "--timeout" | "--backend") => {
                     output.push(argument);
                     if let Some(value) = arguments.next() {
                         output.push(value);
@@ -107,7 +107,7 @@ mod tests {
             .to_vec();
         assert_eq!(flags.arguments(args.clone()).unwrap(), args);
         assert!(!flags.quiet);
-        for flag in ["-o", "--output", "--timeout"] {
+        for flag in ["-o", "--output", "--timeout", "--backend"] {
             let args = ["doc", flag, "--quiet"].map(OsString::from).to_vec();
             assert_eq!(flags.arguments(args.clone()).unwrap(), args);
             assert!(!flags.quiet);

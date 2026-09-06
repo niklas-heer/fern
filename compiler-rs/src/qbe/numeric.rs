@@ -46,22 +46,58 @@ impl Emitter<'_> {
         {
             self.numeric_used = true;
             let instruction = if op == BinaryOp::Power {
-                format!("call $fern_rs_int_pow(l %fault, l {lhs}, l {rhs})")
+                NativeOperation::Call {
+                    callee: native_operand("$fern_rs_int_pow"),
+                    args: vec![
+                        (Scalar::I64, native_operand("%fault")),
+                        (Scalar::I64, native_operand(lhs)),
+                        (Scalar::I64, native_operand(rhs)),
+                    ],
+                    variadic: None,
+                }
             } else {
-                format!(
-                    "call $fern_rs_int_div(l %fault, l {lhs}, l {rhs}, w {})",
-                    u8::from(op == BinaryOp::Remainder)
-                )
+                NativeOperation::Call {
+                    callee: native_operand("$fern_rs_int_div"),
+                    args: vec![
+                        (Scalar::I64, native_operand("%fault")),
+                        (Scalar::I64, native_operand(lhs)),
+                        (Scalar::I64, native_operand(rhs)),
+                        (
+                            Scalar::I32,
+                            native_operand(&(u8::from(op == BinaryOp::Remainder)).to_string()),
+                        ),
+                    ],
+                    variadic: None,
+                }
             };
-            let value = self.assign(locals, Type::Int, &instruction);
+            let value = self.assign(locals, Type::Int, instruction);
             self.guard_fault(locals);
             return value;
         }
         if op == BinaryOp::Power {
-            return self.assign(locals, Type::Float, &format!("call $pow(d {lhs}, d {rhs})"));
+            return self.assign(
+                locals,
+                Type::Float,
+                NativeOperation::Call {
+                    callee: native_operand("$pow"),
+                    args: vec![
+                        (Scalar::F64, native_operand(lhs)),
+                        (Scalar::F64, native_operand(rhs)),
+                    ],
+                    variadic: None,
+                },
+            );
         }
         let rhs = if matches!(op, BinaryOp::ShiftLeft | BinaryOp::ShiftRight) {
-            self.assign(locals, Type::Int, &format!("and {rhs}, 63"))
+            self.assign(
+                locals,
+                Type::Int,
+                NativeOperation::Binary(
+                    MachineBinary::And,
+                    native_operand(rhs),
+                    native_operand("63"),
+                ),
+            )
         } else {
             rhs.into()
         };
@@ -69,7 +105,7 @@ impl Emitter<'_> {
         self.assign(
             locals,
             result.clone(),
-            &format!("{instruction} {lhs}, {rhs}"),
+            NativeOperation::Binary(instruction, native_operand(lhs), native_operand(&(rhs))),
         )
     }
 
@@ -103,7 +139,14 @@ impl Emitter<'_> {
             self.assign(
                 locals,
                 Type::Bool,
-                &format!("call $fern_rs_list_contains_float(l {list}, d {raw})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_rs_list_contains_float"),
+                    args: vec![
+                        (Scalar::I64, native_operand(&(list))),
+                        (Scalar::F64, native_operand(&(raw))),
+                    ],
+                    variadic: None,
+                },
             )
         } else {
             let payload = self.payload(locals, item, raw);
@@ -115,7 +158,14 @@ impl Emitter<'_> {
             let raw = self.assign(
                 locals,
                 Type::Int,
-                &format!("call ${symbol}(l {list}, l {payload})"),
+                NativeOperation::Call {
+                    callee: native_operand(&format!("${}", symbol)),
+                    args: vec![
+                        (Scalar::I64, native_operand(&(list))),
+                        (Scalar::I64, native_operand(&(payload))),
+                    ],
+                    variadic: None,
+                },
             );
             self.unpack(locals, &Type::Bool, raw)
         };

@@ -1,6 +1,6 @@
 //! Typed calls into audited native APIs, including explicit representation bridges.
 use super::*;
-use crate::runtime::{self, Operation, Signature, ValueAbi};
+use crate::runtime::{self, Operation as RuntimeOperation, Signature, ValueAbi};
 
 /// Unify a signature scheme with concrete arguments, without accepting untyped fallbacks.
 fn bind_type(
@@ -75,16 +75,20 @@ impl Emitter<'_> {
             "fern_str_slice" => return self.slice_string(args, span, locals, depth),
             _ => {}
         }
-        if signature.operation == Operation::ScalarContains {
+        if signature.operation == RuntimeOperation::ScalarContains {
             return self.scalar_contains(args, span, locals, depth);
         }
         let symbol = self.test_runtime_symbol(runtime_symbol(&signature, args, span)?);
-        if signature.operation == Operation::JsonObject {
+        if signature.operation == RuntimeOperation::JsonObject {
             let map = self.expr(&args[0], locals, depth)?;
             let value = self.assign(
                 locals,
                 ty.clone(),
-                &format!("call $fern_rs_json_object(l {map})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_rs_json_object"),
+                    args: vec![(Scalar::I64, native_operand(&(map)))],
+                    variadic: None,
+                },
             );
             return Ok((ty, value));
         }
@@ -100,18 +104,30 @@ impl Emitter<'_> {
         if signature.return_abi == ValueAbi::PackedOption {
             return Ok((ty, self.packed_option(symbol, &values, span, locals)?));
         }
-        let instruction = format!("call ${symbol}({})", values.join(", "));
+        let instruction = NativeOperation::Call {
+            callee: native_operand(&format!("${}", symbol)),
+            args: values.clone(),
+            variadic: None,
+        };
         let raw = match signature.return_abi {
             ValueAbi::Void => {
-                self.output.push_str(&format!("    {instruction}\n"));
+                self.output.statement(Statement::Effect(instruction));
                 "0".into()
             }
-            ValueAbi::Word32 => self.assign(locals, Type::Bool, &instruction),
-            _ => self.assign(locals, Type::Int, &instruction),
+            ValueAbi::Word32 => self.assign(locals, Type::Bool, instruction),
+            _ => self.assign(locals, Type::Int, instruction),
         };
         let mut value = self.runtime_result(raw, &ty, signature.return_abi, locals)?;
-        if signature.operation == Operation::InvertBool {
-            value = self.assign(locals, Type::Bool, &format!("ceqw {value}, 0"));
+        if signature.operation == RuntimeOperation::InvertBool {
+            value = self.assign(
+                locals,
+                Type::Bool,
+                NativeOperation::Binary(
+                    MachineBinary::Compare(Comparison::Eq, Scalar::I32),
+                    native_operand(&(value).to_string()),
+                    native_operand("0"),
+                ),
+            );
         }
         Ok((ty, value))
     }
@@ -146,19 +162,21 @@ impl Emitter<'_> {
     /// Apply source/native arity and enum differences after evaluating arguments once.
     fn runtime_operation(
         &mut self,
-        operation: Operation,
-        values: &mut Vec<String>,
+        operation: RuntimeOperation,
+        values: &mut Vec<(Scalar, Operand)>,
         span: Span,
         locals: &mut Locals,
     ) -> Lowering<()> {
         match operation {
-            Operation::DecimalPredicate => self.decimal_guard(values, locals),
-            Operation::UniformPadding => values.push(values[1].clone()),
-            Operation::TableBorder => {
-                let name = values[1]
-                    .strip_prefix("l ")
-                    .ok_or_else(|| invalid(span, "border name requires String ABI"))?;
-                values[1] = format!("l {}", self.border_style(name, span, locals)?);
+            RuntimeOperation::DecimalPredicate => self.decimal_guard(values, locals),
+            RuntimeOperation::UniformPadding => values.push(values[1].clone()),
+            RuntimeOperation::TableBorder => {
+                if values[1].0 != Scalar::I64 {
+                    return Err(invalid(span, "border name requires String ABI"));
+                }
+                let name = values[1].1.clone();
+                let value = self.border_style(name, span, locals)?;
+                values[1] = (Scalar::I64, native_operand(&value));
             }
             _ => {}
         }
@@ -166,7 +184,7 @@ impl Emitter<'_> {
     }
 
     /// Map known style names to C enum values; -1 preserves the object's existing style.
-    fn border_style(&mut self, name: &str, span: Span, locals: &mut Locals) -> Lowering<String> {
+    fn border_style(&mut self, name: Operand, span: Span, locals: &mut Locals) -> Lowering<String> {
         let merge = locals.label();
         let mut incoming = Vec::new();
         for (index, style) in ["rounded", "square", "double", "heavy", "ascii", "none"]
@@ -177,21 +195,31 @@ impl Emitter<'_> {
             let equal = self.assign(
                 locals,
                 Type::Int,
-                &format!("call $fern_str_eq(l {name}, l {literal})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_str_eq"),
+                    args: vec![
+                        (Scalar::I64, name.clone()),
+                        (Scalar::I64, native_operand(&(literal))),
+                    ],
+                    variadic: None,
+                },
             );
             let found = locals.label();
             let next = locals.label();
-            self.output
-                .push_str(&format!("    jnz {equal}, {found}, {next}\n"));
+            self.output.statement(Statement::Branch {
+                condition: native_operand(&(equal)),
+                then_label: (found).to_string(),
+                else_label: (next).to_string(),
+            });
             self.start_block(locals, &found);
-            incoming.push(format!("{found} {index}"));
-            self.output.push_str(&format!("    jmp {merge}\n"));
+            incoming.push((found.clone(), Operand::Int(index as i64)));
+            self.output.statement(Statement::Jump((merge).to_string()));
             self.start_block(locals, &next);
         }
-        incoming.push(format!("{} -1", locals.current));
-        self.output.push_str(&format!("    jmp {merge}\n"));
+        incoming.push((locals.current.clone(), Operand::Int(-1)));
+        self.output.statement(Statement::Jump((merge).to_string()));
         self.start_block(locals, &merge);
-        Ok(self.assign(locals, Type::Int, &format!("phi {}", incoming.join(", "))))
+        Ok(self.assign(locals, Type::Int, NativeOperation::Phi(incoming)))
     }
 
     /// Convert a checked Fern argument to its documented native representation.
@@ -202,20 +230,21 @@ impl Emitter<'_> {
         abi: ValueAbi,
         span: Span,
         locals: &mut Locals,
-    ) -> Lowering<String> {
+    ) -> Lowering<(Scalar, Operand)> {
         match abi {
             ValueAbi::Double64 => {
                 expect_type(ty.clone(), Type::Float, span)?;
-                Ok(format!("d {value}"))
+                Ok((Scalar::F64, native_operand(&value)))
             }
-            ValueAbi::StringList => Ok(format!(
-                "l {}",
-                self.emit_string_list_argument(&value, locals)
+            ValueAbi::StringList => Ok((
+                Scalar::I64,
+                native_operand(&self.emit_string_list_argument(&value, locals)),
             )),
-            ValueAbi::Word64 | ValueAbi::HeapOption | ValueAbi::HeapResult => {
-                Ok(format!("l {}", self.payload(locals, ty, value)))
-            }
-            ValueAbi::Word32 => Ok(format!("w {value}")),
+            ValueAbi::Word64 | ValueAbi::HeapOption | ValueAbi::HeapResult => Ok((
+                Scalar::I64,
+                native_operand(&self.payload(locals, ty, value)),
+            )),
+            ValueAbi::Word32 => Ok((Scalar::I32, native_operand(&value))),
             _ => Err(invalid(span, "unsupported native argument representation")),
         }
     }
@@ -230,15 +259,21 @@ impl Emitter<'_> {
     ) -> Lowering<String> {
         Ok(match abi {
             ValueAbi::Void => "0".into(),
-            ValueAbi::Word32 if *ty == Type::Int => {
-                self.assign(locals, Type::Int, &format!("extsw {raw}"))
-            }
+            ValueAbi::Word32 if *ty == Type::Int => self.assign(
+                locals,
+                Type::Int,
+                NativeOperation::Unary(MachineUnary::ExtSw, native_operand(&(raw).to_string())),
+            ),
             ValueAbi::Word32 => raw,
             ValueAbi::StringList => self.emit_string_list_result(&raw, locals),
             ValueAbi::HeapJsonMembers => self.assign(
                 locals,
                 ty.clone(),
-                &format!("call $fern_rs_json_members(l {raw})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_rs_json_members"),
+                    args: vec![(Scalar::I64, native_operand(&(raw).to_string()))],
+                    variadic: None,
+                },
             ),
             ValueAbi::HeapStringListResult => self.native_adapted_result(&raw, false, locals),
             ValueAbi::HeapExecResult => self.native_adapted_result(&raw, true, locals),
@@ -261,7 +296,7 @@ impl Emitter<'_> {
 
 /// Select equality specialization only after the generic element type is known.
 fn runtime_symbol(signature: &Signature, args: &[Expr], span: Span) -> Lowering<&'static str> {
-    if signature.operation == Operation::ScalarContains {
+    if signature.operation == RuntimeOperation::ScalarContains {
         match args.get(1).map(|arg| &arg.ty) {
             Some(Type::String) => Ok("fern_list_contains_str"),
             Some(Type::Int | Type::Bool) => Ok("fern_list_contains"),
@@ -280,31 +315,76 @@ impl Emitter<'_> {
     fn packed_option(
         &mut self,
         symbol: &str,
-        arguments: &[String],
+        arguments: &[(Scalar, Operand)],
         span: Span,
         locals: &mut Locals,
     ) -> Lowering<String> {
-        let joined = arguments.join(", ");
+        let joined = arguments.to_vec();
         match symbol {
             "fern_str_index_of" => {
                 let base = arguments
                     .first()
-                    .and_then(|arg| arg.strip_prefix("l "))
+                    .filter(|arg| arg.0 == Scalar::I64)
+                    .map(|arg| arg.1.clone())
                     .ok_or_else(|| invalid(span, "index_of requires pointer arguments"))?;
-                let found = self.assign(locals, Type::Int, &format!("call $strstr({joined})"));
-                let present = self.assign(locals, Type::Bool, &format!("cnel {found}, 0"));
-                Ok(self.heap_option(&present, &format!("sub {found}, {base}"), locals))
+                let found = self.assign(
+                    locals,
+                    Type::Int,
+                    NativeOperation::Call {
+                        callee: native_operand("$strstr"),
+                        args: joined,
+                        variadic: None,
+                    },
+                );
+                let present = self.assign(
+                    locals,
+                    Type::Bool,
+                    NativeOperation::Binary(
+                        MachineBinary::Compare(Comparison::Ne, Scalar::I64),
+                        native_operand(&(found)),
+                        native_operand("0"),
+                    ),
+                );
+                Ok(self.heap_option(
+                    &present,
+                    NativeOperation::Binary(MachineBinary::Sub, native_operand(&(found)), base),
+                    locals,
+                ))
             }
             "fern_str_char_at" => {
                 // This C helper only packs bytes 0..255; all payload bits survive.
                 let packed = self.assign(
                     locals,
                     Type::Int,
-                    &format!("call $fern_str_char_at({joined})"),
+                    NativeOperation::Call {
+                        callee: native_operand("$fern_str_char_at"),
+                        args: joined,
+                        variadic: None,
+                    },
                 );
-                let tag = self.assign(locals, Type::Bool, &format!("copy {packed}"));
-                let present = self.assign(locals, Type::Bool, &format!("ceqw {tag}, 1"));
-                Ok(self.heap_option(&present, &format!("sar {packed}, 32"), locals))
+                let tag = self.assign(
+                    locals,
+                    Type::Bool,
+                    NativeOperation::Unary(MachineUnary::Copy, native_operand(&(packed))),
+                );
+                let present = self.assign(
+                    locals,
+                    Type::Bool,
+                    NativeOperation::Binary(
+                        MachineBinary::Compare(Comparison::Eq, Scalar::I32),
+                        native_operand(&(tag)),
+                        native_operand("1"),
+                    ),
+                );
+                Ok(self.heap_option(
+                    &present,
+                    NativeOperation::Binary(
+                        MachineBinary::Sar,
+                        native_operand(&(packed)),
+                        native_operand("32"),
+                    ),
+                    locals,
+                ))
             }
             _ => Err(invalid(
                 span,
@@ -317,30 +397,48 @@ impl Emitter<'_> {
     fn heap_option(
         &mut self,
         present: &str,
-        payload_instruction: &str,
+        payload_instruction: NativeOperation,
         locals: &mut Locals,
     ) -> String {
         let some = locals.label();
         let none = locals.label();
         let merge = locals.label();
-        self.output
-            .push_str(&format!("    jnz {present}, {some}, {none}\n"));
+        self.output.statement(Statement::Branch {
+            condition: native_operand(present),
+            then_label: (some).to_string(),
+            else_label: (none).to_string(),
+        });
         self.start_block(locals, &some);
         let payload = self.assign(locals, Type::Int, payload_instruction);
         let value = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_result_ok(l {payload})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_result_ok"),
+                args: vec![(Scalar::I64, native_operand(&(payload)))],
+                variadic: None,
+            },
         );
-        self.output.push_str(&format!("    jmp {merge}\n"));
+        self.output.statement(Statement::Jump((merge).to_string()));
         self.start_block(locals, &none);
-        let empty = self.assign(locals, Type::Int, "call $fern_result_err(l 0)");
-        self.output.push_str(&format!("    jmp {merge}\n"));
+        let empty = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Call {
+                callee: native_operand("$fern_result_err"),
+                args: vec![(Scalar::I64, native_operand("0"))],
+                variadic: None,
+            },
+        );
+        self.output.statement(Statement::Jump((merge).to_string()));
         self.start_block(locals, &merge);
         self.assign(
             locals,
             Type::Int,
-            &format!("phi {some} {value}, {none} {empty}"),
+            NativeOperation::Phi(vec![
+                ((some).to_string(), native_operand(&(value))),
+                ((none).to_string(), native_operand(&(empty))),
+            ]),
         )
     }
 }
@@ -358,15 +456,54 @@ impl Emitter<'_> {
         let length = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_list_len(l {value})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_list_len"),
+                args: vec![(Scalar::I64, native_operand(value))],
+                variadic: None,
+            },
         );
-        let capacity = self.assign(locals, Type::Int, &format!("add {length}, 1"));
-        let bytes = self.assign(locals, Type::Int, &format!("mul {capacity}, 8"));
-        let header = self.assign(locals, Type::Int, "call $fern_alloc(l 24)");
-        let data = self.assign(locals, Type::Int, &format!("call $fern_alloc(l {bytes})"));
+        let capacity = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(&(length).to_string()),
+                native_operand("1"),
+            ),
+        );
+        let bytes = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Mul,
+                native_operand(&(capacity).to_string()),
+                native_operand("8"),
+            ),
+        );
+        let header = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Call {
+                callee: native_operand("$fern_alloc"),
+                args: vec![(Scalar::I64, native_operand("24"))],
+                variadic: None,
+            },
+        );
+        let data = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Call {
+                callee: native_operand("$fern_alloc"),
+                args: vec![(Scalar::I64, native_operand(&(bytes)))],
+                variadic: None,
+            },
+        );
         // runtime/fern_runtime.h: FernStringList {char** data; i64 len; i64 cap}.
-        self.output
-            .push_str(&format!("    storel {data}, {header}\n"));
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(&(data).to_string()),
+            address: native_operand(&(header).to_string()),
+        });
         self.store_header(&header, 8, &length, locals);
         self.store_header(&header, 16, &capacity, locals);
         self.copy_strings(
@@ -380,14 +517,42 @@ impl Emitter<'_> {
 
     /// Copy a non-null native FernStringList into an ordinary immutable FernList.
     fn emit_string_list_result(&mut self, value: &str, locals: &mut Locals) -> String {
-        let data = self.assign(locals, Type::Int, &format!("loadl {value}"));
-        let length_pointer = self.assign(locals, Type::Int, &format!("add {value}, 8"));
-        let length = self.assign(locals, Type::Int, &format!("loadl {length_pointer}"));
-        let capacity = self.assign(locals, Type::Int, &format!("add {length}, 1"));
+        let data = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(value)),
+        );
+        let length_pointer = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(value),
+                native_operand("8"),
+            ),
+        );
+        let length = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(&(length_pointer))),
+        );
+        let capacity = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(&(length).to_string()),
+                native_operand("1"),
+            ),
+        );
         let list = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_list_with_capacity(l {capacity})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_list_with_capacity"),
+                args: vec![(Scalar::I64, native_operand(&(capacity)))],
+                variadic: None,
+            },
         );
         self.copy_strings(
             CopyEndpoint::StringData(&data),
@@ -400,9 +565,20 @@ impl Emitter<'_> {
 
     /// Store a full-width runtime header field at its audited byte offset.
     fn store_header(&mut self, header: &str, offset: usize, value: &str, locals: &mut Locals) {
-        let address = self.assign(locals, Type::Int, &format!("add {header}, {offset}"));
-        self.output
-            .push_str(&format!("    storel {value}, {address}\n"));
+        let address = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(header),
+                native_operand(&(offset).to_string()),
+            ),
+        );
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand(value),
+            address: native_operand(&(address)),
+        });
     }
 
     /// Copy exactly the source length, preserving 64-bit String pointers and fresh ownership.
@@ -419,44 +595,107 @@ impl Emitter<'_> {
         let done = locals.label();
         let index = locals.temporary();
         let next = locals.temporary();
-        self.output.push_str(&format!("    jmp {test}\n"));
+        self.output.statement(Statement::Jump((test).to_string()));
         self.start_block(locals, &test);
-        self.output
-            .push_str(&format!("    {index} =l phi {before} 0, {body} {next}\n"));
-        let more = self.assign(locals, Type::Bool, &format!("csltl {index}, {length}"));
-        self.output
-            .push_str(&format!("    jnz {more}, {body}, {done}\n"));
+        self.output.statement(Statement::Assign {
+            destination: (index).to_string(),
+            ty: Scalar::I64,
+            operation: NativeOperation::Phi(vec![
+                ((before), native_operand("0")),
+                ((body).to_string(), native_operand(&(next))),
+            ]),
+        });
+        let more = self.assign(
+            locals,
+            Type::Bool,
+            NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::SLt, Scalar::I64),
+                native_operand(&(index).to_string()),
+                native_operand(length),
+            ),
+        );
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(more)),
+            then_label: (body).to_string(),
+            else_label: (done).to_string(),
+        });
         self.start_block(locals, &body);
         let value = match source {
             CopyEndpoint::FernList(list) => self.assign(
                 locals,
                 Type::Int,
-                &format!("call $fern_list_get(l {list}, l {index})"),
+                NativeOperation::Call {
+                    callee: native_operand("$fern_list_get"),
+                    args: vec![
+                        (Scalar::I64, native_operand(list)),
+                        (Scalar::I64, native_operand(&(index).to_string())),
+                    ],
+                    variadic: None,
+                },
             ),
             CopyEndpoint::StringData(data) => {
                 let address = self.string_slot(data, &index, locals);
-                self.assign(locals, Type::Int, &format!("loadl {address}"))
+                self.assign(
+                    locals,
+                    Type::Int,
+                    NativeOperation::Load(LoadKind::I64, native_operand(&(address))),
+                )
             }
         };
         match destination {
-            CopyEndpoint::FernList(list) => self.output.push_str(&format!(
-                "    call $fern_list_push_mut(l {list}, l {value})\n"
-            )),
+            CopyEndpoint::FernList(list) => {
+                self.output
+                    .statement(Statement::Effect(NativeOperation::Call {
+                        callee: native_operand("$fern_list_push_mut"),
+                        args: vec![
+                            (Scalar::I64, native_operand(list)),
+                            (Scalar::I64, native_operand(&(value))),
+                        ],
+                        variadic: None,
+                    }))
+            }
             CopyEndpoint::StringData(data) => {
                 let address = self.string_slot(data, &index, locals);
-                self.output
-                    .push_str(&format!("    storel {value}, {address}\n"));
+                self.output.statement(Statement::Store {
+                    kind: LoadKind::I64,
+                    value: native_operand(&(value)),
+                    address: native_operand(&(address)),
+                });
             }
         }
-        self.output
-            .push_str(&format!("    {next} =l add {index}, 1\n    jmp {test}\n"));
+        self.output.statement(Statement::Assign {
+            destination: (next),
+            ty: Scalar::I64,
+            operation: NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(&(index).to_string()),
+                native_operand("1"),
+            ),
+        });
+        self.output.statement(Statement::Jump((test).to_string()));
         self.start_block(locals, &done);
     }
 
     /// Address one element in a native array of 64-bit String pointers.
     fn string_slot(&mut self, data: &str, index: &str, locals: &mut Locals) -> String {
-        let offset = self.assign(locals, Type::Int, &format!("mul {index}, 8"));
-        self.assign(locals, Type::Int, &format!("add {data}, {offset}"))
+        let offset = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Mul,
+                native_operand(index),
+                native_operand("8"),
+            ),
+        );
+        self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(data),
+                native_operand(&(offset)),
+            ),
+        )
     }
 }
 
@@ -465,18 +704,41 @@ impl Emitter<'_> {
     fn require_native_pointer(&mut self, pointer: &str, locals: &mut Locals) {
         let valid = locals.label();
         let failure = locals.label();
-        let exists = self.assign(locals, Type::Bool, &format!("cnel {pointer}, 0"));
-        self.output
-            .push_str(&format!("    jnz {exists}, {valid}, {failure}\n"));
+        let exists = self.assign(
+            locals,
+            Type::Bool,
+            NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::Ne, Scalar::I64),
+                native_operand(pointer),
+                native_operand("0"),
+            ),
+        );
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(exists)),
+            then_label: (valid).to_string(),
+            else_label: (failure).to_string(),
+        });
         self.start_block(locals, &failure);
-        self.output.push_str("    hlt\n");
+        self.output.statement(Statement::Trap);
         self.start_block(locals, &valid);
     }
 
     /// Read one audited 64-bit C field; callers must first establish a valid object.
     fn native_field(&mut self, object: &str, offset: usize, locals: &mut Locals) -> String {
-        let address = self.assign(locals, Type::Int, &format!("add {object}, {offset}"));
-        self.assign(locals, Type::Int, &format!("loadl {address}"))
+        let address = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(object),
+                native_operand(&(offset).to_string()),
+            ),
+        );
+        self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(&(address))),
+        )
     }
 
     /// Copy a C record with contiguous 64-bit fields into a separate tagged Rust tuple.
@@ -491,9 +753,17 @@ impl Emitter<'_> {
         let result = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_alloc(l {})", (fields + 1) * 8),
+            NativeOperation::Call {
+                callee: native_operand("$fern_alloc"),
+                args: vec![(Scalar::I64, native_operand(&((fields + 1) * 8).to_string()))],
+                variadic: None,
+            },
         );
-        self.output.push_str(&format!("    storel 0, {result}\n"));
+        self.output.statement(Statement::Store {
+            kind: LoadKind::I64,
+            value: native_operand("0"),
+            address: native_operand(&(result).to_string()),
+        });
         for index in 0..fields {
             let value = self.native_field(object, index * 8, locals);
             if strings.contains(&index) {
@@ -508,29 +778,55 @@ impl Emitter<'_> {
     fn native_match(&mut self, object: &str, locals: &mut Locals) -> String {
         self.require_native_pointer(object, locals);
         let start = self.native_field(object, 0, locals);
-        let present = self.assign(locals, Type::Bool, &format!("csgel {start}, 0"));
+        let present = self.assign(
+            locals,
+            Type::Bool,
+            NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::SGe, Scalar::I64),
+                native_operand(&(start)),
+                native_operand("0"),
+            ),
+        );
         let some = locals.label();
         let none = locals.label();
         let merge = locals.label();
-        self.output
-            .push_str(&format!("    jnz {present}, {some}, {none}\n"));
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(present)),
+            then_label: (some).to_string(),
+            else_label: (none).to_string(),
+        });
         self.start_block(locals, &some);
         let tuple = self.native_tuple(object, 3, &[2], locals);
         let value = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_result_ok(l {tuple})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_result_ok"),
+                args: vec![(Scalar::I64, native_operand(&(tuple)))],
+                variadic: None,
+            },
         );
         let some_end = locals.current.clone();
-        self.output.push_str(&format!("    jmp {merge}\n"));
+        self.output.statement(Statement::Jump((merge).to_string()));
         self.start_block(locals, &none);
-        let absent = self.assign(locals, Type::Int, "call $fern_result_err(l 0)");
-        self.output.push_str(&format!("    jmp {merge}\n"));
+        let absent = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Call {
+                callee: native_operand("$fern_result_err"),
+                args: vec![(Scalar::I64, native_operand("0"))],
+                variadic: None,
+            },
+        );
+        self.output.statement(Statement::Jump((merge).to_string()));
         self.start_block(locals, &merge);
         self.assign(
             locals,
             Type::Int,
-            &format!("phi {some_end} {value}, {none} {absent}"),
+            NativeOperation::Phi(vec![
+                ((some_end), native_operand(&(value))),
+                ((none).to_string(), native_operand(&(absent))),
+            ]),
         )
     }
 
@@ -538,7 +834,15 @@ impl Emitter<'_> {
     fn native_captures(&mut self, object: &str, locals: &mut Locals) -> String {
         self.require_native_pointer(object, locals);
         let count = self.native_field(object, 0, locals);
-        let list = self.assign(locals, Type::Int, "call $fern_list_with_capacity(l 10)");
+        let list = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Call {
+                callee: native_operand("$fern_list_with_capacity"),
+                args: vec![(Scalar::I64, native_operand("10"))],
+                variadic: None,
+            },
+        );
         let before = locals.current.clone();
         let test = locals.label();
         let body = locals.label();
@@ -546,25 +850,73 @@ impl Emitter<'_> {
         let done = locals.label();
         let index = locals.temporary();
         let next = locals.temporary();
-        self.output.push_str(&format!("    jmp {test}\n"));
+        self.output.statement(Statement::Jump((test).to_string()));
         self.start_block(locals, &test);
-        self.output
-            .push_str(&format!("    {index} =l phi {before} 0, {latch} {next}\n"));
-        let more = self.assign(locals, Type::Bool, &format!("csltl {index}, {count}"));
-        self.output
-            .push_str(&format!("    jnz {more}, {body}, {done}\n"));
+        self.output.statement(Statement::Assign {
+            destination: (index).to_string(),
+            ty: Scalar::I64,
+            operation: NativeOperation::Phi(vec![
+                ((before), native_operand("0")),
+                ((latch).to_string(), native_operand(&(next))),
+            ]),
+        });
+        let more = self.assign(
+            locals,
+            Type::Bool,
+            NativeOperation::Binary(
+                MachineBinary::Compare(Comparison::SLt, Scalar::I64),
+                native_operand(&(index)),
+                native_operand(&(count)),
+            ),
+        );
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(more)),
+            then_label: (body).to_string(),
+            else_label: (done).to_string(),
+        });
         self.start_block(locals, &body);
         let data = self.native_field(object, 8, locals);
         self.require_native_pointer(&data, locals);
-        let offset = self.assign(locals, Type::Int, &format!("mul {index}, 24"));
-        let record = self.assign(locals, Type::Int, &format!("add {data}, {offset}"));
+        let offset = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Mul,
+                native_operand(&(index)),
+                native_operand("24"),
+            ),
+        );
+        let record = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(&(data).to_string()),
+                native_operand(&(offset)),
+            ),
+        );
         let tuple = self.native_tuple(&record, 3, &[2], locals);
-        self.output.push_str(&format!(
-            "    call $fern_list_push_mut(l {list}, l {tuple})\n    jmp {latch}\n"
-        ));
-        self.start_block(locals, &latch);
         self.output
-            .push_str(&format!("    {next} =l add {index}, 1\n    jmp {test}\n"));
+            .statement(Statement::Effect(NativeOperation::Call {
+                callee: native_operand("$fern_list_push_mut"),
+                args: vec![
+                    (Scalar::I64, native_operand(&(list))),
+                    (Scalar::I64, native_operand(&(tuple))),
+                ],
+                variadic: None,
+            }));
+        self.output.statement(Statement::Jump((latch).to_string()));
+        self.start_block(locals, &latch);
+        self.output.statement(Statement::Assign {
+            destination: (next),
+            ty: Scalar::I64,
+            operation: NativeOperation::Binary(
+                MachineBinary::Add,
+                native_operand(&(index)),
+                native_operand("1"),
+            ),
+        });
+        self.output.statement(Statement::Jump((test).to_string()));
         self.start_block(locals, &done);
         list
     }
@@ -582,18 +934,29 @@ impl Emitter<'_> {
         let success = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_result_is_ok(l {result})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_result_is_ok"),
+                args: vec![(Scalar::I64, native_operand(result))],
+                variadic: None,
+            },
         );
         let ok = locals.label();
         let err = locals.label();
         let merge = locals.label();
-        self.output
-            .push_str(&format!("    jnz {success}, {ok}, {err}\n"));
+        self.output.statement(Statement::Branch {
+            condition: native_operand(&(success)),
+            then_label: (ok).to_string(),
+            else_label: (err).to_string(),
+        });
         self.start_block(locals, &ok);
         let native = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_result_unwrap(l {result})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_result_unwrap"),
+                args: vec![(Scalar::I64, native_operand(result))],
+                variadic: None,
+            },
         );
         self.require_native_pointer(&native, locals);
         let payload = if process {
@@ -604,17 +967,24 @@ impl Emitter<'_> {
         let wrapped = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_result_ok(l {payload})"),
+            NativeOperation::Call {
+                callee: native_operand("$fern_result_ok"),
+                args: vec![(Scalar::I64, native_operand(&(payload)))],
+                variadic: None,
+            },
         );
         let ok_end = locals.current.clone();
-        self.output.push_str(&format!("    jmp {merge}\n"));
+        self.output.statement(Statement::Jump((merge).to_string()));
         self.start_block(locals, &err);
-        self.output.push_str(&format!("    jmp {merge}\n"));
+        self.output.statement(Statement::Jump((merge).to_string()));
         self.start_block(locals, &merge);
         self.assign(
             locals,
             Type::Int,
-            &format!("phi {ok_end} {wrapped}, {err} {result}"),
+            NativeOperation::Phi(vec![
+                ((ok_end), native_operand(&(wrapped))),
+                ((err).to_string(), native_operand(result)),
+            ]),
         )
     }
 }

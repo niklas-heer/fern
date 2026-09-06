@@ -50,12 +50,32 @@ impl Emitter<'_> {
         state: &mut PatternState<'_>,
         locals: &mut Locals,
     ) -> Lowering<()> {
-        let tag = self.assign(locals, Type::Int, &format!("loadl {value}"));
+        let tag = self.assign(
+            locals,
+            Type::Int,
+            NativeOperation::Load(LoadKind::I64, native_operand(value)),
+        );
         let mut selected = "0".to_owned();
         for (index, member) in crate::unions::members(subject).iter().enumerate() {
             if crate::unions::members(narrowed).contains(member) {
-                let equal = self.assign(locals, Type::Bool, &format!("ceql {tag}, {index}"));
-                selected = self.assign(locals, Type::Bool, &format!("or {selected}, {equal}"));
+                let equal = self.assign(
+                    locals,
+                    Type::Bool,
+                    NativeOperation::Binary(
+                        MachineBinary::Compare(Comparison::Eq, Scalar::I64),
+                        native_operand(&(tag).to_string()),
+                        native_operand(&(index).to_string()),
+                    ),
+                );
+                selected = self.assign(
+                    locals,
+                    Type::Bool,
+                    NativeOperation::Binary(
+                        MachineBinary::Or,
+                        native_operand(&(selected).to_string()),
+                        native_operand(&(equal)),
+                    ),
+                );
             }
         }
         self.require_pattern(&selected, state.failure, locals);

@@ -26,6 +26,44 @@ struct Options {
     arguments: Vec<OsString>,
     format_check: bool,
     controls: cli_controls::Controls,
+    backend: Backend,
+}
+
+/// Explicit selection never substitutes another backend after a failure.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum Backend {
+    #[default]
+    Qbe,
+    Cranelift,
+}
+
+impl Backend {
+    /// Accept only documented names, including when provided as a separate operand.
+    fn parse(value: &std::ffi::OsStr) -> Result<Self, String> {
+        match value.to_str() {
+            Some("qbe") => Ok(Self::Qbe),
+            Some("cranelift") => Ok(Self::Cranelift),
+            _ => Err("backend must be qbe or cranelift".into()),
+        }
+    }
+}
+
+/// Backend-owned artifacts reach the same staging, linker and publication boundary.
+enum NativeCode {
+    Qbe(String),
+    #[cfg(feature = "cranelift")]
+    Object(Vec<u8>),
+}
+
+impl NativeCode {
+    /// Compile exactly the selected representation, with no fallback or shared assembly stage.
+    fn compile(&self, workspace: &native::Workspace) -> Result<PathBuf, String> {
+        match self {
+            Self::Qbe(il) => native::compile(il, workspace),
+            #[cfg(feature = "cranelift")]
+            Self::Object(bytes) => native::compile_object(bytes, workspace),
+        }
+    }
 }
 
 /// Print explicit user-requested help, even when informational output is quiet.
@@ -34,6 +72,7 @@ fn help() {
             "fern-rs: experimental Rust frontend (C remains the default)\n\
 Usage: fern-rs <check|emit|build|run|fmt|doc|lex|parse> <source.fn> [-o output]\n\
 Run arguments: fern-rs run source.fn -- [arguments]\n\
+Native backend: --backend=qbe|cranelift (or --backend <name>); QBE is the default. Cranelift requires its Cargo feature and supports build/run.\n\
 Global controls: --quiet, --verbose, --color=auto|always|never; -v aliases --version.\n\
 Subset: generic functions, custom types, modules, Int/Bool/String, List/Option/Result, guarded match, and Result ?.\n\
 Documentation: fern-rs doc <source.fn|directory> [--html] [--inferred] [--open] [-o output] generates source documentation.\n\
@@ -73,13 +112,35 @@ fn options(
     let mut output = None;
     let mut forwarded = Vec::new();
     let mut format_check = false;
+    let mut backend = None;
     let mut rest = arguments.into_iter().skip(1);
     while let Some(argument) = rest.next() {
         if argument == "--" && source.is_some() && command == "run" {
             forwarded.extend(rest);
             break;
         }
-        if argument == "--check" {
+        if argument == "--backend"
+            || argument
+                .to_str()
+                .is_some_and(|value| value.starts_with("--backend="))
+        {
+            if !["emit", "build", "run"].contains(&command.as_str()) {
+                return Err("--backend is only valid for emit/build/run".into());
+            }
+            if backend.is_some() {
+                return Err("backend specified more than once".into());
+            }
+            let value = if argument == "--backend" {
+                rest.next().ok_or("--backend requires qbe or cranelift")?
+            } else {
+                argument
+                    .to_str()
+                    .and_then(|value| value.strip_prefix("--backend="))
+                    .ok_or("backend must be qbe or cranelift")?
+                    .into()
+            };
+            backend = Some(Backend::parse(&value)?);
+        } else if argument == "--check" {
             if command != "fmt" {
                 return Err("--check is only valid for fmt".into());
             }
@@ -103,6 +164,17 @@ fn options(
             return Err("only one source file is accepted".into());
         }
     }
+    let backend = backend.unwrap_or_default();
+    if backend == Backend::Cranelift {
+        if command == "emit" {
+            return Err("emit produces QBE text; Cranelift supports build/run".into());
+        }
+        #[cfg(not(feature = "cranelift"))]
+        return Err(
+            "Cranelift backend is unavailable in this compiler; rebuild with --features cranelift"
+                .into(),
+        );
+    }
     Ok(Some(Options {
         command,
         source: source.ok_or("missing source file")?,
@@ -110,6 +182,7 @@ fn options(
         arguments: forwarded,
         format_check,
         controls,
+        backend,
     }))
 }
 
@@ -129,8 +202,8 @@ fn run(options: Options) -> Result<u8, String> {
             .information("No type errors (Rust prototype subset)");
         return Ok(0);
     }
-    let il = qbe::emit(&typed).map_err(|error| loaded.render(error))?;
     if options.command == "emit" {
+        let il = qbe::emit(&typed).map_err(|error| loaded.render(error))?;
         if let Some(output) = options.output {
             emit_file(&options.source, &output, &il)?;
         } else {
@@ -138,11 +211,23 @@ fn run(options: Options) -> Result<u8, String> {
         }
         return Ok(0);
     }
+    let code = match options.backend {
+        Backend::Qbe => NativeCode::Qbe(qbe::emit(&typed).map_err(|error| loaded.render(error))?),
+        Backend::Cranelift => {
+            #[cfg(feature = "cranelift")]
+            {
+                let program = qbe::lower(&typed).map_err(|error| loaded.render(error))?;
+                NativeCode::Object(fern_prototype::cranelift::emit_object(&program)?)
+            }
+            #[cfg(not(feature = "cranelift"))]
+            return Err("Cranelift backend is unavailable in this compiler; rebuild with --features cranelift".into());
+        }
+    };
     if options.command == "build" {
-        return build(&options.source, options.output, &il, options.controls);
+        return build(&options.source, options.output, &code, options.controls);
     }
     let workspace = native::Workspace::new(&env::temp_dir()).map_err(|e| e.to_string())?;
-    let executable = native::compile(&il, &workspace)?;
+    let executable = code.compile(&workspace)?;
     let status = Command::new(executable)
         .args(options.arguments)
         .status()
@@ -219,14 +304,14 @@ fn emit_file(source: &Path, output: &Path, il: &str) -> Result<(), String> {
 fn build(
     source: &Path,
     output: Option<PathBuf>,
-    il: &str,
+    code: &NativeCode,
     controls: cli_controls::Controls,
 ) -> Result<u8, String> {
     let output = output.unwrap_or_else(|| PathBuf::from(source.file_stem().unwrap_or_default()));
     let destination = output_destination(source, &output)?;
     let parent = destination.parent().ok_or("invalid output directory")?;
     let workspace = native::Workspace::new(parent).map_err(|e| e.to_string())?;
-    let executable = native::compile(il, &workspace)?;
+    let executable = code.compile(&workspace)?;
     fs::rename(executable, destination).map_err(|e| format!("cannot install output: {e}"))?;
     controls.information(&format!("Created executable: {}", output.display()));
     Ok(0)

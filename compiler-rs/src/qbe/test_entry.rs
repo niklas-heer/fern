@@ -19,11 +19,37 @@ impl Emitter<'_> {
         }
         const MESSAGE: &str = "fern: System.exit cannot terminate a test";
         let bytes = MESSAGE.len() + 1;
-        self.data.push_str(&format!(
-            "data $fern_rs_test_exit_message = {{ b \"{MESSAGE}\", b 10 }}\n"
-        ));
-        self.output.push_str(&format!(
-            "function $fern_rs_test_exit(l %status) {{\n@start\n    call $write(w 2, l $fern_rs_test_exit_message, l {bytes})\n    call $fern_exit(l 1)\n    ret\n}}\n"
-        ));
+        self.data.data(
+            "$fern_rs_test_exit_message",
+            vec![
+                DataValue::Bytes(MESSAGE.as_bytes().to_vec()),
+                DataValue::Bytes(vec![10]),
+            ],
+        );
+        self.output.begin(
+            "$fern_rs_test_exit",
+            None,
+            vec![(Scalar::I64, "%status".to_owned())],
+            false,
+        );
+        self.output.statement(Statement::Label("@start".to_owned()));
+        self.output
+            .statement(Statement::Effect(NativeOperation::Call {
+                callee: native_operand("$write"),
+                args: vec![
+                    (Scalar::I32, native_operand("2")),
+                    (Scalar::I64, native_operand("$fern_rs_test_exit_message")),
+                    (Scalar::I64, native_operand(&(bytes).to_string())),
+                ],
+                variadic: None,
+            }));
+        self.output
+            .statement(Statement::Effect(NativeOperation::Call {
+                callee: native_operand("$fern_exit"),
+                args: vec![(Scalar::I64, native_operand("1"))],
+                variadic: None,
+            }));
+        self.output.statement(Statement::Return(None));
+        self.output.end();
     }
 }
