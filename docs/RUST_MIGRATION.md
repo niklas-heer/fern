@@ -1016,3 +1016,12 @@ completion remains available when no source label matches.
 
 Twenty new protocol regressions bring the Rust checkpoint to 1093 tests on macOS
 and 1094 on Linux arm64. The full Rust, C and documentation gates verify integration.
+
+## Numeric editor literals — 2026-09-06
+
+The editor now parses the compiler's binary/octal/hexadecimal literal spellings,
+integer separators and exponent-only Floats. Eight new compiler-checked sources
+assert exact numeric tokens, including patterns, signed minimum Int and ranges;
+three incremental edits change radix, exponent and range form. The pinned native
+and WASM gate passes 93 valid sources, all 33 unchanged malformed recovery cases
+and 33 edits. Generated artifacts remain reproducible; full syntax parity stays open.

@@ -70,6 +70,10 @@ def valid_cases(tool, directory, cases, wasm):
         tree = structured_tree(tool, path, wasm)
         for expected in case.get("paths", []):
             assert tree.find(expected) is not None, (case["name"], expected, result.stdout)
+        if "numeric_tokens" in case:
+            tokens = [[node.tag, node.text] for node in tree.iter()
+                      if node.tag in {"integer_literal", "float_literal"}]
+            assert tokens == case["numeric_tokens"], (case["name"], tokens)
         for node in case["nodes"]:
             assert "(" + node in result.stdout, (case["name"], node, result.stdout)
 
@@ -156,7 +160,7 @@ def main():
     args = options.parse_args()
     assert command([args.tree_sitter, "--version"]).stdout.strip() == "tree-sitter 0.26.12"
     cases = json.loads(CASES.read_text())
-    assert [len(cases[k]) for k in ["valid", "invalid", "edits"]] == [85, 33, 30]
+    assert [len(cases[k]) for k in ["valid", "invalid", "edits"]] == [93, 33, 33]
     assert all(len(case["source"].encode()) <= 1024 * 1024 for group in cases.values() for case in group)
     with tempfile.TemporaryDirectory(prefix="fern-editor-parity-") as temporary:
         directory = Path(temporary)
@@ -175,7 +179,7 @@ def main():
         valid_cases(args.tree_sitter, directory, cases["valid"], args.wasm)
         invalid_cases(args.tree_sitter, directory, cases["invalid"], args.wasm)
         edited_cases(args.tree_sitter, directory, cases["edits"], args.wasm)
-    print(f"Editor {'WASM' if args.wasm else 'native'}: 85 valid, 33 malformed (all recovered), 30 incremental cases")
+    print(f"Editor {'WASM' if args.wasm else 'native'}: 93 valid, 33 malformed (all recovered), 33 incremental cases")
 
 if __name__ == "__main__":
     main()

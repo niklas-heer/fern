@@ -8,7 +8,7 @@ Python generator detects drift without writing.
 
 Decision84 verifies aliases, newtypes, unions, typed narrowing, function clauses,
 control flow, collection expressions and source argument labels. The corpus contains
-85 accepted sources, including 29 executable native fixtures, 33 malformed cases and 30
+93 accepted sources, including 29 executable native fixtures, 33 malformed cases and 33
 incremental edits. Every accepted source checks with the Rust compiler. Native
 and WASM trees agree on node structure and UTF-8 byte ranges. Four Zed queries
 execute against the same checked source fixture.
@@ -85,3 +85,11 @@ The scanner uses Tree-sitter allocator lifecycle helpers, as explicitly allowed
 by Decision84/CLAUDE. It validates malformed incremental state without assertions,
 retains at most 128 indentation levels, caps columns at 1 MiB, and serializes all
 levels in at most 514 bytes. This is not a Fern runtime allocation exception.
+
+The numeric follow-on accepts lowercase/uppercase binary, octal and hexadecimal
+prefixes, valid integer separators, exponent-only Floats and signed exponents.
+Eight compiler-checked sources assert exact numeric token kinds/text; three edits
+cover radix, exponent and range changes. Existing malformed-source error ranges
+and following declarations remain unchanged. Numeric range/type checks and the
+complete invalid-token profile remain compiler diagnostics, not a claim of full
+editor syntax equivalence.

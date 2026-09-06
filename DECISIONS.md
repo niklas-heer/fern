@@ -123,6 +123,14 @@ cases, with scanner keyword boundaries and lookahead under the existing limits.
 Both WASM copies are 277,598 bytes, SHA256
 `27f01d3d422bad335369b4069fc86c7239b097180ba5f5dc710ed5aab3d12fef`.
 
+The numeric editor follow-on verifies 93 accepted sources, all 33 existing
+malformed recovery ranges and 33 incremental edits. Binary/octal/hexadecimal
+prefixes, valid integer separators and exponent-only Floats retain exact numeric
+token kinds/text. All published parser/WASM files are generated from the authored
+template; remaining syntax and numeric semantic validation still belong to the
+compiler. This extends Decision84 without changing Fern numeric semantics.
+
+
 ### 83 Directional finite unions and typed narrowing
 * **Date**: 2026-09-06
 * **Status**: Accepted for the bounded first checkpoint

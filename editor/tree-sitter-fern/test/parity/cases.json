@@ -783,6 +783,180 @@
         "block_comment"
       ],
       "complete": true
+    },
+    {
+      "name": "numeric_binary",
+      "source": "fn value() -> Int: 0b1010_0110 + 0B11\n",
+      "nodes": [
+        "integer_literal",
+        "binary_expression"
+      ],
+      "numeric_tokens": [
+        [
+          "integer_literal",
+          "0b1010_0110"
+        ],
+        [
+          "integer_literal",
+          "0B11"
+        ]
+      ]
+    },
+    {
+      "name": "numeric_octal",
+      "source": "fn value() -> Int: 0o7_55 + 0O12\n",
+      "nodes": [
+        "integer_literal",
+        "binary_expression"
+      ],
+      "numeric_tokens": [
+        [
+          "integer_literal",
+          "0o7_55"
+        ],
+        [
+          "integer_literal",
+          "0O12"
+        ]
+      ]
+    },
+    {
+      "name": "numeric_hexadecimal",
+      "source": "fn value() -> Int: 0xCA_FE + 0Xff\n",
+      "nodes": [
+        "integer_literal",
+        "binary_expression"
+      ],
+      "numeric_tokens": [
+        [
+          "integer_literal",
+          "0xCA_FE"
+        ],
+        [
+          "integer_literal",
+          "0Xff"
+        ]
+      ]
+    },
+    {
+      "name": "numeric_exponents",
+      "source": "fn value() -> Float: 1e3 + 2E+2 - 5e-1 + 1.25e+2\n",
+      "nodes": [
+        "float_literal",
+        "binary_expression"
+      ],
+      "numeric_tokens": [
+        [
+          "float_literal",
+          "1e3"
+        ],
+        [
+          "float_literal",
+          "2E+2"
+        ],
+        [
+          "float_literal",
+          "5e-1"
+        ],
+        [
+          "float_literal",
+          "1.25e+2"
+        ]
+      ]
+    },
+    {
+      "name": "numeric_separators",
+      "source": "fn value() -> Int: 1_234_567 + 0x1_f + 0b1_0\n",
+      "nodes": [
+        "integer_literal",
+        "binary_expression"
+      ],
+      "numeric_tokens": [
+        [
+          "integer_literal",
+          "1_234_567"
+        ],
+        [
+          "integer_literal",
+          "0x1_f"
+        ],
+        [
+          "integer_literal",
+          "0b1_0"
+        ]
+      ]
+    },
+    {
+      "name": "numeric_ranges",
+      "source": "fn value() -> Int:\n    let items = [0x0, 0o1, 0b10]\n    let pair = (items, 0xff)\n    for n in 0b0..=0x2:\n        println(n)\n    pair.1\n",
+      "nodes": [
+        "range_expression",
+        "member_access",
+        "integer_literal",
+        "for_expression"
+      ],
+      "numeric_tokens": [
+        [
+          "integer_literal",
+          "0x0"
+        ],
+        [
+          "integer_literal",
+          "0o1"
+        ],
+        [
+          "integer_literal",
+          "0b10"
+        ],
+        [
+          "integer_literal",
+          "0xff"
+        ],
+        [
+          "integer_literal",
+          "0b0"
+        ],
+        [
+          "integer_literal",
+          "0x2"
+        ],
+        [
+          "integer_literal",
+          "1"
+        ]
+      ]
+    },
+    {
+      "name": "numeric_patterns",
+      "source": "fn select(0x0: Int) -> Int: 1\nfn select(n: Int) -> Int: n\n",
+      "nodes": [
+        "integer_literal",
+        "parameter"
+      ],
+      "numeric_tokens": [
+        [
+          "integer_literal",
+          "0x0"
+        ],
+        [
+          "integer_literal",
+          "1"
+        ]
+      ]
+    },
+    {
+      "name": "numeric_minimum",
+      "source": "fn value() -> Int: -0x8000_0000_0000_0000\n",
+      "nodes": [
+        "integer_literal",
+        "unary_expression"
+      ],
+      "numeric_tokens": [
+        [
+          "integer_literal",
+          "0x8000_0000_0000_0000"
+        ]
+      ]
     }
   ],
   "invalid": [
@@ -1373,6 +1547,27 @@
       "old": "fn()->7",
       "new": "fn ()->8",
       "complete": true,
+      "rust_check": true
+    },
+    {
+      "name": "edit_numeric_radix",
+      "source": "fn value() -> Int: 0b10\n",
+      "old": "0b10",
+      "new": "0x20",
+      "rust_check": true
+    },
+    {
+      "name": "edit_numeric_exponent",
+      "source": "fn value() -> Float: 1e2\n",
+      "old": "1e2",
+      "new": "1.25E-3",
+      "rust_check": true
+    },
+    {
+      "name": "edit_numeric_range",
+      "source": "fn value() -> Int:\n    for n in 0..0x2:\n        println(n)\n    0\n",
+      "old": "0..0x2",
+      "new": "0b0..=0o3",
       "rust_check": true
     }
   ]
