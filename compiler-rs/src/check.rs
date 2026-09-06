@@ -16,6 +16,7 @@ mod labels;
 mod lift;
 mod maps;
 mod nominal;
+mod obligations;
 mod parameters;
 mod pipes;
 mod preflight;
@@ -153,6 +154,14 @@ fn pipeline<T>(
     source: &ast::Program,
     finish: impl FnOnce(&ast::Program, &nominal::Registry, &HashMap<String, Signature>) -> Checked<T>,
 ) -> Checked<(ir::Program, T)> {
+    pipeline_mode(source, finish, true)
+}
+/// The private test mode exposes typed IR for testing individual proof stages independently.
+fn pipeline_mode<T>(
+    source: &ast::Program,
+    finish: impl FnOnce(&ast::Program, &nominal::Registry, &HashMap<String, Signature>) -> Checked<T>,
+    prove_results: bool,
+) -> Checked<(ir::Program, T)> {
     preflight::check(source)?;
     let expanded = aliases::expand(source)?;
     let source = expanded.program.as_ref();
@@ -162,10 +171,16 @@ fn pipeline<T>(
     let graph = dependencies::analyze_with_work(source, expanded.work)?;
     let (program, mut signatures, work) = whole::resolve(source, &registry, &graph)?;
     labels::finalize(&program, &mut signatures)?;
-    schemes::validate(&program, &registry, &mut signatures, work)?;
+    let templates = schemes::validate(&program, &registry, &mut signatures, work)?;
     let ir = specialize::run(&program, &registry, &signatures)?;
     ir::reject_probes(&ir)?;
     crate::json_codec::validate_program(&ir)?;
+    if prove_results {
+        let roots = templates.iter().map(|f| f.id.0).collect();
+        let templates = schemes::proof_bodies(&program, &registry, &signatures, templates, work)?;
+        let work = obligations::templates(templates, &registry, &roots)?;
+        obligations::check(&ir, work)?;
+    }
     let facts = finish(&program, &registry, &signatures)?;
     Ok((ir, facts))
 }

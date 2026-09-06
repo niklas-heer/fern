@@ -26,10 +26,10 @@ pub(crate) fn analyze(source: &ast::Program, site: &HoleSite) -> Checked<editor:
     independent_component(source, &graph, &selected.name, site)?;
     let (prepared, mut signatures, work) = whole::resolve(source, &registry, &graph)?;
     labels::finalize(&prepared, &mut signatures)?;
-    schemes::validate(&prepared, &registry, &mut signatures, work)?;
+    let mut checked = schemes::validate(&prepared, &registry, &mut signatures, work)?;
     for function in &prepared.functions {
         if function.name != selected.name && signatures[&function.name].generics.is_empty() {
-            checker(&registry, &signatures, None).function(function)?;
+            checked.push(checker(&registry, &signatures, None).function(function)?);
         }
     }
     let function = prepared
@@ -38,7 +38,8 @@ pub(crate) fn analyze(source: &ast::Program, site: &HoleSite) -> Checked<editor:
         .find(|f| f.name == selected.name)
         .ok_or_else(|| failure(site, "missing source group"))?;
     let mut checker = checker(&registry, &signatures, Some(site.clone()));
-    checker.function(function)?;
+    checked.push(checker.function(function)?);
+    prove_obligations(checked, &registry, registry.codec_template_work.get())?;
     let receiver = checker
         .recovery
         .and_then(|state| state.receiver)
@@ -55,6 +56,17 @@ pub(crate) fn analyze(source: &ast::Program, site: &HoleSite) -> Checked<editor:
         ));
     }
     Ok(facts)
+}
+
+/// Keep the private hole explicit while lifting all checked cleanup and closure bodies for proof.
+fn prove_obligations(
+    mut functions: Vec<ir::Function>,
+    registry: &nominal::Registry,
+    work: usize,
+) -> Checked<()> {
+    lift::run(&mut functions)?;
+    let types = registry.layouts(&functions)?;
+    obligations::check_recovery(&ir::Program { functions, types }, work)
 }
 
 /// Require a complete concrete source signature for every clause of the selected group.

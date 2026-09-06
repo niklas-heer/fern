@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity under both C and Rust frontends on five pinned fixtures, literal paths and all compiler/library source
-- Rust migration: `just rust-check` passing (1196 Rust tests (1197 on Linux; normal parallel capture fixtures restored), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: `just rust-check` passing (1302 Rust tests (1303 on Linux; normal parallel capture fixtures restored), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
 
@@ -53,7 +53,8 @@ for approval between milestones. C remains the default until the parity gates pa
 - [x] Custom algebraic/record types, generic functions, nested patterns and guards (41 checker and 36 emitter tests; native recursive values and guarded matching).
 - [x] Modules/imports/visibility and a realistic application spanning multiple files (13 loader tests including visibility bypass regressions, native project execution).
 - [ ] Remaining executable language parity: remaining function/numeric/string operations, control flow and complete error handling.
-- [ ] Replace reference-only Result binding checks with semantic handling on reachable paths; collection metadata, partial searches and one-branch handling currently leave errors unhandled.
+- [x] Replace reference-only Result checks with bounded reachable-path handling, call/alias provenance, complete collection coverage and deferred cleanup (Decision95).
+- [ ] Complete recursive nominal stored-Result tree handlers and wider recursive summary equations without granting unproved handling credit.
 - [ ] Standard-library/native ABI compatibility and executable application coverage.
 - [ ] Diagnostics, formatting, REPL/LSP, documentation and developer-command parity.
 - [x] Verify the 1006-test expanded Rust checkpoint, C quality gate and documentation on Linux arm64 with Rust 1.75; expose POSIX test APIs under glibc strict C11 without hiding Darwin extensions.
@@ -122,7 +123,7 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Canonical finite unions, contextual member/subset conversion, typed narrowing and full-width native/REPL carriers, preserving generic equality and Result obligations (87 Rust regressions, 27 native programs, 23 atomic invalid cases and unit/main entry checks).
 - [ ] Union constructor refinements, variance, implicit joins and lifted capabilities.
 - [ ] Remaining function/type syntax and complete native-language audit.
-- [ ] Track semantic Result handling beyond local references (for example, inspecting a List(Result) length currently counts as handling its elements).
+- [x] Track Result duties beyond local references; metadata, partial searches and incomplete branch handling do not acknowledge entire values (Decision95).
 
 ### Rust Migration: Collections and Error Values
 

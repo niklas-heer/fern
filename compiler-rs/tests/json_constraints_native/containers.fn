@@ -10,5 +10,7 @@ fn main() -> Result(Unit,json.Error):
     println(forward(%{"value":Some(7)})?)
     let outputs=List.map([1,2],write)
     for output in outputs:
-        println(output?)
+        match output:
+            Ok(text) -> println(text)
+            Err(error) -> println(json.error_message(error))
     Ok(())

@@ -29,7 +29,7 @@ engineering milestones; they do not certify the entire language.
   JSON model with exact numbers and immutable builders. The legacy C source API
   still copies strings and can accept invalid JSON. Explicitly derived record codecs
   now include regular recursive schemas with finite bases and transparent
-  newtypes. Generic constraints, sum/union wire formats, general traits and the verified Rust default
+  newtypes and conditional generic codec requirements. Sum/union wire formats, general traits and the verified Rust default
   switch remain open; see [typed codecs](JSON_TYPED_CODECS.md) and
   [the Rust JSON contract](JSON_RUST_API.md).
 - **Server and database APIs:** HTTP serving, typed SQL queries and the broader
@@ -39,10 +39,11 @@ engineering milestones; they do not certify the entire language.
   covered, including Unicode negative-path CLI classification. A reliable native
   default launcher remains open. Python remains the quality-workflow entry point;
   see [the checker contract](BOOTSTRAP_CHECKER.md).
-- **Result handling:** unused bindings and discarded Result expressions are
-  rejected, but merely reading a collection's length or handling a value on only
-  one branch can currently satisfy the binding-use check. Early-exit searches can
-  leave later errors unhandled. Semantic handling on reachable paths remains open.
+- **Result handling:** the Rust checker proves reachable-path handling through
+  aliases, collections, generic calls and deferred cleanup. Metadata-only uses,
+  partial searches and uncovered early exits reject. Recursive nominal trees with
+  stored Results and general mutual structural proofs remain incomplete; see
+  [the handling contract](RESULT_HANDLING.md).
 - **Editor completeness:** the verified grammar corpus is bounded. Source-label completion supports closed and EOF-open calls; remaining syntax
   and broader malformed-source recovery remain open. Local Zed packaging does not publish its pinned grammar revision.
 - **Memory and targets:** Boehm GC remains the native memory backend. Ownership

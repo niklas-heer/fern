@@ -299,21 +299,44 @@ pub(super) fn validate(
     registry: &nominal::Registry,
     signatures: &mut HashMap<String, Signature>,
     mut work: usize,
-) -> Checked<()> {
+) -> Checked<Vec<ir::Function>> {
     let mut schemes = Vec::new();
+    let mut bodies = Vec::new();
     for function in &program.functions {
         if signatures[&function.name].generics.is_empty() {
             continue;
         }
-        let (scheme, requirements, used) = check_scheme(function, registry, signatures, work)?;
+        let (scheme, body, requirements, used) =
+            check_scheme(function, registry, signatures, work)?;
         work = used;
         signatures
             .get_mut(&function.name)
             .expect("known scheme")
             .requirements = requirements;
         schemes.push(scheme);
+        bodies.push(body);
     }
-    propagate(&schemes, signatures, registry, work)
+    propagate(&schemes, signatures, registry, work)?;
+    Ok(bodies)
+}
+
+/// Add finalized nongeneric source bodies only for obligation proof, preserving editor hole routing.
+pub(super) fn proof_bodies(
+    program: &ast::Program,
+    registry: &nominal::Registry,
+    signatures: &HashMap<String, Signature>,
+    mut bodies: Vec<ir::Function>,
+    mut work: usize,
+) -> Checked<Vec<ir::Function>> {
+    for function in &program.functions {
+        if !signatures[&function.name].generics.is_empty() {
+            continue;
+        }
+        let (_, body, _, used) = check_scheme(function, registry, signatures, work)?;
+        work = used;
+        bodies.push(body);
+    }
+    Ok(bodies)
 }
 
 /// Each body owns its rigid names; every callee's quantified variables are freshly instantiated.
@@ -322,7 +345,7 @@ fn check_scheme(
     registry: &nominal::Registry,
     signatures: &HashMap<String, Signature>,
     work: usize,
-) -> Checked<(Scheme, Vec<Requirement>, usize)> {
+) -> Checked<(Scheme, ir::Function, Vec<Requirement>, usize)> {
     let signature = &signatures[&function.name];
     let inference = Inference {
         newtypes: registry.newtype_definitions(),
@@ -351,13 +374,11 @@ fn check_scheme(
     }
     let checked = checker.function(function)?;
     let mut proof_work = registry.codec_template_work.get();
-    let proof = ir::validate_codec_templates(
-        &ir::Program {
-            functions: vec![checked],
-            types: Vec::new(),
-        },
-        &mut proof_work,
-    );
+    let mut program = ir::Program {
+        functions: vec![checked],
+        types: Vec::new(),
+    };
+    let proof = ir::validate_codec_templates(&program, &mut proof_work);
     registry.codec_template_work.set(proof_work);
     proof?;
     let calls = checker.inference.scheme_calls.into_inner();
@@ -366,6 +387,10 @@ fn check_scheme(
             name: function.name.clone(),
             calls,
         },
+        program
+            .functions
+            .pop()
+            .ok_or_else(|| Diagnostic::new(function.span, "missing checked scheme body"))?,
         checker.inference.requirements.into_inner(),
         checker.inference.probe_work.get(),
     ))

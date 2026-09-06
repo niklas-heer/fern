@@ -1209,3 +1209,33 @@ Integrated macOS and Linux gates pass 1,196 and 1,197 Rust tests respectively,
 with normal parallel test execution, thirteen typed native programs and twenty-two
 atomic invalid cases, the shared REPL corpus, and native runtime debug/release/
 sanitizer checks. Prior dynamic JSON and native compiler suites remain green.
+
+
+## Reachable Result handling (Decision95) — 2026-09-06
+
+The Rust checker now proves handling and complete return provenance before
+publishing typed IR, source facts or REPL state. Borrowing helpers remain valid;
+their callers retain outstanding duties. Boolean path predicates preserve alias
+correlations, nested Result layers and early-exit/defer behavior. Full collection
+families differ from partial searches and projections, and fold transitions must
+retain or handle prior accumulator duties. Source/generic/callable summaries carry
+actual effects rather than relying on function type equality.
+
+The proof shares its bounded work through generic codec-template validation and
+concrete publication. Real codec inputs borrow; their fresh Result outputs remain
+accountable. Phantom metadata is separate from actual stored fields. Private
+recovery operations cannot erase surrounding effects or publish executable holes.
+
+The pre-JSON corpus retained all 234 accepted programs unchanged. Two JSON callback
+fixtures are explicitly migrated from per-item `?` to exhaustive per-item handling:
+the old pattern could abandon already-produced later Results on Err. Successful
+stdout is unchanged, and a paired regression preserves the original rejection.
+The corrected current corpus retains all 247 accepted programs. Recursive nominal
+stored-Result trees and broader structural fixed points remain separate completion
+work; see [the exact contract](RESULT_HANDLING.md).
+
+
+Integrated macOS and Linux gates pass 1,302 and 1,303 Rust tests respectively,
+including native compiler programs, runtime sanitizer profiles, fuzz smoke tests,
+full C checks, source/native checker diagnostic and workflow parity, and
+documentation checks.
