@@ -1,0 +1,9 @@
+type User derive(Json):
+    age: Int
+    name: Option(String)
+fn main() -> Result(Unit, json.Error):
+    let user = json.decode("\{\"age\":9007199254740993\}", User)?
+    println(user.age)
+    println(Option.is_none(user.name))
+    println(json.encode(user)?)
+    Ok(())

@@ -202,6 +202,14 @@ impl Renderer<'_> {
         if !declaration.parameters.is_empty() {
             header.push_str(&format!("({})", declaration.parameters.join(", ")));
         }
+        if !declaration.derives.is_empty() {
+            let names: Vec<_> = declaration
+                .derives
+                .iter()
+                .map(|d| d.name.as_str())
+                .collect();
+            header.push_str(&format!(" derive({})", names.join(", ")));
+        }
         header.push(':');
         let mut lines = vec![line(0, header, declaration.span.start)];
         for variant in &declaration.variants {
@@ -370,6 +378,7 @@ impl Renderer<'_> {
     /// Render expressions with explicit grouping where it does not interfere with layout.
     fn expression(&self, expression: &Expr, indent: usize) -> Result<Vec<Line>> {
         let text = match &expression.kind {
+            ExprKind::TypeTarget(ty) => type_text(ty)?,
             ExprKind::Break => "break".into(),
             ExprKind::Continue => "continue".into(),
             ExprKind::Range {
@@ -1439,6 +1448,9 @@ fn structural(mut program: ast::Program) -> String {
     }
     for declaration in &mut program.types {
         declaration.span = Span::default();
+        for derive in &mut declaration.derives {
+            derive.span = Span::default();
+        }
         for variant in &mut declaration.variants {
             variant.span = Span::default();
             for field in &mut variant.fields {
@@ -1456,6 +1468,7 @@ fn structural(mut program: ast::Program) -> String {
 fn clear_expression(expression: &mut Expr) {
     expression.span = Span::default();
     match &mut expression.kind {
+        ExprKind::TypeTarget(_) => {}
         ExprKind::Unary { value, .. }
         | ExprKind::Try(value)
         | ExprKind::Return(value)
@@ -1496,11 +1509,7 @@ fn clear_expression(expression: &mut Expr) {
             args.iter_mut().for_each(clear_argument);
         }
         ExprKind::Interpolate(parts) | ExprKind::MultilineString(parts) => {
-            for part in parts {
-                if let ast::StringPart::Value(value) = part {
-                    clear_expression(value);
-                }
-            }
+            clear_string_parts(parts)
         }
         ExprKind::Call { args, .. } | ExprKind::GlobalCall { args, .. } => {
             args.iter_mut().for_each(clear_argument);
@@ -1521,6 +1530,15 @@ fn clear_expression(expression: &mut Expr) {
         | ExprKind::Name(_)
         | ExprKind::GlobalName { .. }
         | ExprKind::Unit => {}
+    }
+}
+
+/// Literal segments carry no source spans; only their embedded values need clearing.
+fn clear_string_parts(parts: &mut [ast::StringPart]) {
+    for part in parts {
+        if let ast::StringPart::Value(value) = part {
+            clear_expression(value);
+        }
     }
 }
 

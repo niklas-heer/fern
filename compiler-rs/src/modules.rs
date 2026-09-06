@@ -739,6 +739,9 @@ fn qualify_declarations(
     for decl in declarations {
         decl.name = own.types[&decl.name].clone();
         shift(&mut decl.span, offset);
+        for derive in &mut decl.derives {
+            shift(&mut derive.span, offset);
+        }
         for variant in &mut decl.variants {
             variant.name = own.values[&variant.name].clone();
             shift(&mut variant.span, offset);
@@ -876,7 +879,8 @@ fn register_constructor(
 }
 
 fn reserved_declaration(name: &str) -> bool {
-    crate::runtime::native_type(name).is_some()
+    crate::codec_syntax::is_codec(name)
+        || crate::runtime::native_type(name).is_some()
         || crate::runtime::lookup(name).is_some()
         || crate::runtime::reserved_namespace(name)
         || matches!(
@@ -1061,10 +1065,34 @@ fn resolve_global(name: &mut String, names: &NameMap, allow_builtin: bool) -> Re
 /// Builtin-qualified calls need no source import; arbitrary module prefixes do.
 fn builtin_path(name: &str) -> bool {
     crate::check::builtin(name).is_some()
+        || crate::codec_syntax::is_codec(name)
         || crate::runtime::lookup(name).is_some()
         || crate::runtime::omissions()
             .iter()
             .any(|entry| entry.names.contains(&name))
+}
+
+/// Resolve a codec's callee first, so its static target never enters the value namespace.
+fn prepare_codec(
+    expr: &mut ast::Expr,
+    names: &Names,
+    scopes: &[BTreeSet<String>],
+) -> Result<(), Error> {
+    if let ast::ExprKind::TypeTarget(ty) = &mut expr.kind {
+        return qualify_type(ty, names);
+    }
+    let canonical = match &expr.kind {
+        ast::ExprKind::Call { name, .. } | ast::ExprKind::Pipe { name, .. }
+            if !local(scopes, name) =>
+        {
+            names.values.get(name).unwrap_or(name).clone()
+        }
+        ast::ExprKind::GlobalCall { resolved, .. } | ast::ExprKind::GlobalPipe { resolved, .. } => {
+            resolved.clone()
+        }
+        _ => return Ok(()),
+    };
+    crate::codec_syntax::prepare(expr, &canonical).map_err(|e| at_span(failure(e.message), e.span))
 }
 
 /// Rewrite expression identities and relocate byte spans; block-local bindings stay local.
@@ -1076,6 +1104,7 @@ fn rewrite(
     offset: usize,
 ) -> Result<(), Error> {
     let original = expr.span;
+    prepare_codec(expr, names, scopes).map_err(|e| at_span(e, original))?;
     shift(&mut expr.span, offset);
     mark_global(&mut expr.kind, names, prefixes, scopes).map_err(|e| at_span(e, original))?;
     match &mut expr.kind {

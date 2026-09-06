@@ -161,6 +161,11 @@ impl Machine {
     fn node(&mut self, expr: &ir::Expr) -> Eval<Value> {
         use ir::ExprKind::*;
         match &expr.kind {
+            JsonCodec {
+                direction,
+                input,
+                plan,
+            } => self.json_codec(*direction, input, plan),
             EditorHole { .. } => Err(fault("editor hole cannot enter executable IR")),
             Probe { .. } => Err(fault("inference probe cannot enter executable IR")),
             UnionInject { value } => {
@@ -207,11 +212,7 @@ impl Machine {
             }
             Field { value, index } => self.field(value, *index),
             Construct { constructor, value } => self.construct(*constructor, value.as_deref()),
-            Try(value) => match self.expression(value)? {
-                Value::Sum(0, fields) if fields.len() == 1 => Ok(fields[0].clone()),
-                value @ Value::Sum(1, _) => Err(Failure::Return(value)),
-                _ => Err(fault("invalid Result")),
-            },
+            Try(value) => self.try_value(value),
             Unary { op, value } => unary(*op, self.expression(value)?),
             Binary { op, left, right } => self.binary(*op, left, right),
             Call { target, args } => {
@@ -225,6 +226,14 @@ impl Machine {
             } => self.conditional(condition, then_branch, else_branch.as_deref()),
             Match { value, arms } => self.match_expression(value, arms),
             Block(statements) => self.lexical_block(statements),
+        }
+    }
+    /// Preserve early Result propagation without changing the surrounding function's cleanup path.
+    fn try_value(&mut self, value: &ir::Expr) -> Eval<Value> {
+        match self.expression(value)? {
+            Value::Sum(0, fields) if fields.len() == 1 => Ok(fields[0].clone()),
+            value @ Value::Sum(1, _) => Err(Failure::Return(value)),
+            _ => Err(fault("invalid Result")),
         }
     }
     /// Read the current lexical slot without exposing absent evaluator state.
@@ -605,6 +614,13 @@ fn graph_budget<'a>(values: impl Iterator<Item = &'a Value>) -> Result<(), Strin
                 }
             }
             Value::Json(value) => json.add(value, &mut bytes, &mut count)?,
+            Value::JsonError(error) => {
+                if let Some(path) = &error.path {
+                    if seen.insert(Rc::as_ptr(path) as usize) {
+                        bytes = bytes.saturating_add(path.capacity() + 40);
+                    }
+                }
+            }
             Value::String(s) => {
                 if seen.insert(Rc::as_ptr(s) as usize) {
                     bytes = bytes.saturating_add(s.len());

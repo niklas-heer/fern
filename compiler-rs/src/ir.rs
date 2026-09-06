@@ -86,6 +86,12 @@ impl EditorHoleToken {
 
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    /// Concrete codec with exactly one executable input; static targets never enter IR.
+    JsonCodec {
+        direction: crate::json_codec::Direction,
+        input: Box<Expr>,
+        plan: std::rc::Rc<crate::json_codec::Plan>,
+    },
     UnionInject {
         value: Box<Expr>,
     },
@@ -331,7 +337,8 @@ pub(crate) fn children(expr: &Expr) -> Vec<&Expr> {
         ExprKind::Invoke { callee, args } => std::iter::once(callee.as_ref())
             .chain(args.iter())
             .collect(),
-        ExprKind::UnionInject { value }
+        ExprKind::JsonCodec { input: value, .. }
+        | ExprKind::UnionInject { value }
         | ExprKind::UnionWiden { value }
         | ExprKind::Wrap(value)
         | ExprKind::Unwrap(value)

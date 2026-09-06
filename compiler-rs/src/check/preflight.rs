@@ -249,7 +249,7 @@ impl Budget {
             } => {
                 self.charge(name.len(), expr.span)?;
                 self.charge(resolved.len(), expr.span)?;
-                pending.extend(args.iter().map(|e| (&e.value, depth + 1)));
+                self.reference_arguments(expr, args, pending, depth)?;
             }
             ast::ExprKind::GlobalPipe {
                 name,
@@ -261,22 +261,47 @@ impl Budget {
                 self.charge(name.len(), expr.span)?;
                 self.charge(resolved.len(), expr.span)?;
                 pending.push((value, depth + 1));
-                pending.extend(args.iter().map(|e| (&e.value, depth + 1)));
+                self.reference_arguments(expr, args, pending, depth)?;
             }
             ast::ExprKind::Pipe {
                 value, name, args, ..
             } => {
                 self.charge(name.len(), expr.span)?;
                 pending.push((value, depth + 1));
-                pending.extend(args.iter().map(|e| (&e.value, depth + 1)));
+                self.reference_arguments(expr, args, pending, depth)?;
             }
             ast::ExprKind::Call { name, args } => {
                 self.charge(name.len(), expr.span)?;
-                pending.extend(args.iter().map(|e| (&e.value, depth + 1)));
+                self.reference_arguments(expr, args, pending, depth)?;
             }
             _ => return Ok(false),
         }
         Ok(true)
+    }
+
+    /// A static type leaf is permitted only as the canonical decoder's complete target argument.
+    fn reference_arguments<'a>(
+        &mut self,
+        expr: &'a ast::Expr,
+        args: &'a [ast::Argument],
+        pending: &mut Vec<(&'a ast::Expr, usize)>,
+        depth: usize,
+    ) -> Checked<()> {
+        let slot = crate::codec_syntax::static_slot(expr);
+        for (index, arg) in args.iter().enumerate() {
+            if let ast::ExprKind::TypeTarget(ty) = &arg.value.kind {
+                if slot != Some(index) {
+                    return Err(Diagnostic::new(
+                        arg.span,
+                        "compile-time type target cannot be used as a value",
+                    ));
+                }
+                self.ty(ty, arg.span)?;
+            } else {
+                pending.push((&arg.value, depth + 1));
+            }
+        }
+        Ok(())
     }
 
     /// Charge expression nodes only after checking their current traversal depth.
@@ -357,6 +382,12 @@ impl Budget {
                 continue;
             }
             match &expr.kind {
+                ast::ExprKind::TypeTarget(_) => {
+                    return Err(Diagnostic::new(
+                        expr.span,
+                        "compile-time type target cannot be used as a value",
+                    ))
+                }
                 ast::ExprKind::ConditionMatch(arms) => queue_conditions(arms, &mut pending, depth),
                 ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {
                     self.interpolation(parts, &mut pending, depth, expr.span)?
@@ -449,6 +480,7 @@ pub(super) fn check(program: &ast::Program) -> Checked<()> {
     newtypes(program, &mut budget)?;
     for decl in &program.types {
         budget.charge(decl.name.len(), decl.span)?;
+        derivations(decl, &mut budget)?;
         if decl.parameters.len() > MAX_PARAMETERS || decl.variants.len() > MAX_PARAMETERS {
             return Err(Diagnostic::new(
                 decl.span,
@@ -582,4 +614,18 @@ impl Budget {
         }
         Ok(())
     }
+}
+
+/// Bound source trait metadata before any nominal registry clones it.
+fn derivations(decl: &ast::TypeDecl, budget: &mut Budget) -> Checked<()> {
+    if decl.derives.len() > 32 {
+        return Err(Diagnostic::new(
+            decl.span,
+            "derive trait count limit exceeded (32)",
+        ));
+    }
+    for derive in &decl.derives {
+        budget.charge(derive.name.len(), derive.span)?;
+    }
+    Ok(())
 }

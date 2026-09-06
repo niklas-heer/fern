@@ -17,6 +17,8 @@ mod fault;
 mod higher_order;
 #[path = "qbe/iteration.rs"]
 mod iteration;
+#[path = "qbe/json_codecs.rs"]
+mod json_codecs;
 #[path = "qbe/maps.rs"]
 mod maps;
 #[path = "qbe/newtypes.rs"]
@@ -57,6 +59,7 @@ pub fn emit_test(program: &ir::Program) -> Result<String, Diagnostic> {
 /// Share executable validation while keeping test-only process behavior out of ordinary programs.
 fn emit_mode(program: &ir::Program, test_mode: bool) -> Result<String, Diagnostic> {
     ir::reject_probes(program)?;
+    crate::json_codec::validate_program(program)?;
     emit_inner(program, test_mode).map_err(|exit| match exit {
         Exit::Diagnostic(error) => error,
         Exit::Terminated => Diagnostic::new(
@@ -120,6 +123,8 @@ fn emit_inner(program: &ir::Program, test_mode: bool) -> Lowering<String> {
     let main = main.ok_or_else(|| invalid(Span::default(), "missing main function"))?;
     let mut emitter = Emitter {
         test_mode,
+        codec_tables: HashMap::new(),
+        codec_data_bytes: 0,
         functions,
         layouts,
         output: String::new(),
@@ -186,6 +191,8 @@ fn expect_type(actual: Type, expected: Type, span: Span) -> Lowering<()> {
 }
 
 struct Emitter<'a> {
+    codec_tables: HashMap<usize, String>,
+    codec_data_bytes: usize,
     test_mode: bool,
     functions: BTreeMap<usize, &'a Function>,
     layouts: HashMap<Type, &'a ir::TypeLayout>,
@@ -360,6 +367,7 @@ impl Emitter<'_> {
         self.validate_expr(expr, depth)?;
         self.strict_termination(expr, locals, depth + 1)?;
         let (actual, value) = match &expr.kind {
+            ExprKind::JsonCodec { .. } => self.json_codec(expr, locals, depth + 1)?,
             ExprKind::With { .. }
             | ExprKind::For { .. }
             | ExprKind::Range { .. }

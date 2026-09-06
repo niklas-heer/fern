@@ -5,6 +5,7 @@ use super::*;
 pub(super) fn program_size(program: &ir::Program) -> Result<(usize, usize), String> {
     let mut budget = CodeBudget {
         pending: Vec::new(),
+        codec_plans: std::collections::HashSet::new(),
         bytes: 0,
         count: 0,
     };
@@ -45,11 +46,42 @@ enum Part<'a> {
     Pattern(&'a ir::Pattern),
 }
 struct CodeBudget<'a> {
+    codec_plans: std::collections::HashSet<usize>,
     pending: Vec<Part<'a>>,
     bytes: usize,
     count: usize,
 }
 impl<'a> CodeBudget<'a> {
+    /// Charge concrete codec tables retained by executable closures before queueing their types.
+    fn codec(&mut self, plan: &'a Rc<crate::json_codec::Plan>) -> Result<(), String> {
+        if plan.entries.len() > 4096 {
+            return Err("interactive value storage limit exceeded".into());
+        }
+        if !self.codec_plans.insert(Rc::as_ptr(plan) as usize) {
+            return Ok(());
+        }
+        self.count += plan.entries.len();
+        self.bytes += std::mem::size_of_val(plan.entries.as_slice());
+        for entry in &plan.entries {
+            self.pending.push(Part::Type(&entry.ty));
+            match &entry.kind {
+                crate::json_codec::Kind::Tuple(ids) => {
+                    self.bytes += std::mem::size_of_val(ids.as_slice())
+                }
+                crate::json_codec::Kind::Record(fields) => {
+                    self.bytes += std::mem::size_of_val(fields.as_slice());
+                    for field in fields {
+                        self.bytes += field.name.len();
+                    }
+                }
+                _ => {}
+            }
+        }
+        if self.bytes > 16 * 1024 * 1024 || self.count + self.pending.len() > 200_000 {
+            return Err("interactive value storage limit exceeded".into());
+        }
+        Ok(())
+    }
     /// Include expression-owned strings, child storage and all retained type information.
     fn expression(&mut self, expr: &'a ir::Expr) -> Result<(), String> {
         use ir::ExprKind::*;
@@ -58,6 +90,10 @@ impl<'a> CodeBudget<'a> {
         match &expr.kind {
             EditorHole { .. } => return Err("editor hole cannot enter executable IR".into()),
             Probe { .. } => return Err("inference probe cannot enter executable IR".into()),
+            JsonCodec { input, plan, .. } => {
+                self.pending.push(Part::Expr(input));
+                self.codec(plan)?;
+            }
             String(text) => self.bytes += text.len(),
             Range { start, end, .. } => self.pending.extend([Part::Expr(start), Part::Expr(end)]),
             For {
@@ -232,6 +268,7 @@ impl<'a> CodeBudget<'a> {
 pub(super) fn type_size(ty: &Type) -> Result<(usize, usize), String> {
     let mut budget = CodeBudget {
         pending: vec![Part::Type(ty)],
+        codec_plans: std::collections::HashSet::new(),
         bytes: 0,
         count: 0,
     };
@@ -251,6 +288,31 @@ pub(super) fn type_size(ty: &Type) -> Result<(usize, usize), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retained_codec_tables_charge_shared_identity_once() {
+        let plan = Rc::new(crate::json_codec::Plan {
+            root: 0,
+            entries: vec![crate::json_codec::Entry {
+                ty: Type::Int,
+                kind: crate::json_codec::Kind::Int,
+            }],
+        });
+        let mut budget = CodeBudget {
+            codec_plans: std::collections::HashSet::new(),
+            pending: Vec::new(),
+            bytes: 0,
+            count: 0,
+        };
+        budget.codec(&plan).unwrap();
+        let first = (budget.bytes, budget.count, budget.pending.len());
+        budget.codec(&plan).unwrap();
+        assert_eq!(first, (budget.bytes, budget.count, budget.pending.len()));
+        let distinct = Rc::new((*plan).clone());
+        budget.codec(&distinct).unwrap();
+        assert_eq!(first.0 * 2, budget.bytes);
+        assert_eq!(first.1 * 2, budget.count);
+    }
+
     fn closure(program: Rc<ir::Program>) -> Value {
         Value::Closure(Rc::new(ClosureValue {
             program,

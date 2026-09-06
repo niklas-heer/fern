@@ -201,3 +201,39 @@ fn inactive_union_conversions_cannot_hide_private_nodes() {
         }
     }
 }
+
+#[test]
+fn unused_codec_inputs_cannot_hide_private_nodes() {
+    for editor in [false, true] {
+        let source = "fn unused()->Result(String,json.Error):json.encode(1)\nfn main():()\n";
+        let mut program = crate::check::check(&crate::parse::parse(source).unwrap()).unwrap();
+        let ExprKind::JsonCodec { input, .. } = &mut program.functions[0].body.kind else {
+            panic!("codec")
+        };
+        input.kind = if editor {
+            ExprKind::EditorHole {
+                token: EditorHoleToken::new(),
+                receiver: Box::new((**input).clone()),
+            }
+        } else {
+            ExprKind::Probe {
+                token: ProbeToken::new(0),
+                children: vec![(**input).clone()],
+                bindings: vec![],
+            }
+        };
+        let message = if editor {
+            "editor hole"
+        } else {
+            "inference probe"
+        };
+        assert!(reject_probes(&program)
+            .unwrap_err()
+            .message
+            .contains(message));
+        assert!(crate::qbe::emit(&program)
+            .unwrap_err()
+            .message
+            .contains(message));
+    }
+}

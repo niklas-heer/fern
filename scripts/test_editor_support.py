@@ -87,6 +87,12 @@ def queries(tool, directory):
             assert "text: `Choice`" in result.stdout and "text: `size`" in result.stdout
 
 
+    derived = GRAMMAR / "test/parity/derive_queries.fn"
+    result = command([tool, "query", ZED / "highlights.scm", derived], GRAMMAR)
+    for capture, text in [("keyword", "derive"), ("type", "Json")]:
+        assert re.search(rf"- {capture},[^\n]*text: `{text}`", result.stdout), (capture, text)
+
+
 def web_runtime(path):
     """Verify the portable web runtime bytes against the reviewed official release archive."""
     lock = json.loads((ROOT / "scripts/editor/toolchain.json").read_text())

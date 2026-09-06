@@ -38,6 +38,16 @@ function checkQueries(language, Query, parser) {
     query.delete();
   }
   tree.delete();
+  const derived = parser.parse(fs.readFileSync(path.join(root,
+    'editor/tree-sitter-fern/test/parity/derive_queries.fn'), 'utf8'));
+  assert(!derived.rootNode.hasError);
+  const query = new Query(language, fs.readFileSync(path.join(directory, 'highlights.scm'), 'utf8'));
+  const captures = query.captures(derived.rootNode);
+  for (const [name, text] of [['keyword', 'derive'], ['type', 'Json']]) {
+    assert(captures.some(c => c.name === name && c.node.text === text), name + ': ' + text);
+  }
+  query.delete();
+  derived.delete();
 }
 
 /** Require type precedence and typed-pattern structure independently of display serialization. */
@@ -88,6 +98,10 @@ async function main() {
     assert(!tree.rootNode.hasError, test.name + ': ' + tree.rootNode.toString());
     for (const node of test.nodes) assert(tree.rootNode.toString().includes('(' + node), test.name + ': ' + node);
     checkTypePaths(tree, test);
+    if (test.derivations) {
+      assert.deepEqual(tree.rootNode.descendantsOfType('derive_clause')
+        .map(n => n.childForFieldName('trait')?.text), test.derivations, test.name);
+    }
     tree.delete();
   }
   for (const test of cases.invalid) {

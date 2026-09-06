@@ -1394,9 +1394,16 @@ const ENTRIES: &[Entry] = &[
         ),
         Operation::DecimalPredicate,
     ),
+    entry(
+        &["json.error_path", "Json.error_path"],
+        &[Json(JsonShape::Error)],
+        String,
+        "fern_json_value_error_path",
+    ),
 ];
 
 const OMISSIONS: &[Omission] = &[
+    Omission { names: &["fern_json_codec_encode", "fern_json_codec_decode"], reason: "Typed compiler-owned JSON codec operations require a validated concrete descriptor, not a source runtime signature." },
     Omission { names: &["fern_json_parse", "fern_json_stringify"], reason: "Legacy string-copy ABI retained for C source; Rust JSON uses opaque typed values." },
     Omission { names: &["fern_json_value_limit_error"], reason: "Internal checked JSON adapter preflight; not a source API." },
     Omission {

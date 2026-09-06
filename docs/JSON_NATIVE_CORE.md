@@ -33,6 +33,7 @@ All functions below use the `fern_json_value_` prefix:
 | `error_code` | `const Error*` | `int64_t` |
 | `error_offset` | `const Error*` | `int64_t` |
 | `error_message` | `const Error*` | static `const char*` |
+| `error_path` | `const Error*` | immutable JSON Pointer `const char*` |
 
 Every Result is the existing full-width heap Result returned as `int64_t`.
 Success/failure tags are read with `fern_result_is_ok`; the full-width payload is
@@ -100,6 +101,10 @@ do not incorporate untrusted input. The first failure is preserved.
 | 9 | NonIntegralNumber | `JSON number is not an integer` |
 | 10 | UnrepresentableString | `JSON string contains NUL` |
 | 11 | NonFiniteNumber | `JSON number is not finite` |
+| 12 | UnknownField | `unknown JSON object field` |
+
+Code12 belongs to strict [typed record decoding](JSON_TYPED_CODECS.md); existing
+dynamic operations keep their codes and empty error paths.
 
 Code11 is used by the Float builder for NaN/infinity. The parser rejects those
 spellings as syntax; numeric conversion overflow uses code8. Host failure to create the

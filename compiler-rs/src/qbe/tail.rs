@@ -204,6 +204,7 @@ fn children(expr: &Expr) -> Vec<&Expr> {
         | ExprKind::Try(value)
         | ExprKind::Field { value, .. }
         | ExprKind::Wrap(value)
+        | ExprKind::JsonCodec { input: value, .. }
         | ExprKind::UnionInject { value }
         | ExprKind::UnionWiden { value }
         | ExprKind::Unwrap(value) => vec![value],

@@ -229,6 +229,9 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
+        if crate::codec_syntax::is_codec(name) {
+            return self.json_codec(name, args, expected, span, depth);
+        }
         if !self.signatures.contains_key(name) {
             labels::positional(args)?;
         }

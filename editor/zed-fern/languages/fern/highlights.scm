@@ -1,5 +1,5 @@
 ; AUTO-GENERATED from scripts/editor/highlights.scm.in. Edit the authored template.
-["fn" "type" "newtype" "pub" "import" "as" "let" "if" "else" "match" "return" "for" "in" "with" "do" "defer"] @keyword
+["fn" "type" "derive" "newtype" "pub" "import" "as" "let" "if" "else" "match" "return" "for" "in" "with" "do" "defer"] @keyword
 (break_expression) @keyword
 (continue_expression) @keyword
 ["and" "or" "not"] @keyword.operator

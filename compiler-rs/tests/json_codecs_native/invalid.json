@@ -1,0 +1,16 @@
+{
+  "no_derive": "type User:\n    age:Int\nfn main(): match json.decode(\"1\",User):\n    Ok(_) -> ()\n    Err(_) -> ()\n",
+  "nullable_unit": "fn main(): match json.decode(\"null\",Option(Unit)):\n    Ok(_) -> ()\n    Err(_) -> ()\n",
+  "nullable_dynamic": "fn main(): match json.decode(\"null\",Option(json.Value)):\n    Ok(_) -> ()\n    Err(_) -> ()\n",
+  "nested_option": "fn main(): match json.decode(\"null\",Option(Option(Int))):\n    Ok(_) -> ()\n    Err(_) -> ()\n",
+  "ignored_decode": "fn main(): json.decode(\"1\",Int)\n",
+  "ignored_encode": "fn main(): json.encode(1)\n",
+  "result_record": "type User derive(Json):\n    duty:Result(Int,String)\nfn main():()\n",
+  "recursive": "type User derive(Json):\n    next:List(User)\nfn main():()\n",
+  "function_field": "type User derive(Json):\n    callback:()->Int\nfn main():()\n",
+  "map_key": "fn main(): match json.decode(\"1\",Map(Int,String)):\n    Ok(_) -> ()\n    Err(_) -> ()\n",
+  "fake_static": "fn target():1\nfn main():json.decode(\"1\",target())\n",
+  "local_json": "fn main():\n    let json=1\n    json.decode(\"1\",Int)\n",
+  "wrong_text": "fn main(): json.decode(42,Int)\n",
+  "generic_codec": "fn encode(x:a)->Result(String,json.Error):json.encode(x)\nfn main():()\n"
+}

@@ -64,6 +64,7 @@ fn variant(n: &str, fields: Vec<(Option<&str>, Type)>) -> Variant {
 }
 fn decl(n: &str, params: Vec<&str>, variants: Vec<Variant>, record: bool) -> TypeDecl {
     TypeDecl {
+        derives: Vec::new(),
         public: false,
         name: n.into(),
         parameters: params.into_iter().map(Into::into).collect(),

@@ -1,19 +1,27 @@
 //! Native-compatible byte positions, resource accounting and Unicode decoding.
 use super::*;
-struct Parser<'s, 'b> {
+struct Parser<'s, 'b, 'l> {
     text: &'s [u8],
     at: usize,
-    budget: Budget<'b>,
+    budget: &'b mut Budget<'l>,
 }
 /// Parse one bounded document with native byte offsets, returning an immutable root or the first failure.
 pub(super) fn document(text: &str, limits: &mut Limits) -> Result<Json> {
     if text.len() > INPUT {
         return Err(error(4, INPUT as i64));
     }
+    let mut budget = Budget::new(limits, text.len())?;
+    document_in(text, &mut budget)
+}
+/// Parse under an existing codec allowance without resetting allocation, nodes or work.
+pub(super) fn document_in(text: &str, budget: &mut Budget<'_>) -> Result<Json> {
+    if text.len() > INPUT {
+        return Err(error(4, INPUT as i64));
+    }
     let mut parser = Parser {
         text: text.as_bytes(),
         at: usize::from(text.starts_with('\u{feff}')) * 3,
-        budget: Budget::new(limits, text.len())?,
+        budget,
     };
     let value = parser.value(1)?;
     parser.space();
@@ -23,11 +31,11 @@ pub(super) fn document(text: &str, limits: &mut Limits) -> Result<Json> {
     Ok(value)
 }
 /// Validate a builder number token under its supplied budget; reject any unconsumed suffix.
-pub(super) fn number(text: &str, budget: Budget<'_>) -> Result<Json> {
+pub(super) fn number(text: &str, mut budget: Budget<'_>) -> Result<Json> {
     let mut parser = Parser {
         text: text.as_bytes(),
         at: 0,
-        budget,
+        budget: &mut budget,
     };
     if !matches!(parser.peek(), Some(b'-' | b'0'..=b'9')) {
         return Err(parser.fail(1));
@@ -38,7 +46,7 @@ pub(super) fn number(text: &str, budget: Budget<'_>) -> Result<Json> {
     }
     Ok(value)
 }
-impl Parser<'_, '_> {
+impl Parser<'_, '_, '_> {
     /// Read the current byte without advancing; None denotes the exact end of input.
     fn peek(&self) -> Option<u8> {
         self.text.get(self.at).copied()
@@ -264,7 +272,7 @@ impl Parser<'_, '_> {
         let mut capacity = 0;
         if self.peek() == Some(closing) {
             self.at += 1;
-            return value::seal(children, object, offset, &mut self.budget);
+            return value::seal(children, object, offset, self.budget);
         }
         for _ in 0..NODES {
             if object {
@@ -286,7 +294,7 @@ impl Parser<'_, '_> {
             self.at += 1;
             if separator == closing {
                 self.sync();
-                return value::seal(children, object, offset, &mut self.budget);
+                return value::seal(children, object, offset, self.budget);
             }
             if separator != b',' {
                 return Err(error(1, (self.at - 1) as i64));

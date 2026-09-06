@@ -403,6 +403,7 @@ impl<'a> Walker<'a, '_> {
             return Ok(());
         }
         match &expr.kind {
+            TypeTarget(_) => {}
             Name(name) => self.reference(name, expr.span)?,
             Call { name, args } => {
                 self.reference(name, expr.span)?;

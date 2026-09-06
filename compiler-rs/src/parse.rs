@@ -1436,6 +1436,32 @@ impl Parser {
         Ok(())
     }
 
+    /// Retain a nonempty bounded derive list; duplicate requests never silently merge.
+    fn derivations(&mut self) -> ParseResult<Vec<crate::ast::Derivation>> {
+        if !self.word("derive") {
+            return Ok(Vec::new());
+        }
+        self.take();
+        self.expect(Kind::Left, "expected '(' after derive")?;
+        let mut result = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..32 {
+            if self.current().kind == Kind::Right {
+                return Err(self.error("derive requires a nonempty trait list"));
+            }
+            let (name, span) = self.name()?;
+            if !seen.insert(name.clone()) {
+                return Err(Diagnostic::new(span, "duplicate derive trait"));
+            }
+            result.push(crate::ast::Derivation { name, span });
+            if self.eat(&Kind::Right) {
+                return Ok(result);
+            }
+            self.expect(Kind::Comma, "expected ',' or ')' in derive list")?;
+        }
+        Err(self.error("derive trait count limit exceeded (32)"))
+    }
+
     /// Parse the indented payload shared by existing record and sum declarations.
     fn nominal_body(
         &mut self,
@@ -1444,6 +1470,7 @@ impl Parser {
         parameters: Vec<String>,
         public: bool,
     ) -> ParseResult<TypeDecl> {
+        let derives = self.derivations()?;
         self.expect(Kind::Colon, "expected ':' before type body")?;
         self.expect(Kind::Newline, "type declarations require an indented body")?;
         self.expect(Kind::Indent, "type declarations require an indented body")?;
@@ -1477,6 +1504,7 @@ impl Parser {
             return Err(Diagnostic::new(span, "type requires fields or variants"));
         }
         Ok(TypeDecl {
+            derives,
             public,
             name,
             parameters,
@@ -1793,47 +1821,7 @@ impl Parser {
                 }
             }
         }
-        let arity = match name.as_str() {
-            "List" | "Option" => Some(1),
-            "Result" | "Map" => Some(2),
-            "Int" | "Float" | "Bool" | "String" | "Unit" | "Range" => Some(0),
-            _ => None,
-        };
-        if arity.is_some_and(|arity| arguments.len() != arity) {
-            return Err(Diagnostic::new(
-                span,
-                format!("wrong type argument count for {name}; separate arguments with ','"),
-            ));
-        }
-        Ok(match name.as_str() {
-            "Int" => Type::Int,
-            "Range" => Type::Range,
-            "Float" => Type::Float,
-            "Unit" => Type::Unit,
-            "Bool" => Type::Bool,
-            "String" => Type::String,
-            "List" => Type::List(Box::new(arguments.remove(0))),
-            "Option" => Type::Option(Box::new(arguments.remove(0))),
-            "Result" | "Map" => {
-                let second = Box::new(arguments.remove(1));
-                let first = Box::new(arguments.remove(0));
-                if name == "Map" {
-                    Type::Map(first, second)
-                } else {
-                    Type::Result(first, second)
-                }
-            }
-            _ if arguments.is_empty()
-                && !name.contains('.')
-                && name.starts_with(|c: char| c.is_lowercase()) =>
-            {
-                Type::Generic(name)
-            }
-            _ if crate::runtime::native_type(&name).is_some() && arguments.is_empty() => {
-                Type::Native(crate::runtime::native_type(&name).expect("checked native name"))
-            }
-            _ => Type::Named(name, arguments),
-        })
+        named_type(name, arguments, span)
     }
 
     /// Distinguish structural tuple/group types from right-associative function signatures.
@@ -3424,6 +3412,51 @@ fn pipe(left: Parsed, right: Parsed) -> ParseResult<Parsed> {
         span,
         depth,
     )
+}
+
+/// Share type-name arity and primitive identities with canonical static codec targets.
+pub(crate) fn named_type(name: String, mut arguments: Vec<Type>, span: Span) -> ParseResult<Type> {
+    let arity = match name.as_str() {
+        "List" | "Option" => Some(1),
+        "Result" | "Map" => Some(2),
+        "Int" | "Float" | "Bool" | "String" | "Unit" | "Range" => Some(0),
+        _ => None,
+    };
+    if arity.is_some_and(|arity| arguments.len() != arity) {
+        return Err(Diagnostic::new(
+            span,
+            format!("wrong type argument count for {name}; separate arguments with ','"),
+        ));
+    }
+    Ok(match name.as_str() {
+        "Int" => Type::Int,
+        "Range" => Type::Range,
+        "Float" => Type::Float,
+        "Unit" => Type::Unit,
+        "Bool" => Type::Bool,
+        "String" => Type::String,
+        "List" => Type::List(Box::new(arguments.remove(0))),
+        "Option" => Type::Option(Box::new(arguments.remove(0))),
+        "Result" | "Map" => {
+            let second = Box::new(arguments.remove(1));
+            let first = Box::new(arguments.remove(0));
+            if name == "Map" {
+                Type::Map(first, second)
+            } else {
+                Type::Result(first, second)
+            }
+        }
+        _ if arguments.is_empty()
+            && !name.contains('.')
+            && name.starts_with(|c: char| c.is_lowercase()) =>
+        {
+            Type::Generic(name)
+        }
+        _ if crate::runtime::native_type(&name).is_some() && arguments.is_empty() => {
+            Type::Native(crate::runtime::native_type(&name).expect("checked native name"))
+        }
+        _ => Type::Named(name, arguments),
+    })
 }
 
 #[cfg(test)]

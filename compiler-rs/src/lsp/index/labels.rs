@@ -218,6 +218,7 @@ impl<'a> Index<'a> {
 /// Builtins and constructors cannot acquire a source interface through an invalid declaration.
 fn reserved_callee(name: &str) -> bool {
     crate::check::builtin(name).is_some()
+        || crate::codec_syntax::is_codec(name)
         || crate::runtime::resolve(name).is_some()
         || matches!(name, "Some" | "None" | "Ok" | "Err")
 }

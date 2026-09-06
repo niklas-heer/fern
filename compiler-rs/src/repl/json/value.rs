@@ -259,7 +259,7 @@ fn stringify(node: &Node, limits: &mut Limits) -> Result<String> {
     Ok(out)
 }
 /// Append a validated subtree into reserved output; sealed depth and expanded-node metadata bound recursion.
-fn encode(node: &Node, out: &mut String) {
+pub(super) fn encode(node: &Node, out: &mut String) {
     match &node.kind {
         Kind::Null => out.push_str("null"),
         Kind::Bool(v) => out.push_str(if *v { "true" } else { "false" }),

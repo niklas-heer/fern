@@ -475,6 +475,7 @@ rust-check: rust-build
     python3 scripts/test_rust_global_identity.py
     python3 scripts/test_rust_stdlib.py
     python3 scripts/test_rust_json.py
+    python3 scripts/test_rust_json_codecs.py
     python3 scripts/test_rust_doctests.py
     python3 scripts/test_rust_units.py
     uv run scripts/test_style_parity.py --compiler compiler-rs/target/debug/fern-rs
@@ -492,6 +493,7 @@ rust-check: rust-build
     python3 scripts/test_runtime_process_bounded.py
     python3 scripts/test_process_frontends.py --compiler compiler-rs/target/debug/fern-rs
     python3 scripts/test_runtime_json.py
+    python3 scripts/test_runtime_json_codecs.py
     python3 scripts/test_rust_fuzz.py
 
 # Build both frontends with release settings for the opt-in evaluation.

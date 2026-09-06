@@ -300,6 +300,26 @@
     }
   },
   {
+    "type": "derive_clause",
+    "named": true,
+    "fields": {
+      "trait": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "type_identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "expression",
     "named": true,
     "fields": {},
@@ -1519,6 +1539,10 @@
       "required": false,
       "types": [
         {
+          "type": "derive_clause",
+          "named": true
+        },
+        {
           "type": "record_field",
           "named": true
         },
@@ -1956,6 +1980,10 @@
   },
   {
     "type": "defer",
+    "named": false
+  },
+  {
+    "type": "derive",
     "named": false
   },
   {

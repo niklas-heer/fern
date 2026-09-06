@@ -55,8 +55,16 @@ pub struct NewtypeDecl {
     pub inner_span: Span,
 }
 
+/// An explicit source trait derivation; unsupported traits remain located diagnostics.
+#[derive(Clone, Debug)]
+pub struct Derivation {
+    pub name: String,
+    pub span: Span,
+}
+
 #[derive(Clone, Debug)]
 pub struct TypeDecl {
+    pub derives: Vec<Derivation>,
     /// Source visibility belongs to this type declaration, independently of same-named values.
     pub public: bool,
     pub name: String,
@@ -120,6 +128,8 @@ pub struct Expr {
 }
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    /// A compile-time decoder target, legal only in a canonically resolved static argument slot.
+    TypeTarget(Type),
     Int(i64),
     Float(f64),
     Bool(bool),

@@ -5,6 +5,7 @@ pub mod check;
 pub mod documentation;
 pub mod format;
 pub mod ir;
+pub mod json_codec;
 pub mod lsp;
 pub mod modules;
 pub mod parse;
@@ -77,3 +78,5 @@ pub mod unit_test;
 
 mod decimal;
 mod decimal_table;
+
+pub(crate) mod codec_syntax;

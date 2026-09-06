@@ -1,5 +1,6 @@
 //! Immutable JSON semantics with native-profile and aggregate interactive budgets.
 use super::*;
+mod codec;
 mod convert;
 mod parse;
 mod value;
@@ -34,15 +35,20 @@ impl PartialEq for Node {
         std::ptr::eq(self, other)
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Error {
+    pub(super) path: Option<Rc<String>>,
     code: u8,
     offset: i64,
 }
 type Result<T> = std::result::Result<T, Error>;
 /// Construct a stable code/byte-offset failure; code zero is reserved for evaluator exhaustion.
 fn error(code: u8, offset: i64) -> Error {
-    Error { code, offset }
+    Error {
+        code,
+        offset,
+        path: None,
+    }
 }
 /// Return the native NUL-terminated prefix, scanning no farther than the input limit plus one.
 fn input(text: &str) -> &str {
@@ -162,6 +168,7 @@ fn dispatch(operation: &str, args: &[Value], limits: &mut Limits) -> Result<Valu
             | "error_code"
             | "error_offset"
             | "error_message"
+            | "error_path"
     ) {
         Ok(value)
     } else {
@@ -174,6 +181,7 @@ fn operation_value(operation: &str, args: &[Value], limits: &mut Limits) -> Resu
         ("parse", [Value::String(text)]) => parse::document(input(text), limits).map(Value::Json),
         ("error_code", [Value::JsonError(e)]) => Ok(Value::Int(e.code.into())),
         ("error_offset", [Value::JsonError(e)]) => Ok(Value::Int(e.offset)),
+        ("error_path", [Value::JsonError(e)]) => error_path(e, limits),
         ("error_message", [Value::JsonError(e)]) => {
             Ok(Value::String(Rc::new(message(e.code).into())))
         }
@@ -181,6 +189,13 @@ fn operation_value(operation: &str, args: &[Value], limits: &mut Limits) -> Resu
         (name, [Value::Json(value), rest @ ..]) => value::access(name, value, rest, limits),
         _ => value::build(operation, args, limits),
     }
+}
+/// Copy exact visible path text after charging interactive storage, never exposing hidden capacity.
+fn error_path(error: &Error, limits: &mut Limits) -> Result<Value> {
+    let path = error.path.as_deref().map(String::as_str).unwrap_or("");
+    Limits::charge(&mut limits.work, path.len())?;
+    Limits::charge(&mut limits.allocated, path.len() + 40)?;
+    Ok(Value::String(Rc::new(path.to_owned())))
 }
 /// Return the static message for a stable error code without embedding input text.
 fn message(code: u8) -> &'static str {
@@ -197,6 +212,7 @@ fn message(code: u8) -> &'static str {
         "JSON number is not an integer",
         "JSON string contains NUL",
         "JSON number is not finite",
+        "unknown JSON object field",
     ]
     .get(code as usize)
     .copied()

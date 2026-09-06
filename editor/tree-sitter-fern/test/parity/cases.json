@@ -957,6 +957,61 @@
           "0x8000_0000_0000_0000"
         ]
       ]
+    },
+    {
+      "name": "derive_record",
+      "source": "type User derive(Json):\n    id: Int\n    name: String\nfn encode() -> Result(String, json.Error): json.encode(User(1, \"fern\"))\n",
+      "nodes": [
+        "type_definition",
+        "derive_clause"
+      ],
+      "paths": [
+        ".//type_definition/derive_clause/type_identifier"
+      ],
+      "rust_fixture": "editor/tree-sitter-fern/test/parity/derive_queries.fn",
+      "derivations": [
+        "Json"
+      ]
+    },
+    {
+      "name": "derive_generic_record",
+      "source": "pub type Box(a) derive(Json):\n    value: a\nfn encode() -> Result(String, json.Error): json.encode(Box(Some(1)))\n",
+      "nodes": [
+        "type_parameters",
+        "derive_clause",
+        "generic_type"
+      ]
+    },
+    {
+      "name": "derive_module_target",
+      "source": "import model\nfn decode(text: String) -> Result(model.User, json.Error): json.decode(text, model.User)\n",
+      "files": {
+        "model.fn": "pub type User derive(Json):\n    id: Int\n"
+      },
+      "nodes": [
+        "import_statement",
+        "qualified_type",
+        "member_access"
+      ]
+    },
+    {
+      "name": "derive_tuple_map",
+      "source": "type Entry derive(Json):\n    pair: (Int, String)\n    present: Option(Bool)\nfn decode(text: String) -> Result(Map(String, Entry), json.Error): json.decode(text, Map(String, Entry))\n",
+      "nodes": [
+        "derive_clause",
+        "tuple_type",
+        "generic_type",
+        "call_expression"
+      ]
+    },
+    {
+      "name": "codec_static_pipe_target",
+      "source": "fn decode(text: String) -> Result(List(Option(Int)), json.Error): text |> json.decode(List(Option(Int)))\n",
+      "nodes": [
+        "binary_expression",
+        "generic_type",
+        "call_expression"
+      ]
     }
   ],
   "invalid": [
@@ -1332,6 +1387,17 @@
           29
         ]
       ]
+    },
+    {
+      "name": "derive_trailing_comma",
+      "source": "type Item derive(Json,):\n    count:Int\nfn after()->Int:1\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          21,
+          22
+        ]
+      ]
     }
   ],
   "edits": [
@@ -1568,6 +1634,27 @@
       "source": "fn value() -> Int:\n    for n in 0..0x2:\n        println(n)\n    0\n",
       "old": "0..0x2",
       "new": "0b0..=0o3",
+      "rust_check": true
+    },
+    {
+      "name": "edit_add_derive",
+      "source": "type Entry:\n    value: Int\n",
+      "old": "Entry:",
+      "new": "Entry derive(Json):",
+      "rust_check": true
+    },
+    {
+      "name": "edit_remove_derive",
+      "source": "type Entry derive(Json):\n    value: Int\n",
+      "old": "Entry derive(Json):",
+      "new": "Entry:",
+      "rust_check": true
+    },
+    {
+      "name": "edit_derive_generic_payload",
+      "source": "type Box(a) derive(Json):\n    value: a\n",
+      "old": "value: a",
+      "new": "value: List(a)",
       "rust_check": true
     }
   ]

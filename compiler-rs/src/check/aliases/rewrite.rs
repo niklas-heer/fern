@@ -3,7 +3,13 @@ use super::*;
 /// Substitute the bounded expression tree's explicit local annotations and guards.
 pub(super) fn expression(expr: &mut ast::Expr, expander: &mut Expander<'_>) -> Checked<()> {
     expander.charge(1, expr.span)?;
+    expression_kind(expr, expander)
+}
+
+/// Dispatch each already-charged source node, preserving static annotations and value children.
+fn expression_kind(expr: &mut ast::Expr, expander: &mut Expander<'_>) -> Checked<()> {
     match &mut expr.kind {
+        ast::ExprKind::TypeTarget(ty) => *ty = expander.expand(ty, expr.span)?,
         ast::ExprKind::Range { .. } | ast::ExprKind::For { .. } | ast::ExprKind::With { .. } => {
             substitute_iteration(expr, expander)?
         }

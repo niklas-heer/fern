@@ -1,0 +1,19 @@
+type Box(a) derive(Json):
+    value:a
+type Count = Int
+fn Count()->String:
+    println("wrong value namespace")
+    "wrong"
+fn make() -> ()->Result(Box(Float),json.Error):
+    () -> json.decode("\{\"value\":-0\}",Box(Float))
+fn main() -> Result(Unit,json.Error):
+    let callback = make()
+    let box = callback()?
+    println(json.encode(box)?)
+    let count = "9007199254740993" |> Json.decode(Count)
+    match count:
+        Ok(value) -> println(value)
+        Err(error) -> println(json.error_code(error))
+    let wrapped = Box(Box(42))
+    println(wrapped |> json.encode() |> Result.unwrap_or("failure"))
+    Ok(())

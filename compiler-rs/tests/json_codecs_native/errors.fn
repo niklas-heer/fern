@@ -1,0 +1,19 @@
+type Item derive(Json):
+    count:Int
+fn describe(error:json.Error):
+    println(json.error_code(error))
+    println(json.error_offset(error))
+    println(json.error_path(error))
+fn main():
+    match json.decode("\{\"a/b~c\":[1,1.5]\}",Map(String,List(Int))):
+        Ok(_) -> println(0)
+        Err(error) -> describe(error)
+    match json.decode("\{\"count\":7,\"extra\":1\}",Item):
+        Ok(_) -> println(0)
+        Err(error) -> describe(error)
+    match json.decode("\{\}",Item):
+        Ok(_) -> println(0)
+        Err(error) -> describe(error)
+    match json.decode("[1,]",List(Int)):
+        Ok(_) -> println(0)
+        Err(error) -> describe(error)

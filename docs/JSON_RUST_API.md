@@ -30,6 +30,7 @@ json.members(json.Value) -> Result(List((json.Value, json.Value)), json.Error)
 json.error_code(json.Error) -> Int
 json.error_offset(json.Error) -> Int
 json.error_message(json.Error) -> String
+json.error_path(json.Error) -> String
 
 json.null() -> json.Value
 json.from_bool(Bool) -> json.Value
@@ -88,8 +89,11 @@ The native gate runs ten exact-output programs and twelve semantic rejection
 cases, including direct/first-class calls, NUL members, signed 64-bit Int/Float values,
 opaque values retained through GC, deferred cleanup, and shared-tree limits.
 Eight Rust integration tests additionally cover qualified aliases, formatting,
-public-IR signature rejection and retained interactive wrappers. Typed
-`json.encode`, `json.decode(User)` and `derive(Json)` remain future codec work.
+public-IR signature rejection and retained interactive wrappers.
+[Typed codecs](JSON_TYPED_CODECS.md) add `json.encode(value)`,
+`json.decode(text, TargetType)` and explicit `derive(Json)` on acyclic records.
+They preserve these dynamic operations and report field/index paths through
+`json.error_path`. Dynamic failures retain an empty path.
 
 ## Interactive resource limits
 

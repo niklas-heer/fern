@@ -1972,4 +1972,20 @@ char* fern_prompt_password(const char* prompt);
  */
 int64_t fern_prompt_int(const char* prompt, int64_t min, int64_t max);
 
+
+/** Read an immutable JSON Pointer path; dynamic errors have an empty path. @param error opaque error; @return retained path. */
+const char* fern_json_value_error_path(const FernJsonError* error);
+
+/** Compiler-validated concrete codec descriptor; child descriptors are acyclic constants. */
+typedef struct FernJsonCodec {
+    int64_t kind;
+    int64_t count;
+    const struct FernJsonCodec* const* children;
+    const char* const* names;
+} FernJsonCodec;
+/** Encode a full-width typed payload under one shared codec budget. @param plan checked descriptor; @param payload native bits; @return Result(String,Error). */
+int64_t fern_json_codec_encode(const FernJsonCodec* plan, int64_t payload);
+/** Decode into checked native storage. @param plan checked descriptor; @param text source String; @return Result(payload,Error). */
+int64_t fern_json_codec_decode(const FernJsonCodec* plan, const char* text);
+
 #endif /* FERN_RUNTIME_H */

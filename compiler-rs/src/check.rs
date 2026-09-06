@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 mod aliases;
 mod clauses;
 mod closures;
+mod codecs;
 mod control;
 mod coverage;
 mod dependencies;
@@ -156,12 +157,14 @@ fn pipeline<T>(
     let source = expanded.program.as_ref();
     let registry = nominal::Registry::new(source)?;
     aliases::validate(source, &registry)?;
+    codecs::validate(source, &registry)?;
     let graph = dependencies::analyze_with_work(source, expanded.work)?;
     let (program, mut signatures, work) = whole::resolve(source, &registry, &graph)?;
     labels::finalize(&program, &mut signatures)?;
     schemes::validate(&program, &registry, &mut signatures, work)?;
     let ir = specialize::run(&program, &registry, &signatures)?;
     ir::reject_probes(&ir)?;
+    crate::json_codec::validate_program(&ir)?;
     let facts = finish(&program, &registry, &signatures)?;
     Ok((ir, facts))
 }
@@ -242,6 +245,7 @@ fn reserved(name: &str) -> bool {
         return true;
     }
     builtin(name).is_some()
+        || crate::codec_syntax::is_codec(name)
         || runtime::lookup(name).is_some()
         || runtime::reserved_namespace(name)
         || matches!(
@@ -717,6 +721,12 @@ impl Checker<'_> {
         depth: usize,
     ) -> Checked<TypedKind> {
         Ok(match &expr.kind {
+            ast::ExprKind::TypeTarget(_) => {
+                return Err(Diagnostic::new(
+                    expr.span,
+                    "compile-time type target cannot be used as a value",
+                ))
+            }
             ast::ExprKind::Break
             | ast::ExprKind::Continue
             | ast::ExprKind::Range { .. }
@@ -1725,7 +1735,8 @@ impl Checker<'_> {
             }
             ir::ExprKind::Invoke { callee, args } => self.finalize_invoke(callee, args)?,
             ir::ExprKind::Unary { op, value } => self.finalize_unary(*op, value)?,
-            ir::ExprKind::UnionInject { value }
+            ir::ExprKind::JsonCodec { input: value, .. }
+            | ir::ExprKind::UnionInject { value }
             | ir::ExprKind::UnionWiden { value }
             | ir::ExprKind::Wrap(value)
             | ir::ExprKind::Unwrap(value)

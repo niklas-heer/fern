@@ -1064,3 +1064,35 @@ The complete Rust gates pass 1113 tests on macOS and 1114 on Linux arm64. Isolat
 actual Zed startup succeeds through both discovery and an explicit compiler path;
 its recorded initialize responses receive the formatting capability. The format
 request itself is verified through the library and executable protocol tests.
+
+
+## Concrete typed JSON codecs (J4) — 2026-09-06
+
+Decision98 adds `json.encode(value)` and `json.decode(text, TargetType)` with
+explicit `derive(Json)` on acyclic records. Both return ordinary Results in native
+programs and the REPL. The type-only target supports module aliases and input
+pipes; no executable type expression or symbolic plan enters public IR. Concrete
+generic records, supported containers and exact primitive adapters share strict
+field/nullability rules and JSON Pointer errors.
+
+All codec phases and children share bounded work, allocation and path accounting.
+Public plan validation includes inactive entries and functions with one aggregate
+allowance, while QBE deduplicates immutable descriptor tables and bounds output.
+The authored `runtime/fern_json_codec.inc` is included in runtime source inventories;
+new source syntax remains Rust-only and legacy C JSON symbols remain unchanged.
+See [the complete J4 contract](JSON_TYPED_CODECS.md).
+
+Integration passes 1,153 Rust tests on macOS arm64 and 1,154 on Linux arm64 with
+Rust 1.75, native source/atomic-output gates, old dynamic JSON oracles and new
+typed ABI/path/shared-budget tests in debug, release and ASan/UBSan. The first
+Linux attempt hit an existing timeout-test assertion; its isolated rerun and
+the final complete gate passed. An intervening run required copying the new
+native fixture directory into the owned container.
+
+The editor grammar now checks 98 valid sources against the integrated compiler,
+recovers all 33 existing malformed cases plus a trailing-derive-comma regression,
+and verifies 36 incremental edits in native and WASM parsers. Record derivation
+names have exact syntax/query tests; trailing commas reject consistently with Rust.
+Matching Zed package pinning follows the grammar commit; no remote publication
+is implied. Recursive/newtype codecs, generic constraints, sum/union wire formats
+and general/custom traits remain J5–J7 work.
