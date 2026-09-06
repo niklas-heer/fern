@@ -71,6 +71,7 @@ for approval between milestones. C remains the default until the parity gates pa
 - [ ] Diagnostics, formatting, REPL/LSP, documentation and developer-command parity.
 - [x] Preserve common quiet/verbose/color controls, literal forwarded argv, visible failures and missing-command status in the Rust CLI (Decision108A).
 - [x] Add bounded source-only lex/parse inspection with byte spans, escaped dumps, no import/type/backend execution and atomic parser/limit failure (Decision108B).
+- [x] Open retained HTML documentation only after complete atomic generation, with literal platform argv, visible best-effort failures and consistent byte limits (Decision108C).
 - [x] Verify the 1006-test expanded Rust checkpoint, C quality gate and documentation on Linux arm64 with Rust 1.75; expose POSIX test APIs under glibc strict C11 without hiding Darwin extensions.
 - [ ] Linux/macOS verification, fuzz/performance/packaging gates and default migration.
 

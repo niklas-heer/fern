@@ -1,10 +1,6 @@
 //! Bounded source discovery and atomic publication for directory documentation.
 use fern_prototype::documentation::{self, Output, SourceDocument};
-use std::{
-    fs,
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 /// Parse every discovered source before protecting all input identities and writing output.
 pub(super) fn run(root: &Path, output: Option<&Path>, format: Output) -> Result<u8, String> {
@@ -12,16 +8,7 @@ pub(super) fn run(root: &Path, output: Option<&Path>, format: Output) -> Result<
     let mut sources = Vec::new();
     let mut bytes = 0;
     for path in &files {
-        let mut source = String::new();
-        fs::File::open(path)
-            .map_err(|error| format!("{}: {error}", path.display()))?
-            .take(1024 * 1024 + 1)
-            .read_to_string(&mut source)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
-        bytes += source.len();
-        if bytes > 8 * 1024 * 1024 {
-            return Err("project documentation source exceeds 8 MiB".into());
-        }
+        let source = super::read_source(path, &mut bytes)?;
         sources.push(source);
     }
     let names: Vec<_> = files

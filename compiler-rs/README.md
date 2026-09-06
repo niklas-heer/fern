@@ -513,6 +513,26 @@ Unrelated cached source contents are borrowed during graph loading. Library call
 supplying `FunctionInfo` must preserve facts from the same source snapshot;
 identity and size checks cannot attest caller-edited semantic types.
 
+`fern-rs doc library.fn --open` generates HTML and opens it with the platform
+opener (`open` on macOS, `xdg-open` on Linux). `--open` works with directories and
+`--inferred` and implies `--html`. With `-o`, the destination is relative to the
+current working directory; otherwise the retained artifact is `fern-docs.html`
+there. Existing destination contents are replaced atomically after complete
+successful generation, with the same source-alias protections as ordinary docs.
+The canonical absolute artifact path is printed to stderr. Files remain available
+after the command exits, including when the opener is missing or fails.
+
+The opener receives one literal OS path without shell expansion and cannot read
+terminal input. Its stdout/stderr are discarded; missing executables, unsuccessful
+status and a ten-second launcher timeout produce a visible note even with
+`--quiet`, while successful generation still exits 0. Only the directly owned
+launcher is killed and reaped on timeout; the browser is not owned. A process stuck
+in an uninterruptible kernel operation can delay reaping beyond that deadline.
+No opener runs after parsing, checking, generation or publication fails. Other
+platforms retain the HTML and report the unavailable opener. This Rust output
+convention differs from the legacy Python script's `docs/generated` default;
+no script command override or automatic browser/compiler installation is used.
+
 ## Executable documentation examples
 
 `fern-rs test --doc library.fn` executes each fenced `fern` block in literal @doc

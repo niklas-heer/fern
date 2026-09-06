@@ -6,8 +6,7 @@ use fern_prototype::{
 };
 use std::{
     collections::HashMap,
-    fs,
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -77,16 +76,7 @@ fn inputs(root: &Path) -> Result<Vec<Input>, String> {
     let mut inputs = Vec::new();
     let mut bytes = 0;
     for path in files {
-        let mut source = String::new();
-        fs::File::open(&path)
-            .map_err(|e| format!("{}: {e}", path.display()))?
-            .take(1024 * 1024 + 1)
-            .read_to_string(&mut source)
-            .map_err(|e| e.to_string())?;
-        bytes += source.len();
-        if source.len() > 1024 * 1024 || bytes > 8 * 1024 * 1024 {
-            return Err("inferred documentation source exceeds limit".into());
-        }
+        let source = super::read_source(&path, &mut bytes)?;
         let name = if root.is_dir() {
             path.strip_prefix(root)
                 .unwrap_or(&path)

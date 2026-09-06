@@ -36,7 +36,7 @@ Usage: fern-rs <check|emit|build|run|fmt|doc|lex|parse> <source.fn> [-o output]\
 Run arguments: fern-rs run source.fn -- [arguments]\n\
 Global controls: --quiet, --verbose, --color=auto|always|never; -v aliases --version.\n\
 Subset: generic functions, custom types, modules, Int/Bool/String, List/Option/Result, guarded match, and Result ?.\n\
-Documentation: fern-rs doc <source.fn|directory> [--html] [-o output] generates source documentation.\n\
+Documentation: fern-rs doc <source.fn|directory> [--html] [--inferred] [--open] [-o output] generates source documentation.\n\
 Tests: fern-rs test --doc [source.fn|directory] executes documentation examples.\n\
 Formatting: fern-rs fmt <source.fn|directory> updates sources after validating every file.\n\
 Format validation: fern-rs fmt --check <source.fn|directory> checks canonical formatting without writing.\n\

@@ -3,34 +3,42 @@ use fern_prototype::documentation::{self, Output};
 use std::{ffi::OsString, fs, io::Read, path::PathBuf};
 mod directory;
 mod inferred;
+mod opener;
 struct Options {
     source: PathBuf,
     output: Option<PathBuf>,
     format: Output,
     inferred: bool,
+    open: bool,
 }
 
 /// Parse the doc action, validate source, then print or atomically install the complete document.
 pub(super) fn run(arguments: Vec<OsString>) -> Result<u8, String> {
     if arguments.len() == 2 && (arguments[1] == "--help" || arguments[1] == "-h") {
         use std::io::Write;
-        std::io::stdout().lock().write_all(b"Usage: fern-rs doc <source.fn|directory> [--html] [--inferred] [-o output]\nGenerate source documentation without executing code. Markdown is written to stdout by default. Directory HTML includes module navigation and local search. --inferred checks the current module graph and adds resolved signatures.\n")
+        std::io::stdout().lock().write_all(b"Usage: fern-rs doc <source.fn|directory> [--html] [--inferred] [--open] [-o output]\nGenerate source documentation without executing code. Markdown is written to stdout by default. Directory HTML includes module navigation and local search. --inferred checks the current module graph and adds resolved signatures. --open implies HTML, retains -o output (default: fern-docs.html in the current directory), then best-effort launches the platform opener.\n")
             .map_err(|error| error.to_string())?;
         return Ok(0);
     }
     let options = options(arguments)?;
+    let code = generate(&options)?;
+    if options.open {
+        if let Some(output) = &options.output {
+            opener::open(output);
+        }
+    }
+    Ok(code)
+}
+
+/// Complete generation and atomic publication precede any optional external launcher.
+fn generate(options: &Options) -> Result<u8, String> {
     if options.inferred {
         return inferred::run(&options.source, options.output.as_deref(), options.format);
     }
     if options.source.is_dir() {
         return directory::run(&options.source, options.output.as_deref(), options.format);
     }
-    let mut source = String::new();
-    fs::File::open(&options.source)
-        .map_err(|error| format!("{}: {error}", options.source.display()))?
-        .take(1024 * 1024 + 1)
-        .read_to_string(&mut source)
-        .map_err(|error| format!("{}: {error}", options.source.display()))?;
+    let source = read_source(&options.source, &mut 0)?;
     let title = options
         .source
         .file_name()
@@ -46,8 +54,8 @@ pub(super) fn run(arguments: Vec<OsString>) -> Result<u8, String> {
             error.message
         )
     })?;
-    if let Some(output) = options.output {
-        super::emit_file(&options.source, &output, &rendered)?;
+    if let Some(output) = &options.output {
+        super::emit_file(&options.source, output, &rendered)?;
     } else {
         use std::io::Write;
         std::io::stdout()
@@ -64,6 +72,7 @@ fn options(arguments: Vec<OsString>) -> Result<Options, String> {
     let mut output = None;
     let mut html = false;
     let mut inferred = false;
+    let mut open = false;
     let mut arguments = arguments.into_iter().skip(1);
     while let Some(argument) = arguments.next() {
         if argument == "--inferred" {
@@ -71,6 +80,11 @@ fn options(arguments: Vec<OsString>) -> Result<Options, String> {
                 return Err("--inferred specified more than once".into());
             }
             inferred = true;
+        } else if argument == "--open" {
+            if open {
+                return Err("--open specified more than once".into());
+            }
+            open = true;
         } else if argument == "--html" {
             if html {
                 return Err("--html specified more than once".into());
@@ -90,11 +104,19 @@ fn options(arguments: Vec<OsString>) -> Result<Options, String> {
             return Err("doc accepts one source file or directory".into());
         }
     }
+    if open && output.is_none() {
+        output = Some(PathBuf::from("fern-docs.html"));
+    }
     Ok(Options {
         source: source.ok_or("doc requires a source file or directory")?,
         output,
-        format: if html { Output::Html } else { Output::Markdown },
+        format: if html || open {
+            Output::Html
+        } else {
+            Output::Markdown
+        },
         inferred,
+        open,
     })
 }
 
@@ -105,4 +127,25 @@ pub(super) fn sources(path: &std::path::Path) -> Result<Vec<PathBuf>, String> {
     } else {
         Ok(vec![path.to_path_buf()])
     }
+}
+
+/// Check bounded raw byte lengths before decoding, including a partial UTF-8 sentinel byte.
+fn read_source(path: &std::path::Path, bytes: &mut usize) -> Result<String, String> {
+    let mut source = Vec::new();
+    fs::File::open(path)
+        .and_then(|file| file.take(1024 * 1024 + 1).read_to_end(&mut source))
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    if source.len() > 1024 * 1024 {
+        return Err(format!(
+            "{}: documentation source exceeds 1 MiB",
+            path.display()
+        ));
+    }
+    *bytes = bytes
+        .checked_add(source.len())
+        .ok_or("documentation source size overflow")?;
+    if *bytes > 8 * 1024 * 1024 {
+        return Err("project documentation source exceeds 8 MiB".into());
+    }
+    String::from_utf8(source).map_err(|error| format!("{}: invalid UTF-8: {error}", path.display()))
 }
