@@ -1,0 +1,7 @@
+type Choice=(Int,) | (String,String)
+fn main() -> Result(Unit,json.Error):
+    let value=json.decode("[42]",Choice)?
+    println(json.encode(value)?)
+    let other:Choice=("left","right")
+    println(json.encode(other)?)
+    Ok(())

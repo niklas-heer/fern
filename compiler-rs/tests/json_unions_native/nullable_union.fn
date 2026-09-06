@@ -1,0 +1,7 @@
+type Choice=Option(Int) | String
+fn main()->Result(Unit,json.Error):
+    let absent=json.decode("null",Choice)?
+    println(json.encode(absent)?)
+    let present=json.decode("42",Choice)?
+    println(json.encode(present)?)
+    Ok(())

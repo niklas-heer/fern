@@ -1,0 +1,8 @@
+type Choice(a)=a | String
+fn read(text:String,witness:a)->Result(Choice(a),json.Error):json.decode(text,Choice(a))
+fn main()->Result(Unit,json.Error):
+    let numbers:(String,Int)->Result(Int | String,json.Error)=read
+    let words:(String,String)->Result(String,json.Error)=read
+    println(json.encode(numbers("7",0)?)?)
+    println(words("\"word\"","")?)
+    Ok(())

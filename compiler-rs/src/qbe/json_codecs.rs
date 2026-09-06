@@ -45,7 +45,9 @@ impl Emitter<'_> {
                             .saturating_add(variant.fields.len().saturating_mul(64));
                     }
                 }
-                Kind::Tuple(ids) => bytes = bytes.saturating_add(ids.len().saturating_mul(64)),
+                Kind::Tuple(ids) | Kind::Union(ids) => {
+                    bytes = bytes.saturating_add(ids.len().saturating_mul(64))
+                }
                 Kind::Record(fields) => {
                     for field in fields {
                         bytes = bytes
@@ -149,6 +151,7 @@ impl Emitter<'_> {
 fn descriptor(kind: &Kind) -> (usize, Vec<usize>) {
     match kind {
         Kind::Sum(_) => unreachable!("sum descriptors use their typed variant table"),
+        Kind::Union(ids) => (13, ids.clone()),
         Kind::Int => (0, vec![]),
         Kind::Float => (1, vec![]),
         Kind::Bool => (2, vec![]),

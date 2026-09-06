@@ -74,7 +74,7 @@ impl<'a> CodeBudget<'a> {
                             + std::mem::size_of_val(variant.fields.as_slice());
                     }
                 }
-                crate::json_codec::Kind::Tuple(ids) => {
+                crate::json_codec::Kind::Tuple(ids) | crate::json_codec::Kind::Union(ids) => {
                     self.bytes += std::mem::size_of_val(ids.as_slice())
                 }
                 crate::json_codec::Kind::Record(fields) => {

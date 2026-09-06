@@ -27,7 +27,8 @@ Input pipes work, for example `text |> json.decode(User)`.
 
 Supported concrete wire types are Int, Float, Bool, String, Unit, `json.Value`,
 tuples, Lists, `Map(String, value)`, nullable-safe Options, and regular recursive
-records, tagged sums and transparent newtypes marked `derive(Json)`. Concrete
+records, tagged sums and transparent newtypes marked `derive(Json)`, and unions
+with provably disjoint wire shapes. Concrete
 instantiations of generic records, sums and newtypes are supported.
 Records retain declaration order; maps retain their existing entry order.
 Unknown record fields fail strictly. A missing Option field becomes None; other
@@ -36,8 +37,7 @@ themselves accept null, so `Option(Unit)`, `Option(json.Value)`, and nested Opti
 are rejected. Int conversion preserves the full signed 64-bit range; Float and
 text conversion reuse the dynamic API's existing exact adapters.
 
-This checkpoint does not implement general Json traits, user codec implementations
-or union codecs.
+This checkpoint does not implement general Json traits or user codec implementations.
 Unsupported derivations are diagnosed even when unused. Result-bearing values,
 including nested fields or containers, cannot be serialized: converting a Result
 to opaque JSON does not acknowledge its error obligation.
@@ -161,3 +161,13 @@ Generic and mutually recursive sums use the existing conditional Json requiremen
 The native codec descriptor remains four 64-bit words. For kind12 only, its third word is a typed pointer to three-word variant descriptors (source-name pointer, payload count, codec-pointer array). Other kinds retain their existing child-pointer meaning. This is the narrow Decision103 external ABI exception, not a general language representation change. The new TypeLayout.variant_names vector independently validates source spelling/native tag order; plan products are never fabricated tuples.
 
 Envelopes count their real object, tag text and array nodes against existing JSON depth/node/output/storage limits. Consequently fewer recursive sum links fit within depth 128 than recursive records with fewer wire layers. Plan/metadata/proof work remains one 400,000-unit allowance, source plan count 4096, constructor count 255, descriptor output 16 MiB. Child conversion, tag scans, pointer-path growth and final stringify share the original runtime allowance. Failed path growth retains the parent; an earlier error's code/offset/path cannot be overwritten.
+
+## Disjoint union codecs
+
+`type Choice(a) = a | String` permits `json.decode(text, Choice(Int))`. Existing static target syntax does not accept `json.decode(text, Int | String)`. This checkpoint does not change source Map key policy: a structural union cannot itself be a source Map key. Generic `Map(k,v) | String` retains the exact JsonStringKey(k) requirement until independently inferred concrete instantiation.
+
+Encoding forwards only the selected member's wire value. Decoding selects exactly one member before invoking its decoder. Int and Float overlap; record fields are not inspected to distinguish same-key records; arbitrary List shapes overlap; dynamic JSON overlaps every kind. Strict records use actual required/allowed key sets, with optional status only for actual Option fields. A nullable newtype field remains required. Exact tuple lengths and distinct source constructor-tag sets can discriminate. Newtypes inherit their payload's wire shape without merging nominal source identity.
+
+Unique JSON-kind selection preserves original numeric/text errors. All-sum object unions select a known source tag before strict envelope errors. Mixed record/sum unions use strict key sets first. No unique member is code14 `no unique JSON union member`, at the current parent path with offset -1. Existing standalone sum code13 and codes1–12 are unchanged. No candidate decoder or JSON Pointer allocation is used for selection.
+
+Compiler profile propagation, pair comparisons and type/name work consume the existing aggregate400k allowances, with precharged queues/storage. Concrete plans validate inactive entries too. Native selectors share the original64MiB work allowance with decoding and perform no candidate allocations. Existing input/output/allocation/node/depth limits remain; transparent dispatch adds charged codec steps.

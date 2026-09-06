@@ -1,0 +1,23 @@
+type Left derive(Json):
+    Ready
+    Count(Int)
+type Right derive(Json):
+    Stop
+    Text(String)
+type Choice=Left | Right
+fn inspect(text:String)->Unit:
+    match json.decode(text,Choice):
+        Ok(value) ->
+            match json.encode(value):
+                Ok(text) -> println(text)
+                Err(error) -> println(json.error_code(error))
+        Err(error) ->
+            println(json.error_code(error))
+            println(json.error_offset(error))
+            println(json.error_path(error))
+fn main():
+    inspect("\{\"tag\":\"Count\",\"fields\":[1.5]\}")
+    inspect("\{\"tag\":\"Count\",\"fields\":[],\"extra\":0\}")
+    inspect("\{\"tag\":\"Count\"\}")
+    inspect("\{\"tag\":\"Unknown\",\"fields\":[]\}")
+    inspect("\{\"fields\":[]\}")

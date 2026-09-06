@@ -83,7 +83,7 @@ static void* json_allocate(JsonParser* p, size_t n) {
 
 /** Construct a failure Result. @param code stable code; @param offset input offset or -1; @return Err. */
 static int64_t json_error(int code, int64_t offset) {
-    assert(code >= 1 && code <= 13);
+    assert(code >= 1 && code <= 14);
     assert(offset >= -1);
     FernJsonError* error = fern_alloc(sizeof(*error));
     error->code = code;
@@ -704,10 +704,10 @@ int64_t fern_json_value_as_float(const FernJsonValue* value) {
     return fern_result_ok(bits);
 }
 
-/** Read a stable error code. @param error valid opaque error; @return code1..13. */
+/** Read a stable error code. @param error valid opaque error; @return code1..14. */
 int64_t fern_json_value_error_code(const FernJsonError* error) {
     assert(error != NULL);
-    assert(error->code >= 1 && error->code <= 13);
+    assert(error->code >= 1 && error->code <= 14);
     return error->code;
 }
 
@@ -721,11 +721,11 @@ int64_t fern_json_value_error_offset(const FernJsonError* error) {
 /** Read a stable nonallocating message. @param error valid opaque error; @return static NUL-terminated message. */
 const char* fern_json_value_error_message(const FernJsonError* error) {
     assert(error != NULL);
-    assert(error->code >= 1 && error->code <= 13);
+    assert(error->code >= 1 && error->code <= 14);
     static const char* messages[] = {"", "invalid JSON syntax", "invalid JSON Unicode", "duplicate JSON object key",
         "JSON resource limit exceeded", "JSON value has wrong type", "JSON object key not found",
         "JSON array index out of bounds", "JSON number out of range", "JSON number is not an integer",
-        "JSON string contains NUL", "JSON number is not finite", "unknown JSON object field", "unknown JSON variant"};
+        "JSON string contains NUL", "JSON number is not finite", "unknown JSON object field", "unknown JSON variant", "no unique JSON union member"};
     return messages[error->code];
 }
 

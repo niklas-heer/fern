@@ -10,7 +10,7 @@ typedef struct {
 
 /** Retain the first failure and its already reserved location. @param c context; @param code stable code; @param offset primitive offset. */
 static void codec_fail(JsonCodecState* c, int code, int64_t offset) {
-    assert(c != NULL && code >= 1 && code <= 13);
+    assert(c != NULL && code >= 1 && code <= 14);
     if (!c->failure->code) { c->failure->code=code; c->failure->offset=offset; c->failure->path=c->path; }
 }
 /** Transfer deterministic allocation/work failure without replacing an earlier conversion failure. @param c context; @return still valid. */
@@ -66,7 +66,7 @@ static const char* codec_path(JsonCodecState* c,const char* key,size_t length) {
 }
 /** Validate recursion/work before reading an already checked descriptor. @param c context; @param plan descriptor; @param depth current depth; @return available. */
 static bool codec_step(JsonCodecState* c,const FernJsonCodec* plan,size_t depth) {
-    assert(c != NULL && plan != NULL && plan->kind>=0 && plan->kind<=12 && plan->count>=0);
+    assert(c != NULL && plan != NULL && plan->kind>=0 && plan->kind<=13 && plan->count>=0);
     (void)plan;
     if (depth>=JSON_DEPTH_MAX) {codec_fail(c,4,-1);return false;}
     return codec_work(c,1);
@@ -164,6 +164,7 @@ static FernJsonValue* codec_encode_object(JsonCodecState* c,const FernJsonCodec*
     return json_seal(&c->budget,out) && codec_ready(c)?out:NULL;
 }
 #include "fern_json_codec_sums.inc"
+#include "fern_json_codec_unions.inc"
 
 /** Dispatch a concrete value without a type guess or representation coercion. @param c context; @param p checked plan; @param bits payload; @param depth depth; @return JSON value. */
 static FernJsonValue* codec_encode(JsonCodecState* c,const FernJsonCodec* p,int64_t bits,size_t depth) {
@@ -176,6 +177,7 @@ static FernJsonValue* codec_encode(JsonCodecState* c,const FernJsonCodec* p,int6
         case 7:{const int64_t* sum=(const void*)(intptr_t)bits;return sum[0]?codec_scalar(c,4,0):codec_encode(c,p->children[0],sum[1],depth+1);}
         case 9:case 10:return codec_encode_object(c,p,bits,depth);
         case 12:return codec_encode_sum(c,p,bits,depth);
+        case 13:return codec_encode_union(c,p,bits,depth);
         case 11:return codec_encode(c,p->children[0],bits,depth+1);
         default:codec_fail(c,5,-1);return NULL;
     }
@@ -286,6 +288,7 @@ static int64_t codec_decode(JsonCodecState* c,const FernJsonCodec* p,const FernJ
         case 9:return codec_decode_map(c,p,v,depth);
         case 10:return codec_decode_record(c,p,v,depth);
         case 12:return codec_decode_sum(c,p,v,depth);
+        case 13:return codec_decode_union(c,p,v,depth);
         case 11:return codec_decode(c,p->children[0],v,depth+1);
         default:codec_fail(c,5,-1);return 0;
     }

@@ -3,6 +3,8 @@ use crate::{ir, runtime::NativeType, Diagnostic, Span, Type};
 use std::collections::HashMap;
 
 pub(crate) mod finite;
+mod profile_plan;
+pub(crate) mod profiles;
 pub(crate) mod sums;
 
 const MAX_ENTRIES: usize = 4096;
@@ -38,6 +40,7 @@ pub enum Kind {
     Map(usize),
     Record(Vec<Field>),
     Sum(Vec<Variant>),
+    Union(Vec<usize>),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
@@ -126,7 +129,7 @@ impl Validation {
         for entry in &plan.entries {
             self.ty(&entry.ty)?;
             match &entry.kind {
-                Kind::Tuple(children) => self.charge(children.len())?,
+                Kind::Tuple(children) | Kind::Union(children) => self.charge(children.len())?,
                 Kind::Sum(variants) => {
                     self.charge(variants.len())?;
                     for variant in variants {
@@ -202,6 +205,13 @@ impl Plan {
         let mut proof = finite::Proof::new(self.entries.len(), &mut audit.work, audit.span)?;
         for (id, entry) in self.entries.iter().enumerate() {
             match &entry.kind {
+                Kind::Union(children) => {
+                    proof.disjunction(id)?;
+                    for child in children {
+                        let product = proof.alternative(id)?;
+                        proof.edge(product, *child)?;
+                    }
+                }
                 Kind::Sum(variants) => {
                     proof.disjunction(id)?;
                     for variant in variants {
@@ -225,7 +235,8 @@ impl Plan {
                 _ => {}
             }
         }
-        proof.finish()
+        proof.finish()?;
+        self.profiles(audit)
     }
     /// Exact indexed references permit regular cycles without trusting source derivations.
     fn child(
@@ -259,10 +270,13 @@ impl Plan {
             (Kind::List(id), Type::List(ty)) => self.child(*id, index, audit)?.ty == **ty,
             (Kind::Option(id), Type::Option(ty)) => {
                 let child = self.child(*id, index, audit)?;
-                child.ty == **ty && !self.nullable(*id, audit)?
+                child.ty == **ty
             }
             (Kind::Map(id), Type::Map(key, ty)) => {
                 **key == Type::String && self.child(*id, index, audit)?.ty == **ty
+            }
+            (Kind::Union(ids), Type::Union(types)) => {
+                self.union_members(index, ids, types, audit)?
             }
             (Kind::Tuple(ids), Type::Tuple(types)) => {
                 if ids.len() != types.len() {
@@ -310,22 +324,6 @@ impl Plan {
             && layout.variants.len() == 1
             && layout.variants[0].len() == 1
             && layout.variants[0][0] == child.ty)
-    }
-    /// Nullable newtype payloads cannot be hidden beneath a transparent Option.
-    fn nullable(&self, mut id: usize, audit: &mut Validation) -> Result<bool, Diagnostic> {
-        for _ in 0..128 {
-            audit.charge(1)?;
-            let entry = self
-                .entries
-                .get(id)
-                .ok_or_else(|| audit.error("invalid JSON codec child slot"))?;
-            match &entry.kind {
-                Kind::Newtype(child) => id = *child,
-                Kind::Unit | Kind::Dynamic | Kind::Option(_) => return Ok(true),
-                _ => return Ok(false),
-            }
-        }
-        Err(audit.error("JSON newtype nullability depth limit exceeded"))
     }
     /// Every field must name its exact tagged-record slot; aliases and unboxed newtypes cannot fabricate it.
     fn record(

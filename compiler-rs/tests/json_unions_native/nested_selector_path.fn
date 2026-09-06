@@ -1,0 +1,10 @@
+type Choice=Int | String
+type Outer derive(Json):
+    choice:Choice
+fn main():
+    match json.decode("\{\"choice\":true\}",Outer):
+        Ok(_) -> ()
+        Err(error) ->
+            println(json.error_code(error))
+            println(json.error_offset(error))
+            println(json.error_path(error))

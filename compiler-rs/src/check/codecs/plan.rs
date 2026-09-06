@@ -31,6 +31,7 @@ pub(super) enum Kind {
     Map(Id),
     Record(Vec<Field>),
     Sum(Vec<Variant>),
+    Union(Vec<Id>),
     /// Only unused-derive validation uses this symbolic leaf; never publish in executable IR.
     Parameter,
 }

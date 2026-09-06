@@ -1,0 +1,12 @@
+newtype Decimal derive(Json)=Decimal(Float)
+type Choice=Decimal | Bool
+fn main()->Result(Unit,json.Error):
+    let value=json.decode("-0.0",Choice)?
+    let values=[value]
+    let callback=()->values
+    let decoded=json.encode(callback())?
+    println(decoded)
+    match value:
+        n:Decimal -> println(n.0)
+        _:Bool -> println(0.0)
+    Ok(())

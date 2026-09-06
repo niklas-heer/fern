@@ -165,6 +165,7 @@ fn concrete_entry(entry: Plan) -> Checked<wire::Entry> {
         Kind::Newtype(id) => wire::Kind::Newtype(id.0),
         Kind::List(id) => wire::Kind::List(id.0),
         Kind::Option(id) => wire::Kind::Option(id.0),
+        Kind::Union(ids) => wire::Kind::Union(ids.into_iter().map(|id| id.0).collect()),
         Kind::Tuple(ids) => wire::Kind::Tuple(ids.into_iter().map(|id| id.0).collect()),
         Kind::Map(id) => wire::Kind::Map(id.0),
         Kind::Record(fields) => wire::Kind::Record(
@@ -231,6 +232,9 @@ fn target_type(
         Type::Result(a, b) => Type::Result(Box::new(child(a)?), Box::new(child(b)?)),
         Type::Map(a, b) => Type::Map(Box::new(child(a)?), Box::new(child(b)?)),
         Type::Tuple(args) => Type::Tuple(args.iter().map(&mut child).collect::<Checked<_>>()?),
+        Type::Union(args) => {
+            crate::unions::make(args.iter().map(&mut child).collect::<Checked<_>>()?, span)?
+        }
         _ => ty.clone(),
     })
 }

@@ -3,6 +3,7 @@ use super::*;
 use crate::json_codec::{Direction, Kind as Wire, Plan};
 mod containers;
 mod sums;
+mod unions;
 struct Execution<'p, 'b> {
     plan: &'p Plan,
     budget: Budget<'b>,
@@ -124,6 +125,9 @@ impl Execution<'_, '_> {
     /// Reuse decimal conversion policy; known primitive nodes require no new parser or child allowance.
     fn encode_kind(&mut self, id: usize, input: &Value, depth: usize) -> Result<Json> {
         match (&self.plan.entries[id].kind, input) {
+            (Wire::Union(children), Value::Union(value)) => {
+                self.encode_union(children, value, depth)
+            }
             (Wire::Newtype(child), _) => self.encode(*child, input, depth + 1),
             (Wire::Dynamic, Value::Json(node)) => {
                 self.budget.work(node.nodes)?;
@@ -151,6 +155,7 @@ impl Execution<'_, '_> {
             self.budget.allocate(64)?;
         }
         match (&self.plan.entries[id].kind, &input.kind) {
+            (Wire::Union(children), _) => self.decode_union(children, input, depth),
             (Wire::Newtype(child), _) => self.decode(*child, input, depth + 1),
             (Wire::Dynamic, _) => {
                 self.budget.work(input.nodes)?;

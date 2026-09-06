@@ -1,0 +1,7 @@
+type Node(a) derive(Json):
+    next:Node(a) | a
+type Choice=Node(String) | String
+fn main()->Result(Unit,json.Error):
+    let value=json.decode("\{\"next\":\{\"next\":\"done\"\}\}",Choice)?
+    println(json.encode(value)?)
+    Ok(())

@@ -21,7 +21,9 @@ def main():
     sources += sorted((ROOT / "compiler-rs/tests/json_newtype_native").glob("*.fn"))
     sources += sorted((ROOT / "compiler-rs/tests/json_constraints_native").glob("*.fn"))
     sources += sorted((ROOT / "compiler-rs/tests/json_sums_native").glob("*.fn"))
+    sources += sorted((ROOT / "compiler-rs/tests/json_unions_native").glob("*.fn"))
     invalid = json.loads((corpus / "invalid.json").read_text())
+    invalid.update(json.loads((ROOT / "compiler-rs/tests/json_unions_native/invalid.json").read_text()))
     assert sources and invalid, "typed JSON corpus is missing"
     with tempfile.TemporaryDirectory(prefix="fern-json-codecs-") as temporary:
         directory = Path(temporary)

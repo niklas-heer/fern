@@ -1,0 +1,13 @@
+type First derive(Json):
+    Started
+    Progress(Int)
+type Second derive(Json):
+    Stopped
+    Message(String)
+type Choice=Second | First
+fn main() -> Result(Unit,json.Error):
+    let value=json.decode("\{\"tag\":\"Started\",\"fields\":[]\}",Choice)?
+    println(json.encode(value)?)
+    let other:Choice=Message("done")
+    println(json.encode(other)?)
+    Ok(())

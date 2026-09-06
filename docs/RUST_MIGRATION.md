@@ -1339,3 +1339,26 @@ extension tests, 102 valid/38 malformed/41 incremental grammar cases, native/WAS
 queries and reproducible hostile-path archive checks. Actual Zed1.18.0 startup
 passes in compiler-override and discovery modes with derived-newtype codec source.
 This is local package/LSP verification, not remote publication or GUI formatting.
+
+
+## Disjoint JSON union codecs (Decision103 J6b) — 2026-09-06
+
+Canonical concrete union plans now select a member from bounded JSON kind,
+strict record keys, tuple length or source sum tags before decoding it exactly
+once. Ambiguous/unsupported shapes reject; no trial payload allocation or
+first-success decoder changes the selected interpretation. Code14 reports no
+unique member at the current parent path. Original numeric and selected-envelope
+errors remain precise. Actual Option field status differs from nullable newtypes.
+
+Whole-union generic requirements retain exact independent evidence, including
+String-only Map keys. Non-union signature positions resolve before canonical
+union equations, so generic duplicate collapse does not require a witness.
+Direct compound decoder targets still use a named alias. Deeper payload/value
+proof and general/custom traits remain separate; see [the contract](JSON_TYPED_CODECS.md).
+
+The integrated macOS/Linux gates pass 1,397/1,399 Rust tests, 36 typed native
+programs, 33 atomic invalid programs and eight runtime ABI fixtures in each of
+three profiles. Existing dynamic JSON, native compiler, full C, native checker
+workflow, fuzz smoke and documentation checks pass. Independent exhaustive key-set
+and finite-graph oracles retain their separate coverage. Golden stdout files keep
+intentional final empty lines, including the empty root JSON Pointer.

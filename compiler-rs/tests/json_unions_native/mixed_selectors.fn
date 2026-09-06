@@ -1,0 +1,25 @@
+type State derive(Json):
+    Ready
+    Count(Int)
+type Extended derive(Json):
+    tag:String
+    fields:List(Int)
+    extra:Bool
+type Choice=State | Extended
+fn inspect(text:String)->Unit:
+    match json.decode(text,Choice):
+        Ok(value) ->
+            match json.encode(value):
+                Ok(text) -> println(text)
+                Err(error) -> println(json.error_code(error))
+        Err(error) ->
+            println(json.error_code(error))
+            println(json.error_offset(error))
+            println(json.error_path(error))
+fn main():
+    inspect("\{\"tag\":\"Ready\",\"fields\":[],\"extra\":true\}")
+    inspect("\{\"tag\":\"Count\",\"fields\":[1.5]\}")
+    inspect("\{\"tag\":\"Other\",\"fields\":[]\}")
+    inspect("\{\"tag\":\"Ready\"\}")
+    inspect("\{\"tag\":\"Ready\",\"fields\":[],\"unexpected\":1\}")
+    inspect("\{\"tag\":\"Ready\",\"fields\":[],\"extra\":0\}")

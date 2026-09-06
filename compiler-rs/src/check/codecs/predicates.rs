@@ -38,6 +38,15 @@ fn walk(
         if !seen.insert((capability, ty.clone())) {
             continue;
         }
+        if union(proof, inference, capability, &ty, span)? {
+            if let Type::Union(children) = &ty {
+                for child in children {
+                    proof.type_work(child, span)?;
+                    pending.push((capability, child.clone()));
+                }
+            }
+            continue;
+        }
         if variable(proof, inference, capability, &ty, span)? {
             continue;
         }
@@ -47,6 +56,43 @@ fn walk(
         }
     }
     Ok(())
+}
+
+/// Check every known component now, while preserving symbolic union disjointness as one equation.
+fn union(
+    proof: &mut Planner<'_>,
+    inference: &Inference,
+    cap: Capability,
+    ty: &Type,
+    span: Span,
+) -> Checked<bool> {
+    let Type::Union(_) = ty else {
+        return Ok(false);
+    };
+    if cap == Capability::JsonStringKey {
+        return Err(Diagnostic::new(
+            span,
+            "JSON object keys must have type String",
+        ));
+    }
+    proof.plan(ty, span, 0)?;
+    proof.finite(span)?;
+    let symbolic = returns::has_infer(ty) || !nominal::generics([ty.clone()]).is_empty();
+    if symbolic {
+        for existing in inference.requirements.borrow().iter() {
+            proof.type_work(&existing.ty, span)?;
+        }
+        schemes::retain_requirement(
+            &mut inference.requirements.borrow_mut(),
+            Requirement {
+                capability: cap,
+                ty: ty.clone(),
+                span,
+            },
+            inference,
+        )?;
+    }
+    Ok(true)
 }
 
 /// Only declared universals or whole-signature existential slots can retain a requirement.

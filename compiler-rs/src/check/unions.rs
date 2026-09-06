@@ -193,6 +193,28 @@ impl Inference {
     pub(super) fn charge_union(&self, ty: &Type, span: Span) -> Checked<()> {
         crate::unions::charge(&self.newtype_work, ty, span)
     }
+    /// Independent non-union positions settle variables before canonical alternatives can collapse.
+    pub(super) fn unify_signature(
+        &mut self,
+        pairs: &[(&Type, &Type)],
+        span: Span,
+        context: &str,
+    ) -> Checked<()> {
+        let mut deferred = Vec::with_capacity(pairs.len());
+        for (actual, expected) in pairs {
+            let a = self.resolve(actual, span)?;
+            let b = self.resolve(expected, span)?;
+            deferred.push(contains_union(&a) || contains_union(&b));
+        }
+        for phase in [false, true] {
+            for ((actual, expected), delayed) in pairs.iter().zip(&deferred) {
+                if *delayed == phase {
+                    self.unify(actual, expected, span, context)?;
+                }
+            }
+        }
+        Ok(())
+    }
     /// Match exact union sets without treating directional subset membership as equality.
     pub(super) fn unify_unions(
         &mut self,

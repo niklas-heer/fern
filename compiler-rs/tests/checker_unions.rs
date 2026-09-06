@@ -128,3 +128,11 @@ fn all_inferred_branch_and_container_forms_require_exact_types() {
         );
     }
 }
+
+#[test]
+fn function_context_uses_independent_positions_before_exact_union_collapse() {
+    for params in ["value:a | String,anchor:a", "anchor:a,value:a | String"] {
+        let source=format!("fn choose({params})->a:anchor\nfn main():\n    let callback:(String,String)->String=choose\n    println(callback(\"a\",\"b\"))\n");
+        fern_prototype::check::check(&fern_prototype::parse::parse(&source).unwrap()).unwrap();
+    }
+}

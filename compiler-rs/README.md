@@ -609,8 +609,8 @@ native programs and the REPL. Unknown fields fail, missing safe Option fields
 become None, and `json.error_path` identifies failures with a JSON Pointer.
 Regular recursive schemas with finite bases and explicitly derived transparent
 newtypes, conditional generic codec-function requirements and explicitly derived
-tagged sums are supported. Union codecs and general/custom Json traits remain
-separate.
+tagged sums and conservatively disjoint unions are supported. General/custom Json
+traits and deeper value-based union discrimination remain separate.
 
 
 Module types and values use separate namespaces. For example, `pub type Id = Int`

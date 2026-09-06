@@ -479,10 +479,12 @@ impl Inference {
         match (&actual, &expected) {
             (Type::Infer(id), ty) | (ty, Type::Infer(id)) => self.assign(*id, ty, span),
             (Type::Function(a, result_a), Type::Function(b, result_b)) if a.len() == b.len() => {
-                for (a, b) in a.iter().zip(b) {
-                    self.unify(a, b, span, context)?;
-                }
-                self.unify(result_a, result_b, span, context)
+                let pairs: Vec<_> = a
+                    .iter()
+                    .zip(b)
+                    .chain([(result_a.as_ref(), result_b.as_ref())])
+                    .collect();
+                self.unify_signature(&pairs, span, context)
             }
             (Type::List(a), Type::List(b)) | (Type::Option(a), Type::Option(b)) => {
                 self.unify(a, b, span, context)

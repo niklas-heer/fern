@@ -214,6 +214,7 @@ fn message(code: u8) -> &'static str {
         "JSON number is not finite",
         "unknown JSON object field",
         "unknown JSON variant",
+        "no unique JSON union member",
     ]
     .get(code as usize)
     .copied()

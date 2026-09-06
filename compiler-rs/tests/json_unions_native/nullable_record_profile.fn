@@ -1,0 +1,12 @@
+newtype Maybe derive(Json)=Maybe(Option(Int))
+type A derive(Json):
+    value:Maybe
+type B derive(Json):
+    other:Option(String)
+type Choice=A | B
+fn main()->Result(Unit,json.Error):
+    let absent=json.decode("\{\}",Choice)?
+    println(json.encode(absent)?)
+    let present=json.decode("\{\"value\":null\}",Choice)?
+    println(json.encode(present)?)
+    Ok(())

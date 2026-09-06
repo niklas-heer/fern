@@ -1,0 +1,2 @@
+# Golden output may intentionally end with an empty printed line.
+*.stdout whitespace=-blank-at-eof

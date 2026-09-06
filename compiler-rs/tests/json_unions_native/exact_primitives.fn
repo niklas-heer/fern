@@ -1,0 +1,19 @@
+type Choice=Int | String
+fn inspect(text:String)->Unit:
+    match json.decode(text,Choice):
+        Ok(value) ->
+            match json.encode(value):
+                Ok(text) -> println(text)
+                Err(error) -> println(json.error_code(error))
+        Err(error) ->
+            println(json.error_code(error))
+            println(json.error_offset(error))
+            println(json.error_path(error))
+fn main():
+    inspect("1.0")
+    inspect("1e0")
+    inspect("9007199254740993")
+    inspect("1.5")
+    inspect("9223372036854775808")
+    inspect("\"a\\u0000b\"")
+    inspect("true")

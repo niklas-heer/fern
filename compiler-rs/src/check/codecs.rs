@@ -2,6 +2,7 @@
 use super::*;
 mod execute;
 mod predicates;
+mod profiles;
 mod sums;
 pub(super) use predicates::{is_json, require, retention};
 mod plan;
@@ -98,6 +99,13 @@ impl<'a> Planner<'a> {
         for (id, entry) in self.entries.iter().enumerate() {
             match &entry.kind {
                 Kind::Pending => return Err(Diagnostic::new(span, "incomplete JSON codec plan")),
+                Kind::Union(children) => {
+                    proof.disjunction(id)?;
+                    for child in children {
+                        let product = proof.alternative(id)?;
+                        proof.edge(product, child.0)?;
+                    }
+                }
                 Kind::Sum(variants) => {
                     proof.disjunction(id)?;
                     for variant in variants {
@@ -121,7 +129,8 @@ impl<'a> Planner<'a> {
                 _ => {}
             }
         }
-        proof.finish()
+        proof.finish()?;
+        profiles::validate(&self.entries, &mut self.work, span)
     }
     /// Wire nullability is a structural property, never inferred from a current runtime value.
     fn nullable(&mut self, id: plan::Id, span: Span) -> Checked<bool> {
@@ -150,13 +159,19 @@ impl<'a> Planner<'a> {
                 }
                 Kind::Option(child)
             }
+            Type::Union(items) => Kind::Union(
+                items
+                    .iter()
+                    .map(|t| self.plan(t, span, depth))
+                    .collect::<Checked<_>>()?,
+            ),
             Type::Tuple(items) => Kind::Tuple(
                 items
                     .iter()
                     .map(|t| self.plan(t, span, depth))
                     .collect::<Checked<_>>()?,
             ),
-            Type::Map(key, item) if **key == Type::String => {
+            Type::Map(key, item) if self.string_key(key, span)? => {
                 Kind::Map(self.plan(item, span, depth)?)
             }
             Type::Map(_, _) => {
@@ -166,10 +181,19 @@ impl<'a> Planner<'a> {
                 ))
             }
             Type::Named(name, _) => return self.record(ty, name, span, depth),
-            Type::Generic(_) if self.symbolic => Kind::Parameter,
+            Type::Generic(_) | Type::Infer(_) if self.symbolic => Kind::Parameter,
             _ => return Err(Diagnostic::new(span, unsupported(ty))),
         };
         Ok(kind)
+    }
+    /// Keep symbolic key identities only when String is still possible; concrete keys remain exact.
+    fn string_key(&mut self, ty: &Type, span: Span) -> Checked<bool> {
+        self.type_work(ty, span)?;
+        match ty {
+            Type::String => Ok(true),
+            Type::Generic(_) | Type::Infer(_) => Ok(self.symbolic),
+            _ => Ok(false),
+        }
     }
     /// Resolve checked record storage while rejecting declaration cycles before child expansion.
     fn record(&mut self, ty: &Type, name: &str, span: Span, depth: usize) -> Checked<Kind> {

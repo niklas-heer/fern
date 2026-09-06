@@ -1,0 +1,5 @@
+fn write(value:Map(k,v) | String,key:k,item:v)->Result(String,json.Error):json.encode(value)
+fn main()->Result(Unit,json.Error):
+    let callback:(Map(String,Int) | String,String,Int)->Result(String,json.Error)=write
+    println(callback(%{"a":7},"",0)?)
+    Ok(())

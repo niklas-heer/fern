@@ -1,0 +1,7 @@
+type Choice=String | Float
+fn main() -> Result(Unit,json.Error):
+    let value=json.decode("-0",Choice)?
+    match value:
+        number:Float -> println(json.encode(number)?)
+        _:String -> println("wrong")
+    Ok(())

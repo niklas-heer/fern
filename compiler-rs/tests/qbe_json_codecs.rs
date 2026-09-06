@@ -57,3 +57,31 @@ fn public_record_wire_names_cannot_contain_nul() {
     program.types[0].fields[0] = fields[0].name.clone();
     assert!(qbe::emit(&program).is_err());
 }
+#[test]
+fn inactive_union_overlap_is_rejected_before_any_qbe_table_is_emitted() {
+    let mut program = program();
+    let function = program
+        .functions
+        .iter_mut()
+        .find(|f| f.name == "first")
+        .unwrap();
+    let ir::ExprKind::JsonCodec { plan, .. } = &mut function.body.kind else {
+        panic!("codec")
+    };
+    let plan = Rc::make_mut(plan);
+    assert_eq!(plan.entries[0].ty, Type::Int);
+    plan.entries.push(Entry {
+        ty: Type::Float,
+        kind: Kind::Float,
+    });
+    let mut members = vec![Type::Int, Type::Float];
+    members.sort();
+    plan.entries.push(Entry {
+        ty: Type::Union(members),
+        kind: Kind::Union(vec![0, 1]),
+    });
+    assert!(qbe::emit(&program)
+        .unwrap_err()
+        .message
+        .contains("not provably disjoint"));
+}

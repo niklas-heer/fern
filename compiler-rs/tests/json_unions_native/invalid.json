@@ -1,0 +1,7 @@
+{
+  "union_number": "type Choice=Int | Float\nfn read()->Result(Choice,json.Error):json.decode(\"null\",Choice)\nfn main():()\n",
+  "union_array": "type Choice=List(Int) | List(String)\nfn read()->Result(Choice,json.Error):json.decode(\"null\",Choice)\nfn main():()\n",
+  "union_nullable": "type Choice=Unit | Option(Int)\nfn read()->Result(Choice,json.Error):json.decode(\"null\",Choice)\nfn main():()\n",
+  "union_option": "type Choice=Option(Int) | Int\nfn read()->Result(Choice,json.Error):json.decode(\"null\",Choice)\nfn main():()\n",
+  "union_record_values": "type A derive(Json):\n    value:Int\ntype B derive(Json):\n    value:String\ntype Choice=A | B\nfn read()->Result(Choice,json.Error):json.decode(\"null\",Choice)\nfn main():()\n"
+}
