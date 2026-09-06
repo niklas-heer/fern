@@ -1,4 +1,6 @@
 //! Independent, bounded lexer and recursive-descent parser for the prototype.
+mod inspection;
+pub use inspection::{debug_ast, debug_tokens};
 mod label_recovery;
 mod recovery;
 use crate::ast::{

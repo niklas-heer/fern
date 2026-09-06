@@ -86,7 +86,8 @@ impl Controls {
         if let Some(action) = arguments.first().and_then(|a| a.to_str()) {
             if self.verbose
                 && [
-                    "check", "emit", "build", "run", "fmt", "doc", "test", "repl", "lsp",
+                    "check", "emit", "build", "run", "fmt", "doc", "test", "repl", "lsp", "lex",
+                    "parse",
                 ]
                 .contains(&action)
             {

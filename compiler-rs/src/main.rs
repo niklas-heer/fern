@@ -8,6 +8,7 @@ mod documentation_cli;
 mod format_cli;
 mod native;
 mod source_directory;
+mod syntax_cli;
 use fern_prototype::{check, modules, qbe};
 use std::{
     env,
@@ -31,7 +32,7 @@ struct Options {
 fn help() {
     println!(
             "fern-rs: experimental Rust frontend (C remains the default)\n\
-Usage: fern-rs <check|emit|build|run|fmt|doc> <source.fn> [-o output]\n\
+Usage: fern-rs <check|emit|build|run|fmt|doc|lex|parse> <source.fn> [-o output]\n\
 Run arguments: fern-rs run source.fn -- [arguments]\n\
 Global controls: --quiet, --verbose, --color=auto|always|never; -v aliases --version.\n\
 Subset: generic functions, custom types, modules, Int/Bool/String, List/Option/Result, guarded match, and Result ?.\n\
@@ -65,7 +66,7 @@ fn options(
         .to_str()
         .ok_or("command must be UTF-8")?
         .to_owned();
-    if !["check", "emit", "build", "run", "fmt"].contains(&command.as_str()) {
+    if !["check", "emit", "build", "run", "fmt", "lex", "parse"].contains(&command.as_str()) {
         return Err(format!("unknown command: {command}"));
     }
     let mut source = None;
@@ -114,6 +115,9 @@ fn options(
 
 /// Parse and check source before producing any artifacts or running backend tools.
 fn run(options: Options) -> Result<u8, String> {
+    if matches!(options.command.as_str(), "lex" | "parse") {
+        return syntax_cli::run(&options.command, &options.source);
+    }
     if options.command == "fmt" {
         return format_cli::run(&options.source, options.format_check);
     }

@@ -641,3 +641,23 @@ Finite ordinary-type unions now support declared member/subset conversions and
 typed match narrowing in native execution and the REPL. Full-width payloads retain
 nominal and generic identity. Existing containers stay invariant; inferred joins
 and lifted operators remain separate work. See [the union contract](../docs/UNIONS.md).
+
+
+### Syntax inspection
+
+`fern-rs lex source.fn` prints the actual Rust lexer token kinds with UTF-8 byte
+ranges. `fern-rs parse source.fn` prints the unresolved source AST, including its
+spans. Neither command loads imports, checks types/names or runs code; they also
+accept library files without an entrypoint. Lexing still validates delimiters and
+indentation, so a successful token dump is not guaranteed for malformed layout.
+
+The escaped text is an inspection format, not stable serialization or byte parity
+with the C compiler's internal representation. Dump stdout is uncolored and
+unchanged by `--quiet`/`--verbose`; verbose action information goes to stderr.
+Only one source path is accepted and `-o` is not supported for these commands.
+
+Input keeps the ordinary 1 MiB source, 65,536-token and parser depth bounds.
+Inspection builds a complete dump of at most 16 MiB before publishing stdout;
+syntax and resource failures therefore produce no partial dump. Oversized source
+is diagnosed before UTF-8 decoding, even if the bounded read cuts a codepoint.
+Ordinary read/write failures remain errors. No native backend/runtime is needed.
