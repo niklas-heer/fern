@@ -40,6 +40,7 @@ fn recursive(list: bool) -> (Plan, Vec<ir::TypeLayout>) {
     (
         plan,
         vec![ir::TypeLayout {
+            variant_names: Vec::new(),
             ty: named,
             storage: ir::LayoutStorage::Tagged,
             fields: vec!["next".into()],

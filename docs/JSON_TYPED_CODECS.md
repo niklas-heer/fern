@@ -27,8 +27,8 @@ Input pipes work, for example `text |> json.decode(User)`.
 
 Supported concrete wire types are Int, Float, Bool, String, Unit, `json.Value`,
 tuples, Lists, `Map(String, value)`, nullable-safe Options, and regular recursive
-records and transparent newtypes marked `derive(Json)`. Concrete instantiations
-of generic records and newtypes are supported.
+records, tagged sums and transparent newtypes marked `derive(Json)`. Concrete
+instantiations of generic records, sums and newtypes are supported.
 Records retain declaration order; maps retain their existing entry order.
 Unknown record fields fail strictly. A missing Option field becomes None; other
 missing fields fail. None and Unit encode as JSON null. Option payloads must not
@@ -36,8 +36,8 @@ themselves accept null, so `Option(Unit)`, `Option(json.Value)`, and nested Opti
 are rejected. Int conversion preserves the full signed 64-bit range; Float and
 text conversion reuse the dynamic API's existing exact adapters.
 
-This checkpoint does not implement general Json traits, user codec implementations,
-sums, or unions.
+This checkpoint does not implement general Json traits, user codec implementations
+or union codecs.
 Unsupported derivations are diagnosed even when unused. Result-bearing values,
 including nested fields or containers, cannot be serialized: converting a Result
 to opaque JSON does not acknowledge its error obligation.
@@ -149,3 +149,15 @@ public IR validation rejects them even in inactive code. There is no default
 concrete witness. Predicate checking and generic-template validation each share a
 400,000-unit allowance across their respective pass; concrete plan and runtime
 limits above remain unchanged.
+
+## Tagged sums
+
+Derived sums opt in with the existing `type Event derive(Json):` syntax. A constructor `Count(42)` encodes exactly as `{"tag":"Count","fields":[42]}`; a nullary `Ready` encodes `{"tag":"Ready","fields":[]}`. The tag is the original unqualified source constructor token. Declaration order, module aliases and nominal type spelling do not appear in the wire identity. Rename a constructor or reorder its payloads only when a wire-format change is intended. Output keys are always tag then fields; payloads retain source declaration order.
+
+Both envelope keys are mandatory. Unknown input keys fail first in input order (code12); then missing tag/fields fail in that order (code6); then tag type/name, payload-array type/arity and child conversions are checked. Unknown constructor names produce code13, `unknown JSON variant`, at `/tag`. Payload failures retain primitive code/offset and append `/fields/<index>` to the current path. No candidate payload is converted before complete envelope shape validation. Tagged source ordinals never become text.
+
+Generic and mutually recursive sums use the existing conditional Json requirement machinery. Finite values are proved as an OR of constructor AND-products. A nullary base permits a recursive chain; a type with only a strict self-recursive constructor is rejected as a codec restriction. Every stored component in every variant is checked, even when another variant supplies a finite base. Stored Results/functions remain unsupported. Phantom type arguments do not create stored fields or obligations.
+
+The native codec descriptor remains four 64-bit words. For kind12 only, its third word is a typed pointer to three-word variant descriptors (source-name pointer, payload count, codec-pointer array). Other kinds retain their existing child-pointer meaning. This is the narrow Decision103 external ABI exception, not a general language representation change. The new TypeLayout.variant_names vector independently validates source spelling/native tag order; plan products are never fabricated tuples.
+
+Envelopes count their real object, tag text and array nodes against existing JSON depth/node/output/storage limits. Consequently fewer recursive sum links fit within depth 128 than recursive records with fewer wire layers. Plan/metadata/proof work remains one 400,000-unit allowance, source plan count 4096, constructor count 255, descriptor output 16 MiB. Child conversion, tag scans, pointer-path growth and final stringify share the original runtime allowance. Failed path growth retains the parent; an earlier error's code/offset/path cannot be overwritten.

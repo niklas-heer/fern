@@ -1976,11 +1976,21 @@ int64_t fern_prompt_int(const char* prompt, int64_t min, int64_t max);
 /** Read an immutable JSON Pointer path; dynamic errors have an empty path. @param error opaque error; @return retained path. */
 const char* fern_json_value_error_path(const FernJsonError* error);
 
+/** One source-named constructor with its real ordered payload codecs (Decision103 ABI). */
+typedef struct FernJsonCodecVariant {
+    const char* name;
+    int64_t count;
+    const struct FernJsonCodec* const* children;
+} FernJsonCodecVariant;
 /** Compiler-validated finite codec graph; tag11 transparently follows one newtype child. */
 typedef struct FernJsonCodec {
     int64_t kind;
     int64_t count;
-    const struct FernJsonCodec* const* children;
+    /* The compiler-validated kind selects this external ABI pointer union only. */
+    union {
+        const struct FernJsonCodec* const* children;
+        const FernJsonCodecVariant* variants;
+    };
     const char* const* names;
 } FernJsonCodec;
 /** Encode a full-width typed payload under one shared codec budget. @param plan checked descriptor; @param payload native bits; @return Result(String,Error). */

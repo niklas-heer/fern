@@ -4,10 +4,10 @@
 #include <string.h>
 static const FernJsonCodec record_codec;
 static const FernJsonCodec* list_children[] = {&record_codec};
-static const FernJsonCodec list_codec = {6,1,list_children,NULL};
+static const FernJsonCodec list_codec = {6,1,{.children=list_children},NULL};
 static const FernJsonCodec* record_children[] = {&list_codec};
 static const char* names[] = {"children"};
-static const FernJsonCodec record_codec = {10,1,record_children,names};
+static const FernJsonCodec record_codec = {10,1,{.children=record_children},names};
 /** A hostile cyclic value must spend depth/work instead of following the schema cache forever. */
 int fern_main(void) {
     int64_t record[2] = {0,0};

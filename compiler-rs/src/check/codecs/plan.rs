@@ -10,6 +10,11 @@ pub(super) struct Field {
     pub optional: bool,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Variant {
+    pub wire_tag: String,
+    pub fields: Vec<Id>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Kind {
     /// Private reserved graph slot; completion is required before any proof or publication.
     Pending,
@@ -25,6 +30,7 @@ pub(super) enum Kind {
     Tuple(Vec<Id>),
     Map(Id),
     Record(Vec<Field>),
+    Sum(Vec<Variant>),
     /// Only unused-derive validation uses this symbolic leaf; never publish in executable IR.
     Parameter,
 }

@@ -142,21 +142,13 @@ fn nominal_children(
         ));
     }
     let newtype = proof.registry.is_newtype(ty);
-    if !newtype && !decl.record {
-        return Err(Diagnostic::new(
-            span,
-            "Json derivation currently requires a record or newtype",
-        ));
-    }
     proof.layout_work(ty, decl, span)?;
     let layout = proof.registry.layout(ty, span)?;
     let cap = if newtype { cap } else { Capability::Json };
     Ok(layout
         .variants
         .into_iter()
-        .next()
-        .unwrap()
-        .into_iter()
+        .flatten()
         .map(|t| (cap, t))
         .collect())
 }

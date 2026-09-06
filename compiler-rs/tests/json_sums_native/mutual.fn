@@ -1,0 +1,15 @@
+type First(a) derive(Json):
+    Stop
+    More(Second(a))
+type Second(a) derive(Json):
+    Item(a,First(a))
+type Phantom(a) derive(Json):
+    Marker
+fn main()->Result(Unit,json.Error):
+    let value:First(Int)=More(Item(7,Stop))
+    let encoded=json.encode(value)?
+    println(encoded)
+    println(json.encode(json.decode(encoded,First(Int))?)?)
+    let phantom:Phantom(Result(Int,String))=Marker
+    println(json.encode(phantom)?)
+    Ok(())

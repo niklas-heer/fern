@@ -10,6 +10,9 @@ impl Execution<'_, '_> {
     ) -> Result<Json> {
         let plan = self.plan;
         match (&plan.entries[id].kind, input) {
+            (Wire::Sum(variants), Value::Sum(tag, fields)) => {
+                self.encode_sum(variants, *tag, fields, depth)
+            }
             (Wire::Option(_), Value::Sum(1, fields)) if fields.is_empty() => {
                 self.scalar(&Value::Unit)
             }
@@ -46,6 +49,9 @@ impl Execution<'_, '_> {
     ) -> Result<Value> {
         let plan = self.plan;
         match (&plan.entries[id].kind, &input.kind) {
+            (Wire::Sum(variants), Kind::Object(values, _)) => {
+                self.decode_sum(variants, values, depth)
+            }
             (Wire::Option(child), kind) => {
                 self.slots(1)?;
                 if matches!(kind, Kind::Null) {
@@ -70,7 +76,7 @@ impl Execution<'_, '_> {
             _ => Err(error(5, -1)),
         }
     }
-    fn json_slots(&mut self, count: usize) -> Result<()> {
+    pub(super) fn json_slots(&mut self, count: usize) -> Result<()> {
         if count > NODES {
             return Err(error(4, -1));
         }
@@ -78,7 +84,7 @@ impl Execution<'_, '_> {
         self.budget.node()?;
         self.budget.allocate(count * 8)
     }
-    fn encode_array(
+    pub(super) fn encode_array(
         &mut self,
         values: &[Value],
         child: impl Fn(usize) -> usize,
@@ -95,7 +101,7 @@ impl Execution<'_, '_> {
         }
         value::seal(children, false, 0, &mut self.budget)
     }
-    fn decode_array(
+    pub(super) fn decode_array(
         &mut self,
         values: &[Json],
         child: impl Fn(usize) -> usize,
@@ -203,7 +209,7 @@ impl Execution<'_, '_> {
         }
         Ok(Value::Sum(0, Rc::new(result)))
     }
-    fn same_key(&mut self, a: &str, b: &str) -> Result<bool> {
+    pub(super) fn same_key(&mut self, a: &str, b: &str) -> Result<bool> {
         self.budget.work(b.len() + 1 + a.len().min(b.len()) + 1)?;
         Ok(a == b)
     }

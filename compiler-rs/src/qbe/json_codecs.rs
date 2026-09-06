@@ -37,6 +37,14 @@ impl Emitter<'_> {
         for entry in &plan.entries {
             bytes = bytes.saturating_add(256);
             match &entry.kind {
+                Kind::Sum(variants) => {
+                    for variant in variants {
+                        bytes = bytes
+                            .saturating_add(variant.wire_tag.len().saturating_mul(8))
+                            .saturating_add(512)
+                            .saturating_add(variant.fields.len().saturating_mul(64));
+                    }
+                }
                 Kind::Tuple(ids) => bytes = bytes.saturating_add(ids.len().saturating_mul(64)),
                 Kind::Record(fields) => {
                     for field in fields {
@@ -63,50 +71,84 @@ impl Emitter<'_> {
         let unique = self.strings;
         self.strings += 1;
         for (index, entry) in plan.entries.iter().enumerate() {
-            let (tag, children) = descriptor(&entry.kind);
-            let prefix = format!("$json_codec_{unique}_{index}");
-            let child_data = if children.is_empty() {
-                "0".into()
-            } else {
-                let refs = children
-                    .iter()
-                    .map(|id| format!("l $json_codec_{unique}_{id}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                self.data
-                    .push_str(&format!("data {prefix}_children = {{ {refs} }}\n"));
-                format!("{prefix}_children")
-            };
-            let names = if let Kind::Record(fields) = &entry.kind {
-                let mut names = Vec::new();
-                for field in fields {
-                    names.push(format!("l {}", self.string(&field.name, span)?));
-                }
-                if names.is_empty() {
-                    "0".into()
-                } else {
-                    self.data.push_str(&format!(
-                        "data {prefix}_names = {{ {} }}\n",
-                        names.join(", ")
-                    ));
-                    format!("{prefix}_names")
-                }
-            } else {
-                "0".into()
-            };
-            self.data.push_str(&format!(
-                "data {prefix} = {{ l {tag}, l {}, l {child_data}, l {names} }}\n",
-                children.len()
-            ));
+            self.codec_entry(unique, index, &entry.kind, span)?;
         }
         let table = format!("$json_codec_{unique}_{}", plan.root);
         self.codec_tables.insert(identity, table.clone());
         Ok(table)
     }
+    /// Sum descriptors address real variant products, never fake tuple codec entries.
+    fn codec_entry(
+        &mut self,
+        unique: usize,
+        index: usize,
+        kind: &Kind,
+        span: Span,
+    ) -> Lowering<()> {
+        let prefix = format!("$json_codec_{unique}_{index}");
+        if let Kind::Sum(variants) = kind {
+            let mut rows = Vec::with_capacity(variants.len());
+            for (tag, variant) in variants.iter().enumerate() {
+                let children =
+                    self.codec_children(unique, &format!("{prefix}_v{tag}"), &variant.fields);
+                let name = self.string(&variant.wire_tag, span)?;
+                rows.push(format!(
+                    "l {name}, l {}, l {children}",
+                    variant.fields.len()
+                ));
+            }
+            self.data.push_str(&format!(
+                "data {prefix}_variants = {{ {} }}\n",
+                rows.join(", ")
+            ));
+            self.data.push_str(&format!(
+                "data {prefix} = {{ l 12, l {}, l {prefix}_variants, l 0 }}\n",
+                variants.len()
+            ));
+            return Ok(());
+        }
+        let (tag, children) = descriptor(kind);
+        let child_data = self.codec_children(unique, &prefix, &children);
+        let mut names = Vec::new();
+        if let Kind::Record(fields) = kind {
+            for field in fields {
+                names.push(format!("l {}", self.string(&field.name, span)?));
+            }
+        }
+        let names = if names.is_empty() {
+            "0".into()
+        } else {
+            self.data.push_str(&format!(
+                "data {prefix}_names = {{ {} }}\n",
+                names.join(", ")
+            ));
+            format!("{prefix}_names")
+        };
+        self.data.push_str(&format!(
+            "data {prefix} = {{ l {tag}, l {}, l {child_data}, l {names} }}\n",
+            children.len()
+        ));
+        Ok(())
+    }
+    /// Emit a bounded descriptor pointer array after aggregate output reservation.
+    fn codec_children(&mut self, unique: usize, prefix: &str, ids: &[usize]) -> String {
+        if ids.is_empty() {
+            return "0".into();
+        }
+        let refs = ids
+            .iter()
+            .map(|id| format!("l $json_codec_{unique}_{id}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.data
+            .push_str(&format!("data {prefix}_children = {{ {refs} }}\n"));
+        format!("{prefix}_children")
+    }
 }
 /// Match the documented runtime ABI without relying on Rust enum discriminant layout.
 fn descriptor(kind: &Kind) -> (usize, Vec<usize>) {
     match kind {
+        Kind::Sum(_) => unreachable!("sum descriptors use their typed variant table"),
         Kind::Int => (0, vec![]),
         Kind::Float => (1, vec![]),
         Kind::Bool => (2, vec![]),

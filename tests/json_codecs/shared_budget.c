@@ -1,7 +1,7 @@
 #include "../../runtime/fern_json.c"
-static const FernJsonCodec scalar={0,0,NULL,NULL};
+static const FernJsonCodec scalar={0,0,{.children=NULL},NULL};
 static const FernJsonCodec* children[]={&scalar};
-static const FernJsonCodec sequence={6,1,children,NULL};
+static const FernJsonCodec sequence={6,1,{.children=children},NULL};
 /** Siblings share the same allowance; exhaustion occurs before the second primitive adapter. */
 int fern_main(void) {
     int64_t data[]={1,2};FernList values={.data=data,.len=2,.cap=2};

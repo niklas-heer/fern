@@ -16,7 +16,6 @@ fn unused_derived_records_validate_every_payload_and_trait() {
             "Result",
         ),
         ("type User derive(Json):\n    value:Option(Unit)\n", "null"),
-        ("type State derive(Json):\n    On\n    Off\n", "record"),
     ] {
         let program = parse::parse(&format!("{source}fn main():()\n")).unwrap();
         let error = check::check(&program).unwrap_err();
@@ -86,4 +85,10 @@ fn canonical_codec_identities_cannot_be_redefined_as_source_functions() {
     program.functions[0].name = "json.decode".into();
     let error = check::check(&program).unwrap_err();
     assert!(error.message.contains("reserved"), "{error:?}");
+}
+
+#[test]
+fn unused_derived_sums_are_validated_without_requiring_a_record_shape() {
+    let source = "type State derive(Json):\n    On\n    Off\nfn main():()\n";
+    check::check(&parse::parse(source).unwrap()).unwrap();
 }

@@ -2,6 +2,7 @@
 use super::*;
 mod execute;
 mod predicates;
+mod sums;
 pub(super) use predicates::{is_json, require, retention};
 mod plan;
 #[cfg(test)]
@@ -97,6 +98,15 @@ impl<'a> Planner<'a> {
         for (id, entry) in self.entries.iter().enumerate() {
             match &entry.kind {
                 Kind::Pending => return Err(Diagnostic::new(span, "incomplete JSON codec plan")),
+                Kind::Sum(variants) => {
+                    proof.disjunction(id)?;
+                    for variant in variants {
+                        let product = proof.alternative(id)?;
+                        for child in &variant.fields {
+                            proof.edge(product, child.0)?;
+                        }
+                    }
+                }
                 Kind::Newtype(child) => proof.edge(id, child.0)?,
                 Kind::Tuple(children) => {
                     for child in children {
@@ -179,10 +189,7 @@ impl<'a> Planner<'a> {
             return Ok(Kind::Newtype(self.plan(&inner, span, depth)?));
         }
         if !declaration.record {
-            return Err(Diagnostic::new(
-                span,
-                "derive(Json) currently requires a record",
-            ));
+            return self.sum(ty, declaration, span, depth);
         }
         self.fields(ty, declaration, span, depth).map(Kind::Record)
     }
@@ -195,7 +202,10 @@ impl<'a> Planner<'a> {
         if arguments.len() != decl.parameters.len() {
             return Err(Diagnostic::new(span, "wrong nominal type argument count"));
         }
-        for field in &decl.variants[0].fields {
+        for variant in &decl.variants {
+            self.charge(variant.name.len() + 1, variant.span)?;
+        }
+        for field in decl.variants.iter().flat_map(|v| &v.fields) {
             self.charge(field.name.as_ref().map_or(0, String::len) + 1, field.span)?;
             let mut pending = vec![&field.ty];
             while let Some(ty) = pending.pop() {

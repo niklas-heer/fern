@@ -23,6 +23,7 @@ fn construct(ty: Type, tag: usize, fields: Vec<Expr>) -> Expr {
 }
 fn record() -> TypeLayout {
     TypeLayout {
+        variant_names: Vec::new(),
         storage: fern_prototype::ir::LayoutStorage::Tagged,
         ty: named("Person"),
         variants: vec![vec![Type::String, Type::Bool, Type::Int]],
@@ -120,6 +121,7 @@ fn nominal_types_validate_layouts_tags_fields_and_concreteness() {
 #[test]
 fn nested_constructor_tests_precede_payload_loads_and_guard_evaluation() {
     let choice = TypeLayout {
+        variant_names: Vec::new(),
         storage: fern_prototype::ir::LayoutStorage::Tagged,
         ty: named("Choice"),
         variants: vec![vec![named("Person")], vec![]],
@@ -164,6 +166,7 @@ fn nested_constructor_tests_precede_payload_loads_and_guard_evaluation() {
 fn nested_bool_patterns_prove_exhaustive_and_guarded_patterns_do_not() {
     let ty = named("Box");
     let layout = TypeLayout {
+        variant_names: Vec::new(),
         storage: fern_prototype::ir::LayoutStorage::Tagged,
         ty: ty.clone(),
         variants: vec![vec![Type::Bool]],
@@ -278,12 +281,14 @@ fn generic_instantiations_have_distinct_concrete_layouts_and_field_types() {
     let string = Type::Named("Box".into(), vec![Type::String]);
     let layouts = vec![
         TypeLayout {
+            variant_names: Vec::new(),
             storage: fern_prototype::ir::LayoutStorage::Tagged,
             ty: integer.clone(),
             variants: vec![vec![Type::Int]],
             fields: vec!["value".into()],
         },
         TypeLayout {
+            variant_names: Vec::new(),
             storage: fern_prototype::ir::LayoutStorage::Tagged,
             ty: string.clone(),
             variants: vec![vec![Type::String]],
@@ -307,6 +312,7 @@ fn generic_instantiations_have_distinct_concrete_layouts_and_field_types() {
     assert!(emit(
         construct(unresolved.clone(), 0, vec![]),
         vec![TypeLayout {
+            variant_names: Vec::new(),
             storage: fern_prototype::ir::LayoutStorage::Tagged,
             ty: unresolved,
             variants: vec![vec![]],
@@ -319,6 +325,7 @@ fn generic_instantiations_have_distinct_concrete_layouts_and_field_types() {
 #[test]
 fn failed_guard_bindings_cannot_escape_and_wrong_nested_arity_is_rejected() {
     let choice = TypeLayout {
+        variant_names: Vec::new(),
         storage: fern_prototype::ir::LayoutStorage::Tagged,
         ty: named("Choice"),
         variants: vec![vec![Type::String], vec![]],
@@ -363,6 +370,7 @@ fn failed_guard_bindings_cannot_escape_and_wrong_nested_arity_is_rejected() {
 fn recursive_nominal_layouts_and_nested_product_coverage_are_bounded() {
     let chain = named("Chain");
     let layout = TypeLayout {
+        variant_names: Vec::new(),
         storage: fern_prototype::ir::LayoutStorage::Tagged,
         ty: chain.clone(),
         variants: vec![vec![], vec![chain.clone()]],
@@ -375,6 +383,7 @@ fn recursive_nominal_layouts_and_nested_product_coverage_are_bounded() {
     .is_ok());
     let pair = named("Flags");
     let layout = TypeLayout {
+        variant_names: Vec::new(),
         storage: fern_prototype::ir::LayoutStorage::Tagged,
         ty: pair.clone(),
         variants: vec![vec![Type::Bool, Type::Bool]],

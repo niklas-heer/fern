@@ -1,0 +1,16 @@
+newtype Amount derive(Json)=Amount(Float)
+type Packet(a) derive(Json):
+    Empty
+    Packed(a)
+fn write(value):json.encode(value)
+fn closure(value):
+    () -> write(value)
+fn main()->Result(Unit,json.Error):
+    let original:Packet(Amount)=Packed(Amount(-0.0))
+    let writer=closure(original)
+    let text=writer()?
+    println(text)
+    let decoded=json.decode(text,Packet(Amount))?
+    println(write([decoded,original])?)
+    println(write(%{"exact":Packed(9007199254740993)})?)
+    Ok(())

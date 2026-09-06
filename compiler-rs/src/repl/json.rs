@@ -213,6 +213,7 @@ fn message(code: u8) -> &'static str {
         "JSON string contains NUL",
         "JSON number is not finite",
         "unknown JSON object field",
+        "unknown JSON variant",
     ]
     .get(code as usize)
     .copied()

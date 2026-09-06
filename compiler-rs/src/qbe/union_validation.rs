@@ -3,7 +3,18 @@ use super::*;
 
 /// Validate shapes and charge every structural occurrence before any emitter clones or comparisons.
 pub(super) fn preflight(program: &ir::Program) -> Lowering<()> {
-    let mut work = 0;
+    let mut work = 0usize;
+    for layout in &program.types {
+        for name in layout.fields.iter().chain(&layout.variant_names) {
+            work = work.saturating_add(name.len() + 1);
+            if work > 400_000 {
+                return Err(invalid(
+                    Span::default(),
+                    "nominal metadata work limit exceeded",
+                ));
+            }
+        }
+    }
     walk(program, &mut |ty, selected| {
         type_work(ty, selected, &mut work)
     })

@@ -4,6 +4,13 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 103 Encode explicitly derived sums with stable source tags
+* **Date**: 2026-09-06
+* **Status**: Accepted for tagged sums (J6a); union codecs and general traits remain separate
+* **Decision**: I will encode derived sum values as a strict object with `tag` and `fields`, using original unqualified constructor spelling and source-order payloads. Validate the complete envelope before converting payloads; unknown variants use code13 at `/tag`.
+* **Context**: The proposal and failing native/REPL/public-plan tests preceded implementation. Constructor ordinals and runtime storage are not stable wire identities. Finite recursive schemas need an OR of constructor products, checking all stored components, including inactive variants. The unavailable `/decision` skill is replaced by this established format.
+* **Consequences**: Independent variant-name layout metadata validates source identity. The four-word native descriptor uses a narrowly typed children/variants pointer union; kind12 points to three-word variant descriptors. This external ABI exception does not fabricate language tuple layouts. Every envelope node and payload spends the existing shared native/REPL limits. Plan validation charges metadata and finite-value proof before publication, including inactive entries. Constructor rename/payload reorder changes the wire format. Result/function payloads remain unsupported; phantom arguments remain irrelevant. See [the codec contract](docs/JSON_TYPED_CODECS.md).
+
 ### 102 Retain native test identity until descendant cleanup is complete
 * **Date**: 2026-09-06
 * **Status**: Accepted for the native helper and safe Rust adapter

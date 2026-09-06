@@ -178,6 +178,15 @@ fn concrete_entry(entry: Plan) -> Checked<wire::Entry> {
                 })
                 .collect(),
         ),
+        Kind::Sum(variants) => wire::Kind::Sum(
+            variants
+                .into_iter()
+                .map(|v| wire::Variant {
+                    wire_tag: v.wire_tag,
+                    fields: v.fields.into_iter().map(|id| id.0).collect(),
+                })
+                .collect(),
+        ),
         Kind::Parameter | Kind::Pending => {
             return Err(Diagnostic::new(
                 Span::default(),

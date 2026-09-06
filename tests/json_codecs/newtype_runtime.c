@@ -1,11 +1,11 @@
 #include "../../runtime/fern_json.c"
 #include <gc/gc.h>
-static const FernJsonCodec integer_codec={0,0,NULL,NULL};
-static const FernJsonCodec float_codec={1,0,NULL,NULL};
+static const FernJsonCodec integer_codec={0,0,{.children=NULL},NULL};
+static const FernJsonCodec float_codec={1,0,{.children=NULL},NULL};
 static const FernJsonCodec* integers[]={&integer_codec};
-static const FernJsonCodec integer_newtype={11,1,integers,NULL};
+static const FernJsonCodec integer_newtype={11,1,{.children=integers},NULL};
 static const FernJsonCodec* floats[]={&float_codec};
-static const FernJsonCodec float_newtype={11,1,floats,NULL};
+static const FernJsonCodec float_newtype={11,1,{.children=floats},NULL};
 /** Compare raw/wrapped adapter allocation and bits without counting unrelated runtime initialization. */
 static int compare(const FernJsonCodec* raw,const FernJsonCodec* wrapped,int64_t bits) {
     JsonCodecState a=codec_begin(),b=codec_begin();

@@ -192,6 +192,7 @@ fn unused_union_signature_work_is_aggregate_bounded() {
     let ty = union(vec![Type::Int, long.clone()]);
     let mut p = program(expr(Type::Unit, ExprKind::Unit));
     p.types.push(ir::TypeLayout {
+        variant_names: Vec::new(),
         storage: ir::LayoutStorage::Tagged,
         ty: long,
         variants: vec![vec![]],

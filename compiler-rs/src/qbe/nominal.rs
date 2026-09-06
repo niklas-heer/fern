@@ -35,6 +35,7 @@ pub(super) fn layouts(types: &[ir::TypeLayout]) -> Lowering<HashMap<Type, &ir::T
                 "record field metadata differs from layout",
             ));
         }
+        variant_names(layout)?;
         let unique: BTreeSet<_> = layout.fields.iter().collect();
         if unique.len() != layout.fields.len() {
             return Err(invalid(Span::default(), "duplicate record field names"));
@@ -53,6 +54,30 @@ pub(super) fn layouts(types: &[ir::TypeLayout]) -> Lowering<HashMap<Type, &ir::T
         newtypes::representation(&layout.ty, &layouts, Span::default())?;
     }
     Ok(layouts)
+}
+
+/// Names are inert source metadata, but malformed inactive layouts still cannot carry arbitrary tags.
+fn variant_names(layout: &ir::TypeLayout) -> Lowering<()> {
+    if layout.variant_names.is_empty() {
+        return Ok(());
+    }
+    if layout.storage != ir::LayoutStorage::Tagged
+        || !layout.fields.is_empty()
+        || layout.variant_names.len() != layout.variants.len()
+        || layout.variant_names.len() > 255
+    {
+        return Err(invalid(
+            Span::default(),
+            "invalid source constructor metadata",
+        ));
+    }
+    let mut names = BTreeSet::new();
+    for name in &layout.variant_names {
+        if !crate::json_codec::sums::source_name(name) || !names.insert(name) {
+            return Err(invalid(Span::default(), "invalid source constructor name"));
+        }
+    }
+    Ok(())
 }
 
 /// Require every nominal reference to have an exact concrete layout without expanding cycles.

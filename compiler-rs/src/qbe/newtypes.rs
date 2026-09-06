@@ -29,6 +29,7 @@ pub(super) fn representation<'t>(
 pub(super) fn payload(layout: &ir::TypeLayout, span: Span) -> Lowering<&Type> {
     if layout.storage != ir::LayoutStorage::Unboxed
         || !layout.fields.is_empty()
+        || !layout.variant_names.is_empty()
         || layout.variants.len() != 1
         || layout.variants[0].len() != 1
     {

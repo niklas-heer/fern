@@ -1315,3 +1315,17 @@ release and sanitizer profiles on macOS/Linux, including exact output caps and
 malformed transport. Existing unit/doc source tests retain their output and exit
 contracts. The Linux suite also verifies that escaped pipe holders cannot leave
 Rust reader threads behind. See [component requirements](../compiler-rs/README.md).
+
+
+## Tagged JSON sums (Decision103 J6a) — 2026-09-06
+
+Explicitly derived sums use stable source constructor names in strict tag/fields
+envelopes. Finite-value proof supports constructor alternatives without hiding
+invalid stored fields. Native and interactive execution charge real envelope
+nodes, payloads and error paths against the same existing allowances.
+
+The integrated macOS/Linux gates pass 1,354/1,356 Rust tests, eighteen typed native
+JSON programs and twenty-eight atomic invalid programs. Seven runtime ABI fixtures
+pass debug/release/sanitizer profiles. Full C checks, the native checker workflow,
+compiler fuzz smoke and documentation gates also pass. Union codecs and general
+traits remain separate; see [the wire contract](JSON_TYPED_CODECS.md).

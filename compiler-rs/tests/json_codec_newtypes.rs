@@ -65,6 +65,7 @@ fn public_newtype_plans_reject_storage_and_optional_marker_forgery() {
         ],
     };
     let layout = ir::TypeLayout {
+        variant_names: Vec::new(),
         ty,
         storage: ir::LayoutStorage::Unboxed,
         fields: vec![],

@@ -156,6 +156,7 @@ fn tuple_ir_cannot_impersonate_nominal_records() {
     };
     let program = Program {
         types: vec![TypeLayout {
+            variant_names: Vec::new(),
             storage: fern_prototype::ir::LayoutStorage::Tagged,
             ty,
             variants: vec![vec![]],

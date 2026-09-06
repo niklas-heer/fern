@@ -26,6 +26,8 @@ pub struct TypeLayout {
     pub storage: LayoutStorage,
     pub ty: Type,
     pub variants: Vec<Vec<Type>>,
+    /// Original unqualified source constructor names; empty for records and newtypes.
+    pub variant_names: Vec<String>,
     pub fields: Vec<String>,
 }
 #[derive(Clone, Debug)]

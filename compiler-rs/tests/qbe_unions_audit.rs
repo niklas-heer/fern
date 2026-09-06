@@ -63,6 +63,7 @@ fn pattern_only_union_comparison_work_is_aggregate_bounded() {
     });
     let program = ir::Program {
         types: vec![ir::TypeLayout {
+            variant_names: Vec::new(),
             ty: member,
             storage: ir::LayoutStorage::Tagged,
             variants: vec![vec![]],

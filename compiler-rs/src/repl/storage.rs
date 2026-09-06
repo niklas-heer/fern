@@ -22,7 +22,9 @@ pub(super) fn program_size(program: &ir::Program) -> Result<(usize, usize), Stri
         budget.bytes += std::mem::size_of::<ir::TypeLayout>()
             + layout.variants.len() * std::mem::size_of::<Vec<Type>>()
             + layout.fields.len() * std::mem::size_of::<String>()
-            + layout.fields.iter().map(String::len).sum::<usize>();
+            + layout.fields.iter().map(String::len).sum::<usize>()
+            + layout.variant_names.len() * std::mem::size_of::<String>()
+            + layout.variant_names.iter().map(String::len).sum::<usize>();
         budget
             .pending
             .extend(layout.variants.iter().flatten().map(Part::Type));
@@ -65,6 +67,13 @@ impl<'a> CodeBudget<'a> {
         for entry in &plan.entries {
             self.pending.push(Part::Type(&entry.ty));
             match &entry.kind {
+                crate::json_codec::Kind::Sum(variants) => {
+                    self.bytes += std::mem::size_of_val(variants.as_slice());
+                    for variant in variants {
+                        self.bytes += variant.wire_tag.len()
+                            + std::mem::size_of_val(variant.fields.as_slice());
+                    }
+                }
                 crate::json_codec::Kind::Tuple(ids) => {
                     self.bytes += std::mem::size_of_val(ids.as_slice())
                 }

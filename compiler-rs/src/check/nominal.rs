@@ -263,6 +263,14 @@ impl Registry {
             },
             ty: ty.clone(),
             variants,
+            variant_names: if decl.record || self.is_newtype(ty) {
+                Vec::new()
+            } else {
+                decl.variants
+                    .iter()
+                    .map(|v| v.name.rsplit('.').next().unwrap().to_owned())
+                    .collect()
+            },
             fields,
         })
     }

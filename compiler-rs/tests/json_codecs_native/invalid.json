@@ -20,5 +20,11 @@
   "generic_nullable": "fn write(value:Option(a)):json.encode(value)\nfn main()->Result(Unit,json.Error):\n    println(write(Some(()))?)\n    Ok(())\n",
   "generic_map_key": "fn write(value:Map(k,v)):json.encode(value)\nfn main()->Result(Unit,json.Error):\n    println(write(%{1:2})?)\n    Ok(())\n",
   "generic_no_derive": "type Hidden:\n    value:Int\nfn write(value):json.encode(value)\nfn main()->Result(Unit,json.Error):\n    println(write(Hidden(1))?)\n    Ok(())\n",
-  "generic_stored_result": "fn produced()->Result(Int,String):Ok(1)\nfn write(value):json.encode(value)\nfn main()->Result(Unit,json.Error):\n    println(write(produced())?)\n    Ok(())\n"
+  "generic_stored_result": "fn produced()->Result(Int,String):Ok(1)\nfn write(value):json.encode(value)\nfn main()->Result(Unit,json.Error):\n    println(write(produced())?)\n    Ok(())\n",
+  "sum_no_derive": "type Event:\n    Ready\nfn main():\n    match json.encode(Ready):\n        Ok(text) -> println(text)\n        Err(error) -> println(json.error_message(error))\n",
+  "sum_no_finite_value": "type Chain derive(Json):\n    Link(Int,Chain)\nfn main():()\n",
+  "sum_hidden_nonproductive": "type Bad derive(Json):\n    Again(Bad)\ntype Choice derive(Json):\n    Safe\n    Hidden(Bad)\nfn main():()\n",
+  "sum_hidden_result": "type Event derive(Json):\n    Safe\n    Hidden(Result(Int,String))\nfn main():()\n",
+  "sum_generic_bad_instance": "type Event(a) derive(Json):\n    Value(a)\nfn encode(value):json.encode(value)\nfn main():\n    match encode(Value((x:Int)->x)):\n        Ok(text) -> println(text)\n        Err(error) -> println(json.error_message(error))\n",
+  "sum_nullable_option_field": "type Event derive(Json):\n    Safe\n    Hidden(Option(Unit))\nfn main():()\n"
 }

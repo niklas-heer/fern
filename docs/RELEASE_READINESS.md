@@ -29,7 +29,7 @@ engineering milestones; they do not certify the entire language.
   JSON model with exact numbers and immutable builders. The legacy C source API
   still copies strings and can accept invalid JSON. Explicitly derived record codecs
   now include regular recursive schemas with finite bases and transparent
-  newtypes and conditional generic codec requirements. Sum/union wire formats, general traits and the verified Rust default
+  newtypes, tagged sums and conditional generic codec requirements. Union wire formats, general traits and the verified Rust default
   switch remain open; see [typed codecs](JSON_TYPED_CODECS.md) and
   [the Rust JSON contract](JSON_RUST_API.md).
 - **Server and database APIs:** HTTP serving, typed SQL queries and the broader

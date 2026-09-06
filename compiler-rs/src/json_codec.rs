@@ -3,6 +3,7 @@ use crate::{ir, runtime::NativeType, Diagnostic, Span, Type};
 use std::collections::HashMap;
 
 pub(crate) mod finite;
+pub(crate) mod sums;
 
 const MAX_ENTRIES: usize = 4096;
 const MAX_WORK: usize = 400_000;
@@ -14,6 +15,12 @@ pub struct Field {
     pub index: usize,
     pub codec: usize,
     pub optional: bool,
+}
+/// Source tag spelling is checked independently against nominal layout metadata.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Variant {
+    pub wire_tag: String,
+    pub fields: Vec<usize>,
 }
 /// Child indices address a validated finite graph; symbolic parameters have no wire form.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,6 +37,7 @@ pub enum Kind {
     Tuple(Vec<usize>),
     Map(usize),
     Record(Vec<Field>),
+    Sum(Vec<Variant>),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
@@ -119,6 +127,12 @@ impl Validation {
             self.ty(&entry.ty)?;
             match &entry.kind {
                 Kind::Tuple(children) => self.charge(children.len())?,
+                Kind::Sum(variants) => {
+                    self.charge(variants.len())?;
+                    for variant in variants {
+                        self.charge(variant.wire_tag.len() + variant.fields.len())?;
+                    }
+                }
                 Kind::Record(fields) => {
                     self.charge(fields.len())?;
                     for field in fields {
@@ -133,7 +147,8 @@ impl Validation {
             crate::unions::bound(&layout.ty, self.span)?;
             self.charge(type_size(&layout.ty))?;
             self.charge(layout.fields.len() + layout.variants.len())?;
-            for name in &layout.fields {
+            self.charge(layout.variant_names.len())?;
+            for name in layout.fields.iter().chain(&layout.variant_names) {
                 self.charge(name.len())?;
             }
             for fields in &layout.variants {
@@ -187,6 +202,15 @@ impl Plan {
         let mut proof = finite::Proof::new(self.entries.len(), &mut audit.work, audit.span)?;
         for (id, entry) in self.entries.iter().enumerate() {
             match &entry.kind {
+                Kind::Sum(variants) => {
+                    proof.disjunction(id)?;
+                    for variant in variants {
+                        let product = proof.alternative(id)?;
+                        for child in &variant.fields {
+                            proof.edge(product, *child)?;
+                        }
+                    }
+                }
                 Kind::Newtype(child) => proof.edge(id, *child)?,
                 Kind::Tuple(children) => {
                     for child in children {
@@ -251,6 +275,9 @@ impl Plan {
                     same
                 }
             }
+            (Kind::Sum(variants), Type::Named(..)) => {
+                self.sum(index, variants, entry, layouts, audit)?
+            }
             (Kind::Newtype(child), Type::Named(..)) => {
                 self.newtype(index, *child, entry, layouts, audit)?
             }
@@ -279,6 +306,7 @@ impl Plan {
             .ok_or_else(|| audit.error("JSON newtype codec is missing its checked layout"))?;
         Ok(layout.storage == ir::LayoutStorage::Unboxed
             && layout.fields.is_empty()
+            && layout.variant_names.is_empty()
             && layout.variants.len() == 1
             && layout.variants[0].len() == 1
             && layout.variants[0][0] == child.ty)
@@ -312,6 +340,7 @@ impl Plan {
             return Err(audit.error("JSON codec record is missing its checked layout"));
         };
         if layout.storage != ir::LayoutStorage::Tagged
+            || !layout.variant_names.is_empty()
             || layout.variants.len() != 1
             || layout.fields.len() != fields.len()
             || layout.variants[0].len() != fields.len()

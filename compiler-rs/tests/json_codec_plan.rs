@@ -54,6 +54,7 @@ fn public_plan_rejects_mismatched_record_and_nullable_option_storage() {
     plan.root = 1;
     assert!(plan.validate(&[], Span::default()).is_err());
     let mut layout = ir::TypeLayout {
+        variant_names: Vec::new(),
         ty,
         storage: ir::LayoutStorage::Tagged,
         fields: vec!["value".into()],
@@ -101,6 +102,7 @@ fn phantom_metadata_never_enables_unsupported_executable_entries() {
     ] {
         let ty = Type::Named("Phantom".into(), vec![arg.clone()]);
         let layout = ir::TypeLayout {
+            variant_names: Vec::new(),
             ty: ty.clone(),
             storage: ir::LayoutStorage::Tagged,
             fields: vec!["value".into()],

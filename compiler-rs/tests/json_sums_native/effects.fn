@@ -1,0 +1,20 @@
+type State derive(Json):
+    Ready
+    Count(Int)
+fn input()->String:
+    println("input")
+    "\{\"tag\":\"Count\",\"fields\":[1.5]\}"
+fn later()->Unit:println("later")
+fn work()->Result(Unit,json.Error):
+    defer println("cleanup")
+    let state=json.decode(input(),State)?
+    println(json.encode(state)?)
+    later()
+    Ok(())
+fn main():
+    match work():
+        Ok(_) -> ()
+        Err(error) ->
+            println(json.error_code(error))
+            println(json.error_offset(error))
+            println(json.error_path(error))

@@ -2,13 +2,13 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-static const FernJsonCodec integer_codec = {0,0,NULL,NULL};
-static const FernJsonCodec string_codec = {3,0,NULL,NULL};
+static const FernJsonCodec integer_codec = {0,0,{.children=NULL},NULL};
+static const FernJsonCodec string_codec = {3,0,{.children=NULL},NULL};
 static const FernJsonCodec* list_children[] = {&integer_codec};
-static const FernJsonCodec list_codec = {6,1,list_children,NULL};
+static const FernJsonCodec list_codec = {6,1,{.children=list_children},NULL};
 static const FernJsonCodec* fields[] = {&integer_codec,&string_codec};
 static const char* names[] = {"age","name"};
-static const FernJsonCodec record_codec = {10,2,fields,names};
+static const FernJsonCodec record_codec = {10,2,{.children=fields},names};
 static int fail(const char* message) { fprintf(stderr,"%s\n",message); return 1; }
 int fern_main(void) {
     int64_t value=fern_json_codec_decode(&integer_codec,"9007199254740993");

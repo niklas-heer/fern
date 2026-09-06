@@ -2,6 +2,7 @@
 use super::*;
 use crate::json_codec::{Direction, Kind as Wire, Plan};
 mod containers;
+mod sums;
 struct Execution<'p, 'b> {
     plan: &'p Plan,
     budget: Budget<'b>,
