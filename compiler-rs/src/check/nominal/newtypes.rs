@@ -34,7 +34,7 @@ pub(super) fn declaration(decl: &ast::NewtypeDecl) -> Checked<ast::TypeDecl> {
         ));
     }
     Ok(ast::TypeDecl {
-        derives: Vec::new(),
+        derives: decl.derives.clone(),
         public: decl.public,
         name: decl.name.clone(),
         parameters: decl.parameters.clone(),

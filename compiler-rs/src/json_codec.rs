@@ -25,6 +25,7 @@ pub enum Kind {
     Unit,
     Dynamic,
     List(usize),
+    Newtype(usize),
     Option(usize),
     Tuple(Vec<usize>),
     Map(usize),
@@ -179,6 +180,7 @@ impl Plan {
         let mut proof = finite::Proof::new(self.entries.len(), &mut audit.work, audit.span)?;
         for (id, entry) in self.entries.iter().enumerate() {
             match &entry.kind {
+                Kind::Newtype(child) => proof.edge(id, *child)?,
                 Kind::Tuple(children) => {
                     for child in children {
                         proof.edge(id, *child)?;
@@ -226,8 +228,7 @@ impl Plan {
             (Kind::List(id), Type::List(ty)) => self.child(*id, index, audit)?.ty == **ty,
             (Kind::Option(id), Type::Option(ty)) => {
                 let child = self.child(*id, index, audit)?;
-                child.ty == **ty
-                    && !matches!(child.kind, Kind::Unit | Kind::Dynamic | Kind::Option(_))
+                child.ty == **ty && !self.nullable(*id, audit)?
             }
             (Kind::Map(id), Type::Map(key, ty)) => {
                 **key == Type::String && self.child(*id, index, audit)?.ty == **ty
@@ -243,6 +244,9 @@ impl Plan {
                     same
                 }
             }
+            (Kind::Newtype(child), Type::Named(..)) => {
+                self.newtype(index, *child, entry, layouts, audit)?
+            }
             (Kind::Record(fields), Type::Named(..)) => {
                 self.record(index, fields, entry, layouts, audit)?
             }
@@ -252,6 +256,41 @@ impl Plan {
             return Err(audit.error("JSON codec kind does not match its concrete storage type"));
         }
         Ok(())
+    }
+    /// Follow unboxed wire identity without accepting a forged tagged or mismatched layout.
+    fn newtype(
+        &self,
+        index: usize,
+        child: usize,
+        entry: &Entry,
+        layouts: &HashMap<&Type, &ir::TypeLayout>,
+        audit: &mut Validation,
+    ) -> Result<bool, Diagnostic> {
+        let child = self.child(child, index, audit)?;
+        let layout = layouts
+            .get(&entry.ty)
+            .ok_or_else(|| audit.error("JSON newtype codec is missing its checked layout"))?;
+        Ok(layout.storage == ir::LayoutStorage::Unboxed
+            && layout.fields.is_empty()
+            && layout.variants.len() == 1
+            && layout.variants[0].len() == 1
+            && layout.variants[0][0] == child.ty)
+    }
+    /// Nullable newtype payloads cannot be hidden beneath a transparent Option.
+    fn nullable(&self, mut id: usize, audit: &mut Validation) -> Result<bool, Diagnostic> {
+        for _ in 0..128 {
+            audit.charge(1)?;
+            let entry = self
+                .entries
+                .get(id)
+                .ok_or_else(|| audit.error("invalid JSON codec child slot"))?;
+            match &entry.kind {
+                Kind::Newtype(child) => id = *child,
+                Kind::Unit | Kind::Dynamic | Kind::Option(_) => return Ok(true),
+                _ => return Ok(false),
+            }
+        }
+        Err(audit.error("JSON newtype nullability depth limit exceeded"))
     }
     /// Every field must name its exact tagged-record slot; aliases and unboxed newtypes cannot fabricate it.
     fn record(

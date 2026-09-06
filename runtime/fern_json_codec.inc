@@ -66,7 +66,7 @@ static const char* codec_path(JsonCodecState* c,const char* key,size_t length) {
 }
 /** Validate recursion/work before reading an already checked descriptor. @param c context; @param plan descriptor; @param depth current depth; @return available. */
 static bool codec_step(JsonCodecState* c,const FernJsonCodec* plan,size_t depth) {
-    assert(c != NULL && plan != NULL && plan->kind>=0 && plan->kind<=10 && plan->count>=0);
+    assert(c != NULL && plan != NULL && plan->kind>=0 && plan->kind<=11 && plan->count>=0);
     (void)plan;
     if (depth>=JSON_DEPTH_MAX) {codec_fail(c,4,-1);return false;}
     return codec_work(c,1);
@@ -173,6 +173,7 @@ static FernJsonValue* codec_encode(JsonCodecState* c,const FernJsonCodec* p,int6
         case 6:case 8:return codec_encode_array(c,p,bits,depth);
         case 7:{const int64_t* sum=(const void*)(intptr_t)bits;return sum[0]?codec_scalar(c,4,0):codec_encode(c,p->children[0],sum[1],depth+1);}
         case 9:case 10:return codec_encode_object(c,p,bits,depth);
+        case 11:return codec_encode(c,p->children[0],bits,depth+1);
         default:codec_fail(c,5,-1);return NULL;
     }
 }
@@ -281,6 +282,7 @@ static int64_t codec_decode(JsonCodecState* c,const FernJsonCodec* p,const FernJ
         }
         case 9:return codec_decode_map(c,p,v,depth);
         case 10:return codec_decode_record(c,p,v,depth);
+        case 11:return codec_decode(c,p->children[0],v,depth+1);
         default:codec_fail(c,5,-1);return 0;
     }
 }

@@ -1012,6 +1012,63 @@
         "generic_type",
         "call_expression"
       ]
+    },
+    {
+      "name": "derive_newtype_public",
+      "source": "pub newtype UserId derive(Json) = UserId(Int)\n",
+      "nodes": [
+        "newtype_definition",
+        "derive_clause"
+      ],
+      "paths": [
+        ".//newtype_definition/derive_clause"
+      ],
+      "derivations": [
+        "Json"
+      ]
+    },
+    {
+      "name": "derive_newtype_generic",
+      "source": "newtype Box(a) derive(Json) = Packed(a)\n",
+      "nodes": [
+        "newtype_definition",
+        "derive_clause"
+      ],
+      "paths": [
+        ".//newtype_definition/derive_clause"
+      ],
+      "derivations": [
+        "Json"
+      ]
+    },
+    {
+      "name": "derive_newtype_payload",
+      "source": "newtype Rows derive(Json) = Rows(List((Int, String)))\n",
+      "nodes": [
+        "newtype_definition",
+        "derive_clause"
+      ],
+      "paths": [
+        ".//newtype_definition/derive_clause"
+      ],
+      "derivations": [
+        "Json"
+      ]
+    },
+    {
+      "name": "derive_newtype_record",
+      "source": "newtype UserId derive(Json) = Id(Int)\ntype User derive(Json):\n    id: UserId\n",
+      "nodes": [
+        "newtype_definition",
+        "derive_clause"
+      ],
+      "paths": [
+        ".//newtype_definition/derive_clause"
+      ],
+      "derivations": [
+        "Json",
+        "Json"
+      ]
     }
   ],
   "invalid": [
@@ -1398,6 +1455,59 @@
           22
         ]
       ]
+    },
+    {
+      "name": "derive_newtype_empty",
+      "source": "newtype Id derive() = Id(Int)\nfn after()->Int:0\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          11,
+          19
+        ]
+      ],
+      "rust_reject": true
+    },
+    {
+      "name": "derive_newtype_trailing_comma",
+      "source": "newtype Id derive(Json,) = Id(Int)\nfn after()->Int:0\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          22,
+          23
+        ]
+      ],
+      "rust_reject": true
+    },
+    {
+      "name": "derive_newtype_after_equals",
+      "source": "newtype Id = derive(Json) Id(Int)\nfn after()->Int:0\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          0,
+          33
+        ],
+        [
+          "ERROR",
+          11,
+          28
+        ]
+      ],
+      "rust_reject": true
+    },
+    {
+      "name": "derive_newtype_too_many",
+      "source": "newtype Id derive(Trait0,Trait1,Trait2,Trait3,Trait4,Trait5,Trait6,Trait7,Trait8,Trait9,Trait10,Trait11,Trait12,Trait13,Trait14,Trait15,Trait16,Trait17,Trait18,Trait19,Trait20,Trait21,Trait22,Trait23,Trait24,Trait25,Trait26,Trait27,Trait28,Trait29,Trait30,Trait31,Trait32) = Id(Int)\nfn after()->Int:0\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          263,
+          271
+        ]
+      ],
+      "rust_reject": true
     }
   ],
   "edits": [
@@ -1656,6 +1766,40 @@
       "old": "value: a",
       "new": "value: List(a)",
       "rust_check": true
+    },
+    {
+      "name": "edit_newtype_add_derive",
+      "source": "newtype Id = Id(Int)\n",
+      "old": "Id =",
+      "new": "Id derive(Json) =",
+      "rust_check": true
+    },
+    {
+      "name": "edit_newtype_remove_derive",
+      "source": "newtype Id derive(Json) = Id(Int)\n",
+      "old": " derive(Json)",
+      "new": "",
+      "rust_check": true
+    },
+    {
+      "name": "edit_newtype_generic_derive",
+      "source": "newtype Box(a) derive(Json) = Packed(a)\n",
+      "old": "Packed(a)",
+      "new": "Packed(List(a))",
+      "rust_check": true
+    },
+    {
+      "name": "edit_newtype_broken_derive",
+      "source": "newtype Id derive(Json) = Id(Int)\n",
+      "old": "derive(Json)",
+      "new": "derive(Json,)",
+      "valid": false
+    },
+    {
+      "name": "edit_newtype_repair_derive",
+      "source": "newtype Id derive(Json,) = Id(Int)\n",
+      "old": "derive(Json,)",
+      "new": "derive(Json)"
     }
   ]
 }

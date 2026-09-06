@@ -90,6 +90,7 @@ fn concrete_entry(entry: Plan) -> Checked<wire::Entry> {
         Kind::String => wire::Kind::String,
         Kind::Unit => wire::Kind::Unit,
         Kind::Dynamic => wire::Kind::Dynamic,
+        Kind::Newtype(id) => wire::Kind::Newtype(id.0),
         Kind::List(id) => wire::Kind::List(id.0),
         Kind::Option(id) => wire::Kind::Option(id.0),
         Kind::Tuple(ids) => wire::Kind::Tuple(ids.into_iter().map(|id| id.0).collect()),

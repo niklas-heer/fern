@@ -480,7 +480,7 @@ pub(super) fn check(program: &ast::Program) -> Checked<()> {
     newtypes(program, &mut budget)?;
     for decl in &program.types {
         budget.charge(decl.name.len(), decl.span)?;
-        derivations(decl, &mut budget)?;
+        derivations(&decl.derives, decl.span, &mut budget)?;
         if decl.parameters.len() > MAX_PARAMETERS || decl.variants.len() > MAX_PARAMETERS {
             return Err(Diagnostic::new(
                 decl.span,
@@ -577,6 +577,7 @@ fn newtypes(program: &ast::Program, budget: &mut Budget) -> Checked<()> {
             budget.charge(name.len(), decl.span)?;
         }
         budget.ty(&decl.inner, decl.inner_span)?;
+        derivations(&decl.derives, decl.span, budget)?;
     }
     Ok(())
 }
@@ -617,14 +618,14 @@ impl Budget {
 }
 
 /// Bound source trait metadata before any nominal registry clones it.
-fn derivations(decl: &ast::TypeDecl, budget: &mut Budget) -> Checked<()> {
-    if decl.derives.len() > 32 {
+fn derivations(derives: &[ast::Derivation], span: Span, budget: &mut Budget) -> Checked<()> {
+    if derives.len() > 32 {
         return Err(Diagnostic::new(
-            decl.span,
+            span,
             "derive trait count limit exceeded (32)",
         ));
     }
-    for derive in &decl.derives {
+    for derive in derives {
         budget.charge(derive.name.len(), derive.span)?;
     }
     Ok(())

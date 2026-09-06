@@ -92,6 +92,16 @@ def queries(tool, directory):
     for capture, text in [("keyword", "derive"), ("type", "Json")]:
         assert re.search(rf"- {capture},[^\n]*text: `{text}`", result.stdout), (capture, text)
 
+    derived = GRAMMAR / "test/parity/newtype_derive_queries.fn"
+    result = command([tool, "query", ZED / "highlights.scm", derived], GRAMMAR)
+    for capture, text in [("keyword", "derive"), ("type", "Json")]:
+        assert len(re.findall(rf"- {capture},[^\n]*text: `{text}`", result.stdout)) == 3, (capture, text)
+    for constructor in ["Identity", "Packed"]:
+        assert re.search(rf"- constructor,[^\n]*text: `{constructor}`", result.stdout), constructor
+    outline = command([tool, "query", ZED / "outline.scm", derived], GRAMMAR)
+    for name in ["UserId", "Box"]:
+        assert re.search(rf"- name,[^\n]*text: `{name}`", outline.stdout), name
+
 
 def web_runtime(path):
     """Verify the portable web runtime bytes against the reviewed official release archive."""
@@ -130,6 +140,9 @@ def main():
         command([args.tree_sitter, "test", "--wasm"], GRAMMAR)
         for mode in [[], ["--wasm"]]:
             command([sys.executable, ROOT / "scripts/test_editor_parity.py", "--tree-sitter",
+                     args.tree_sitter, "--rust", args.rust, *mode])
+        for mode in [[], ["--wasm"]]:
+            command([sys.executable, ROOT / "scripts/test_editor_derive_limits.py", "--tree-sitter",
                      args.tree_sitter, "--rust", args.rust, *mode])
     print("Editor support: reproducible native/query/WASM and Rust syntax gates passed")
 

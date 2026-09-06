@@ -94,3 +94,25 @@ fn static_target_privacy_and_arbitrary_call_errors_are_located_before_value_rewr
         error.message
     );
 }
+
+#[test]
+fn imported_derived_newtypes_keep_type_identity_and_shift_trait_spans() {
+    use fern_prototype::{check, qbe};
+    let project = Project::new();
+    let module = "pub newtype Id derive(Json) = Packed(Int)\npub fn Id()->Int:99\n";
+    project.write("model.fn", module);
+    let main=project.write("main.fn","import model as m\nfn main() -> Result(Unit,json.Error):\n    let value=json.decode(\"42\",m.Id)?\n    println(value.0)\n    Ok(())\n");
+    let loaded = modules::load(&main).unwrap();
+    let newtype = &loaded.program.newtypes[0];
+    assert_eq!(newtype.name, "model.Id");
+    assert_eq!(
+        newtype.derives[0].span.start - newtype.span.start,
+        module.find("Json").unwrap() - module.find("newtype").unwrap()
+    );
+    qbe::emit(&check::check(&loaded.program).unwrap()).unwrap();
+    project.write("model.fn", "newtype Id derive(Json) = Packed(Int)\n");
+    assert!(modules::load(&main)
+        .unwrap_err()
+        .message
+        .contains("private"));
+}

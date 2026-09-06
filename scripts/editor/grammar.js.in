@@ -58,10 +58,11 @@ module.exports = grammar({
     type_alias: $ => seq(optional("pub"), "type", field("name", $.type_identifier),
       optional($.type_parameters), "=", field("target", $.type)),
     newtype_definition: $ => seq(optional("pub"), "newtype", field("name", $.type_identifier),
-      optional($.type_parameters), "=", field("constructor", $.type_identifier),
+      optional($.type_parameters), optional($.derive_clause), "=", field("constructor", $.type_identifier),
       "(", field("payload", $.type), ")"),
     type_parameters: $ => seq("(", sep1($.identifier, ","), optional(","), ")"),
-    derive_clause: $ => seq("derive", "(", sep1(field("trait", choice($.identifier, $.type_identifier)), ","), ")"),
+    derive_clause: $ => seq("derive", "(", field("trait", choice($.identifier, $.type_identifier)), optional($._derive_tail_31), ")"),
+    ...deriveTailRules(),
     type_definition: $ => seq(optional("pub"), "type", field("name", $.type_identifier),
       optional($.type_parameters), optional($.derive_clause), ":", repeat1($._newline), $._indent,
       repeat1(choice($._newline, $.record_field, $.type_variant)), $._dedent),
@@ -176,6 +177,16 @@ module.exports = grammar({
 // Keep comma-separated grammar sequences declarative and deterministic.
 function sep1(rule, separator) {
   return seq(rule, repeat(seq(separator, rule)));
+}
+
+// Hidden linear tail states cap derive lists at32 without deep JSON or ambiguous alternatives.
+function deriveTailRules() {
+  const rules = {};
+  for (let count = 1; count <= 31; count++) {
+    rules['_derive_tail_' + count] = $ => seq(',', field('trait', choice($.identifier, $.type_identifier)),
+      ...(count > 1 ? [optional($['_derive_tail_' + (count - 1)])] : []));
+  }
+  return rules;
 }
 
 // ABI14 has no reserved-word sets. Exclude exact binding keywords from labels.

@@ -183,8 +183,9 @@ impl Renderer<'_> {
         Ok(line(
             0,
             format!(
-                "{}newtype {owner} = {}({})",
+                "{}newtype {owner}{} = {}({})",
                 if public { "pub " } else { "" },
+                derive_text(&decl.derives),
                 decl.constructor,
                 type_text(&decl.inner)?
             ),
@@ -1445,6 +1446,9 @@ fn structural(mut program: ast::Program) -> String {
         decl.span = Span::default();
         decl.constructor_span = Span::default();
         decl.inner_span = Span::default();
+        for derive in &mut decl.derives {
+            derive.span = Span::default();
+        }
     }
     for declaration in &mut program.types {
         declaration.span = Span::default();
@@ -1731,4 +1735,13 @@ fn clear_argument(arg: &mut ast::Argument) {
     arg.span = Span::default();
     clear_label(&mut arg.label);
     clear_expression(&mut arg.value);
+}
+
+/// Preserve explicit derivation requests on a newtype header.
+fn derive_text(derives: &[ast::Derivation]) -> String {
+    if derives.is_empty() {
+        return String::new();
+    }
+    let names: Vec<_> = derives.iter().map(|d| d.name.as_str()).collect();
+    format!(" derive({})", names.join(", "))
 }

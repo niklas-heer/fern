@@ -39,13 +39,20 @@ function checkQueries(language, Query, parser) {
   }
   tree.delete();
   const derived = parser.parse(fs.readFileSync(path.join(root,
-    'editor/tree-sitter-fern/test/parity/derive_queries.fn'), 'utf8'));
+    'editor/tree-sitter-fern/test/parity/newtype_derive_queries.fn'), 'utf8'));
   assert(!derived.rootNode.hasError);
   const query = new Query(language, fs.readFileSync(path.join(directory, 'highlights.scm'), 'utf8'));
   const captures = query.captures(derived.rootNode);
   for (const [name, text] of [['keyword', 'derive'], ['type', 'Json']]) {
-    assert(captures.some(c => c.name === name && c.node.text === text), name + ': ' + text);
+    assert.equal(captures.filter(c => c.name === name && c.node.text === text).length, 3, name + ': ' + text);
   }
+  for (const text of ['Identity', 'Packed']) {
+    assert(captures.some(c => c.name === 'constructor' && c.node.text === text), text);
+  }
+  const outline = new Query(language, fs.readFileSync(path.join(directory, 'outline.scm'), 'utf8'));
+  const names = outline.captures(derived.rootNode).filter(c => c.name === 'name').map(c => c.node.text);
+  assert(names.includes('UserId') && names.includes('Box'));
+  outline.delete();
   query.delete();
   derived.delete();
 }

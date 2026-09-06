@@ -20,6 +20,7 @@ pub(super) enum Kind {
     Unit,
     Dynamic,
     List(Id),
+    Newtype(Id),
     Option(Id),
     Tuple(Vec<Id>),
     Map(Id),

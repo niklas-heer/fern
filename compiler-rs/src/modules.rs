@@ -710,6 +710,9 @@ fn qualify_source_types(
         shift(&mut decl.span, offset);
         shift(&mut decl.constructor_span, offset);
         shift(&mut decl.inner_span, offset);
+        for derive in &mut decl.derives {
+            shift(&mut derive.span, offset);
+        }
     }
     Ok(())
 }

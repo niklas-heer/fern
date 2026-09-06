@@ -29,7 +29,7 @@ def main():
                 ("sanitized", ["-g", "-O1", "-fsanitize=address,undefined", "-fno-omit-frame-pointer"])]
     with tempfile.TemporaryDirectory(prefix="fern-json-codec-runtime-") as directory:
         for name, flags in profiles:
-            for fixture in ["typed_runtime", "path_boundary", "shared_budget", "recursive_runtime"]:
+            for fixture in ["typed_runtime", "path_boundary", "shared_budget", "recursive_runtime", "newtype_runtime"]:
                 binary = Path(directory) / f"{fixture}-{name}"
                 sources = [f"tests/json_codecs/{fixture}.c"]
                 if fixture in ("typed_runtime", "recursive_runtime"):

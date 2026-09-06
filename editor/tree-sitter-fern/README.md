@@ -7,14 +7,16 @@ Never edit generated `grammar.js`, parser sources/headers, queries or WASM by ha
 Python generator detects drift without writing.
 
 Decision84 verifies aliases, newtypes, unions, typed narrowing, function clauses,
-control flow, collection expressions, source argument labels and record `derive(Json)`. The corpus contains
-98 accepted sources, including 29 executable native fixtures, 34 malformed cases and 36
+control flow, collection expressions, source argument labels and record/newtype `derive(Json)`. The corpus contains
+102 accepted sources, including 29 executable native fixtures, 38 malformed cases and 41
 incremental edits. Every accepted source checks with the Rust compiler. Native
 and WASM trees agree on node structure and UTF-8 byte ranges. Four Zed queries
 execute against the same checked source fixture.
 
-All 34 malformed cases retain the following declaration. Record derivations reject
-trailing commas, matching the Rust parser. Missing `in` and `<-`
+All 38 malformed cases retain the following declaration. Record/newtype derivations require1–32 traits and reject trailing commas, matching
+the Rust parser. Newtype metadata appears after optional type parameters and before
+`=`. Unknown/duplicate trait semantics remain compiler-owned; syntax boundaries
+are independently checked through the compiler formatter/parser. Missing `in` and `<-`
 produce genuine missing-token nodes; a missing `do` marks the broken declaration
 as an error while preserving its successor. Public declarations, CRLF/blank lines
 and column-zero lambdas have explicit boundary tests. Post-dedent callback expressions,

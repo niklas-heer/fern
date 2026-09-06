@@ -93,6 +93,7 @@ impl<'a> Planner<'a> {
         for (id, entry) in self.entries.iter().enumerate() {
             match &entry.kind {
                 Kind::Pending => return Err(Diagnostic::new(span, "incomplete JSON codec plan")),
+                Kind::Newtype(child) => proof.edge(id, child.0)?,
                 Kind::Tuple(children) => {
                     for child in children {
                         proof.edge(id, child.0)?;
@@ -109,13 +110,16 @@ impl<'a> Planner<'a> {
         proof.finish()
     }
     /// Wire nullability is a structural property, never inferred from a current runtime value.
-    fn nullable(&self, id: plan::Id) -> bool {
-        matches!(
-            self.entries[id.0].ty,
+    fn nullable(&mut self, id: plan::Id, span: Span) -> Checked<bool> {
+        // The shared representation walker charges every layer before cloning/substitution.
+        let ty = self.registry.representation(&self.entries[id.0].ty, span)?;
+        self.type_work(&ty, span)?;
+        Ok(matches!(
+            ty,
             Type::Unit | Type::Native(runtime::NativeType::JsonValue) | Type::Option(_)
-        )
+        ))
     }
-    /// Admit only the explicit J4 wire domains; unsupported values never gain a fallback codec.
+    /// Admit only the explicit wire domains; unsupported values never gain a fallback codec.
     fn kind(&mut self, ty: &Type, span: Span, depth: usize) -> Checked<Kind> {
         let kind = match ty {
             Type::Int => Kind::Int,
@@ -127,7 +131,7 @@ impl<'a> Planner<'a> {
             Type::List(item) => Kind::List(self.plan(item, span, depth)?),
             Type::Option(item) => {
                 let child = self.plan(item, span, depth)?;
-                if self.nullable(child) {
+                if self.nullable(child, span)? {
                     return Err(Diagnostic::new(span,"Option payload can encode null; transparent JSON Option would be ambiguous"));
                 }
                 Kind::Option(child)
@@ -155,23 +159,20 @@ impl<'a> Planner<'a> {
     }
     /// Resolve checked record storage while rejecting declaration cycles before child expansion.
     fn record(&mut self, ty: &Type, name: &str, span: Span, depth: usize) -> Checked<Kind> {
-        if self.registry.is_newtype(ty) {
-            return Err(Diagnostic::new(
-                span,
-                "newtype JSON codecs are not supported in this checkpoint",
-            ));
-        }
-        let declaration = self.declarations.get(name).ok_or_else(|| {
-            Diagnostic::new(
-                span,
-                "newtype JSON codecs are not supported in this checkpoint",
-            )
-        })?;
+        let declaration = self
+            .declarations
+            .get(name)
+            .ok_or_else(|| Diagnostic::new(span, "unknown nominal JSON codec target"))?;
         if !declaration.derives.iter().any(|d| d.name == "Json") {
             return Err(Diagnostic::new(
                 span,
                 format!("{name} has no Json codec; add derive(Json)"),
             ));
+        }
+        if self.registry.is_newtype(ty) {
+            self.layout_work(ty, declaration, span)?;
+            let inner = self.registry.newtype_inner(ty, span)?;
+            return Ok(Kind::Newtype(self.plan(&inner, span, depth)?));
         }
         if !declaration.record {
             return Err(Diagnostic::new(
@@ -256,7 +257,13 @@ impl<'a> Planner<'a> {
 pub(super) fn validate(program: &ast::Program, registry: &nominal::Registry) -> Checked<()> {
     let mut planner = Planner::new(program, registry);
     planner.symbolic = true;
-    for declaration in &program.types {
+    let declarations = program.types.iter().chain(
+        program
+            .newtypes
+            .iter()
+            .map(|decl| &registry.declarations[&decl.name]),
+    );
+    for declaration in declarations {
         if declaration.derives.is_empty() {
             continue;
         }

@@ -1402,6 +1402,7 @@ impl Parser {
         let start = self.take().span.start;
         let (name, _) = self.name()?;
         let parameters = self.type_parameters()?;
+        let derives = self.derivations()?;
         self.expect(Kind::Assign, "expected '=' before newtype constructor")?;
         let (constructor, constructor_span) = self.name()?;
         self.expect(
@@ -1424,6 +1425,7 @@ impl Parser {
             program.exports.push(name.clone());
         }
         program.newtypes.push(crate::ast::NewtypeDecl {
+            derives,
             public,
             name,
             parameters,

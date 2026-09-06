@@ -1,0 +1,22 @@
+newtype Id derive(Json) = Id(Int)
+newtype Amount derive(Json) = Amount(Float)
+newtype Box(a) derive(Json) = Packed(a)
+newtype Raw derive(Json) = Raw(json.Value)
+newtype Forest derive(Json) = Forest(List(Forest))
+
+fn wrap(value: Amount) -> Box(Amount): Packed(value)
+fn main() -> Result(Unit,json.Error):
+    let first=json.decode("9223372036854775807",Id)?
+    println(first.0)
+    println(json.encode(Id(-9223372036854775808))?)
+    let negative=json.decode("-0",Box(Amount))?
+    let copied=List.map([negative.0],wrap)
+    println(json.encode(copied)?)
+    println(json.encode(Packed(Amount(5e-324)))?)
+    let callback:(Amount)->Box(Amount)=wrap
+    println(json.encode(callback(Amount(42.5)))?)
+    let raw=Raw(json.parse("9007199254740993")?)
+    println(json.encode(raw)?)
+    let forest = Forest([Forest([])])
+    println(json.encode(forest)?)
+    Ok(())

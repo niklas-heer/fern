@@ -1005,9 +1005,13 @@
       }
     },
     "children": {
-      "multiple": false,
+      "multiple": true,
       "required": false,
       "types": [
+        {
+          "type": "derive_clause",
+          "named": true
+        },
         {
           "type": "type_parameters",
           "named": true

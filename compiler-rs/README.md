@@ -589,11 +589,13 @@ including retained closures and ordinary Result errors. Its aggregate work and
 storage limits are documented in the API reference.
 
 [Typed codecs](../docs/JSON_TYPED_CODECS.md) provide `json.encode(value)` and
-`json.decode(text, TargetType)`, including input pipes. Acyclic records opt in
+`json.decode(text, TargetType)`, including input pipes. Records and newtypes opt in
 with `derive(Json)`; concrete generic records and supported containers work in
 native programs and the REPL. Unknown fields fail, missing safe Option fields
 become None, and `json.error_path` identifies failures with a JSON Pointer.
-Recursive schemas, newtypes and general/custom Json traits remain separate.
+Regular recursive schemas with finite bases and explicitly derived transparent
+newtypes are supported. Generic codec-function requirements, sum/union wire formats
+and general/custom Json traits remain separate.
 
 
 Module types and values use separate namespaces. For example, `pub type Id = Int`

@@ -123,6 +123,7 @@ impl Execution<'_, '_> {
     /// Reuse decimal conversion policy; known primitive nodes require no new parser or child allowance.
     fn encode_kind(&mut self, id: usize, input: &Value, depth: usize) -> Result<Json> {
         match (&self.plan.entries[id].kind, input) {
+            (Wire::Newtype(child), _) => self.encode(*child, input, depth + 1),
             (Wire::Dynamic, Value::Json(node)) => {
                 self.budget.work(node.nodes)?;
                 Ok(node.clone())
@@ -149,6 +150,7 @@ impl Execution<'_, '_> {
             self.budget.allocate(64)?;
         }
         match (&self.plan.entries[id].kind, &input.kind) {
+            (Wire::Newtype(child), _) => self.decode(*child, input, depth + 1),
             (Wire::Dynamic, _) => {
                 self.budget.work(input.nodes)?;
                 Ok(Value::Json(input.clone()))

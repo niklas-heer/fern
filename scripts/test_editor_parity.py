@@ -125,8 +125,16 @@ def edited_cases(tool, directory, cases, wasm):
         incremental = parse(tool, path, wasm, edit)
         path.write_text(source[:at] + new + source[at + len(old):])
         fresh = parse(tool, path, wasm)
-        assert fresh.returncode == incremental.returncode == 0, (case["name"], fresh, incremental)
-        assert fresh.stdout == incremental.stdout, (case["name"], fresh.stdout, incremental.stdout)
+        if case.get("valid", True):
+            assert fresh.returncode == incremental.returncode == 0, (case["name"], fresh, incremental)
+            assert fresh.stdout == incremental.stdout, (case["name"], fresh.stdout, incremental.stdout)
+        else:
+            assert fresh.returncode != 0 and incremental.returncode != 0, case["name"]
+            path.write_text(source)
+            changed_tree = parse(tool, path, wasm, edit, xml=True).stdout.split("</sources>")[0]
+            path.write_text(source[:at] + new + source[at + len(old):])
+            fresh_tree = parse(tool, path, wasm, xml=True).stdout.split("</sources>")[0]
+            assert changed_tree == fresh_tree, (case["name"], changed_tree, fresh_tree)
 
 
 def rust_oracle(compiler, directory, case):
@@ -143,6 +151,14 @@ def rust_oracle(compiler, directory, case):
     path = project / "rust_oracle.fn"
     path.write_text(source + suffix)
     command([compiler, "check", str(path)])
+
+
+def rust_invalid_oracle(compiler, directory, case):
+    """Require syntax-invalid editor cases to be rejected by the compiler parser without typechecking."""
+    path = directory / (case["name"] + "_rust_invalid.fn")
+    path.write_text(case["source"])
+    result = command([compiler, "fmt", str(path)], success=False)
+    assert result.returncode != 0, (case["name"], result.stdout)
 
 
 def rust_edit_oracles(compiler, directory, case):
@@ -163,7 +179,7 @@ def main():
     args = options.parse_args()
     assert command([args.tree_sitter, "--version"]).stdout.strip() == "tree-sitter 0.26.12"
     cases = json.loads(CASES.read_text())
-    assert [len(cases[k]) for k in ["valid", "invalid", "edits"]] == [98, 34, 36]
+    assert [len(cases[k]) for k in ["valid", "invalid", "edits"]] == [102, 38, 41]
     assert all(len(case["source"].encode()) <= 1024 * 1024 for group in cases.values() for case in group)
     with tempfile.TemporaryDirectory(prefix="fern-editor-parity-") as temporary:
         directory = Path(temporary)
@@ -176,13 +192,16 @@ def main():
                 source=(GRAMMAR / "test/parity/scanner_unicode.fn").read_text()))
             for case in cases["valid"]:
                 rust_oracle(args.rust, directory, case)
+            for case in cases["invalid"]:
+                if case.get("rust_reject"):
+                    rust_invalid_oracle(args.rust, directory, case)
             for case in cases["edits"]:
                 if case.get("rust_check"):
                     rust_edit_oracles(args.rust, directory, case)
         valid_cases(args.tree_sitter, directory, cases["valid"], args.wasm)
         invalid_cases(args.tree_sitter, directory, cases["invalid"], args.wasm)
         edited_cases(args.tree_sitter, directory, cases["edits"], args.wasm)
-    print(f"Editor {'WASM' if args.wasm else 'native'}: 98 valid, 34 malformed (all recovered), 36 incremental cases")
+    print(f"Editor {'WASM' if args.wasm else 'native'}: 102 valid, 38 malformed (all recovered), 41 incremental cases")
 
 if __name__ == "__main__":
     main()

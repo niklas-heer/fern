@@ -1,0 +1,13 @@
+newtype Maybe derive(Json) = Maybe(Option(Int))
+type Record derive(Json):
+    required: Maybe
+    optional: Option(Int)
+fn main() -> Result(Unit,json.Error):
+    let value=json.decode("\{\"required\":null\}",Record)?
+    println(json.encode(value)?)
+    match json.decode("\{\}",Record):
+        Ok(_) -> println(0)
+        Err(error) ->
+            println(json.error_code(error))
+            println(json.error_path(error))
+    Ok(())

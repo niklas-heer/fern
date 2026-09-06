@@ -26,8 +26,9 @@ same-spelled function or value. Arbitrary expressions are not type targets.
 Input pipes work, for example `text |> json.decode(User)`.
 
 Supported concrete wire types are Int, Float, Bool, String, Unit, `json.Value`,
-tuples, Lists, `Map(String, value)`, nullable-safe Options, and regular recursive records
-marked `derive(Json)`. Concrete instantiations of generic records are supported.
+tuples, Lists, `Map(String, value)`, nullable-safe Options, and regular recursive
+records and transparent newtypes marked `derive(Json)`. Concrete instantiations
+of generic records and newtypes are supported.
 Records retain declaration order; maps retain their existing entry order.
 Unknown record fields fail strictly. A missing Option field becomes None; other
 missing fields fail. None and Unit encode as JSON null. Option payloads must not
@@ -36,7 +37,7 @@ are rejected. Int conversion preserves the full signed 64-bit range; Float and
 text conversion reuse the dynamic API's existing exact adapters.
 
 This checkpoint does not implement general Json traits, user codec implementations,
-generic codec function constraints, newtypes, sums, or unions.
+generic codec function constraints, sums, or unions.
 Unsupported derivations are diagnosed even when unused. Result-bearing values,
 including nested fields or containers, cannot be serialized: converting a Result
 to opaque JSON does not acknowledge its error obligation.
@@ -98,3 +99,25 @@ the existing depth/work/node budgets. A repeated record/list chain at depths
 127 and 128 preserves the same success/error boundary in native and interactive
 execution; a hostile native cyclic value terminates with code 4. The path and
 original-error preservation rules above continue to apply.
+
+## Transparent newtypes
+
+Newtypes opt in with an explicit header, for example
+`newtype UserId derive(Json) = UserId(Int)` or
+`newtype Box(a) derive(Json) = Packed(a)`. A type without this opt-in has no codec.
+Encoding and decoding use the payload's wire form while preserving distinct
+source type identity. Native constructors, accessors and codec adaptation add no
+wrapper allocation, including for nested Float payloads. Existing numeric/text
+conversion rules are unchanged; Float JSON uses the established 17-digit format.
+The REPL also erases the wrapper representation, retaining its checked source type.
+
+Nullability follows the payload. A newtype wrapping Option(Int) accepts explicit
+JSON null. It is still a **required** record field: missing-field defaults apply
+only to actual Option fields. Conversely, Option of a newtype that accepts null
+is rejected as ambiguous. Newtype identity does not grant implicit Json support
+to Map keys: they remain exactly String.
+
+Regular recursive newtypes such as a wrapper over List of itself share the same
+finite-graph and runtime-budget rules as recursive records. Strict unboxed cycles
+remain invalid. Every transparent wrapper layer spends work and depth, even
+though it adds no native allocation. Result-bearing payloads remain unsupported.

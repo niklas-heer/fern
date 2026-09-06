@@ -44,6 +44,7 @@ pub struct TypeAlias {
 /// A distinct one-payload nominal type whose constructor adds no runtime allocation.
 #[derive(Clone, Debug)]
 pub struct NewtypeDecl {
+    pub derives: Vec<Derivation>,
     /// Source visibility belongs to this type declaration, independently of same-named values.
     pub public: bool,
     pub name: String,

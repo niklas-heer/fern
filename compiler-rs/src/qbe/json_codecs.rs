@@ -113,6 +113,7 @@ fn descriptor(kind: &Kind) -> (usize, Vec<usize>) {
         Kind::String => (3, vec![]),
         Kind::Unit => (4, vec![]),
         Kind::Dynamic => (5, vec![]),
+        Kind::Newtype(id) => (11, vec![*id]),
         Kind::List(id) => (6, vec![*id]),
         Kind::Option(id) => (7, vec![*id]),
         Kind::Tuple(ids) => (8, ids.clone()),

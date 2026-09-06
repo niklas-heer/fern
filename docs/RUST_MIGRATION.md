@@ -1134,3 +1134,40 @@ capture returned `Text file busy (os error 26)` before the timeout assertion.
 The unchanged-source full Linux gate passes with `RUST_TEST_THREADS=1`; a separate
 fixture reliability fix remains tracked. This serialization is not needed by the
 recursive JSON tests themselves.
+
+
+## Explicitly derived newtype JSON (J5b) — 2026-09-06
+
+`newtype UserId derive(Json) = UserId(Int)` opts a distinct nominal type into
+transparent JSON conversion. Derivation metadata survives imports, type/value
+name collisions, source documentation and canonical formatting. Generic wrappers
+and finite recursive wrappers over containers retain exact nominal identity.
+The compiler and public plan validator reject wrong storage, wrong payload types,
+forged optional-field markers and unsupported derivations.
+
+Native descriptor tag 11 follows one child with another depth/work step and no
+wrapper allocation. Native tests compare actual GC allocated bytes as well as
+logical budgets against raw Int/Float adapters, and preserve Int MIN/MAX, negative
+zero and subnormal bits. A newtype wrapping Option accepts explicit null but is
+still a required record field; only actual Option fields default to None when
+missing. Option of a nullable newtype remains ambiguous and rejects.
+
+The typed native/REPL corpus now has ten programs and eighteen atomic invalid
+inputs, plus five native runtime fixtures across debug/release/sanitizers.
+Conditional generic codec-function requirements remain the next Decision101
+stage; sum/union formats and general/custom traits remain open.
+
+Editor support now verifies the newtype derive header in native and WASM parsers,
+including public/generic declarations, highlight and outline fields, the 32-trait
+limit, malformed headers and incremental break/repair edits. All previous
+98 valid, 34 malformed and 36 edit cases remain unchanged; the expanded corpus is
+102/38/41. Both regenerated WASM modules are 288,352 bytes with SHA256
+`8877901ef6c339bde4211eb55d97f7397071b5c20a16b4e7220d3f19df866ed0`.
+Matching Zed package pinning follows the grammar commit.
+
+Integrated macOS verification passes 1,174 Rust tests; Linux passes 1,175 with
+the previously documented capture-fixture serialization. Full C compatibility
+gates pass on both platforms. The shared editor gate confirms both newtype
+queries and the original record-derive query regression, with no existing source
+case removed. Newtype allocation and full-width payload checks pass in all three
+native runtime profiles.
