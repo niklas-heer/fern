@@ -29,7 +29,8 @@ CASES = {
     "slice_indirect": ('fn main():\n    defer println("done")\n    let slice: (String, Int, Int) -> String = String.slice\n    println(slice("é", 1, 1))\n', 1, "done\n", "fern: runtime error: String.slice indices must be UTF-8 character boundaries\n"),
     "slice_clamp": ('fn main():\n    println(String.slice("aé🌿z", 1, 7))\n    println(String.slice("é", -9, 99))\n    println(String.len(String.slice("é", 99, -9)))\n', 0, "é🌿\né\n0\n", ""),
     "split_scalars": ('fn main():\n    for part in String.split("aé🌿é", ""): println(part)\n    println(List.len(String.split("", "")))\n', 0, "a\né\n🌿\ne\ń\n0\n", ""),
-    "split_invalid_bytes": ('fn main():\n    defer println("done")\n    let text = Result.unwrap_or(File.read("invalid-utf8.txt"), "")\n    println(List.len(String.split(text, "")))\n', 1, "done\n", "fern: runtime error: String.split requires valid UTF-8 input\n"),
+    "read_invalid_text": ('fn main():\n    defer println("done")\n    match File.read("invalid-utf8.txt"):\n        Ok(_) -> println(-1)\n        Err(code) -> println(code)\n', 0, "3\ndone\n", ""),
+    "split_invalid_bytes": ('fn main():\n    defer println("done")\n    let text = System.arg(1)\n    println(List.len(String.split(text, "")))\n', 1, "done\n", "fern: runtime error: String.split requires valid UTF-8 input\n"),
 }
 
 
@@ -47,7 +48,15 @@ def main():
         for name, (source, code, stdout, stderr) in cases.items():
             path = directory / f"{name}.fn"
             path.write_text(source)
-            result = run([compiler, "run", path], environment, directory)
+            if name == "split_invalid_bytes":
+                # Native argv injection preserves downstream guard coverage after File.read rejects raw bytes.
+                binary = directory / "split-invalid-native"
+                built = run([compiler, "build", path, "-o", binary], environment, directory)
+                assert built.returncode == 0, built
+                invalid = b"\xc0\xaf".decode("utf-8", "surrogateescape")
+                result = run([binary, invalid], environment, directory)
+            else:
+                result = run([compiler, "run", path], environment, directory)
             assert (result.returncode, result.stdout, result.stderr) == (code, stdout, stderr), (name, result)
     print(f"Rust entry/access contracts passed: {len(cases)} native programs")
 

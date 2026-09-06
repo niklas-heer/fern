@@ -1,0 +1,4 @@
+fn main():
+    match File.read(System.arg(1)):
+        Ok(text) -> println(String.len(text))
+        Err(code) -> println(-code)

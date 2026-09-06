@@ -1,0 +1,21 @@
+fn file_int(result: Result(Int, Int)) -> Int:
+    match result:
+        Ok(value) -> value
+        Err(code) -> -code
+fn file_text(result: Result(String, Int)) -> String:
+    match result:
+        Ok(value) -> value
+        Err(code) -> "file error {code}"
+fn status(result: Result(Int, Int)) -> Int:
+    match result:
+        Ok(n) -> n
+        Err(code) -> -code
+fn main():
+    let path = System.arg(1)
+    let maximum = String.repeat("x", 16777216)
+    println(file_int(File.write(path, maximum)))
+    println(String.len(file_text(File.read(path))))
+    let oversized = maximum + "x"
+    println(status(File.write(path, oversized)))
+    println(status(File.append(path, oversized)))
+    println(file_int(File.size(path)))

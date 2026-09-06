@@ -345,6 +345,8 @@ fn file_size(path: &std::path::Path) -> Result<i64, i64> {
         .map_err(|_| 3)
         .and_then(|n| i64::try_from(n).map_err(|_| 3))
 }
+/// Publish complete UTF8/NUL-free text within the native profile and stricter session budget.
+/// Safe std File drop cannot observe a late OS close error; all explicit reads are checked.
 fn read_file(path: &std::path::Path) -> Eval<Value> {
     use std::io::{Read, Seek, SeekFrom};
     let mut file = match std::fs::File::open(path) {
@@ -352,27 +354,35 @@ fn read_file(path: &std::path::Path) -> Eval<Value> {
         Err(_) => return Ok(file_result(Err(1))),
     };
     let length = match file.seek(SeekFrom::End(0)) {
-        Ok(n) => n,
-        Err(_) => return Ok(file_result(Err(3))),
+        Ok(n) if n <= 16 * 1024 * 1024 => n,
+        _ => return Ok(file_result(Err(3))),
     };
-    bounded(usize::try_from(length).ok(), MAX_STRING, "string")?;
+    let length = bounded(usize::try_from(length).ok(), MAX_STRING, "string")?;
     if file.seek(SeekFrom::Start(0)).is_err() {
         return Ok(file_result(Err(3)));
     }
-    let mut bytes = Vec::with_capacity(length as usize);
-    if file.take(length).read_to_end(&mut bytes).is_err() || bytes.len() as u64 != length {
+    let mut bytes = vec![0; length + 1];
+    if file.read_exact(&mut bytes[..length]).is_err()
+        || !matches!(file.read(&mut bytes[length..]), Ok(0))
+    {
         return Ok(file_result(Err(3)));
     }
-    if let Some(end) = bytes.iter().position(|byte| *byte == 0) {
-        bytes.truncate(end);
+    bytes.truncate(length);
+    if bytes.contains(&0) {
+        return Ok(file_result(Err(3)));
     }
-    let text = String::from_utf8(bytes).map_err(|_| {
-        fault("File.read produced invalid UTF-8; interactive strings require UTF-8")
-    })?;
+    let Ok(text) = String::from_utf8(bytes) else {
+        return Ok(file_result(Err(3)));
+    };
     Ok(file_result(Ok(Value::String(Rc::new(text)))))
 }
+
+/// Validate before target side effects, then complete unbuffered writes without claiming durability.
 fn write_file(path: &std::path::Path, text: &str, append: bool) -> Result<i64, i64> {
     use std::io::Write;
+    if text.len() > 16 * 1024 * 1024 || text.contains('\0') {
+        return Err(3);
+    }
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -382,4 +392,34 @@ fn write_file(path: &std::path::Path, text: &str, append: bool) -> Result<i64, i
         .map_err(|_| 2)?;
     file.write_all(text.as_bytes()).map_err(|_| 3)?;
     Ok(text.len() as i64)
+}
+
+#[cfg(test)]
+mod file_text_tests {
+    use super::write_file;
+
+    #[test]
+    fn write_preflight_preserves_existing_target_for_nul_and_oversize() {
+        let path = std::env::temp_dir().join(format!("fern-file-preflight-{}", std::process::id()));
+        std::fs::write(&path, b"original").unwrap();
+        let oversized = "x".repeat(16 * 1024 * 1024 + 1);
+        for append in [false, true] {
+            for text in ["a\0b", oversized.as_str()] {
+                assert_eq!(write_file(&path, text, append), Err(3));
+                assert_eq!(std::fs::read(&path).unwrap(), b"original");
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn unbuffered_file_errors_are_returned_before_success() {
+        for append in [false, true] {
+            assert_eq!(
+                write_file(std::path::Path::new("/dev/full"), "lost", append),
+                Err(3)
+            );
+        }
+    }
 }

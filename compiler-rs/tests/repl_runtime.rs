@@ -210,12 +210,8 @@ fn file_reads_bound_allocation_and_reject_unrepresentable_bytes() {
         .unwrap_err()
         .contains("limit"));
     std::fs::write(&path, [0xFF]).unwrap();
-    let error = Session::default().evaluate(&source).unwrap_err();
-    assert!(
-        error.contains("File.read") && error.contains("UTF-8"),
-        "{error}"
-    );
+    assert_eq!(Session::default().evaluate(&source).unwrap(), "bad\n");
     std::fs::write(&path, b"good\0ignored").unwrap();
-    assert_eq!(Session::default().evaluate(&source).unwrap(), "good\n");
+    assert_eq!(Session::default().evaluate(&source).unwrap(), "bad\n");
     std::fs::remove_file(path).unwrap();
 }

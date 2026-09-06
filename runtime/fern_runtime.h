@@ -806,26 +806,30 @@ typedef struct FernFile {
 } FernFile;
 
 /**
- * Read entire file contents as a string.
+ * Read complete seekable file text (strict UTF8, no interior NUL, <=16MiB).
  * @param path The file path.
- * @return Result: Ok(string contents) or Err(error code).
- *         Returns packed Result where Ok contains pointer to string.
+ * @return Heap Result: Ok(String), or Err(open1/IO-or-invalid-text3/allocation4).
+ * Complete read, ferror and fclose are checked before successful publication.
  */
 int64_t fern_read_file(const char* path);
 
 /**
- * Write string to file (overwrites if exists).
+ * Write UTF8 text <=16MiB to file (overwrites if exists), preflighted before opening.
  * @param path The file path.
  * @param contents The string to write.
- * @return Result: Ok(bytes written) or Err(error code).
+ * @return Heap Result: Ok(bytes written) only after fwrite/ferror/fclose succeed.
+ * Errors may leave a modified target; no atomicity, fsync or durability guarantee.
+ * Invalid text/size and IO return Err3; open failure remains Err2.
  */
 int64_t fern_write_file(const char* path, const char* contents);
 
 /**
- * Append string to file (creates if not exists).
+ * Append UTF8 text <=16MiB to file (creates if not exists), preflighted before opening.
  * @param path The file path.
  * @param contents The string to append.
- * @return Result: Ok(bytes written) or Err(error code).
+ * @return Heap Result: Ok(bytes written) only after fwrite/ferror/fclose succeed.
+ * Errors may leave a modified target; no atomicity, fsync or durability guarantee.
+ * Invalid text/size and IO return Err3; open failure remains Err2.
  */
 int64_t fern_append_file(const char* path, const char* contents);
 

@@ -6,14 +6,14 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 
 ## Current Status Snapshot
 
-- Quality gate: `just check` passing (574 C tests, 16 full-width Int programs, native process/stderr/workflow/string/print tests, 13 TUI tests, 18 examples, strict style); validated with stale host `LIBRARY_PATH` excluded
+- Quality gate: `just check` passing (574 C tests, 16 full-width Int programs, native file/process/stderr/workflow/string/print tests, 13 TUI tests, 18 examples, strict style); validated with stale host `LIBRARY_PATH` excluded
 - Perf gate: `just perf-budget` passing on macOS arm64 (7.49 s build, 549,384-byte compiler, 2.82 ms startup p95)
 - Fuzz gate: `just fuzz-smoke` passing (64 cases, seed `0xC0FFEE`)
 - Docs gate: `just docs-check` passing (consistency, generation, doc tests); LSP RPC smoke passing
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity under both C and Rust frontends on five pinned fixtures, literal paths and all compiler/library source
-- Rust migration: `just rust-check` passing (1015 Rust tests, 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 27 union programs, 21 entry/access programs, 9 controlled-fault cases, 233 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: `just rust-check` passing (1019 Rust tests (1020 on Linux), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 233 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
 
@@ -85,6 +85,7 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Numeric operators, full-width literal forms, multiline strings/comments/documentation and Unicode identifiers (seven native programs, eight controlled-fault programs, 12 invalid inputs and seven interactive regressions).
 - [x] Bound shared runtime String.repeat allocations before multiplication; empty-input fast path (eight native ABI regressions).
 - [x] Replace shared runtime list access assertions with defined failures before access (six native ABI regressions; preserves full-width successful values).
+- [x] Publish complete bounded File.read text and require buffered write/append completion, with shared REPL text policy (eight source-native cases per frontend and five runtime groups in debug/release/sanitizer builds on macOS/Linux arm64).
 - [x] Private return inference with bounded recursive constraints, explicit public return signatures and concrete Result-valued entry points (17 checker regressions, bounded type-work checks and native execution).
 - [x] Guard Rust list access, repetition and UTF-8 slicing/splitting through deferred cleanup, including native malformed-byte input (21 native programs, 26 shared-runtime UTF-8 cases and interactive regressions).
 - [x] Shared exact list and list/tuple rest patterns, bounded coverage and Result discard checks; native length guards and atomic interactive bindings.

@@ -1,0 +1,16 @@
+fn file_int(result: Result(Int, Int)) -> Int:
+    match result:
+        Ok(value) -> value
+        Err(code) -> -code
+fn file_text(result: Result(String, Int)) -> String:
+    match result:
+        Ok(value) -> value
+        Err(code) -> "file error {code}"
+fn main():
+    let path = System.arg(1)
+    println(file_int(File.write(path, "🌿é")))
+    println(file_int(File.append(path, "!")))
+    println(file_text(File.read(path)))
+    println(file_int(File.size(path)))
+    println(file_int(File.write(path, "")))
+    println(String.len(file_text(File.read(path))))

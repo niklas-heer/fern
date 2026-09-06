@@ -882,3 +882,12 @@ beyond 1 MiB. Fresh native caches prevent results from another grammar snapshot.
 Three explicitly tracked malformed inline headers still absorb the following
 declaration. Full recovery, remaining syntax and Zed packaging stay open; see
 [the exact editor contract](../editor/tree-sitter-fern/README.md).
+
+## Complete file-text Results — 2026-09-06
+
+File.read now rejects invalid UTF-8, interior NUL and content above 16 MiB before
+publishing a String. Native write/append check buffered close failures before Ok;
+text preflight happens before opening a target. The REPL keeps the same text
+policy and its stricter storage budget, with the safe File-drop limitation stated
+in [the IO contract](FILE_TEXT_IO.md). Native fault injection and source programs
+cover late failures, exact limits, complete output and preserved preflight targets.
