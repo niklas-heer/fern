@@ -47,10 +47,15 @@ impl Drop for Process {
 /// Execute a native test for at most sixty seconds and capture at most 256 KiB per stream.
 /// Standard input is closed; each Unix test owns a separate process group for cleanup.
 pub fn run(executable: &Path, timeout: Duration) -> Result<Captured, String> {
+    run_command(Command::new(executable), timeout)
+}
+
+/// Apply the same capture limits to an already constructed literal command.
+/// The private seam lets tests use a stable interpreter without executing a freshly written inode.
+fn run_command(mut command: Command, timeout: Duration) -> Result<Captured, String> {
     if timeout.is_zero() || timeout > Duration::from_secs(60) {
         return Err("test timeout must be between 1 and 60 seconds".into());
     }
-    let mut command = Command::new(executable);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -139,15 +144,12 @@ fn poll(
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use std::{fs, os::unix::fs::PermissionsExt};
 
-    /// Execute a temporary test-owned shell fixture without requiring the native compiler.
+    /// Execute a fixed test body through the existing interpreter, avoiding write-to-exec races.
     fn script(body: &str, timeout: Duration) -> Result<Captured, String> {
-        let workspace = super::super::Workspace::new(&std::env::temp_dir()).unwrap();
-        let executable = workspace.path.join("capture-test");
-        fs::write(&executable, format!("#!/bin/sh\n{body}\n")).unwrap();
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-        run(&executable, timeout)
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", body]);
+        run_command(command, timeout)
     }
 
     #[test]
@@ -182,5 +184,31 @@ mod tests {
         assert!(result.unwrap_err().contains("output limit"));
         assert!(run(Path::new("unused"), Duration::ZERO).is_err());
         assert!(run(Path::new("unused"), Duration::from_secs(61)).is_err());
+    }
+
+    #[test]
+    fn concurrent_shell_fixtures_keep_output_and_status_independent() {
+        std::thread::scope(|scope| {
+            let jobs: Vec<_> = (0..8)
+                .map(|worker| {
+                    scope.spawn(move || {
+                        for iteration in 0..20 {
+                            let expected = format!("{worker}:{iteration}");
+                            let result = script(
+                                &format!("printf '%s' '{expected}'; exit 7"),
+                                Duration::from_secs(3),
+                            )
+                            .unwrap();
+                            assert_eq!(result.status.code(), Some(7));
+                            assert_eq!(result.stdout, expected.as_bytes());
+                            assert!(result.stderr.is_empty());
+                        }
+                    })
+                })
+                .collect();
+            for job in jobs {
+                job.join().unwrap();
+            }
+        });
     }
 }

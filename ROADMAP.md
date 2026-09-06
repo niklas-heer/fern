@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity under both C and Rust frontends on five pinned fixtures, literal paths and all compiler/library source
-- Rust migration: `just rust-check` passing (1174 Rust tests (1175 on Linux; capture fixtures serialized pending ETXTBSY repair), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: `just rust-check` passing (1175 Rust tests (1176 on Linux; normal parallel capture fixtures restored), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
 
@@ -246,6 +246,8 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [ ] Repin and verify the Zed package after the newtype derivation grammar commit.
 - [ ] Extend typed JSON with generic codec constraints (Decision101 J5c).
 - [ ] Define and implement sum/union wire formats and general/custom Json traits (J6–J7).
+- [x] Remove newly written executable races from native capture tests; preserve timeout/stream/descendant coverage and add 160 concurrent per-run output/status assertions.
+- [ ] Retain direct-child ownership through native documentation/unit-test capture cleanup (Decision102 proposal).
 - [ ] Verify default-command migration to Rust, retaining C as an explicit bootstrap/reference executable and documenting its legacy JSON source contract (Decision96).
 - [ ] Implement HTTP serving and the broader SQL query/resource APIs described in the design.
 - [ ] Complete function clauses/pattern parameters, labeled calls, aliases/newtypes/unions, traits/constraints and full private signature inference through native execution.

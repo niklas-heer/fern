@@ -1171,3 +1171,20 @@ gates pass on both platforms. The shared editor gate confirms both newtype
 queries and the original record-derive query regression, with no existing source
 case removed. Newtype allocation and full-width payload checks pass in all three
 native runtime profiles.
+
+
+## Concurrent native capture fixtures — 2026-09-06
+
+The intermittent Linux `Text file busy` failure was reproduced on Rust 1.75 by
+eight workers repeatedly creating and executing shell fixtures. The test seam
+now passes a literal command to the existing capture mechanism and invokes the
+stable `/bin/sh` interpreter for fixed test bodies. Public executable capture
+still takes a path; application execution does not gain a shell fallback.
+
+Timeout, output limits and inherited-output descendant tests remain intact.
+A new 8×20 concurrent regression verifies independent exact output and nonzero
+status. Twenty repeated Linux parallel runs pass 3,200 adversarial invocations
+without retries or serialization, alongside macOS checks and Clippy. Full platform
+gates now use normal parallel Cargo execution. The separate existing lifecycle
+audit—retaining child identity until process-group cleanup—remains Decision102
+work and is not claimed fixed by this fixture change.
