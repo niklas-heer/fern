@@ -154,11 +154,15 @@ fn phantom_result_metadata_is_distinct_from_actual_stored_union_payloads() {
 }
 
 #[test]
-fn union_targets_use_type_aliases_without_accepting_value_expression_type_syntax() {
+fn union_targets_accept_aliases_and_inline_types_without_runtime_type_values() {
     let accepted="type Choice(a)=a | String\nfn read()->Result(Choice(Int),json.Error):json.decode(\"7\",Choice(Int))\nfn main():()\n";
     check::check(&parse::parse(accepted).unwrap()).unwrap();
     let inline="fn read()->Result(Int | String,json.Error):json.decode(\"7\",Int | String)\nfn main():()\n";
-    assert!(parse::parse(inline).is_err());
+    check::check(&parse::parse(inline).unwrap()).unwrap();
+    rejects(
+        "fn accept(value:Int):value\nfn main():accept(Int | String)\n",
+        "cannot be used as a value",
+    );
 }
 #[test]
 fn map_overlap_and_nullable_union_payloads_stay_rejected() {

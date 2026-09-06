@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `mise run release-package` and `mise run release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: Fern-native default checker, exact native/Python diagnostic and 66 workflow parity cases, bounded content cache and native supervision verified on macOS/Linux; ordinary style checks need no Python/Cargo
-- Rust migration: `mise run rust-check` passing (1450 Rust checks (1453 on Linux; bounded CLI inspection/docs and mutual Result handlers), 4 measurement-harness tests, 197 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: `mise run rust-check` passing (1473 Rust checks (1476 on Linux; literal native library paths and inline JSON type targets), 4 measurement-harness tests, 197 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
 
@@ -266,7 +266,9 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [x] Extend typed JSON with conditional generic codec requirements, exact specialization, private template boundaries and phantom-field semantics (Decision101 J5c; 13 native programs, 22 atomic invalids, native/REPL parity).
 - [x] Implement explicitly derived tagged JSON sums, finite constructor-choice proof and shared native/REPL resource accounting (Decision103 J6a).
 - [x] Implement conservative disjoint JSON unions, allocation-free member selection and whole-union conditional requirements (Decision103 J6b).
-- [ ] Complete deeper union discrimination, inline compound decoder targets and general/custom Json traits (J6c–J7).
+- [x] Accept inline union-bearing JSON decoder targets with bounded linear recognition, exact type identities and native/interactive parity; preserve ordinary parsing/formatting.
+- [x] Verify the library-path/inline-codec checkpoint on macOS and Linux: full Rust/native/C/docs gates, 1470/1472 nextest tests without skips, separate doctests and all ten Criterion smoke phases.
+- [ ] Complete deeper union discrimination and general/custom Json traits (J6c–J7).
 - [x] Reassess QBE/Cranelift using current primary sources and an independent native AOT experiment; correct the original QBE rationale (Decision109).
 - [ ] Trial a supported Cranelift backend through shared lowering and complete native/ABI/debug/performance gates before a default decision.
 - [x] Reserve an ABI-permitted Apple arm64 QBE scratch register, verify swaps/calls/spills and independent native outputs, and preserve generic Linux assembly (Decision104).

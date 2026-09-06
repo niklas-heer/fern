@@ -1,5 +1,6 @@
 //! Independent, bounded lexer and recursive-descent parser for the prototype.
 mod inspection;
+mod type_arguments;
 pub use inspection::{debug_ast, debug_tokens};
 mod label_recovery;
 mod recovery;
@@ -152,6 +153,8 @@ fn parser_tokens(tokens: Vec<Token>, record: bool) -> Parser {
         type_spans: record.then(Vec::new),
         member_hole: None,
         label_hole: None,
+        type_argument_work: 0,
+        type_argument_shapes: None,
     }
 }
 
@@ -1173,6 +1176,8 @@ struct Parser {
     type_spans: Option<Vec<Span>>,
     member_hole: Option<HoleSite>,
     label_hole: Option<LabelSite>,
+    type_argument_work: usize,
+    type_argument_shapes: Option<type_arguments::Shapes>,
 }
 
 impl Parser {
@@ -2453,7 +2458,7 @@ impl Parser {
                 return Err(self.error("positional arguments must precede labeled arguments"));
             }
             labeled |= label.is_some();
-            let arg = self.expr(0)?;
+            let arg = self.argument_value()?;
             depth = depth.max(arg.depth);
             let span = Span {
                 start,

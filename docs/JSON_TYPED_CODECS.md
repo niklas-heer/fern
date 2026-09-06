@@ -164,7 +164,21 @@ Envelopes count their real object, tag text and array nodes against existing JSO
 
 ## Disjoint union codecs
 
-`type Choice(a) = a | String` permits `json.decode(text, Choice(Int))`. Existing static target syntax does not accept `json.decode(text, Int | String)`. This checkpoint does not change source Map key policy: a structural union cannot itself be a source Map key. Generic `Map(k,v) | String` retains the exact JsonStringKey(k) requirement until independently inferred concrete instantiation.
+Inline static targets accept `json.decode(text, Int | String)` and nested forms
+such as `List(Int | String)`, `Map(String,Int | Bool)`, `(Int | String,Bool)` and
+`Box(Int | String)`. `type Choice(a) = a | String` and
+`json.decode(text, Choice(Int))` remain equivalent. Input pipes support the same
+target grammar. These forms are type syntax only in a canonically resolved codec
+slot; an ordinary function or a shadowed receiver cannot consume them as values.
+Existing lambda and runtime-expression targets remain invalid. Recognition is
+linear in the token stream: argument boundaries and token-prefix counts are built
+once, then queried in constant time. Construction and queries share a precharged
+400,000-unit allowance. The 1 MiB source/65,536-token limits and existing type
+depth/union-alternative limits of 128 remain.
+
+This does not change source Map key policy: a structural union cannot itself be a
+source Map key. Generic `Map(k,v) | String` retains the exact JsonStringKey(k)
+requirement until independently inferred concrete instantiation.
 
 Encoding forwards only the selected member's wire value. Decoding selects exactly one member before invoking its decoder. Int and Float overlap; record fields are not inspected to distinguish same-key records; arbitrary List shapes overlap; dynamic JSON overlaps every kind. Strict records use actual required/allowed key sets, with optional status only for actual Option fields. A nullable newtype field remains required. Exact tuple lengths and distinct source constructor-tag sets can discriminate. Newtypes inherit their payload's wire shape without merging nominal source identity.
 

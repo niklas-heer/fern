@@ -1,0 +1,14 @@
+type Box(a) derive(Json):
+    value:a
+fn main()->Result(Unit,json.Error):
+    let list=json.decode("[1,\"leaf\"]",List(Int | String))?
+    println(json.encode(list)?)
+    let map=json.decode("\{\"a\":true,\"b\":7\}",Map(String,Int | Bool))?
+    println(json.encode(map)?)
+    let tuple=json.decode("[\"leaf\",true]",(Int | String,Bool))?
+    println(json.encode(tuple)?)
+    let absent=json.decode("null",Option(Int | String))?
+    println(json.encode(absent)?)
+    let record=json.decode("\{\"value\":7\}",Box(Int | String))?
+    println(json.encode(record)?)
+    Ok(())
