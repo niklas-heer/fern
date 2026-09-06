@@ -1,0 +1,4 @@
+type Hidden:
+    Packed(Int)
+pub type Token=Hidden
+pub fn make()->Token:Packed(1)

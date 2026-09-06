@@ -1,0 +1,4 @@
+import lib.facade_wildcard.*
+fn main():
+    let x:Item(String)=Item("both")
+    println(x)

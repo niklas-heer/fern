@@ -1,0 +1,4 @@
+import lib.newtype_value as m
+fn main():
+    let value=m.Wrap(1)
+    ()

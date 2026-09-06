@@ -1,0 +1,3 @@
+pub type Id=Int
+fn Id(x:Int)->Int:x
+pub fn make()->Id:41

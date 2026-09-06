@@ -85,14 +85,7 @@ impl Server {
             else {
                 return Ok(Json::Null);
             };
-            let Some((path, text, span)) = index.location(target) else {
-                return Ok(Json::Null);
-            };
-            let uri = self.definition_uri(uri, path);
-            return Ok(object([
-                ("uri", string(uri)),
-                ("range", source_range(text, span)),
-            ]));
+            return Ok(self.definition_locations(uri, index, target));
         }
         if facts
             .as_ref()
@@ -104,6 +97,24 @@ impl Server {
         }
         Ok(completion(source, cursor, index, facts.as_ref()))
     }
+    /// Return every exact selected namespace location, deduplicated by source declaration.
+    fn definition_locations(&self, uri: &str, index: &Index<'_>, target: Span) -> Json {
+        let mut locations = Vec::new();
+        for target in std::iter::once(&target).chain(&index.additional_targets) {
+            if let Some((path, text, span)) = index.location(*target) {
+                locations.push(object([
+                    ("uri", string(self.definition_uri(uri, path))),
+                    ("range", source_range(text, span)),
+                ]));
+            }
+        }
+        if locations.len() == 1 {
+            locations.pop().unwrap_or(Json::Null)
+        } else {
+            Json::Array(locations)
+        }
+    }
+
     /// Reuse a client's original URI when an imported source is open under that spelling.
     fn definition_uri(&self, current: &str, path: &Path) -> String {
         if file_path(current).ok().flatten().is_none() {
@@ -151,18 +162,17 @@ fn completion(
     };
     let mut candidates = BTreeMap::new();
     let shadowed = index.is_some_and(|i| {
-        i.locals
-            .contains_key(receiver.split('.').next().unwrap_or(&receiver))
+        !i.in_type_context()
+            && i.locals
+                .contains_key(receiver.split('.').next().unwrap_or(&receiver))
     });
     if receiver.is_empty() || !shadowed {
         for name in index::builtins() {
             add_candidate(&mut candidates, &name, 3, &receiver, &prefix);
         }
         if let Some(index) = index {
-            for (name, target) in &index.visible {
-                if let Some(kind) = index.completion_kind(target) {
-                    add_candidate(&mut candidates, name, kind, &receiver, &prefix);
-                }
+            for (name, kind) in index.completions() {
+                add_candidate(&mut candidates, name, kind, &receiver, &prefix);
             }
         }
     }
@@ -174,7 +184,7 @@ fn completion(
             add_candidate(&mut candidates, name, 14, "", &prefix);
         }
         if let Some(index) = index {
-            for name in index.locals.keys() {
+            for name in index.locals.keys().filter(|_| !index.in_type_context()) {
                 if name.starts_with(&prefix) {
                     candidates.insert(name.clone(), 6);
                 }

@@ -1,0 +1,4 @@
+import lib.private_payload.{Token}
+fn main():
+    let value=Token.Packed(1)
+    ()

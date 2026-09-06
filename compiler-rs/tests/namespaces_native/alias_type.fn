@@ -1,0 +1,3 @@
+import lib.alias_type as m
+fn raw(x:m.Id)->Int:x
+fn main():println(raw(m.make()))

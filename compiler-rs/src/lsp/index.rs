@@ -14,16 +14,19 @@ pub(super) struct Source<'a> {
     pub start: usize,
     pub tokens: parse::IdentifierIndex,
     annotations: Vec<Span>,
+    selectors: Vec<Span>,
 }
 pub(super) struct Index<'a> {
     pub sources: Vec<Source<'a>>,
-    pub visible: BTreeMap<String, String>,
+    visible_types: BTreeMap<String, String>,
+    visible_values: BTreeMap<String, String>,
     pub globals: BTreeMap<String, Symbol>,
     types: BTreeMap<String, Symbol>,
-    aliases: std::collections::BTreeSet<String>,
     type_context: bool,
+    selector_context: bool,
     pub locals: Bindings,
     pub target: Option<Span>,
+    pub additional_targets: Vec<Span>,
     cursor: usize,
     token: Option<Span>,
     work: usize,
@@ -39,13 +42,14 @@ impl<'a> Index<'a> {
             .sources()
             .map(|s| Self::source(s.path, s.text, s.start))
             .collect::<Option<Vec<_>>>()?;
-        let visible = loaded
-            .symbols
-            .iter()
-            .find(|s| s.path == path)?
-            .names
-            .clone();
-        Self::build(&loaded.program, sources, visible, offset + cursor)
+        let symbols = loaded.symbols.iter().find(|s| s.path == path)?;
+        Self::build(
+            &loaded.program,
+            sources,
+            symbols.types.clone(),
+            symbols.values.clone(),
+            offset + cursor,
+        )
     }
     /// Non-file documents use the same lexical rules without inventing filesystem imports.
     pub fn single(
@@ -55,80 +59,77 @@ impl<'a> Index<'a> {
         cursor: usize,
     ) -> Option<Self> {
         let sources = vec![Self::source(path, source, 0)?];
-        let mut visible = BTreeMap::new();
+        let mut types = BTreeMap::new();
+        let mut values = BTreeMap::new();
         for function in program
             .functions
             .iter()
             .filter(|f| f.span != Span::default())
         {
-            visible.insert(function.name.clone(), function.name.clone());
+            values.insert(function.name.clone(), function.name.clone());
         }
         for alias in &program.aliases {
-            visible.insert(alias.name.clone(), alias.name.clone());
+            types.insert(alias.name.clone(), alias.name.clone());
         }
         for decl in &program.newtypes {
-            visible.insert(decl.name.clone(), decl.name.clone());
-            visible.insert(decl.constructor.clone(), decl.constructor.clone());
-            visible.insert(
+            types.insert(decl.name.clone(), decl.name.clone());
+            values.insert(decl.constructor.clone(), decl.constructor.clone());
+            values.insert(
                 format!("{}.{}", decl.name, decl.constructor),
                 decl.constructor.clone(),
             );
         }
         for ty in &program.types {
-            visible.insert(ty.name.clone(), ty.name.clone());
+            types.insert(ty.name.clone(), ty.name.clone());
             for variant in &ty.variants {
-                visible.insert(variant.name.clone(), variant.name.clone());
+                values.insert(variant.name.clone(), variant.name.clone());
                 let leaf = variant.name.rsplit('.').next().unwrap_or(&variant.name);
-                visible.insert(format!("{}.{leaf}", ty.name), variant.name.clone());
+                values.insert(format!("{}.{leaf}", ty.name), variant.name.clone());
             }
         }
-        Self::build(program, sources, visible, cursor)
+        Self::build(program, sources, types, values, cursor)
     }
     /// Keep lexical indexing bounded independently of parser layout and checker work.
     fn source(path: &'a Path, text: &'a str, start: usize) -> Option<Source<'a>> {
+        let roles = parse::source_roles(text).ok()?;
         Some(Source {
             path,
             text,
             start,
             tokens: parse::identifier_index(text).ok()?,
-            annotations: parse::annotation_spans(text).ok()?,
+            annotations: roles.types,
+            selectors: roles.selectors,
         })
     }
     /// Collect declaration identities once; inspect only scopes containing this request's cursor.
     fn build(
         program: &ast::Program,
         sources: Vec<Source<'a>>,
-        visible: BTreeMap<String, String>,
+        visible_types: BTreeMap<String, String>,
+        visible_values: BTreeMap<String, String>,
         cursor: usize,
     ) -> Option<Self> {
         let count: usize = sources
             .iter()
             .map(|s| s.tokens.identifiers.len() + s.tokens.numbers.len())
             .sum();
-        if count > 100_000 || visible.len() > 100_000 {
+        if count > 100_000 || visible_types.len().saturating_add(visible_values.len()) > 100_000 {
             return None;
         }
-        let token = sources.iter().find_map(|s| {
-            s.tokens
-                .identifiers
-                .iter()
-                .chain(s.tokens.numbers.iter())
-                .find(|span| span.start + s.start <= cursor && cursor <= span.end + s.start)
-                .map(|span| Span {
-                    start: span.start + s.start,
-                    end: span.end + s.start,
-                })
-        });
+        let token = cursor_token(&sources, cursor);
         let type_context = type_context(&sources, token);
+        let selector_context = selector_context(&sources, token);
         let mut index = Self {
             sources,
-            visible,
+            visible_types,
+            visible_values,
             globals: BTreeMap::new(),
             types: BTreeMap::new(),
-            aliases: program.aliases.iter().map(|a| a.name.clone()).collect(),
             type_context,
+            selector_context,
             locals: Bindings::new(),
             target: None,
+            additional_targets: Vec::new(),
             cursor,
             token,
             work: 0,
@@ -243,10 +244,7 @@ impl<'a> Index<'a> {
                         }
                     }
                 }
-                if ty.record {
-                    continue;
-                }
-                if let Some(span) = self.identifier(variant.span, 0) {
+                if let Some(span) = self.identifier(variant.span, usize::from(ty.record)) {
                     self.globals
                         .insert(variant.name.clone(), Symbol { span, kind: 4 });
                     if self.contains(span) {
@@ -286,18 +284,21 @@ impl<'a> Index<'a> {
         let Some(word) = self.word(token) else {
             return;
         };
-        let Some(text) = self.text(word) else {
+        let Some(text) = self.text(word).map(str::to_owned) else {
             return;
         };
+        if self.selector_targets(&text) {
+            return;
+        }
         if self.type_context {
             self.target = self
-                .visible
-                .get(text)
+                .visible_types
+                .get(&text)
                 .and_then(|name| self.types.get(name))
                 .map(|s| s.span);
             return;
         }
-        let root = text.split('.').next().unwrap_or(text);
+        let root = text.split('.').next().unwrap_or(&text);
         if let Some(binding) = self.locals.get(root) {
             if word == token {
                 self.target = Some(*binding);
@@ -307,12 +308,8 @@ impl<'a> Index<'a> {
         if token.end != word.end {
             return;
         }
-        if let Some(name) = self.visible.get(text) {
-            self.target = self
-                .globals
-                .get(name)
-                .or_else(|| self.types.get(name))
-                .map(|s| s.span);
+        if let Some(name) = self.visible_values.get(&text) {
+            self.target = self.globals.get(name).map(|s| s.span);
         }
     }
 
@@ -357,22 +354,54 @@ impl<'a> Index<'a> {
             end: index.tokens.identifiers[last].end + index.start,
         })
     }
-    /// Choose completion kinds using the selected syntax namespace, retaining record constructors.
-    pub(super) fn completion_kind(&self, name: &str) -> Option<i64> {
-        if !self.type_context && self.aliases.contains(name) {
-            return None;
+    /// Offer only symbols from the cursor's namespace; selectors include both, type first.
+    pub(super) fn completions(&self) -> impl Iterator<Item = (&str, i64)> {
+        let types = self
+            .visible_types
+            .iter()
+            .filter(|_| self.type_context || self.selector_context)
+            .filter_map(|(name, target)| {
+                self.types
+                    .get(target)
+                    .map(|symbol| (name.as_str(), symbol.kind))
+            });
+        let values = self
+            .visible_values
+            .iter()
+            .filter(|_| !self.type_context)
+            .filter_map(|(name, target)| {
+                self.globals
+                    .get(target)
+                    .map(|symbol| (name.as_str(), symbol.kind))
+            });
+        types.chain(values)
+    }
+
+    /// Type annotations never inherit a lexical value's visibility or shadowing.
+    pub(super) fn in_type_context(&self) -> bool {
+        self.type_context
+    }
+
+    /// An import selector may deliberately identify both namespaces; preserve type-first order.
+    fn selector_targets(&mut self, text: &str) -> bool {
+        if !self.selector_context {
+            return false;
         }
-        let first = if self.type_context {
-            &self.types
-        } else {
-            &self.globals
-        };
-        Some(
-            first
-                .get(name)
-                .or_else(|| self.types.get(name))
-                .map_or(9, |s| s.kind),
-        )
+        let ty = self
+            .visible_types
+            .get(text)
+            .and_then(|name| self.types.get(name))
+            .map(|s| s.span);
+        let value = self
+            .visible_values
+            .get(text)
+            .and_then(|name| self.globals.get(name))
+            .map(|s| s.span);
+        self.target = ty.or(value);
+        if let Some(value) = value.filter(|value| Some(*value) != self.target) {
+            self.additional_targets.push(value);
+        }
+        true
     }
 
     /// Return a selected declaration's fully qualified resolver identity, never just its leaf.
@@ -991,5 +1020,31 @@ fn type_context(sources: &[Source<'_>], token: Option<Span>) -> bool {
                 source.start + span.start <= token.start && token.end <= source.start + span.end
             })
         })
+    })
+}
+
+/// Import selector roles come only from parser-confirmed delimiters in this exact source.
+fn selector_context(sources: &[Source<'_>], token: Option<Span>) -> bool {
+    token.is_some_and(|token| {
+        sources.iter().any(|source| {
+            source.selectors.iter().any(|span| {
+                source.start + span.start <= token.start && token.end <= source.start + span.end
+            })
+        })
+    })
+}
+
+/// Locate the caret in actual identifier or scalar tokens under the already charged source budget.
+fn cursor_token(sources: &[Source<'_>], cursor: usize) -> Option<Span> {
+    sources.iter().find_map(|s| {
+        s.tokens
+            .identifiers
+            .iter()
+            .chain(s.tokens.numbers.iter())
+            .find(|span| span.start + s.start <= cursor && cursor <= span.end + s.start)
+            .map(|span| Span {
+                start: span.start + s.start,
+                end: span.end + s.start,
+            })
     })
 }

@@ -1,0 +1,4 @@
+import lib.facade_alias as m
+fn main():
+    let x:m.api.Item(Int)=m.api.Item(49)
+    println(x)

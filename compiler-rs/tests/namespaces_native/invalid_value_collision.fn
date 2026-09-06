@@ -1,0 +1,3 @@
+import lib.alias_value.{Id}
+import lib.newtype_value.{Id}
+fn main():()

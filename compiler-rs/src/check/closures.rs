@@ -223,7 +223,10 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
-        if self.registry.is_alias(name) {
+        if self.registry.is_alias(name)
+            && !self.signatures.contains_key(name)
+            && self.registry.constructor(name).is_none()
+        {
             return Err(Diagnostic::new(
                 span,
                 "a type alias does not introduce a value or constructor",

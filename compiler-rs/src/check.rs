@@ -1143,7 +1143,10 @@ impl Checker<'_> {
 
     /// Reject calling local `name` or a module path whose root is locally shadowed.
     fn callable_name(&self, name: &str, span: Span) -> Checked<()> {
-        if self.registry.is_alias(name) {
+        if self.registry.is_alias(name)
+            && !self.signatures.contains_key(name)
+            && self.registry.constructor(name).is_none()
+        {
             return Err(Diagnostic::new(
                 span,
                 "a type alias does not introduce a value or constructor",

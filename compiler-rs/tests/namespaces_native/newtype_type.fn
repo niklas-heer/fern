@@ -1,0 +1,3 @@
+import lib.newtype_type.*
+fn keep(x:Id)->Id:x
+fn main():println(keep(Wrap(45)).0)

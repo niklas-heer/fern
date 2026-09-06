@@ -1,0 +1,2 @@
+import lib.sum_value as m
+fn main():println(m.Id(44))

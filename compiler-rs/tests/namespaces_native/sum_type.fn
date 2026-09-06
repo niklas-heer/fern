@@ -1,0 +1,3 @@
+import lib.sum_type.{Id,value}
+fn keep(x:Id)->Id:x
+fn main():println(value(keep(Id.Wrap(43))))

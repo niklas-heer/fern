@@ -47,7 +47,7 @@ fn editor_metadata_retains_aliases_without_changing_ordinary_compiler_syntax() {
         .iter()
         .find(|s| s.path == main)
         .unwrap()
-        .names;
+        .values;
     assert_eq!(visible.get("m.value").unwrap(), "model.value");
     assert!(!visible.contains_key("m.hidden"));
     let function = indexed

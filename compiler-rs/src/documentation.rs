@@ -91,12 +91,11 @@ fn declarations<'a>(
             });
         }
     }
-    for (name, span) in type_declarations(program) {
+    for (name, span, public) in type_declarations(program) {
         let header = source
             .get(span.start..span.end)
             .ok_or_else(|| limit("invalid type declaration span"))?
             .trim_end();
-        let public = program.exports.contains(name);
         declarations.push(Declaration {
             name,
             span,
@@ -119,13 +118,23 @@ fn declarations<'a>(
 }
 
 /// Preserve source identities for all nominal, transparent and distinct type declarations.
-fn type_declarations(program: &ast::Program) -> impl Iterator<Item = (&String, Span)> {
+fn type_declarations(program: &ast::Program) -> impl Iterator<Item = (&String, Span, bool)> {
     program
         .types
         .iter()
-        .map(|decl| (&decl.name, decl.span))
-        .chain(program.aliases.iter().map(|decl| (&decl.name, decl.span)))
-        .chain(program.newtypes.iter().map(|decl| (&decl.name, decl.span)))
+        .map(|decl| (&decl.name, decl.span, decl.public))
+        .chain(
+            program
+                .aliases
+                .iter()
+                .map(|decl| (&decl.name, decl.span, decl.public)),
+        )
+        .chain(
+            program
+                .newtypes
+                .iter()
+                .map(|decl| (&decl.name, decl.span, decl.public)),
+        )
 }
 
 impl Writer {

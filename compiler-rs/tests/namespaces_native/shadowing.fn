@@ -1,0 +1,13 @@
+import lib.both as api
+type Receiver:
+    Item:(Int)->Int
+fn main():
+    let lib=1
+    let callback=api.Item
+    println(callback(4294967296))
+    println(2 |> api.Item)
+    let delayed=() -> callback(lib+4)
+    println(delayed())
+    let api=Receiver((x)->x+10)
+    let value:api.Item(Int)=api.Item(3)
+    println(value)

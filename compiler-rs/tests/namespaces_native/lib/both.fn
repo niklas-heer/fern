@@ -1,0 +1,2 @@
+pub type Item(a)=a
+pub fn Item(x:a)->a:x

@@ -1,0 +1,4 @@
+import lib.both as api
+fn main():
+    let api=1
+    println(api.Item(1))

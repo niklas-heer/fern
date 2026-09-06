@@ -1,0 +1,2 @@
+pub newtype Id=Wrap(Int)
+fn Id(x:Int)->Int:x

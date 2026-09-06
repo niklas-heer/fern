@@ -1,0 +1,4 @@
+pub type Id:
+    Wrap(Int)
+fn Id(x:Int)->Int:x
+pub fn value(Wrap(x):Id)->Int:x

@@ -87,21 +87,15 @@ impl Renderer<'_> {
             declarations.push((import.span.start, vec![line(0, text, import.span.start)]));
         }
         for alias in &program.aliases {
-            declarations.push((
-                alias.span.start,
-                vec![self.alias(alias, program.exports.contains(&alias.name))?],
-            ));
+            declarations.push((alias.span.start, vec![self.alias(alias, alias.public)?]));
         }
         for decl in &program.newtypes {
-            declarations.push((
-                decl.span.start,
-                vec![self.newtype(decl, program.exports.contains(&decl.name))?],
-            ));
+            declarations.push((decl.span.start, vec![self.newtype(decl, decl.public)?]));
         }
         for declaration in &program.types {
             declarations.push((
                 declaration.span.start,
-                self.declaration(declaration, program.exports.contains(&declaration.name))?,
+                self.declaration(declaration, declaration.public)?,
             ));
         }
         for function in &program.functions {

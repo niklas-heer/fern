@@ -38,6 +38,7 @@ def main():
     corpus += sorted((ROOT / "compiler-rs/tests/whole_signatures").glob("*.fn"))
     corpus += sorted((ROOT / "compiler-rs/tests/inference_shapes").glob("*.fn"))
     corpus += sorted((ROOT / "compiler-rs/tests/aliases").glob("*.fn"))
+    corpus += sorted((ROOT / "compiler-rs/tests/newtypes_native").glob("*.fn"))
     corpus += sorted((ROOT / "compiler-rs/tests/json_values/valid").glob("*.fn"))
     sources = [path.read_text() for path in corpus]
     sources.extend(case[0] for case in BOUNDARY_CASES.values())

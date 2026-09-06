@@ -1,0 +1,3 @@
+pub type Mark=Int
+pub type Container:
+    Mark(Int)

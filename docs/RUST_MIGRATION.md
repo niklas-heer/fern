@@ -756,9 +756,9 @@ limits, constructor callbacks, recursive containers, String keys, cleanup and
 wrapped JSON; fourteen invalid programs preserve existing output. Native allocation
 oracles compare equivalent wrapped and unwrapped code.
 
-Unions and general traits remain separate. The current module loader still rejects
-independent type/value declarations sharing one spelling; namespace separation is
-in progress. See [newtype semantics](NEWTYPES.md) and Decision 79.
+Unions and general traits remain separate. Module type/value namespace separation
+is covered by the later checkpoint below. See [newtype semantics](NEWTYPES.md)
+and Decision 79.
 
 Newtype checkpoint gates pass: 885 Rust tests, 550 C tests and the complete native,
 sanitizer, fuzz and documentation suites on macOS arm64. Editor support regeneration
@@ -790,3 +790,24 @@ benchmarks, coverage and watch remain separate work.
 
 Unit-runner checkpoint gates pass: 900 Rust tests, 550 C tests and the complete
 native, sanitizer, fuzz and documentation suites on macOS arm64.
+
+
+## Independent module namespaces
+
+Types and values now have independent declaration, import and visibility maps.
+A public alias or nominal owner does not publish a private same-named function;
+a public function does not publish a private same-named type or its constructors.
+An alias may share its spelling with a real function or unrelated constructor,
+but an alias alone cannot construct a value. Same-namespace collisions still reject.
+
+Selective imports and public reexports preserve both public identities. Type
+annotations ignore local value shadowing; calls, pipes and function references
+honor the original lexical receiver. Editor navigation uses exact current-source
+locations, including both identities for an import selector. Formatting and
+documentation use declaration provenance rather than a shared spelling list.
+Combined metadata accounting preserves the existing symbol and byte limits.
+See Decision 82.
+
+Nineteen new Rust regressions and twelve native programs verify these behaviors.
+Twelve invalid builds preserve existing output bytes, mode and modification time.
+The deterministic mutation corpus now also includes newtype programs.

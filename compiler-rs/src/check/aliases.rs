@@ -75,14 +75,12 @@ pub(super) fn validate(program: &ast::Program, registry: &nominal::Registry) -> 
 
 /// Reject namespace collisions and undeclared formals before references become transparent.
 fn declarations(program: &ast::Program) -> Checked<HashMap<&str, &ast::TypeAlias>> {
-    let mut occupied: HashSet<&str> = program.functions.iter().map(|f| f.name.as_str()).collect();
+    let mut occupied: HashSet<&str> = HashSet::new();
     for ty in &program.types {
         occupied.insert(&ty.name);
-        occupied.extend(ty.variants.iter().map(|v| v.name.as_str()));
     }
     for decl in &program.newtypes {
         occupied.insert(&decl.name);
-        occupied.insert(&decl.constructor);
     }
     let mut aliases = HashMap::new();
     for alias in &program.aliases {

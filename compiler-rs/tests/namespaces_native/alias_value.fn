@@ -1,0 +1,2 @@
+import lib.alias_value.{Id}
+fn main():println(Id(42))

@@ -582,3 +582,13 @@ a compatible module spelling. The old String/Int source signatures no longer
 apply to Rust; C source and both legacy native symbols remain unchanged. The REPL evaluates the same JSON API using bounded immutable Rust values,
 including retained closures and ordinary Result errors. Its aggregate work and
 storage limits are documented in the API reference.
+
+
+Module types and values use separate namespaces. For example, `pub type Id = Int`
+and `pub fn Id(value: Int) -> Int: value` can coexist and both are selected by
+`import ids.{Id}`. Each declaration keeps its own visibility: publishing one does
+not publish a private same-named sibling. A public nominal type publishes its own
+constructors; an alias never creates or exports its target's constructors. Calls
+and annotations navigate to their respective declarations, while an import
+selector can navigate to both. Duplicate declarations within either namespace
+remain errors.

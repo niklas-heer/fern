@@ -1,0 +1,5 @@
+import lib.only_type.{Shared}
+import lib.only_value.{Shared}
+fn main():
+    let x:Shared=Shared(50)
+    println(x)

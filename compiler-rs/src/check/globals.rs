@@ -26,7 +26,10 @@ impl Checker<'_> {
     }
     /// Resolve a proven global without consulting lexical bindings of its canonical prefix.
     pub(super) fn global_name(&mut self, name: &str, span: Span) -> Checked<TypedKind> {
-        if self.registry.is_alias(name) {
+        if self.registry.is_alias(name)
+            && !self.signatures.contains_key(name)
+            && self.registry.constructor(name).is_none()
+        {
             return Err(Diagnostic::new(
                 span,
                 "a type alias does not introduce a value or constructor",

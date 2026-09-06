@@ -1,0 +1,1 @@
+pub fn Shared(x:Int)->Int:x

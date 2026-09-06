@@ -46,13 +46,10 @@ fn alias_cycles_arities_and_undeclared_variables_are_diagnostics() {
     assert!(rejected("type Value = Missing\nfn main(): ()\n").contains("unknown"));
 }
 #[test]
-fn aliases_add_no_constructors_and_cannot_shadow_other_declarations() {
+fn aliases_add_no_constructors_and_cannot_shadow_other_types() {
     assert!(rejected("type Id = Int\nfn main(): Id(1)\n").contains("alias"));
-    for source in [
-        "type Id = Int\ntype Id = String",
-        "type Id = Int\nfn Id() -> Int: 1",
-        "type Int = String",
-    ] {
+    checked("type Id = Int\nfn Id() -> Int: 1\nfn main(): println(Id())\n");
+    for source in ["type Id = Int\ntype Id = String", "type Int = String"] {
         assert!(
             check::check(&parse::parse(&format!("{source}\nfn main(): ()\n")).unwrap()).is_err()
         );
@@ -79,6 +76,7 @@ fn raw_alias_trees_are_preflight_bounded_before_ast_cloning() {
     let mut program = parse::parse("fn main(): ()\n").unwrap();
     program.aliases = (0..40)
         .map(|n| fern_prototype::ast::TypeAlias {
+            public: false,
             name: format!("Alias{n}"),
             parameters: vec![],
             target: Type::Tuple(vec![Type::Int; 3000]),

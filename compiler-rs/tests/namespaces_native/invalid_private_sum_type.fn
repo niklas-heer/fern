@@ -1,0 +1,3 @@
+import lib.sum_value as m
+fn keep(x:m.Id)->m.Id:x
+fn main():()

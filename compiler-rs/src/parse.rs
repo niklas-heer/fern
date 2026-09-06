@@ -84,9 +84,45 @@ pub fn parse(source: &str) -> ParseResult<Program> {
 /// Return exact parsed type-syntax ranges for a valid bounded current source snapshot.
 /// Failed speculative arrow-header parses are excluded; no lexical guesses are published.
 pub fn annotation_spans(source: &str) -> ParseResult<Vec<Span>> {
+    Ok(source_roles(source)?.types)
+}
+
+/// Committed syntax ranges distinguish type annotations from dual-namespace import selectors.
+pub(crate) struct SourceRoles {
+    pub types: Vec<Span>,
+    pub selectors: Vec<Span>,
+}
+
+/// Parse once, recording only successful type syntax and actual import-list delimiter tokens.
+pub(crate) fn source_roles(source: &str) -> ParseResult<SourceRoles> {
     let mut parser = source_parser(source, true)?;
-    parser.program()?;
-    Ok(parser.type_spans.unwrap_or_default())
+    let program = parser.program()?;
+    let mut selectors = Vec::new();
+    for import in program
+        .imports
+        .iter()
+        .filter(|import| import.items.is_some())
+    {
+        let start = parser
+            .tokens
+            .partition_point(|token| token.span.start < import.span.start);
+        for token in parser.tokens[start..]
+            .iter()
+            .take_while(|token| token.span.end <= import.span.end)
+        {
+            if token.kind == Kind::LeftBrace {
+                selectors.push(Span {
+                    start: token.span.end,
+                    end: import.span.end,
+                });
+                break;
+            }
+        }
+    }
+    Ok(SourceRoles {
+        types: parser.type_spans.unwrap_or_default(),
+        selectors,
+    })
 }
 
 /// Create the same bounded parser, optionally recording type ranges for source tooling.
@@ -1298,6 +1334,7 @@ impl Parser {
             let end = self.tokens[self.position.saturating_sub(1)].span.end;
             self.line_end()?;
             program.aliases.push(crate::ast::TypeAlias {
+                public,
                 name,
                 parameters,
                 target,
@@ -1306,7 +1343,7 @@ impl Parser {
         } else {
             program
                 .types
-                .push(self.nominal_body(start, name, parameters)?);
+                .push(self.nominal_body(start, name, parameters, public)?);
         }
         Ok(())
     }
@@ -1356,6 +1393,7 @@ impl Parser {
             program.exports.push(name.clone());
         }
         program.newtypes.push(crate::ast::NewtypeDecl {
+            public,
             name,
             parameters,
             constructor,
@@ -1373,6 +1411,7 @@ impl Parser {
         start: usize,
         name: String,
         parameters: Vec<String>,
+        public: bool,
     ) -> ParseResult<TypeDecl> {
         self.expect(Kind::Colon, "expected ':' before type body")?;
         self.expect(Kind::Newline, "type declarations require an indented body")?;
@@ -1407,6 +1446,7 @@ impl Parser {
             return Err(Diagnostic::new(span, "type requires fields or variants"));
         }
         Ok(TypeDecl {
+            public,
             name,
             parameters,
             variants,

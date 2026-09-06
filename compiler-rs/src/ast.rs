@@ -33,6 +33,8 @@ pub struct Import {
 /// A transparent source type name; it introduces no value constructor.
 #[derive(Clone, Debug)]
 pub struct TypeAlias {
+    /// Source visibility belongs to this type declaration, independently of same-named values.
+    pub public: bool,
     pub name: String,
     pub parameters: Vec<String>,
     pub target: Type,
@@ -42,6 +44,8 @@ pub struct TypeAlias {
 /// A distinct one-payload nominal type whose constructor adds no runtime allocation.
 #[derive(Clone, Debug)]
 pub struct NewtypeDecl {
+    /// Source visibility belongs to this type declaration, independently of same-named values.
+    pub public: bool,
     pub name: String,
     pub parameters: Vec<String>,
     pub constructor: String,
@@ -53,6 +57,8 @@ pub struct NewtypeDecl {
 
 #[derive(Clone, Debug)]
 pub struct TypeDecl {
+    /// Source visibility belongs to this type declaration, independently of same-named values.
+    pub public: bool,
     pub name: String,
     pub parameters: Vec<String>,
     pub variants: Vec<Variant>,

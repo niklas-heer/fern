@@ -1,0 +1,2 @@
+import lib.newtype_type as m
+fn main():println(m.Id(1))

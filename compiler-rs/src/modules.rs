@@ -35,7 +35,10 @@ pub struct Loaded {
 #[derive(Debug)]
 pub struct ModuleSymbols {
     pub path: PathBuf,
-    pub names: BTreeMap<String, String>,
+    /// Visible type spellings mapped to their defining module identities.
+    pub types: BTreeMap<String, String>,
+    /// Visible function and constructor spellings, independently filtered by value visibility.
+    pub values: BTreeMap<String, String>,
 }
 
 /// Borrowed source mapping for editor positions without cloning entire documents.
@@ -68,7 +71,12 @@ struct Loader<'a> {
     entry_syntax: Option<(PathBuf, ast::Program, String)>,
     recovery: Option<parse::HoleSite>,
 }
-type Names = BTreeMap<String, String>;
+type NameMap = BTreeMap<String, String>;
+#[derive(Clone, Default)]
+struct Names {
+    types: NameMap,
+    values: NameMap,
+}
 
 /// Load an entry and its imports, enforcing visibility before handing syntax to checking.
 pub fn load(entry: &Path) -> Result<Loaded, Error> {
@@ -522,12 +530,9 @@ impl Loader<'_> {
                         &visible,
                     )?;
                 }
-                for doc in &mut module.syntax.docs {
-                    doc.target = own[&doc.target].clone();
-                    shift(&mut doc.span, module.source.start);
-                }
+                qualify_docs(&mut module.syntax, &own, module.source.start)?;
                 for function in &mut module.syntax.functions {
-                    function.name = own[&function.name].clone();
+                    function.name = own.values[&function.name].clone();
                     qualify_function(function, &visible, &imported_prefixes, module.source.start)?;
                     shift(&mut function.span, module.source.start);
                 }
@@ -552,6 +557,32 @@ impl Loader<'_> {
     }
 }
 
+/// Qualify documentation by its following declaration's namespace, not its spelling.
+fn qualify_docs(program: &mut ast::Program, names: &Names, offset: usize) -> Result<(), Error> {
+    let mut roles: Vec<_> = program
+        .functions
+        .iter()
+        .map(|decl| (decl.span.start, true))
+        .chain(program.types.iter().map(|decl| (decl.span.start, false)))
+        .chain(program.aliases.iter().map(|decl| (decl.span.start, false)))
+        .chain(program.newtypes.iter().map(|decl| (decl.span.start, false)))
+        .collect();
+    roles.sort_unstable_by_key(|role| role.0);
+    for doc in &mut program.docs {
+        let position = roles.partition_point(|role| role.0 < doc.span.end);
+        let (_, value) = roles
+            .get(position)
+            .ok_or_else(|| failure("missing documentation declaration"))?;
+        let namespace = if *value { &names.values } else { &names.types };
+        doc.target = namespace
+            .get(&doc.target)
+            .ok_or_else(|| failure("unknown documentation target"))?
+            .clone();
+        shift(&mut doc.span, offset);
+    }
+    Ok(())
+}
+
 /// Bound aliases to 100,000 entries and 8 MiB of name bytes before cloning across the graph.
 /// The navigation index's one active visibility-table clone is bounded by this same aggregate cap.
 fn record_symbols(
@@ -561,11 +592,11 @@ fn record_symbols(
     path: &Path,
     names: &Names,
 ) -> Result<(), Error> {
-    *count = count.saturating_add(names.len());
+    *count = count.saturating_add(names.types.len() + names.values.len());
     if *count > 100_000 {
         return Err(failure("editor symbol index limit exceeded"));
     }
-    for (name, target) in names {
+    for (name, target) in names.types.iter().chain(&names.values) {
         *bytes = bytes
             .saturating_add(name.len())
             .saturating_add(target.len());
@@ -575,37 +606,46 @@ fn record_symbols(
     }
     symbols.push(ModuleSymbols {
         path: path.to_owned(),
-        names: names.clone(),
+        types: names.types.clone(),
+        values: names.values.clone(),
     });
     Ok(())
 }
 
 /// Expand exported types to include only their own constructors.
 fn exported_names(module: &Module, own: &Names) -> Result<Names, Error> {
-    let mut public = Names::new();
-    for name in &module.syntax.exports {
-        let qualified = own
-            .get(name)
-            .ok_or_else(|| failure(format!("unknown export {name}")))?;
-        public.insert(name.clone(), qualified.clone());
-        if let Some(decl) = module.syntax.newtypes.iter().find(|t| &t.name == name) {
-            public.insert(decl.constructor.clone(), own[&decl.constructor].clone());
-            public.insert(
-                format!("{}.{}", decl.name, decl.constructor),
-                own[&decl.constructor].clone(),
-            );
-        }
-        if let Some(decl) = module.syntax.types.iter().find(|t| &t.name == name) {
-            for variant in &decl.variants {
-                public.insert(variant.name.clone(), own[&variant.name].clone());
-                public.insert(
-                    format!("{}.{}", decl.name, variant.name),
-                    own[&variant.name].clone(),
-                );
-            }
+    let mut public = Names::default();
+    for function in module.syntax.functions.iter().filter(|f| f.public) {
+        public
+            .values
+            .insert(function.name.clone(), own.values[&function.name].clone());
+    }
+    for alias in module.syntax.aliases.iter().filter(|d| d.public) {
+        public
+            .types
+            .insert(alias.name.clone(), own.types[&alias.name].clone());
+    }
+    for decl in module.syntax.newtypes.iter().filter(|d| d.public) {
+        public
+            .types
+            .insert(decl.name.clone(), own.types[&decl.name].clone());
+        export_constructor(&mut public.values, own, &decl.name, &decl.constructor);
+    }
+    for decl in module.syntax.types.iter().filter(|d| d.public) {
+        public
+            .types
+            .insert(decl.name.clone(), own.types[&decl.name].clone());
+        for variant in &decl.variants {
+            export_constructor(&mut public.values, own, &decl.name, &variant.name);
         }
     }
     Ok(public)
+}
+
+/// Constructors inherit visibility exclusively from their own nominal declaration.
+fn export_constructor(public: &mut NameMap, own: &Names, owner: &str, name: &str) {
+    public.insert(name.into(), own.values[name].clone());
+    public.insert(format!("{owner}.{name}"), own.values[name].clone());
 }
 
 /// Qualify source type declarations while keeping distinct owner and constructor identities.
@@ -618,8 +658,8 @@ fn qualify_source_types(
     qualify_aliases(&mut program.aliases, own, visible, offset)?;
     qualify_declarations(&mut program.types, own, visible, offset)?;
     for decl in &mut program.newtypes {
-        decl.name = own[&decl.name].clone();
-        decl.constructor = own[&decl.constructor].clone();
+        decl.name = own.types[&decl.name].clone();
+        decl.constructor = own.values[&decl.constructor].clone();
         qualify_type(&mut decl.inner, visible).map_err(|e| at_span(e, decl.inner_span))?;
         shift(&mut decl.span, offset);
         shift(&mut decl.constructor_span, offset);
@@ -636,7 +676,7 @@ fn qualify_aliases(
     offset: usize,
 ) -> Result<(), Error> {
     for alias in aliases {
-        alias.name = own[&alias.name].clone();
+        alias.name = own.types[&alias.name].clone();
         qualify_type(&mut alias.target, visible).map_err(|e| at_span(e, alias.span))?;
         shift(&mut alias.span, offset);
     }
@@ -651,10 +691,10 @@ fn qualify_declarations(
     offset: usize,
 ) -> Result<(), Error> {
     for decl in declarations {
-        decl.name = own[&decl.name].clone();
+        decl.name = own.types[&decl.name].clone();
         shift(&mut decl.span, offset);
         for variant in &mut decl.variants {
-            variant.name = own[&variant.name].clone();
+            variant.name = own.values[&variant.name].clone();
             shift(&mut variant.span, offset);
             for field in &mut variant.fields {
                 qualify_type(&mut field.ty, visible).map_err(|e| at_span(e, field.span))?;
@@ -694,7 +734,7 @@ fn qualify_function(
 
 /// Map local function/type/constructor identities into a module-qualified namespace.
 fn own_names(module: &Module, entry: bool) -> Result<Names, Error> {
-    let mut names = Names::new();
+    let mut names = Names::default();
     let mut groups = BTreeMap::new();
     for function in &module.syntax.functions {
         if groups.get(&function.name) == Some(&function.group_start) {
@@ -703,8 +743,7 @@ fn own_names(module: &Module, entry: bool) -> Result<Names, Error> {
         groups.insert(function.name.clone(), function.group_start);
         if reserved_declaration(&function.name) {
             return Err(failure(format!(
-                "{}: {} is reserved for a builtin",
-                module.source.path.display(),
+                "{} is reserved for a builtin",
                 function.name
             )));
         }
@@ -713,76 +752,78 @@ fn own_names(module: &Module, entry: bool) -> Result<Names, Error> {
         } else {
             format!("{}.{}", module.name, function.name)
         };
-        insert(&mut names, function.name.clone(), qualified)?;
+        insert(&mut names.values, function.name.clone(), qualified)?;
     }
     for decl in &module.syntax.types {
-        if reserved_declaration(&decl.name) {
-            return Err(failure(format!(
-                "{}: {} is reserved for a builtin",
-                module.source.path.display(),
-                decl.name
-            )));
-        }
-        let qualified = format!("{}.{}", module.name, decl.name);
-        insert(&mut names, decl.name.clone(), qualified.clone())?;
+        register_type(module, &mut names.types, &decl.name, decl.span)?;
         for variant in &decl.variants {
-            if reserved_declaration(&variant.name) {
-                return Err(failure(format!(
-                    "{}: constructor {} is reserved for a builtin",
-                    module.source.path.display(),
-                    variant.name
-                )));
-            }
-            let value = format!("{}.{}", module.name, variant.name);
-            if !decl.record {
-                insert(&mut names, variant.name.clone(), value.clone())?;
-            }
-            names.insert(format!("{}.{}", decl.name, variant.name), value);
+            register_constructor(
+                module,
+                &mut names.values,
+                &decl.name,
+                &variant.name,
+                variant.span,
+            )?;
         }
     }
     for alias in &module.syntax.aliases {
-        if reserved_declaration(&alias.name) {
-            return Err(at_span(failure("alias name is reserved"), alias.span));
-        }
-        insert(
-            &mut names,
-            alias.name.clone(),
-            format!("{}.{}", module.name, alias.name),
-        )
-        .map_err(|e| at_span(e, alias.span))?;
+        register_type(module, &mut names.types, &alias.name, alias.span)?;
     }
-    newtype_names(module, &mut names)?;
-    let aliases: Vec<_> = names
-        .iter()
-        .map(|(name, value)| (format!("{}.{name}", module.name), value.clone()))
-        .collect();
-    for (name, value) in aliases {
-        insert(&mut names, name, value)?;
+    for decl in &module.syntax.newtypes {
+        register_type(module, &mut names.types, &decl.name, decl.span)?;
+        register_constructor(
+            module,
+            &mut names.values,
+            &decl.name,
+            &decl.constructor,
+            decl.constructor_span,
+        )?;
+    }
+    for namespace in [&mut names.types, &mut names.values] {
+        let aliases: Vec<_> = namespace
+            .iter()
+            .map(|(name, value)| (format!("{}.{name}", module.name), value.clone()))
+            .collect();
+        for (name, value) in aliases {
+            insert(namespace, name, value)?;
+        }
     }
     Ok(names)
 }
 
-/// Register each newtype's type and value names, permitting its conventional shared spelling.
-fn newtype_names(module: &Module, names: &mut Names) -> Result<(), Error> {
-    for decl in &module.syntax.newtypes {
-        for name in std::iter::once(&decl.name)
-            .chain((decl.constructor != decl.name).then_some(&decl.constructor))
-        {
-            if reserved_declaration(name) {
-                return Err(at_span(
-                    failure(format!("newtype name {name} is reserved")),
-                    decl.span,
-                ));
-            }
-            insert(names, name.clone(), format!("{}.{name}", module.name))
-                .map_err(|e| at_span(e, decl.span))?;
-        }
-        names.insert(
-            format!("{}.{}", decl.name, decl.constructor),
-            format!("{}.{}", module.name, decl.constructor),
-        );
+/// Register one type identity, rejecting duplicates only in the type namespace.
+fn register_type(
+    module: &Module,
+    names: &mut NameMap,
+    name: &str,
+    span: Span,
+) -> Result<(), Error> {
+    if reserved_declaration(name) {
+        return Err(at_span(
+            failure(format!("type name {name} is reserved")),
+            span,
+        ));
     }
-    Ok(())
+    insert(names, name.into(), format!("{}.{name}", module.name)).map_err(|e| at_span(e, span))
+}
+
+/// Register constructor values independently of their owner type's spelling.
+fn register_constructor(
+    module: &Module,
+    names: &mut NameMap,
+    owner: &str,
+    name: &str,
+    span: Span,
+) -> Result<(), Error> {
+    if reserved_declaration(name) {
+        return Err(at_span(
+            failure(format!("constructor {name} is reserved")),
+            span,
+        ));
+    }
+    let qualified = format!("{}.{name}", module.name);
+    insert(names, name.into(), qualified.clone()).map_err(|e| at_span(e, span))?;
+    insert(names, format!("{owner}.{name}"), qualified).map_err(|e| at_span(e, span))
 }
 
 fn reserved_declaration(name: &str) -> bool {
@@ -811,7 +852,7 @@ fn reserved_declaration(name: &str) -> bool {
 }
 
 /// Reject ambiguous source names rather than allowing import order to choose behavior.
-fn insert(names: &mut Names, key: String, value: String) -> Result<(), Error> {
+fn insert(names: &mut NameMap, key: String, value: String) -> Result<(), Error> {
     if names.insert(key.clone(), value).is_some() {
         return Err(failure(format!(
             "ambiguous or duplicate declaration/import: {key}"
@@ -832,39 +873,63 @@ fn import_names(
     if import.items.is_none() {
         prefixes.insert(prefix.clone());
     }
-    let selected: Vec<_> = match &import.items {
-        Some(items) if !items.iter().any(|i| i == "*") => {
-            let mut selected = items.clone();
-            for item in items {
-                selected.extend(
-                    exported
-                        .keys()
-                        .filter(|key| key.starts_with(&format!("{item}.")))
-                        .cloned(),
-                );
+    if let Some(items) = &import.items {
+        let mut selected = BTreeSet::new();
+        for item in items.iter().filter(|item| item.as_str() != "*") {
+            if !selected.insert(item) {
+                return Err(failure(format!("duplicate import selector: {item}")));
             }
-            selected
-        }
-        _ => exported.keys().cloned().collect(),
-    };
-    for name in selected {
-        let value = exported
-            .get(&name)
-            .ok_or_else(|| {
-                failure(format!(
-                    "{}: {name} is private or not exported",
+            if !exported.types.contains_key(item) && !exported.values.contains_key(item) {
+                return Err(failure(format!(
+                    "{}: {item} is private or not exported",
                     import.module
-                ))
-            })?
-            .clone();
+                )));
+            }
+        }
+    }
+    import_namespace(
+        import,
+        &exported.types,
+        &mut visible.types,
+        &mut public.types,
+    )?;
+    import_namespace(
+        import,
+        &exported.values,
+        &mut visible.values,
+        &mut public.values,
+    )
+}
+
+/// Apply identical import syntax independently to each public namespace.
+fn import_namespace(
+    import: &ast::Import,
+    exported: &NameMap,
+    visible: &mut NameMap,
+    public: &mut NameMap,
+) -> Result<(), Error> {
+    let prefix = import.alias.as_ref().unwrap_or(&import.module);
+    for (name, value) in exported {
+        let selected = import.items.as_ref().map_or(true, |items| {
+            items.iter().any(|item| {
+                item == "*"
+                    || name == item
+                    || name
+                        .strip_prefix(item)
+                        .is_some_and(|tail| tail.starts_with('.'))
+            })
+        });
+        if !selected {
+            continue;
+        }
         let key = if import.items.is_none() {
             format!("{prefix}.{name}")
         } else {
-            name
+            name.clone()
         };
         insert(visible, key.clone(), value.clone())?;
         if import.public {
-            insert(public, key, value)?;
+            insert(public, key, value.clone())?;
         }
     }
     Ok(())
@@ -885,7 +950,7 @@ fn local(scopes: &[BTreeSet<String>], name: &str) -> bool {
 fn qualify_type(ty: &mut Type, names: &Names) -> Result<(), Error> {
     match ty {
         Type::Named(name, args) => {
-            resolve_global(name, names, false)?;
+            resolve_global(name, &names.types, false)?;
             for arg in args {
                 qualify_type(arg, names)?;
             }
@@ -921,17 +986,19 @@ fn resolve_name(
     if local(scopes, name) {
         return Ok(());
     }
-    if !names.contains_key(name) && prefixes.iter().any(|p| name.starts_with(&format!("{p}."))) {
+    if !names.values.contains_key(name)
+        && prefixes.iter().any(|p| name.starts_with(&format!("{p}.")))
+    {
         return Err(failure(format!(
             "{name} is private or not exported by its imported module"
         )));
     }
-    resolve_global(name, names, true)?;
+    resolve_global(name, &names.values, true)?;
     Ok(())
 }
 
 /// Resolve only visible global identities; merged dependency declarations are not implicit imports.
-fn resolve_global(name: &mut String, names: &Names, allow_builtin: bool) -> Result<(), Error> {
+fn resolve_global(name: &mut String, names: &NameMap, allow_builtin: bool) -> Result<(), Error> {
     if let Some(value) = names.get(name) {
         *name = value.clone();
     } else if (name.contains('.') || name == "main") && !(allow_builtin && builtin_path(name)) {
@@ -1363,7 +1430,7 @@ fn pattern(
             bound.insert(name.clone());
         }
         ast::PatternKind::NamedConstructor { name, fields } => {
-            resolve_global(name, names, false).map_err(|e| at_span(e, original))?;
+            resolve_global(name, &names.values, false).map_err(|e| at_span(e, original))?;
             for field in fields {
                 pattern_binding(field, names, bound, offset)?;
             }
@@ -1399,7 +1466,7 @@ fn mark_global(
     }
     let mut resolved = name.clone();
     resolve_name(&mut resolved, names, prefixes, scopes)?;
-    if !names.contains_key(name) {
+    if !names.values.contains_key(name) {
         return Ok(());
     }
     *kind = match std::mem::replace(kind, ast::ExprKind::Unit) {

@@ -1,0 +1,6 @@
+import lib.constructor.{Mark,Container}
+fn main():
+    let x:Mark=51
+    let value:Container=Mark(x)
+    match value:
+        Mark(result)->println(result)

@@ -69,5 +69,7 @@ fn aliases_participate_in_namespace_conflicts_and_source_locations() {
         "main.fn",
         "type Id = Int\nfn Id() -> Int: 1\nfn main(): ()\n",
     );
+    fern_prototype::check::check(&modules::load(&main).unwrap().program).unwrap();
+    let main = project.write("main.fn", "type Id=Int\ntype Id=String\nfn main():()\n");
     assert!(modules::load(&main).is_err());
 }

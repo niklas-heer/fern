@@ -1,0 +1,2 @@
+type Id=Int
+pub fn Id(x:Int)->Int:x

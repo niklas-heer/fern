@@ -1,0 +1,4 @@
+import lib.facade_selected.{Item}
+fn main():
+    let x:Item(Int)=Item(47)
+    println(x)
