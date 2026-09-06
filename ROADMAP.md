@@ -53,6 +53,7 @@ for approval between milestones. C remains the default until the parity gates pa
 - [x] Custom algebraic/record types, generic functions, nested patterns and guards (41 checker and 36 emitter tests; native recursive values and guarded matching).
 - [x] Modules/imports/visibility and a realistic application spanning multiple files (13 loader tests including visibility bypass regressions, native project execution).
 - [ ] Remaining executable language parity: remaining function/numeric/string operations, control flow and complete error handling.
+- [ ] Replace reference-only Result binding checks with semantic handling on reachable paths; collection metadata, partial searches and one-branch handling currently leave errors unhandled.
 - [ ] Standard-library/native ABI compatibility and executable application coverage.
 - [ ] Diagnostics, formatting, REPL/LSP, documentation and developer-command parity.
 - [x] Verify the 1006-test expanded Rust checkpoint, C quality gate and documentation on Linux arm64 with Rust 1.75; expose POSIX test APIs under glibc strict C11 without hiding Darwin extensions.
