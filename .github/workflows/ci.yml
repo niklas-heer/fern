@@ -46,6 +46,9 @@ jobs:
       - name: Validate native checker diagnostics
         run: just style-parity
 
+      - name: Validate native checker launcher
+        run: just style-launcher-check
+
       - name: Validate examples
         run: just test-examples
 
@@ -105,7 +108,7 @@ jobs:
       - name: Check FERN_STYLE compliance
         run: |
           echo "Checking FERN_STYLE compliance..."
-          uv run scripts/check_style.py lib/ src/
+          ./scripts/check_style lib/ src/
           echo "✓ All files pass FERN_STYLE checks"
 
       - name: Check formatting (if clang-format config exists)

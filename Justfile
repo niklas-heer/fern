@@ -242,7 +242,8 @@ fmt:
 
 # Full quality check (build + test + style, strict mode)
 check:
-    uv run scripts/check_style.py src lib
+    ./scripts/check_style src lib
+    python3 scripts/test_style_default.py
     python3 scripts/test_qbe_apple_registers.py
     python3 scripts/test_c_int64.py
     python3 scripts/test_process_frontends.py --compiler bin/fern
@@ -251,15 +252,15 @@ check:
     python3 scripts/generate_decimal_tables.py --check
     python3 scripts/test_decimal_generator.py
     python3 scripts/test_decimal_frontends.py --compiler bin/fern --c
-    uv run scripts/test_style_workflow.py
+    FERN_STYLE_TOOL_PATH="$PATH" uv run scripts/test_style_workflow.py --native "$PWD/scripts/check_style"
 
 # Style check only (no build/test)
 style:
-    uv run scripts/check_style.py --style-only src lib
+    ./scripts/check_style --style-only src lib
 
 # Lenient style check (warnings allowed)
 style-lenient:
-    uv run scripts/check_style.py --style-only --lenient src lib
+    ./scripts/check_style --style-only --lenient src lib
 
 # Run the Fern implementation of the style checker (bootstrapping progress)
 style-fern: debug
@@ -269,10 +270,36 @@ style-fern: debug
 style-parity: debug
     uv run scripts/test_style_parity.py
     uv run scripts/test_style_workflow.py
+    ./scripts/check_style --help > /dev/null
+    FERN_STYLE_TOOL_PATH="$PATH" uv run scripts/test_style_parity.py --native "$PWD/scripts/check_style"
+    FERN_STYLE_TOOL_PATH="$PATH" uv run scripts/test_style_workflow.py --native "$PWD/scripts/check_style"
+
+# Native launcher lifecycle, cache, configuration and process-ownership verification
+style-launcher-check: debug
+    ./bin/fern build scripts/check_style.fn -o bin/check_style
+    python3 scripts/test_style_default.py
+    python3 scripts/test_style_supervisor.py
+    python3 scripts/test_style_foreground.py
+    python3 scripts/test_style_launch_control.py
+    python3 scripts/test_style_protocol_files.py
+    python3 scripts/test_style_inventory.py
+    python3 scripts/test_style_cache_marker.py
+    python3 scripts/test_style_cache_ownership.py
+    python3 scripts/test_style_retain.py
+    python3 scripts/test_style_tool_identity.py
+    python3 scripts/test_style_cache_early.py
+    python3 scripts/test_style_launcher.py
+    python3 scripts/test_style_cache.py
+    python3 scripts/test_style_cache_defaults.py
+    python3 scripts/test_style_cache_external.py
+    python3 scripts/test_style_cache_retry.py
+    python3 scripts/test_style_cache_concurrent.py
+    python3 scripts/test_style_driver_profile.py
+    python3 scripts/test_style_config_locations.py
 
 # Pre-commit hook check
 pre-commit:
-    uv run scripts/check_style.py --pre-commit src lib
+    ./scripts/check_style --pre-commit src lib
 
 # Test examples - type check all .fn files in examples/
 test-examples: debug

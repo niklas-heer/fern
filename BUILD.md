@@ -8,7 +8,8 @@
 - SQLite development library (`sqlite3`)
 - OpenSSL development library (`openssl`)
 - `pkg-config` for native library discovery
-- Python 3.11+ and `uv` for quality/documentation tooling
+- Clang 14+ and Bash 3.2+ for the native quality-checker launcher
+- Python 3.11+ and `uv` for integration/reference tests and documentation tooling
 - macOS, Linux, or other Unix-like OS
 
 Install the native development dependencies:
@@ -77,7 +78,12 @@ the [evaluation](docs/RUST_FRONTEND_EVALUATION.md) for measurements and migratio
 ### Code Quality
 
 - `just fmt` - Format code with clang-format
-- `just check` - Full build/test/examples/style gate (recommended before commits)
+- `just check` - Native build/test/examples/style workflow plus explicit Python integration gates
+- `just style` - Native style checks without Python or Cargo
+- `just style-parity` - Compare source-compiled and cached native checkers with Python
+- `just style-launcher-check` - Native launcher/cache/process infrastructure tests
+
+See [native checker configuration and cache cleanup](docs/NATIVE_STYLE_CHECKER.md).
 
 ## Project Structure
 

@@ -16,7 +16,7 @@ engineering milestones; they do not certify the entire language.
 | Actor foundation | String FIFO mailboxes, lifecycle/monitor/restart, three deterministic strategies | Six invariant scenarios and 1,536 seeded strategy crash steps |
 | Terminal UI | Styled output, panels/tables, editable input/password prompts, cursor controls, immutable trees, logs | 13 native/PTY tests and a compiled example |
 | Editor | Rust LSP, bounded Tree-sitter corpus and locally staged Zed extension | Native/WASM source parity, reproducible package tests and isolated actual-Zed LSP startup |
-| Native checker | Style diagnostic parity and 66 build/test/example/Git/CLI workflows under both frontends | Required diagnostic and workflow gates on macOS/Linux arm64 |
+| Native checker | Default C-bootstrap cached launcher; ordinary style checks need no Python/Cargo | 66 independent workflow cases, exact diagnostics, cache/concurrency/ownership and sanitizer gates on macOS/Linux |
 
 ## Blocking full language completion
 
@@ -35,10 +35,6 @@ engineering milestones; they do not certify the entire language.
 - **Server and database APIs:** HTTP serving, typed SQL queries and the broader
   design-level application stack are not implemented by the current client and
   SQLite execute primitives.
-- **Bootstrapping:** native build/test/Git workflows and diagnostic parity are
-  covered, including Unicode negative-path CLI classification. A reliable native
-  default launcher remains open. Python remains the quality-workflow entry point;
-  see [the checker contract](BOOTSTRAP_CHECKER.md).
 - **Result handling:** the Rust checker proves reachable-path handling through
   aliases, collections, generic calls and deferred cleanup. Metadata-only uses,
   partial searches and uncovered early exits reject. Recursive nominal trees with

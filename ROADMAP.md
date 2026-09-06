@@ -12,7 +12,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Docs gate: `just docs-check` passing (consistency, generation, doc tests); LSP RPC smoke passing
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
-- Bootstrap gate: exact native/Python style diagnostic parity under both C and Rust frontends on five pinned fixtures, literal paths and all compiler/library source
+- Bootstrap gate: Fern-native default checker, exact native/Python diagnostic and 66 workflow parity cases, bounded content cache and native supervision verified on macOS/Linux; ordinary style checks need no Python/Cargo
 - Rust migration: `just rust-check` passing (1302 Rust tests (1303 on Linux; normal parallel capture fixtures restored), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
@@ -166,7 +166,7 @@ Exit criteria:
 
 ### Priority 3: Milestone 9 Bootstrapping
 
-Status: Diagnostic parity complete; workflow parity remains open
+Status: Complete for the native quality-checker bootstrap workflow
 
 - [x] Compare exact diagnostics, severity, messages, and exits on pinned failing fixtures and all `src`/`lib` sources (strict, lenient, summary, nested paths)
 - [x] Port the Fern checker to immutable returned state and verify exact diagnostics, file counts and exits under both C and Rust frontends, including continuation after a failed build.
@@ -176,7 +176,7 @@ Status: Diagnostic parity complete; workflow parity remains open
 - [x] Run the native build/test/example/Git workflow through literal bounded argv, preserve stderr CLI failures and compare 47 scenarios under both frontends.
 - [x] Reach pinned diagnostic/workflow parity for `scripts/check_style.py` in `scripts/check_style.fn`, including Unicode numeric-path prefix classification (66 reference-first workflow cases under both frontends).
 - [x] Add parity assertions to CI (`just style-parity` as a required gate)
-- [ ] Make Fern-native checker the default once parity is stable
+- [x] Make the Fern-native checker the default through a content-validated C-bootstrap launcher; verify cold/warm caches, source and external inputs, concurrency, failure, ownership and independent Python parity on macOS/Linux (Decision93).
 
 Exit criteria:
 - Style checks can run without Python for normal developer workflows.
@@ -255,7 +255,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [ ] Complete function clauses/pattern parameters, labeled calls, aliases/newtypes/unions, traits/constraints and full private signature inference through native execution.
 - [ ] Complete Sets and the specified standard modules, including data formats, testing/utilities, IO/system, cryptography and compression.
 - [ ] Audit all specified syntax and stdlib calls for complete typecheck-to-native behavior; reject unsupported execution paths.
-- [ ] Complete compiler bootstrapping workflow parity, ownership analysis, and the planned WASM backend.
+- [ ] Complete ownership analysis and the planned WASM backend.
 
 ## Next Session Start Here
 
@@ -266,5 +266,5 @@ verified checkpoints. Preserve the concrete type/ABI and native-output gates in
 [migration progress](docs/RUST_MIGRATION.md).
 
 1. Implement real actor execution and descendant lifecycle; preserve the deterministic contracts.
-2. Complete the native checker's build/git/CLI workflow parity before making it the default.
+2. Preserve the verified native checker default and its C-bootstrap/reference parity while completing the Rust command migration.
 3. Close remaining spec-to-execution gaps using native-output tests, starting with JSON and server/data APIs.

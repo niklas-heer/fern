@@ -19,6 +19,7 @@ This folder contains project-level reference documents. Use this file as the can
 - [`../DECISIONS.md`](../DECISIONS.md): architecture and design decisions
 - [`../DESIGN.md`](../DESIGN.md): language design and semantics
 - [`../FERN_STYLE.md`](../FERN_STYLE.md): coding standards and style rules
+- [`NATIVE_STYLE_CHECKER.md`](NATIVE_STYLE_CHECKER.md): native quality-checker launcher and cache contract
 - [`../CLAUDE.md`](../CLAUDE.md): AI-assisted workflow and quality process
 - [`../BUILD.md`](../BUILD.md): build and troubleshooting guide
 

@@ -103,8 +103,9 @@ just release-package       # Compiler/runtime bundle and checksum
 
 CI covers Linux and macOS. The tests include relocated installations, unusual
 file paths, exact program output, pseudo-terminal interaction, and seeded actor
-failure scenarios. Python remains the reference quality checker until the
-entire native checker workflow reaches parity.
+failure scenarios. The Fern-native quality checker is the default; ordinary
+style checks require no Python or Cargo. Full verification retains independent
+Python integration oracles. See the [native launcher](docs/NATIVE_STYLE_CHECKER.md).
 
 The complete release checklist is in [release readiness](docs/RELEASE_READINESS.md).
 Releases use conventional commits and `release-please`, starting from the

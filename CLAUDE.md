@@ -159,7 +159,8 @@ The ROADMAP.md is the single source of truth for project progress. Failing to up
 just check
 ```
 
-This runs the consolidated quality checker (`scripts/check_style.py`) which:
+This runs the Fern-native quality checker (`scripts/check_style`), followed by
+explicit Python integration and parity oracles. The native checker performs:
 1. **Clean build** - `just clean && just debug` (catches stale .o files)
 2. **Unit tests** - `just test` (all 346+ tests must pass)
 3. **Examples** - Type-checks all `examples/*.fn` files

@@ -1190,6 +1190,36 @@ audit—retaining child identity until process-group cleanup—remains Decision1
 work and is not claimed fixed by this fixture change.
 
 
+## Native quality-checker default (Decision93) — 2026-09-06
+
+The default style, lenient and pre-commit recipes now launch the compiled Fern
+checker through a content-validated C-bootstrap cache. Full `just check` keeps
+its independent Python integration cases, while ordinary style checks require
+neither Python nor Cargo. Seven real-Just dispatch regressions first failed when
+Python tools were disabled, then passed with exact native arguments, streams
+and failure propagation. CI retains source-compiled reference checks and also
+verifies the cached launcher and its infrastructure suite.
+
+Both platform deliveries passed supervisor/controller/descriptor/inventory
+matrices in debug/release/sanitizers, 66 independent workflow cases, immutable
+cache and external dependency checks, concurrency, interrupted cold starts,
+one-retry freshness and bounded ownership cleanup. Clang14 configuration
+injection initially reproduced a portability gap; the final private empty config
+and compiler-scoped default suppression pass all three implicit config locations
+on Linux14 and Mac16. Actual current-source cold/warm and no-Python checks pass.
+The [launcher contract](NATIVE_STYLE_CHECKER.md) specifies exact bounds and the
+initial helper, escaped-group and filesystem-freshness limitations.
+
+The implementation changes the quality-checker entry point. The language's
+default compiler remains C pending the separate Decision96 command migration.
+
+Integration also reproduced empty `XDG_CACHE_HOME` selecting `/fern-style` rather
+than the documented HOME fallback. The launcher and cleaner now share unset/empty
+fallback semantics. An actual native regression populates an isolated HOME cache
+with XDG unset, reuses it with XDG empty, then verifies cleanup selects that same
+cache. No user cache or parent directory permissions are modified.
+
+
 ## Conditional generic JSON requirements (J5c) — 2026-09-06
 
 Generic codec wrappers now infer and retain Json, non-null payload and exact

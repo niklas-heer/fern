@@ -3,7 +3,10 @@
 The native checker runs build, test, examples, style and advisory Git checks using
 literal subprocess arguments with explicit time/output limits. Both C and Rust
 can compile `scripts/check_style.fn`; `just style-fern` runs its full workflow.
-The Python checker remains the default and compatibility reference. The workflow
+`just style`, `just style-lenient`, `just pre-commit` and the primary `just check`
+workflow use the [native launcher](NATIVE_STYLE_CHECKER.md). Ordinary style checks
+require neither Python nor Cargo. Full checks retain explicit Python integration
+tests, and the Python checker remains the compatibility reference. The workflow
 CLI oracle pins Python 3.14 through its uv script metadata: argparse short-help
 cluster handling differs in Python 3.11, so host Python must not silently select
 different expected behavior. Normal Python checker execution remains available
@@ -33,5 +36,8 @@ numeric categories are not decimal digits. Nineteen reference-first cases cover
 these prefixes, supplementary digits, actual files and explicit `--` termination.
 The [Unicode classifier](STRING_DECIMAL.md) pins the same Unicode 16 profile.
 
-Default migration still requires a reliable native launcher with cold-build,
-source/compiler/runtime invalidation, failure and concurrent-invocation tests.
+Default migration is verified through cold-build, source/compiler/runtime and
+external-dependency invalidation, failure, concurrent invocation and ownership
+tests on macOS/Linux. `just style-launcher-check` runs the native infrastructure
+matrices. See the [launcher contract](NATIVE_STYLE_CHECKER.md) for configuration,
+cache cleanup and precise supervision limits.
