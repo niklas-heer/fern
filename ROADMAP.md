@@ -154,6 +154,7 @@ Status: Active
 
 - [x] Enforce restart budgets at time zero, single replacement lineage, acyclic ownership, invalid PID rejection, and stopped-sibling semantics (six runtime scenarios, 1,536 seeded crash steps)
 - [x] Preserve runtime `send` Result values through native codegen (success and invalid-PID execution regressions)
+- [x] Stop owned descendants before fallible exit notifications, reject restarts under dead owners, and prepare name/monitor storage before publishing actors (ten subtree/failure groups plus all six prior scenarios in debug/release/sanitizers on macOS/Linux arm64).
 - [ ] Close remaining supervision/runtime behavior gaps not yet modeled end-to-end
 - [ ] Expand deterministic FernSim scenarios for supervision trees and failure policies
 - [x] Add stronger actor runtime invariants to regression suites (seeded native-runtime scenarios)
@@ -228,7 +229,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [x] Verify Zed grammar registration, pinned Preview2 component packaging, reproducible staged archives and actual isolated Rust LSP startup through discovery and explicit paths.
 - [x] Repin the locally staged Zed package to the verified label/recovery grammar, test exact label captures and reproducible archives, and rerun both actual-editor LSP discovery/override smokes.
 - [ ] Complete Tree-sitter parity for remaining Rust syntax and publish a fetchable matching grammar revision when release is authorized.
-- [ ] Execute actor functions with suspension, typed messages/receive/timeouts, and descendant supervision lifecycle.
+- [ ] Execute actor functions with suspension, typed messages/receive/timeouts, ancestor escalation and descendant subtree reconstruction.
 - [x] Immutable native JSON parser/accessors/stringifier with exact numbers, Unicode validation and bounded resources (14,309 API checks, 24 budget checks and 6,000 numeric oracle cases in debug/release/sanitizer builds).
 - [x] Migrate Rust native JSON to opaque values/errors, immutable builders and bounded lossless collection adapters (ten native programs, twelve semantic rejections, eight Rust integration tests and 248 native builder checks per build).
 - [x] Evaluate dynamic JSON in the Rust REPL with exact native semantics, independent cleanup budgets and bounded shared storage (21 new Rust regressions and 12,000 numeric/formatting oracles).

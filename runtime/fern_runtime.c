@@ -2528,6 +2528,8 @@ typedef struct {
     int64_t mailbox_cap;
     int64_t scheduler_tokens;
     int64_t scheduler_enqueued;
+    int64_t exit_child_cursor;
+    int64_t exit_next_id;
 } FernActorRecord;
 
 typedef struct {
@@ -2849,6 +2851,8 @@ static int64_t fern_actor_spawn_with_link(const char* name, int64_t linked_paren
     assert(linked_parent_id >= 0);
 
     FernActorRuntimeState* state = fern_actor_runtime_state();
+    char* saved_name = FERN_STRDUP(name);
+    if (saved_name == NULL) return 0;
     if (!fern_actor_registry_reserve(state, state->actor_len + 1)) {
         return 0;
     }
@@ -2859,7 +2863,7 @@ static int64_t fern_actor_spawn_with_link(const char* name, int64_t linked_paren
     actor->actor_id = actor_id;
     actor->alive = 1;
     actor->linked_parent_id = linked_parent_id;
-    actor->name = FERN_STRDUP(name);
+    actor->name = saved_name;
     state->actor_len++;
 
     return actor_id;
@@ -3539,144 +3543,192 @@ static int64_t fern_actor_collect_restart_targets(
 }
 
 /**
- * Mark an actor as exited and notify links/monitors.
- * Linked parent receives Exit(pid,reason), monitors receive DOWN(pid,reason).
- * @param actor_id Exiting actor id.
- * @param reason Exit reason string.
- * @return Result: Ok(0) when actor transitions to exited.
+ * Advance a preorder walk using the acyclic ownership forest's parent backlinks.
+ * @param state Valid actor registry, unchanged during the walk.
+ * @param actor Last visited record, with its next-child cursor initialized.
+ * @param root_id Walk boundary; ancestors outside this subtree are never visited.
+ * @return Next descendant, or NULL after the whole subtree is visited.
+ */
+static FernActorRecord* fern_actor_exit_next(
+    FernActorRuntimeState* state, FernActorRecord* actor, int64_t root_id) {
+    assert(state != NULL);
+    assert(actor != NULL);
+    for (int64_t depth = 0; depth < state->actor_len; depth++) {
+        if (actor->exit_child_cursor < actor->supervision_child_len) {
+            int64_t child_id = actor->supervision_child_ids[actor->exit_child_cursor++];
+            FernActorRecord* child = fern_actor_lookup(state, child_id);
+            assert(child != NULL && child->supervisor_id == actor->actor_id);
+            return child;
+        }
+        if (actor->actor_id == root_id) return NULL;
+        actor = fern_actor_lookup(state, actor->supervisor_id);
+        assert(actor != NULL);
+    }
+    return NULL;
+}
+
+/**
+ * Stop every owned descendant before any notification allocation can fail.
+ * @param state Valid single-threaded registry; registration preserves an acyclic forest.
+ * @param root Live actor whose subtree is being stopped.
+ * @return Nothing; root heads a preorder list of newly stopped records.
+ */
+static void fern_actor_stop_subtree(FernActorRuntimeState* state, FernActorRecord* root) {
+    assert(state != NULL);
+    assert(root != NULL && fern_actor_is_alive(root));
+    FernActorRecord* actor = root;
+    FernActorRecord* previous = NULL;
+    for (int64_t visited = 0; visited < state->actor_len && actor != NULL; visited++) {
+        actor->exit_child_cursor = 0;
+        if (fern_actor_is_alive(actor)) {
+            actor->alive = 0;
+            actor->scheduler_tokens = 0;
+            actor->scheduler_enqueued = 0;
+            actor->exit_next_id = 0;
+            if (state->current_actor_id == actor->actor_id) state->current_actor_id = 0;
+            if (previous != NULL) previous->exit_next_id = actor->actor_id;
+            previous = actor;
+        }
+        actor = fern_actor_exit_next(state, actor, root->actor_id);
+    }
+    assert(actor == NULL);
+}
+
+/**
+ * Deliver one signal only to a still-live observer outside the stopped subtree.
+ * @param state Valid registry after all lifecycle changes have been applied.
+ * @param observer_id Optional linked parent or monitor identity.
+ * @param actor_id Stopped actor identity.
+ * @param kind Signal spelling, either Exit or DOWN.
+ * @param reason Root reason or descendant shutdown reason.
+ * @return Ok(0), or the first allocation/send error.
+ */
+static int64_t fern_actor_exit_signal(FernActorRuntimeState* state, int64_t observer_id,
+    int64_t actor_id, const char* kind, const char* reason) {
+    assert(state != NULL);
+    assert(kind != NULL);
+    FernActorRecord* observer = fern_actor_lookup(state, observer_id);
+    if (observer == NULL || !fern_actor_is_alive(observer)) return fern_result_ok(0);
+    char* message = fern_actor_format_signal_message(kind, actor_id, reason);
+    if (message == NULL) return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+    return fern_actor_send(observer_id, message);
+}
+
+/**
+ * Notify surviving links and monitors in deterministic root-first registration order.
+ * @param state Registry containing the newly stopped linked list.
+ * @param root_id Head of the stopped list.
+ * @param reason Original root reason; descendants receive shutdown.
+ * @return Ok(0), or first failure; lifecycle transitions are never rolled back.
+ */
+static int64_t fern_actor_notify_subtree(FernActorRuntimeState* state,
+    int64_t root_id, const char* reason) {
+    assert(state != NULL);
+    assert(root_id > 0);
+    int64_t next_id = root_id;
+    for (int64_t count = 0; count < state->actor_len && next_id != 0; count++) {
+        FernActorRecord* actor = fern_actor_lookup(state, next_id);
+        assert(actor != NULL && !fern_actor_is_alive(actor));
+        const char* exit_reason = next_id == root_id ? reason : "shutdown";
+        next_id = actor->exit_next_id;
+        actor->exit_next_id = 0;
+        if (actor->linked_parent_id > 0) {
+            int64_t status = fern_actor_exit_signal(state, actor->linked_parent_id,
+                actor->actor_id, "Exit", exit_reason);
+            if (!fern_result_is_ok(status)) return status;
+        }
+        for (int64_t i = 0; i < actor->monitor_len; i++) {
+            int64_t status = fern_actor_exit_signal(state, actor->monitor_ids[i],
+                actor->actor_id, "DOWN", exit_reason);
+            if (!fern_result_is_ok(status)) return status;
+        }
+    }
+    return fern_result_ok(0);
+}
+
+/**
+ * Stop strategy siblings and replace selected direct children in registration order.
+ * @param state Valid registry; child creation can relocate its record array.
+ * @param supervisor_id Live owner identity, retained rather than a relocatable pointer.
+ * @param target_ids Selected direct children, including the failed actor.
+ * @param target_len Number of selected children.
+ * @param actor_id Failed child whose replacement is returned.
+ * @return Ok(replacement id), or the first lifecycle/notification error.
+ */
+static int64_t fern_actor_restart_targets(FernActorRuntimeState* state,
+    int64_t supervisor_id, const int64_t* target_ids, int64_t target_len, int64_t actor_id) {
+    assert(state != NULL);
+    assert(target_ids != NULL && target_len > 0);
+    for (int64_t i = 0; i < target_len; i++) {
+        FernActorRecord* sibling = fern_actor_lookup(state, target_ids[i]);
+        if (target_ids[i] != actor_id && sibling != NULL && fern_actor_is_alive(sibling)) {
+            int64_t status = fern_actor_exit(target_ids[i], "shutdown");
+            if (!fern_result_is_ok(status)) return status;
+        }
+    }
+    int64_t primary_id = 0;
+    for (int64_t i = 0; i < target_len; i++) {
+        int64_t restarted = fern_actor_restart(target_ids[i]);
+        if (!fern_result_is_ok(restarted)) return restarted;
+        int64_t next_id = fern_result_unwrap(restarted);
+        if (target_ids[i] == actor_id) primary_id = next_id;
+        char* message = fern_actor_format_restart_message(target_ids[i], next_id);
+        if (message == NULL) return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+        int64_t status = fern_actor_send(supervisor_id, message);
+        if (!fern_result_is_ok(status)) return status;
+    }
+    return primary_id > 0 ? fern_result_ok(primary_id) : fern_result_err(FERN_ERR_IO);
+}
+
+/**
+ * Apply the failed root's direct-owner restart policy after subtree notifications.
+ * @param state Valid registry with the entire failed subtree stopped.
+ * @param actor Failed root record.
+ * @param reason Abnormal exit reason.
+ * @return Ok(0) without a live owner, Ok(replacement), or policy/allocation error.
+ */
+static int64_t fern_actor_restart_supervised(FernActorRuntimeState* state,
+    FernActorRecord* actor, const char* reason) {
+    assert(state != NULL);
+    assert(actor != NULL);
+    FernActorRecord* supervisor = fern_actor_lookup(state, actor->supervisor_id);
+    if (supervisor == NULL || !fern_actor_is_alive(supervisor)) return fern_result_ok(0);
+    if (!fern_actor_supervision_consume_budget(state, actor)) {
+        char* message = fern_actor_format_signal_message("ESCALATE", actor->actor_id, reason);
+        if (message == NULL) return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+        int64_t status = fern_actor_send(supervisor->actor_id, message);
+        return fern_result_is_ok(status) ? fern_result_err(FERN_ERR_IO) : status;
+    }
+    if (supervisor->supervision_child_len >= INT64_MAX ||
+        (uint64_t)supervisor->supervision_child_len >= SIZE_MAX / sizeof(int64_t)) {
+        return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+    }
+    int64_t capacity = supervisor->supervision_child_len + 1;
+    int64_t* ids = FERN_ALLOC((size_t)capacity * sizeof(int64_t));
+    if (ids == NULL) return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+    int64_t length = fern_actor_collect_restart_targets(state, supervisor, actor, ids, capacity);
+    if (length <= 0) return fern_result_err(FERN_ERR_IO);
+    return fern_actor_restart_targets(state, supervisor->actor_id, ids, length, actor->actor_id);
+}
+
+/**
+ * Stop an actor's owned subtree before delivering links/monitors or restarting its root.
+ * @param actor_id Live exiting actor id.
+ * @param reason Exit reason; descendants receive shutdown.
+ * @return Ok(0/replacement id), or first error with the failed subtree still stopped.
  */
 int64_t fern_actor_exit(int64_t actor_id, const char* reason) {
-    if (actor_id <= 0) {
-        return fern_result_err(FERN_ERR_IO);
-    }
-
+    if (actor_id <= 0) return fern_result_err(FERN_ERR_IO);
     FernActorRuntimeState* state = fern_actor_runtime_state();
     FernActorRecord* actor = fern_actor_lookup(state, actor_id);
-    if (actor == NULL || !fern_actor_is_alive(actor)) {
-        return fern_result_err(FERN_ERR_IO);
-    }
-
-    actor->alive = 0;
-    actor->scheduler_tokens = 0;
-    actor->scheduler_enqueued = 0;
-    if (state->current_actor_id == actor_id) {
-        state->current_actor_id = 0;
-    }
-
-    int delivered = 0;
-    if (actor->linked_parent_id > 0) {
-        FernActorRecord* parent = fern_actor_lookup(state, actor->linked_parent_id);
-        if (parent != NULL && fern_actor_is_alive(parent)) {
-            char* msg = fern_actor_format_signal_message("Exit", actor_id, reason);
-            if (msg == NULL) {
-                return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
-            }
-            int64_t status = fern_actor_send(parent->actor_id, msg);
-            if (!fern_result_is_ok(status)) {
-                return status;
-            }
-            delivered = 1;
-        }
-    }
-
-    for (int64_t i = 0; i < actor->monitor_len; i++) {
-        int64_t supervisor_id = actor->monitor_ids[i];
-        FernActorRecord* supervisor = fern_actor_lookup(state, supervisor_id);
-        if (supervisor == NULL || !fern_actor_is_alive(supervisor)) {
-            continue;
-        }
-
-        char* msg = fern_actor_format_signal_message("DOWN", actor_id, reason);
-        if (msg == NULL) {
-            return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
-        }
-        int64_t status = fern_actor_send(supervisor->actor_id, msg);
-        if (!fern_result_is_ok(status)) {
-            return status;
-        }
-        delivered = 1;
-    }
-
-    if (fern_actor_reason_is_normal(reason)) {
-        (void)delivered;
-        return fern_result_ok(0);
-    }
-
-    if (actor->supervisor_id > 0) {
-        FernActorRecord* supervisor = fern_actor_lookup(state, actor->supervisor_id);
-        if (supervisor != NULL && fern_actor_is_alive(supervisor)) {
-            if (!fern_actor_supervision_consume_budget(state, actor)) {
-                char* escalate = fern_actor_format_signal_message("ESCALATE", actor_id, reason);
-                if (escalate == NULL) {
-                    return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
-                }
-                int64_t esc_status = fern_actor_send(supervisor->actor_id, escalate);
-                if (!fern_result_is_ok(esc_status)) {
-                    return esc_status;
-                }
-                return fern_result_err(FERN_ERR_IO);
-            }
-
-            int64_t target_cap = supervisor->supervision_child_len + 1;
-            if (target_cap < 1) {
-                target_cap = 1;
-            }
-            int64_t* target_ids = FERN_ALLOC((size_t)target_cap * sizeof(int64_t));
-            if (target_ids == NULL) {
-                return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
-            }
-
-            int64_t target_len = fern_actor_collect_restart_targets(state, supervisor, actor, target_ids, target_cap);
-            if (target_len <= 0) {
-                return fern_result_err(FERN_ERR_IO);
-            }
-
-            for (int64_t i = 0; i < target_len; i++) {
-                int64_t target_id = target_ids[i];
-                if (target_id == actor_id) {
-                    continue;
-                }
-                FernActorRecord* sibling = fern_actor_lookup(state, target_id);
-                if (sibling != NULL && fern_actor_is_alive(sibling)) {
-                    int64_t stop_status = fern_actor_exit(target_id, "shutdown");
-                    if (!fern_result_is_ok(stop_status)) {
-                        return stop_status;
-                    }
-                }
-            }
-
-            int64_t primary_new_actor_id = 0;
-            for (int64_t i = 0; i < target_len; i++) {
-                int64_t old_target_id = target_ids[i];
-                int64_t restarted = fern_actor_restart(old_target_id);
-                if (!fern_result_is_ok(restarted)) {
-                    return restarted;
-                }
-                int64_t new_target_id = fern_result_unwrap(restarted);
-                if (old_target_id == actor_id) {
-                    primary_new_actor_id = new_target_id;
-                }
-
-                char* restart_msg = fern_actor_format_restart_message(old_target_id, new_target_id);
-                if (restart_msg == NULL) {
-                    return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
-                }
-                int64_t restart_status = fern_actor_send(supervisor->actor_id, restart_msg);
-                if (!fern_result_is_ok(restart_status)) {
-                    return restart_status;
-                }
-                delivered = 1;
-            }
-
-            if (primary_new_actor_id <= 0) {
-                return fern_result_err(FERN_ERR_IO);
-            }
-            return fern_result_ok(primary_new_actor_id);
-        }
-    }
-
-    (void)delivered;
-    return fern_result_ok(0);
+    assert(state != NULL);
+    assert(state->actor_len >= 0);
+    if (actor == NULL || !fern_actor_is_alive(actor)) return fern_result_err(FERN_ERR_IO);
+    fern_actor_stop_subtree(state, actor);
+    int64_t status = fern_actor_notify_subtree(state, actor_id, reason);
+    if (!fern_result_is_ok(status)) return status;
+    if (fern_actor_reason_is_normal(reason)) return fern_result_ok(0);
+    return fern_actor_restart_supervised(state, actor, reason);
 }
 
 /**
@@ -3697,6 +3749,21 @@ int64_t fern_actor_restart(int64_t actor_id) {
         return fern_result_err(FERN_ERR_IO);
     }
 
+    if (actor->supervisor_id > 0) {
+        FernActorRecord* owner = fern_actor_lookup(state, actor->supervisor_id);
+        if (owner == NULL || !fern_actor_is_alive(owner)) return fern_result_err(FERN_ERR_IO);
+    }
+
+    /* Prepare fallible monitor storage before publishing a live replacement. */
+    FernActorRecord prepared = {0};
+    if (actor->monitor_len > 0) {
+        if (!fern_actor_monitor_reserve(&prepared, actor->monitor_len)) {
+            return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
+        }
+        memcpy(prepared.monitor_ids, actor->monitor_ids,
+            (size_t)actor->monitor_len * sizeof(int64_t));
+        prepared.monitor_len = actor->monitor_len;
+    }
     const char* name = (actor->name != NULL) ? actor->name : "worker";
     int64_t next_id = fern_actor_spawn_with_link(name, actor->linked_parent_id);
     if (next_id <= 0) {
@@ -3709,13 +3776,9 @@ int64_t fern_actor_restart(int64_t actor_id) {
     assert(actor != NULL);
     assert(next != NULL);
 
-    if (actor->monitor_len > 0) {
-        if (!fern_actor_monitor_reserve(next, actor->monitor_len)) {
-            return fern_result_err(FERN_ERR_OUT_OF_MEMORY);
-        }
-        memcpy(next->monitor_ids, actor->monitor_ids, (size_t)actor->monitor_len * sizeof(int64_t));
-        next->monitor_len = actor->monitor_len;
-    }
+    next->monitor_ids = prepared.monitor_ids;
+    next->monitor_len = prepared.monitor_len;
+    next->monitor_cap = prepared.monitor_cap;
 
     next->supervisor_id = actor->supervisor_id;
     next->supervision_strategy = actor->supervision_strategy;

@@ -23,7 +23,7 @@ engineering milestones; they do not certify the entire language.
 - **Concurrency execution:** spawn does not run a function, and the complete typed
   receive/suspension/timeout/request-reply model is absent. Native compilation
   rejects the unsupported execution syntax; use `actors.start/post/next` for the
-  available explicit mailbox operations. Supervision tree lifecycle is incomplete.
+  available explicit mailbox operations. Descendant termination is verified; ancestor escalation and subtree reconstruction remain incomplete.
   See [the exact actor contract](ACTOR_RUNTIME.md).
 - **JSON:** Rust native execution and its REPL use the bounded, validating opaque
   JSON model with exact numbers and immutable builders. The legacy C source API

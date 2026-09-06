@@ -1252,6 +1252,9 @@ int64_t fern_actor_receive(int64_t actor_id);
  * @param reason Exit reason string.
  * @return Result: Ok(replacement id) after automatic restart, Ok(0) after an
  * ordinary exit, or Err(error code) on failure/restart budget exhaustion.
+ * Owned descendants stop with shutdown before any fallible notification; external
+ * live observers are notified in preorder. Notification failure never revives them.
+ * Restarting the root does not recreate its former descendant subtree.
  */
 int64_t fern_actor_exit(int64_t actor_id, const char* reason);
 
@@ -1260,6 +1263,9 @@ int64_t fern_actor_exit(int64_t actor_id, const char* reason);
  * Restart preserves actor name and linked parent baseline.
  * Actor must already be dead and must not have received a replacement.
  * A dead PID can be replaced only once, even after its replacement exits.
+ * A supervised actor requires its original owner to remain alive. Restarting a
+ * dead owner does not silently reparent its former children.
+ * Name/monitor allocation failures publish no new live actor or replacement ID.
  * @param actor_id Actor id to restart.
  * @return Result: Ok(new actor id) or Err(error code).
  */

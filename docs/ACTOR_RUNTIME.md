@@ -36,15 +36,24 @@ codegen, and runtime implementations.
   only one replacement. Trying to restart the original PID again returns an
   error, even if the replacement has subsequently died. Restart the latest PID.
 - Monitor registrations, linked-parent identity, and the child's own supervision
-  policy survive restart. This baseline deliberately preserves monitors across
+  policy survive restart. Its original supervising owner must still be alive;
+  restarting a dead owner does not reparent old children. Name-copy and replacement
+  monitor-storage failures publish no live record or replacement ID. This baseline deliberately preserves monitors across
   replacements; it does not implement Erlang monitor-reference semantics.
 - A supervised child has one owner. Registration rejects self-supervision, cycles,
   and changing the owner to a different supervisor. Rejected registration leaves
   the existing relationships intact. Re-registering with the same owner updates
   policy and resets that child's restart budget.
+- Exiting a supervisor stops its owned descendant subtree before any notification
+  can allocate or fail. The root retains its reason; newly stopped descendants use
+  `shutdown`. Current-actor context and scheduler tickets are cleared for all of
+  them. External live links/monitors receive preorder notifications in child
+  registration order; dead observers inside the subtree receive none. Already-dead
+  descendants are not notified again. The first notification error is returned,
+  with no rollback; later notifications and automatic restarts are not guaranteed.
 - `normal` and `shutdown` exits deliver notifications but do not automatically
   restart. An already-dead sibling stays dead during another child's strategy
-  restart. Explicitly restarting that stopped child remains available.
+  restart. Explicitly restarting that stopped child remains available while its owner is alive.
 - Abnormal exits apply `one_for_one`, `one_for_all`, or `rest_for_one` to children
   registered with the same strategy. `rest_for_one` uses registration order.
   Affected live siblings stop with `shutdown` before replacements are created in
@@ -90,14 +99,23 @@ Other scenario names are `time-zero`, `single-replacement`, `forest`,
 `invalid-pid`, and `terminated-sibling`. A simulation failure prints the seed and
 strategy so the same case can be reproduced.
 
+The additional `scripts/test_runtime_actor_subtree.py` gate compiles the actual
+actor implementation in debug, release and AddressSanitizer/UndefinedBehaviorSanitizer
+modes. Ten groups cover normal/abnormal/shutdown trees, registration order independent
+of PID order, notification allocation/send failures, already-stopped branches,
+unrelated current context, strategy-driven descendant shutdown, 2,048-level trees,
+dead-owner restarts and atomic name/monitor allocation failures. The same builds
+rerun all six prior scenarios, including their 1,536 seeded crash steps. Both C and
+Rust quality gates run this suite; it is verified on macOS and Linux arm64.
+
 ## Work still required before concurrency is ready for applications
 
 The scheduler does not execute actor functions, suspend/resume them, or isolate
 per-process heaps. Typed `Pid(Message)`, typed transport, selective receive,
 receive timeouts, and synchronous request/reply calls remain incomplete.
-Supervision relationships can form an acyclic hierarchy, but supervisor death
-currently does not stop descendants, automatically escalate through ancestors,
-or recreate a descendant subtree when its supervisor restarts. Linked exits are
+Supervision relationships form an acyclic hierarchy and supervisor death stops
+descendants. Automatic escalation through ancestors and recreation of a descendant
+subtree when its supervisor restarts remain incomplete. Linked exits are
 notifications rather than full bidirectional Erlang exit propagation. The
 single-threaded runtime has no parallel-worker synchronization.
 
