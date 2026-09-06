@@ -51,7 +51,7 @@ preserves mandatory-label validation in unaffected functions.
 
 The editor grammar verifies labeled patterns, reordered calls, multiline arguments
 and pipe holes, with distinct external-label highlights. The verified profile uses
-ASCII labels; complete Unicode syntax and incomplete-call label completion remain open.
+ASCII labels; complete Unicode grammar syntax remains open.
 
 `scripts/test_rust_labels.py` executes five native programs and checks eight invalid
 programs preserve an existing output's bytes, permissions and modification time.
@@ -59,3 +59,19 @@ Rust tests cover modules, contextual callback types, source spans, formatting,
 presentation and hostile AST budgets.
 Public AST labels share the parser's identifier/keyword rules and reject reversed
 spans. Finalized scheme classification has a separate 400,000-unit work ceiling.
+
+For incomplete calls, LSP completion offers source parameter names from the current
+module graph, including unsaved dependencies. It excludes supplied positions and
+respects local shadowing, external pattern names and original pipe placeholders.
+The label edit replaces the exact UTF-16 name range while retaining an existing
+colon/value. These suggestions describe source names, not checked parameter types
+or mandatory labels; ordinary value completion remains available when no source
+label matches. Inconsistent clause interfaces and builtin/constructor collisions
+provide no source-label suggestions.
+
+Recovery supports closed calls and unfinished calls at the end of the file when
+only parentheses remain unmatched and the suffix is whitespace. Other malformed
+syntax does not gain invented executable expressions. Completion publishes at most
+256 items within a conservative 1 MiB edit budget, marking truncation explicitly.
+Twenty protocol regressions cover these boundaries, current overlays, imports,
+Unicode/CRLF edits and lexical fallback.

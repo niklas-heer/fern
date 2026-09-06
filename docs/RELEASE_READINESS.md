@@ -40,9 +40,8 @@ engineering milestones; they do not certify the entire language.
   rejected, but merely reading a collection's length or handling a value on only
   one branch can currently satisfy the binding-use check. Early-exit searches can
   leave later errors unhandled. Semantic handling on reachable paths remains open.
-- **Editor completeness:** the verified grammar corpus is bounded. Remaining
-  syntax and incomplete-call label completion
-  remain open. Local Zed packaging does not publish its pinned grammar revision.
+- **Editor completeness:** the verified grammar corpus is bounded. Source-label completion supports closed and EOF-open calls; remaining syntax
+  and broader malformed-source recovery remain open. Local Zed packaging does not publish its pinned grammar revision.
 - **Memory and targets:** Boehm GC remains the native memory backend. Ownership
   primitives are a baseline, not complete Perceus analysis. WASM is planned.
 - **Language coverage:** every supported design construct still needs a complete

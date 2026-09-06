@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity under both C and Rust frontends on five pinned fixtures, literal paths and all compiler/library source
-- Rust migration: `just rust-check` passing (1073 Rust tests (1074 on Linux), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: `just rust-check` passing (1093 Rust tests (1094 on Linux), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
 
@@ -99,7 +99,8 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Optional source-call labels with stable external pattern interfaces, written evaluation order, labeled pipe holes and module/formatter metadata (18 Rust regressions, four native and four atomic invalid programs).
 - [x] Require labels for exact Bool and repeated finalized declared scheme types, with bounded work and valid source metadata; migrate source fixtures without changing effect order (ten additional Rust regressions; five native and eight atomic invalid programs).
 - [x] Add exact source-label definition/hover across current module overlays and verify labeled grammar/highlights in native/WASM (12 protocol cases and 80/27/27 editor corpus); preserve required labels during member recovery.
-- [ ] Complete incomplete-call source label suggestions and remaining editor syntax.
+- [x] Complete source-label suggestions for closed and EOF-open calls, respecting current modules, supplied arguments, lexical shadowing and exact UTF-16 edits (20 Rust protocol regressions).
+- [ ] Complete remaining editor syntax.
 - [x] Private parameter inference from all clause patterns and supplied annotations, including delayed tuple-rest arity and nominal payload evidence; public boundaries and ambiguity diagnostics retained (seven native programs, nine invalid inputs and interactive regressions).
 - [x] Validate every generic body before specialization using rigid type equality and intrinsic capability requirements; propagate requirements through callbacks/recursive helpers and nominal Map fields (four native programs, 16 invalid programs and interactive regressions).
 - [x] Source-based LSP go-to-definition and scoped completion over current overlays, with module visibility, shadowing, UTF-16 edits and bounded output (21 navigation and three source-index regressions; executable protocol smoke).

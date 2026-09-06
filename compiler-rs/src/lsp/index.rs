@@ -28,6 +28,8 @@ pub(super) struct Index<'a> {
     types: BTreeMap<String, Symbol>,
     interfaces: BTreeMap<String, Vec<Option<ast::ArgumentLabel>>>,
     pub label: Option<LabelSelection>,
+    completion_site: Option<parse::LabelSite>,
+    pub call_labels: Option<Vec<String>>,
     type_context: bool,
     selector_context: bool,
     pub locals: Bindings,
@@ -42,11 +44,26 @@ pub(super) struct Index<'a> {
 impl<'a> Index<'a> {
     /// Build from the exact source graph already resolved with all current editor overlays.
     pub fn loaded(loaded: &'a modules::Loaded, path: &Path, cursor: usize) -> Option<Self> {
+        Self::loaded_labels(loaded, path, cursor, None)
+    }
+    /// Use recovered source roles only for the selected entry, retaining normal dependency indices.
+    pub fn loaded_labels(
+        loaded: &'a modules::Loaded,
+        path: &Path,
+        cursor: usize,
+        site: Option<parse::LabelSite>,
+    ) -> Option<Self> {
         let source = loaded.sources().find(|s| s.path == path)?;
         let offset = source.start;
         let sources = loaded
             .sources()
-            .map(|s| Self::source(s.path, s.text, s.start))
+            .map(|s| {
+                if site.is_some() && s.path == path {
+                    Self::label_source(s.path, s.text, s.start)
+                } else {
+                    Self::source(s.path, s.text, s.start)
+                }
+            })
             .collect::<Option<Vec<_>>>()?;
         let symbols = loaded.symbols.iter().find(|s| s.path == path)?;
         Self::build(
@@ -55,6 +72,7 @@ impl<'a> Index<'a> {
             symbols.types.clone(),
             symbols.values.clone(),
             offset + cursor,
+            site,
         )
     }
     /// Non-file documents use the same lexical rules without inventing filesystem imports.
@@ -64,7 +82,21 @@ impl<'a> Index<'a> {
         path: &'a Path,
         cursor: usize,
     ) -> Option<Self> {
-        let sources = vec![Self::source(path, source, 0)?];
+        Self::single_labels(program, source, path, cursor, None)
+    }
+    /// Label recovery uses lexical source roles only after a parser-proven call position.
+    pub fn single_labels(
+        program: &ast::Program,
+        source: &'a str,
+        path: &'a Path,
+        cursor: usize,
+        site: Option<parse::LabelSite>,
+    ) -> Option<Self> {
+        let sources = vec![if site.is_some() {
+            Self::label_source(path, source, 0)?
+        } else {
+            Self::source(path, source, 0)?
+        }];
         let mut types = BTreeMap::new();
         let mut values = BTreeMap::new();
         for function in program
@@ -93,7 +125,7 @@ impl<'a> Index<'a> {
                 values.insert(format!("{}.{leaf}", ty.name), variant.name.clone());
             }
         }
-        Self::build(program, sources, types, values, cursor)
+        Self::build(program, sources, types, values, cursor, site)
     }
     /// Keep lexical indexing bounded independently of parser layout and checker work.
     fn source(path: &'a Path, text: &'a str, start: usize) -> Option<Source<'a>> {
@@ -107,6 +139,14 @@ impl<'a> Index<'a> {
             selectors: roles.selectors,
         })
     }
+    /// Bound token inventories and visible namespaces before constructing index tables.
+    fn source_budget(sources: &[Source<'_>], types: usize, values: usize) -> Option<()> {
+        let count: usize = sources
+            .iter()
+            .map(|s| s.tokens.identifiers.len() + s.tokens.numbers.len())
+            .sum();
+        (count <= 100_000 && types.saturating_add(values) <= 100_000).then_some(())
+    }
     /// Collect declaration identities once; inspect only scopes containing this request's cursor.
     fn build(
         program: &ast::Program,
@@ -114,14 +154,9 @@ impl<'a> Index<'a> {
         visible_types: BTreeMap<String, String>,
         visible_values: BTreeMap<String, String>,
         cursor: usize,
+        completion_site: Option<parse::LabelSite>,
     ) -> Option<Self> {
-        let count: usize = sources
-            .iter()
-            .map(|s| s.tokens.identifiers.len() + s.tokens.numbers.len())
-            .sum();
-        if count > 100_000 || visible_types.len().saturating_add(visible_values.len()) > 100_000 {
-            return None;
-        }
+        Self::source_budget(&sources, visible_types.len(), visible_values.len())?;
         let token = cursor_token(&sources, cursor);
         let type_context = type_context(&sources, token);
         let selector_context = selector_context(&sources, token);
@@ -133,6 +168,8 @@ impl<'a> Index<'a> {
             types: BTreeMap::new(),
             interfaces: BTreeMap::new(),
             label: None,
+            completion_site,
+            call_labels: None,
             type_context,
             selector_context,
             locals: Bindings::new(),
@@ -669,11 +706,13 @@ impl<'a> Index<'a> {
             E::GlobalName { resolved, .. } => self.reference(resolved, expression.span, locals),
             E::GlobalCall { resolved, args, .. } => {
                 self.reference(resolved, expression.span, locals);
+                self.complete_labels(expression, args, Some(resolved), locals);
                 self.arguments(args, Some(resolved), locals, depth)?;
             }
             E::Call { name, args } => {
                 self.reference(name, expression.span, locals);
                 let callee = self.source_callee(name, locals);
+                self.complete_labels(expression, args, callee.as_deref(), locals);
                 self.arguments(args, callee.as_deref(), locals, depth)?;
             }
             E::Block(statements) => self.block(statements, locals, depth + 1)?,

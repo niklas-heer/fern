@@ -1,10 +1,12 @@
 //! Independent, bounded lexer and recursive-descent parser for the prototype.
+mod label_recovery;
 mod recovery;
 use crate::ast::{
     Argument, ArgumentLabel, BinaryOp, Expr, ExprKind, Field, Function, FunctionSyntax, Import,
     MatchArm, Param, Pattern, PatternKind, Program, Stmt, TypeDecl, UnaryOp, Variant,
 };
 use crate::{Constructor, Diagnostic, Span, Type};
+pub(crate) use label_recovery::{recover_labels, LabelSite};
 pub(crate) use recovery::{recover_member, HoleSite};
 
 const MAX_SOURCE: usize = 1024 * 1024;
@@ -16,6 +18,7 @@ type ParseResult<T> = Result<T, Diagnostic>;
 #[derive(Clone, Debug, PartialEq)]
 enum Kind {
     MemberHole,
+    LabelHole,
     Name(String),
     Number(String),
     Text(String),
@@ -133,8 +136,12 @@ fn source_parser(source: &str, record: bool) -> ParseResult<Parser> {
             "source size exceeds 1 MiB prototype limit",
         ));
     }
-    let tokens = lex(source)?;
-    Ok(Parser {
+    Ok(parser_tokens(lex(source)?, record))
+}
+
+/// Initialize private parser state identically for ordinary and editor-only token streams.
+fn parser_tokens(tokens: Vec<Token>, record: bool) -> Parser {
+    Parser {
         tokens,
         position: 0,
         depth: 0,
@@ -142,7 +149,8 @@ fn source_parser(source: &str, record: bool) -> ParseResult<Parser> {
         type_arm_boundary: None,
         type_spans: record.then(Vec::new),
         member_hole: None,
-    })
+        label_hole: None,
+    }
 }
 
 /// Append a located token, rejecting excessive input before allocation grows.
@@ -172,6 +180,11 @@ struct LayoutLexer {
 
 /// Tokenize logical rows while preserving bounded expression suites inside delimiters.
 fn lex(source: &str) -> ParseResult<Vec<Token>> {
+    lex_layout(source, false)
+}
+
+/// Only label recovery may close a bounded all-parenthesis suffix at the source end.
+fn lex_layout(source: &str, close_parentheses: bool) -> ParseResult<Vec<Token>> {
     let mut lexer = LayoutLexer {
         tokens: Vec::new(),
         levels: vec![0],
@@ -183,7 +196,12 @@ fn lex(source: &str) -> ParseResult<Vec<Token>> {
         offset += lexer.line(&source[offset..], offset)?;
     }
     if let Some(token) = lexer.delimiters.last() {
-        return Err(Diagnostic::new(token.span, "unclosed delimiter"));
+        if !close_parentheses || lexer.delimiters.iter().any(|t| t.kind != Kind::Left) {
+            return Err(Diagnostic::new(token.span, "unclosed delimiter"));
+        }
+        for _ in &lexer.delimiters {
+            push(&mut lexer.tokens, Kind::Right, source.len(), source.len())?;
+        }
     }
     for _ in 1..lexer.levels.len() {
         push(&mut lexer.tokens, Kind::Dedent, source.len(), source.len())?;
@@ -1152,6 +1170,7 @@ struct Parser {
     type_arm_boundary: Option<usize>,
     type_spans: Option<Vec<Span>>,
     member_hole: Option<HoleSite>,
+    label_hole: Option<LabelSite>,
 }
 
 impl Parser {
@@ -2420,12 +2439,21 @@ impl Parser {
 
     /// Parse source-ordered positional and labeled arguments after their opening delimiter.
     fn arguments(&mut self) -> ParseResult<(Vec<Argument>, usize, usize)> {
+        let opening = self.tokens[self.position - 1].span.start;
         let mut args = Vec::new();
         let mut depth = 1;
         let mut labeled = false;
         for _ in 0..self.tokens.len() {
             if self.current().kind == Kind::Right {
-                return Ok((args, self.take().span.end, depth));
+                let end = self.take().span.end;
+                self.finish_label_arguments(opening, end, &args)?;
+                return Ok((args, end, depth));
+            }
+            if self.current().kind == Kind::LabelHole {
+                labeled = true;
+                self.take();
+                self.eat(&Kind::Comma);
+                continue;
             }
             let start = self.current().span.start;
             let label = self.argument_label()?;
@@ -2449,6 +2477,7 @@ impl Parser {
                     .expect(Kind::Right, "expected ',' or ')' after argument")?
                     .span
                     .end;
+                self.finish_label_arguments(opening, end, &args)?;
                 return Ok((args, end, depth));
             }
         }

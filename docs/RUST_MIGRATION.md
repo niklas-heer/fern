@@ -1003,3 +1003,16 @@ Additional x86-64 Linux checks used QEMU with Rust 1.75 and Clang 14: 32 core, f
 label, 13 newtype and 27 union native programs passed, plus their 50 invalid inputs.
 The full Cargo run stalled and reached its external timeout, so this is limited
 emulated execution evidence, not a passing full platform or performance gate.
+
+## Source-label completion — 2026-09-06
+
+The Rust LSP suggests current source parameter names in closed and EOF-open calls.
+Canonical module resolution, privacy, current overlays and lexical shadowing select
+the interface; supplied arguments and original pipe placeholders reserve positions.
+Suggestions provide exact UTF-16 edits without claiming checked types or label
+requirements. Recovery stays private to parser/source indexing and does not create
+executable hole IR. Unsupported malformed sources fail recovery; ordinary lexical
+completion remains available when no source label matches.
+
+Twenty new protocol regressions bring the Rust checkpoint to 1093 tests on macOS
+and 1094 on Linux arm64. The full Rust, C and documentation gates verify integration.

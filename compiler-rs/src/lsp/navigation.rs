@@ -91,6 +91,9 @@ impl Server {
             };
             return Ok(self.definition_locations(uri, index, target));
         }
+        if let Some(result) = self.label_completion(uri, source, cursor) {
+            return Ok(result);
+        }
         if facts
             .as_ref()
             .map_or(true, |facts| facts.receiver.is_none())
@@ -291,7 +294,7 @@ fn add_candidate(
     }
 }
 /// Report truncation explicitly so clients can request a narrower completion prefix.
-fn completion_list(items: Vec<Json>, incomplete: bool) -> Json {
+pub(super) fn completion_list(items: Vec<Json>, incomplete: bool) -> Json {
     object([
         ("isIncomplete", Json::Bool(incomplete)),
         ("items", Json::Array(items)),

@@ -9,26 +9,58 @@ pub(crate) struct LabelSelection {
 impl Index<'_> {
     /// Retain the first source contributor to each stable clause interface position.
     pub(super) fn interfaces(&mut self, program: &ast::Program) -> Option<()> {
+        let mut groups = BTreeMap::new();
+        let mut invalid = std::collections::BTreeSet::new();
         for function in &program.functions {
             self.charge(function.params.len().saturating_add(1), 0)?;
             if function.span == Span::default() {
                 continue;
+            }
+            let identity = (function.group_start, function.params.len(), function.public);
+            let group = groups.entry(function.name.clone()).or_insert(identity);
+            if *group != identity {
+                invalid.insert(function.name.clone());
             }
             let slots = self
                 .interfaces
                 .entry(function.name.clone())
                 .or_insert_with(|| vec![None; function.params.len()]);
             for (slot, param) in slots.iter_mut().zip(&function.params) {
-                if slot.is_some() {
-                    continue;
-                }
-                *slot = param.label.clone().or_else(|| match &param.pattern.kind {
+                let label = param.label.clone().or_else(|| match &param.pattern.kind {
                     ast::PatternKind::Bind(name) => Some(ast::ArgumentLabel {
                         name: name.clone(),
                         span: param.pattern.span,
                     }),
                     _ => None,
                 });
+                if let (Some(old), Some(new)) = (&slot, &label) {
+                    if old.name != new.name {
+                        invalid.insert(function.name.clone());
+                    }
+                }
+                if slot.is_none() {
+                    *slot = label;
+                }
+            }
+        }
+        if self.completion_site.is_some() {
+            for (name, slots) in &self.interfaces {
+                let mut names = std::collections::BTreeSet::new();
+                if reserved_callee(name)
+                    || slots
+                        .iter()
+                        .flatten()
+                        .any(|label| !names.insert(&label.name))
+                {
+                    invalid.insert(name.clone());
+                }
+            }
+            for ty in &program.types {
+                invalid.extend(ty.variants.iter().map(|v| v.name.clone()));
+            }
+            invalid.extend(program.newtypes.iter().map(|n| n.constructor.clone()));
+            for name in invalid {
+                self.interfaces.remove(&name);
             }
         }
         Some(())
@@ -99,6 +131,7 @@ impl Index<'_> {
             } => (value, args, label, Some(resolved.clone())),
             _ => return None,
         };
+        self.complete_labels(expression, args, callee.as_deref(), locals);
         self.pipe_reference(expression, locals);
         self.expression(value, locals, depth)?;
         if let Some(label) = label {
@@ -106,4 +139,85 @@ impl Index<'_> {
         }
         self.arguments(args, callee.as_deref(), locals, depth)
     }
+}
+
+impl<'a> Index<'a> {
+    /// Recover only lexical token ranges; argument suggestions never use these as typed facts.
+    pub(super) fn label_source(path: &'a Path, text: &'a str, start: usize) -> Option<Source<'a>> {
+        Some(Source {
+            path,
+            text,
+            start,
+            tokens: parse::identifier_index(text).ok()?,
+            annotations: Vec::new(),
+            selectors: Vec::new(),
+        })
+    }
+
+    /// Select one canonical source interface and exclude every other supplied argument position.
+    pub(super) fn complete_labels(
+        &mut self,
+        expression: &ast::Expr,
+        _args: &[ast::Argument],
+        callee: Option<&str>,
+        _locals: &Bindings,
+    ) {
+        let Some(site) = &self.completion_site else {
+            return;
+        };
+        let Some(range) = site.arguments() else {
+            return;
+        };
+        if expression.span.end != range.end || expression.span.start >= range.start {
+            return;
+        }
+        let Some(interface) = callee.and_then(|name| self.interfaces.get(name)) else {
+            return;
+        };
+        self.call_labels = Some(Vec::new());
+        if site.supplied().len() > interface.len() {
+            return;
+        }
+        let mut occupied = vec![false; interface.len()];
+        let mut positional = 0;
+        for (label, span) in site.supplied() {
+            if site.colon() && *span == site.selector() {
+                continue;
+            }
+            let slot = if let Some(label) = label {
+                interface
+                    .iter()
+                    .position(|item| item.as_ref().is_some_and(|i| i.name == *label))
+            } else {
+                let slot = positional;
+                positional += 1;
+                Some(slot)
+            };
+            let Some(slot) = slot.and_then(|slot| occupied.get_mut(slot)) else {
+                return;
+            };
+            if *slot {
+                return;
+            }
+            *slot = true;
+        }
+        let labels: Vec<_> = interface
+            .iter()
+            .zip(occupied)
+            .filter_map(|(label, used)| {
+                label
+                    .as_ref()
+                    .filter(|l| !used && l.name.starts_with(site.prefix()))
+                    .map(|l| l.name.clone())
+            })
+            .collect();
+        self.call_labels = (!labels.is_empty() || site.colon()).then_some(labels);
+    }
+}
+
+/// Builtins and constructors cannot acquire a source interface through an invalid declaration.
+fn reserved_callee(name: &str) -> bool {
+    crate::check::builtin(name).is_some()
+        || crate::runtime::resolve(name).is_some()
+        || matches!(name, "Some" | "None" | "Ok" | "Err")
 }

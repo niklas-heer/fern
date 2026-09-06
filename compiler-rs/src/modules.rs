@@ -30,6 +30,7 @@ pub struct Loaded {
     sources: Vec<Source>,
     pub symbols: Vec<ModuleSymbols>,
     pub(crate) recovery: Option<parse::HoleSite>,
+    pub(crate) label_recovery: Option<parse::LabelSite>,
 }
 /// Visible spellings retained before import aliases are flattened for compilation.
 #[derive(Debug)]
@@ -70,6 +71,7 @@ struct Loader<'a> {
     editor: bool,
     entry_syntax: Option<(PathBuf, ast::Program, String)>,
     recovery: Option<parse::HoleSite>,
+    label_recovery: Option<parse::LabelSite>,
 }
 type NameMap = BTreeMap<String, String>;
 #[derive(Clone, Default)]
@@ -105,7 +107,51 @@ pub(crate) fn load_member_sources(
     sources: &HashMap<PathBuf, String>,
     cursor: usize,
 ) -> Result<Loaded, Error> {
-    load_sources(entry, sources, false, Some(cursor), MAX_FILES)
+    load_sources(
+        entry,
+        sources,
+        false,
+        Some(RecoveryRequest::Member(cursor)),
+        MAX_FILES,
+    )
+}
+
+/// Resolve one syntactic argument site with the same current visibility and overlay rules.
+pub(crate) fn load_label_sources(
+    entry: &Path,
+    sources: &HashMap<PathBuf, String>,
+    cursor: usize,
+) -> Result<Loaded, Error> {
+    load_sources(
+        entry,
+        sources,
+        true,
+        Some(RecoveryRequest::Label(cursor)),
+        MAX_FILES,
+    )
+}
+
+enum RecoveryRequest {
+    Member(usize),
+    Label(usize),
+}
+type EntrySyntax = (
+    ast::Program,
+    Option<parse::HoleSite>,
+    Option<parse::LabelSite>,
+);
+
+/// Recover only the requested parser operation; dependencies always parse normally.
+fn entry_syntax(text: &str, request: Option<RecoveryRequest>) -> Result<EntrySyntax, Diagnostic> {
+    match request {
+        Some(RecoveryRequest::Member(cursor)) => {
+            parse::recover_member(text, cursor).map(|(program, site)| (program, Some(site), None))
+        }
+        Some(RecoveryRequest::Label(cursor)) => {
+            parse::recover_labels(text, cursor).map(|(program, site)| (program, None, Some(site)))
+        }
+        None => parse::parse(text).map(|program| (program, None, None)),
+    }
 }
 
 /// Load one checked documentation graph from a bounded project snapshot cache.
@@ -122,19 +168,14 @@ fn load_sources(
     entry: &Path,
     sources: &HashMap<PathBuf, String>,
     editor: bool,
-    cursor: Option<usize>,
+    cursor: Option<RecoveryRequest>,
     snapshot_limit: usize,
 ) -> Result<Loaded, Error> {
     let snapshots = snapshots(sources, snapshot_limit)?;
     let entry = source_identity(entry)?;
     let text = read_source(&entry, &snapshots)?;
-    let (syntax, recovery) = match cursor {
-        Some(cursor) => {
-            parse::recover_member(&text, cursor).map(|(program, site)| (program, Some(site)))
-        }
-        None => parse::parse(&text).map(|program| (program, None)),
-    }
-    .map_err(|e| located(&entry, &text, e))?;
+    let (syntax, recovery, label_recovery) =
+        entry_syntax(&text, cursor).map_err(|e| located(&entry, &text, e))?;
     let name = syntax.module.clone().unwrap_or_else(|| {
         let candidate = entry
             .file_stem()
@@ -175,6 +216,7 @@ fn load_sources(
         editor,
         entry_syntax: Some((entry.clone(), syntax, text)),
         recovery,
+        label_recovery,
     };
     let entry_id = loader.visit(&entry, Some(&name), 0)?;
     loader.resolve(entry_id)
@@ -495,6 +537,9 @@ impl Loader<'_> {
         if let Some(site) = &mut self.recovery {
             site.shift(self.modules[entry].source.start);
         }
+        if let Some(site) = &mut self.label_recovery {
+            site.shift(self.modules[entry].source.start);
+        }
     }
 
     /// Qualify declarations in dependency order, then merge their concrete namespaces.
@@ -550,6 +595,7 @@ impl Loader<'_> {
         }
         Ok(Loaded {
             recovery: self.recovery,
+            label_recovery: self.label_recovery,
             program,
             sources,
             symbols,
