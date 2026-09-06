@@ -152,3 +152,20 @@ arithmetic allowance: header length is below 128 and each stream is at most
 exit codes, exact stream limits, binary payloads containing protocol markers,
 truncated/trailing records and extreme declared lengths/status values. Process
 ownership, reaping, timeout transport and the fault ABI remain unchanged.
+
+
+The GC archive lookup separately treats successful `pkg-config --variable=libdir`
+output as one literal UTF-8 path, not as linker words. It removes only one terminal
+LF or CRLF, preserves ASCII and non-ASCII whitespace (including a space-only
+folder name), and rejects empty, NUL, multiline, invalid UTF-8 or over-4,096-byte
+paths before filesystem lookup. At most 4,098 input bytes can reach this decoder
+when CRLF framing is included; the path itself is limited to 4,096 UTF-8 bytes.
+Quotes, backslashes and shell-looking bytes stay literal. Failed or unavailable
+`pkg-config`, and a valid directory with no static archive, retain the established
+linker-flag fallback. Malformed successful metadata reports an error instead of
+probing the current directory, selecting a replacement-character path or falling
+back silently. The leaf decoder uses the same strict lint policy as linker words.
+Tests invoke fake tools in child processes, use real archive/decoy paths and verify
+exact linker argv without changing the test runner's environment. These bounds
+apply after `Command::output` completes; no producer capture quota or deadline is
+claimed.

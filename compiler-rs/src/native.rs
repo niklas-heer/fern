@@ -1,5 +1,6 @@
 //! Process-based native backend: no C pointers or unsafe Rust cross the boundary.
 mod linker_flags;
+mod package_path;
 use linker_flags::parse as parse_linker_flags;
 #[cfg(unix)]
 use std::os::unix::fs::DirBuilderExt;
@@ -124,8 +125,8 @@ fn gc_flags() -> Result<Vec<OsString>, String> {
         .output()
     {
         if output.status.success() {
-            let directory = String::from_utf8_lossy(&output.stdout);
-            let archive = Path::new(directory.trim()).join("libgc.a");
+            let directory = package_path::parse(&output.stdout)?;
+            let archive = directory.join("libgc.a");
             if archive.is_file() {
                 return Ok(vec![archive.into_os_string()]);
             }
