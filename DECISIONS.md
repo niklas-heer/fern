@@ -4,6 +4,13 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 110 Package the Rust frontend as an explicit relocatable preview
+* **Date**: 2026-09-06
+* **Status**: Accepted for opt-in staging and verification; shipping defaults unchanged
+* **Decision**: I will stage explicit already-built Rust/native components into a new immutable directory and atomically publish one completely verified archive. Preserve exactly seven sibling files and a closed, bounded canonical manifest/archive format.
+* **Context**: Users need to try the expanded Rust frontend outside its source checkout. Portable nonempty directory replacement is not atomic, and checkout fallback can conceal incomplete packages. Failing package/marker/native-relocation tests preceded implementation. The unavailable `/decision` skill is replaced by this established format.
+* **Consequences**: A sibling preview marker disables implicit checkout fallback even when malformed; explicit component overrides remain supported. Bound actual reads, decompression, metadata and precharged payload copies; reject links, aliases, extra paths and malformed archives before publication. Reproducibility covers identical package inputs with the same packaging toolchain, not native compilation or publisher authentication. Native compilation still requires matching host libraries. No installation, signing, publication or default switch is implied. See [the runnable packaging guide](docs/RUST_PREVIEW_PACKAGING.md).
+
 ### 105 Execute bounded typed actors through explicit native continuations
 * **Date**: 2026-09-06
 * **Status**: Accepted for native105A; generalized suspension and supervision remain open

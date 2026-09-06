@@ -40,14 +40,17 @@ cargo run --locked --offline --manifest-path compiler-rs/Cargo.toml -- check exa
 
 `check` and `emit` use only Rust. `build` and `run` require `fern-qbe`,
 `libfern_runtime.a`, a host C compiler, and the existing runtime's native libraries.
-The helper and archive are located beside `fern-rs`, then in the development
-checkout. `FERN_QBE` and `FERN_RUNTIME_LIB` override their paths; `CC` selects a
-single compiler executable (not a shell command). `run source.fn -- args` forwards
+Development binaries locate the helper and archive beside `fern-rs`, then in the
+development checkout. [Relocatable preview bundles](../docs/RUST_PREVIEW_PACKAGING.md)
+use sibling components and disable implicit checkout fallback when the preview
+marker is present. `FERN_QBE` and `FERN_RUNTIME_LIB` override their paths; `CC`
+selects a single compiler executable (not a shell command). `run source.fn -- args` forwards
 literal arguments, available through `System.arg`, `System.args`, and `System.args_count`.
 
 Native documentation/unit tests additionally require `fern-test-supervisor`, built by
 `mise run rust-build` (and the Rust release build). Discovery uses
-`FERN_TEST_SUPERVISOR`, an executable sibling, then the development `bin` directory.
+`FERN_TEST_SUPERVISOR`, then an executable sibling; development binaries without
+a preview marker may also use the development `bin` directory.
 An absent or incompatible helper fails explicitly; there is no post-reap group-kill
 fallback. The helper is a trusted executable component, not an untrusted protocol
 server. Rust takes the stdin liveness guard before waiting, validates the bounded
@@ -608,6 +611,8 @@ Native tools receive literal argument vectors. Private temporary directories own
 intermediate files. Successful builds atomically replace the requested output;
 failed checks or backend invocations preserve existing outputs. Source/output
 aliases are rejected. Normal install/release recipes continue to package C only.
+The separate [opt-in Rust preview workflow](../docs/RUST_PREVIEW_PACKAGING.md)
+packages explicit built components for use after relocation.
 
 ## Evaluation and maintenance
 

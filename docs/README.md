@@ -9,6 +9,7 @@ This folder contains project-level reference documents. Use this file as the can
 - [Actor runtime](ACTOR_RUNTIME.md): exact C mailbox/supervision commitments and execution limits.
 - [Rust native actors](RUST_ACTORS.md): typed execution, suspension, deadlines and resource limits.
 - [Rust frontend evaluation](RUST_FRONTEND_EVALUATION.md): prototype scope, native correctness, measured costs, and migration criteria.
+- [Rust preview packaging](RUST_PREVIEW_PACKAGING.md): explicit relocatable inputs, deterministic bundles, strict verification and moved-package smoke tests.
 - [Native checker progress](BOOTSTRAP_CHECKER.md): bounded command workflows and remaining default-migration gates.
 - [Rust migration progress](RUST_MIGRATION.md): collections, error values, verification, and remaining parity work.
 - [Native backend reassessment](BACKEND_REASSESSMENT.md): QBE/Cranelift evidence, toolchain tradeoffs and acceptance gates.

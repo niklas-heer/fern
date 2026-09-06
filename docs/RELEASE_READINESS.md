@@ -15,6 +15,7 @@ engineering milestones; they do not certify the entire language.
 | SQLite | Open a handle and execute statements | Runtime database regression tests |
 | Actor foundation | String FIFO mailboxes, lifecycle/monitor/restart, three deterministic strategies | Six invariant scenarios and 1,536 seeded strategy crash steps |
 | Rust native actors | Typed Pid, cooperative execution, selective receive/deadlines and bounded continuation frames | Twenty native programs, semantic rejections, independent IR and lifecycle/sanitizer gates |
+| Rust preview | Opt-in relocatable bundle of explicit compiler, helper and runtime inputs; C remains default | Bounded archive tests and moved-package execution gates |
 | Terminal UI | Styled output, panels/tables, editable input/password prompts, cursor controls, immutable trees, logs | 13 native/PTY tests and a compiled example |
 | Editor | Rust LSP, bounded Tree-sitter corpus and locally staged Zed extension | Native/WASM source parity, reproducible package tests and isolated actual-Zed LSP startup |
 | Native checker | Default C-bootstrap cached launcher; ordinary style checks need no Python/Cargo | 66 independent workflow cases, exact diagnostics, cache/concurrency/ownership and sanitizer gates on macOS/Linux |

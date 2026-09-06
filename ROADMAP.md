@@ -13,7 +13,8 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `mise run release-package` and `mise run release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: Fern-native default checker, exact native/Python diagnostic and 66 workflow parity cases, bounded content cache and native supervision verified on macOS/Linux; ordinary style checks need no Python/Cargo
-- Rust migration: full Rust/native, C quality, documentation and nextest gates pass on macOS/Linux arm64, including bounded native actors (Decision105A); the expanded frontend remains opt-in.
+- Rust migration: `mise run rust-check` passing (1515 Rust checks (1518 on Linux; bounded native actors and relocatable previews), 4 measurement-harness tests, 197 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust developer tooling: pinned mise environment and incremental lint-policy checks verified; nextest passes 1511 tests on macOS and 1513 on Linux without skips; Criterion fixtures and all 10 smoke cases pass on both. Actor20-program/16-rejection, managed-runtime sanitizer and moved-preview gates pass on both.
 
 ## Canonical Documents
 
@@ -76,6 +77,7 @@ for approval between milestones. C remains the default until the parity gates pa
 - [x] Add bounded source-only lex/parse inspection with byte spans, escaped dumps, no import/type/backend execution and atomic parser/limit failure (Decision108B).
 - [x] Open retained HTML documentation only after complete atomic generation, with literal platform argv, visible best-effort failures and consistent byte limits (Decision108C).
 - [x] Verify the 1006-test expanded Rust checkpoint, C quality gate and documentation on Linux arm64 with Rust 1.75; expose POSIX test APIs under glibc strict C11 without hiding Darwin extensions.
+- [x] Package explicit Rust/native inputs as a relocatable opt-in preview, with deterministic bounded archives, atomic publication, strict verification and missing-helper isolation (Decision110).
 - [ ] Linux/macOS verification, fuzz/performance/packaging gates and default migration.
 
 Each checkpoint below records verified scope; this completion list stays open

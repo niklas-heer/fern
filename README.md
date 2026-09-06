@@ -12,7 +12,8 @@ compiler pipeline with the existing QBE backend and C runtime. See the
 [evaluation results](docs/RUST_FRONTEND_EVALUATION.md) and
 [migration progress](docs/RUST_MIGRATION.md). Lists, Option/Result, exhaustive
 matching, and Result propagation now work through the Rust native pipeline;
-C remains the default.
+C remains the default. An opt-in [relocatable Rust preview](docs/RUST_PREVIEW_PACKAGING.md)
+can bundle explicit built inputs without installing or changing that default.
 
 ```fern
 fn greet(name: String) -> String:

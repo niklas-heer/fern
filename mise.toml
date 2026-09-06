@@ -468,6 +468,8 @@ python3 scripts/test_rust_json.py
 python3 scripts/test_rust_json_codecs.py
 python3 scripts/test_rust_doctests.py
 python3 scripts/test_rust_units.py
+python3 scripts/test_package_rust_preview.py
+python3 scripts/test_rust_preview.py --compiler compiler-rs/target/debug/fern-rs --qbe bin/fern-qbe --supervisor bin/fern-test-supervisor --runtime bin/libfern_runtime.a
 uv run --locked scripts/test_style_parity.py --compiler compiler-rs/target/debug/fern-rs
 uv run --locked scripts/test_style_workflow.py --compiler compiler-rs/target/debug/fern-rs
 python3 scripts/test_runtime_actor_subtree.py
@@ -572,3 +574,44 @@ run = [
 [tasks.rust-bench]
 description = "Measure compiler phases statistically; compare on an otherwise quiet host"
 run = "cargo bench --manifest-path benchmarks/compiler-phases/Cargo.toml --locked --bench phases"
+
+[tasks.rust-preview-stage]
+description = "Stage an opt-in Rust preview from explicit immutable built inputs"
+run = '''
+python3 scripts/package_rust_preview.py stage \
+  --compiler "${FERN_PREVIEW_COMPILER:?set the built fern-rs path}" \
+  --qbe "${FERN_PREVIEW_QBE:?set the built fern-qbe path}" \
+  --supervisor "${FERN_PREVIEW_SUPERVISOR:?set the built supervisor path}" \
+  --runtime "${FERN_PREVIEW_RUNTIME:?set the built runtime archive path}" \
+  --license LICENSE --version "${FERN_PREVIEW_VERSION:?set preview version}" \
+  --os "${FERN_PREVIEW_OS:?set linux or macos}" --arch "${FERN_PREVIEW_ARCH:?set arm64 or x86_64}" \
+  --output "${FERN_PREVIEW_STAGE:?set a new staging directory}"
+'''
+
+[tasks.rust-preview-package]
+description = "Atomically package a verified opt-in Rust preview"
+run = '''
+python3 scripts/package_rust_preview.py package \
+  --staging "${FERN_PREVIEW_STAGE:?set an existing preview stage}" \
+  --output "${FERN_PREVIEW_ARCHIVE:?set archive output path}"
+'''
+
+[tasks.rust-preview-verify]
+description = "Verify the exact bounded Rust preview archive without extraction"
+run = '''
+python3 scripts/package_rust_preview.py verify "${FERN_PREVIEW_ARCHIVE:?set archive path}"
+'''
+
+[tasks.rust-preview-check]
+description = "Test preview packaging, hostile archives and literal task paths without builds"
+run = "python3 scripts/test_package_rust_preview.py"
+
+[tasks.rust-preview-smoke]
+description = "Move and exercise a Rust preview using explicit already-built inputs"
+run = '''
+python3 scripts/test_rust_preview.py \
+  --compiler "${FERN_PREVIEW_COMPILER:?set the built fern-rs path}" \
+  --qbe "${FERN_PREVIEW_QBE:?set the built fern-qbe path}" \
+  --supervisor "${FERN_PREVIEW_SUPERVISOR:?set the built supervisor path}" \
+  --runtime "${FERN_PREVIEW_RUNTIME:?set the built runtime archive path}"
+'''

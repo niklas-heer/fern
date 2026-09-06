@@ -138,12 +138,12 @@ collection-heavy compilation separately.
 
 Bounded native actors now execute; generalized suspension, typed supervision,
 actor REPL/FernSim parity and broader language/runtime parity remain open.
-Packaging, complete release parity and verified default-command migration
-remain separate requirements. The dated
+Opt-in relocatable Rust preview packaging is available; complete release parity
+and verified default-command migration remain separate requirements. The dated
 sections below record successive checkpoints rather than the current list of
 unsupported features.
 
-See [Rust native actors](RUST_ACTORS.md),
+See [Rust native actors](RUST_ACTORS.md), [preview packaging](RUST_PREVIEW_PACKAGING.md),
 the [supported-feature guide](../compiler-rs/README.md), and the [roadmap](../ROADMAP.md).
 
 Directory native parity exposed a C backend defect: matched Result payloads were
