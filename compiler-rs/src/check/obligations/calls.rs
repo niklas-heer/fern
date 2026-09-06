@@ -6,6 +6,15 @@ pub(super) struct Summaries {
     index: HashMap<usize, usize>,
     recursive_defaults: HashMap<usize, recursive::Contract>,
 }
+impl Summaries {
+    /// Expose only the checked structural contract identity needed for child traversal proofs.
+    pub(super) fn tree_parameter(&self, function: usize) -> Option<usize> {
+        match self.recursive_defaults.get(&function) {
+            Some(recursive::Contract::TreeHandler(index)) => Some(*index),
+            _ => None,
+        }
+    }
+}
 /// Build acyclic source summaries under one aggregate budget; recursive equations follow separately.
 #[cfg(test)]
 pub(super) fn analyze(program: &ir::Program, root: &ir::Function) -> Checked<Summary> {
@@ -96,7 +105,7 @@ fn dependency_order<'a>(
             continue;
         }
         pending.push((function, true));
-        for id in dependencies(&function.body, work)? {
+        for id in ordered_dependencies(program, &function.body, work)? {
             let child = summaries
                 .index
                 .get(&id)
@@ -109,6 +118,52 @@ fn dependency_order<'a>(
         }
     }
     Ok(ordered)
+}
+/// Deferred bodies execute in their registering proof context, not as independent recursive assumptions.
+fn ordered_dependencies(
+    program: &ir::Program,
+    expr: &ir::Expr,
+    work: &mut usize,
+) -> Checked<Vec<usize>> {
+    let mut pending = vec![expr];
+    let mut inline = HashSet::new();
+    let mut found = BTreeMap::new();
+    while let Some(expr) = pending.pop() {
+        charge(work, 1, expr.span)?;
+        if let ir::ExprKind::Defer(value) = &expr.kind {
+            if let ir::ExprKind::Closure { function, captures } = &value.kind {
+                charge(work, captures.len(), expr.span)?;
+                pending.extend(captures);
+                if inline.insert(function.0) {
+                    charge(work, program.functions.len(), expr.span)?;
+                    let body = program
+                        .functions
+                        .iter()
+                        .find(|f| f.id == *function)
+                        .ok_or_else(|| {
+                            Diagnostic::new(expr.span, "missing deferred obligation function")
+                        })?;
+                    pending.push(&body.body);
+                }
+                continue;
+            }
+        }
+        match &expr.kind {
+            ir::ExprKind::Call {
+                target: ir::CallTarget::Function(id),
+                ..
+            }
+            | ir::ExprKind::Closure { function: id, .. } => {
+                found.insert(id.0, ());
+            }
+            _ => {}
+        }
+        for child in ir::children(expr) {
+            charge(work, 1, child.span)?;
+            pending.push(child);
+        }
+    }
+    Ok(found.into_keys().collect())
 }
 /// Scan all typed children, charging each edge before it enters the bounded traversal queue.
 pub(super) fn dependencies(expr: &ir::Expr, work: &mut usize) -> Checked<Vec<usize>> {
@@ -150,6 +205,15 @@ impl Engine<'_> {
                         Diagnostic::new(span, "missing recursive obligation signature")
                     })?;
                 return recursive::apply(self, contract, function, args, span);
+            }
+        }
+        if let Some(summaries) = self.summaries {
+            if let Some(recursive::Contract::TreeHandler(index)) =
+                summaries.recursive_defaults.get(&id)
+            {
+                if summaries.ready.contains_key(&id) {
+                    return recursive_trees::complete(self, *index, args, span);
+                }
             }
         }
         let specialized = self.effect_summary(id, args, span)?;

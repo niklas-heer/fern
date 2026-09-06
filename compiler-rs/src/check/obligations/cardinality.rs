@@ -25,6 +25,30 @@ impl Engine<'_> {
             span,
         )
     }
+    /// A dynamic map's representative exists only when the list contains at least one element.
+    pub(super) fn fresh_map(
+        &mut self,
+        item: &Type,
+        input: Option<usize>,
+        span: Span,
+        depth: usize,
+    ) -> Checked<Value> {
+        let nonempty = self.predicates.variable(&mut self.work, span)?;
+        let parent = self.path;
+        self.path = self
+            .predicates
+            .and(parent, nonempty, &mut self.work, span)?;
+        let value = self.fresh(item, input, span, depth)?;
+        self.path = parent;
+        self.node(
+            Region::Map {
+                entries: vec![(None, value)],
+                exact: false,
+                nonempty,
+            },
+            span,
+        )
+    }
     /// Conditional collection identities retain their original branch and cardinality guards.
     pub(super) fn list_nonempty(
         &mut self,
@@ -43,6 +67,34 @@ impl Engine<'_> {
                 let mut result = Predicate::FALSE;
                 for (guard, value) in choices {
                     let nonempty = self.list_nonempty(value, span, depth + 1)?;
+                    let nonempty = self
+                        .predicates
+                        .and(*guard, nonempty, &mut self.work, span)?;
+                    result = self.predicates.or(result, nonempty, &mut self.work, span)?;
+                }
+                Ok(result)
+            }
+            _ => self.unsupported(span),
+        }
+    }
+    /// Conditional collection identities retain their original branch and cardinality guards.
+    pub(super) fn map_nonempty(
+        &mut self,
+        value: &Value,
+        span: Span,
+        depth: usize,
+    ) -> Checked<Predicate> {
+        self.charge(1, span)?;
+        if depth >= DEPTH_LIMIT {
+            return self.unsupported(span);
+        }
+        match &value.node.kind {
+            Region::Map { nonempty, .. } => Ok(*nonempty),
+            Region::Choice(choices) => {
+                self.charge(choices.len(), span)?;
+                let mut result = Predicate::FALSE;
+                for (guard, value) in choices {
+                    let nonempty = self.map_nonempty(value, span, depth + 1)?;
                     let nonempty = self
                         .predicates
                         .and(*guard, nonempty, &mut self.work, span)?;

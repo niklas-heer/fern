@@ -176,7 +176,7 @@ impl<'a> Substitution<'a> {
                 .input_origins
                 .get(&id)
                 .ok_or_else(|| Diagnostic::new(span, "missing iteration capture obligation"))?;
-            engine.dispose(value, true, false, span)?;
+            engine.dispose(value, !origin.aggregate, false, span)?;
         }
         Ok(())
     }
@@ -214,6 +214,9 @@ impl<'a> Substitution<'a> {
         depth: usize,
     ) -> Checked<()> {
         match &formal.node.kind {
+            Region::RecursiveCut {
+                origin: Some(id), ..
+            } => self.bind_cut(*id, actual, family),
             Region::Nominal { expanded, .. } => {
                 if let Some(value) = expanded.borrow().as_ref() {
                     self.bind(engine, value, actual, family, span, depth + 1)?;
@@ -233,10 +236,7 @@ impl<'a> Substitution<'a> {
                     depth + 1,
                 )?;
             }
-            Region::Boolean(predicate) if !family => {
-                let value = engine.condition(actual, span)?;
-                self.bind_variable(engine, *predicate, value, span)?;
-            }
+            Region::Boolean(p) if !family => self.bind_boolean(engine, *p, actual, span)?,
             Region::Product(fields) => {
                 self.bind_product(engine, fields, actual, family, span, depth + 1)?;
             }
@@ -247,10 +247,7 @@ impl<'a> Substitution<'a> {
                 ..
             } => {
                 if let Some(id) = origin {
-                    self.input_origins.insert(*id, actual.clone());
-                    if family {
-                        self.family_origins.insert(*id);
-                    }
+                    self.bind_cut(*id, actual, family);
                 }
                 self.bind_variants(engine, (guards, variants), actual, family, span, depth + 1)?;
             }
@@ -259,15 +256,32 @@ impl<'a> Substitution<'a> {
             } => {
                 self.bind_list(engine, (*nonempty, items), actual, family, span, depth + 1)?;
             }
-            Region::Map { entries, .. } => {
-                let actual = Self::family(engine, actual, true, span, depth + 1)?;
-                for (_, item) in entries {
-                    self.bind(engine, item, &actual, true, span, depth + 1)?;
-                }
+            Region::Map {
+                entries, nonempty, ..
+            } => {
+                self.bind_map(
+                    engine,
+                    (*nonempty, entries),
+                    actual,
+                    family,
+                    span,
+                    depth + 1,
+                )?;
             }
             _ => {}
         }
         Ok(())
+    }
+    /// Scalar input predicates bind only to the actual value's checked Boolean identity.
+    fn bind_boolean(
+        &mut self,
+        engine: &mut Engine<'_>,
+        formal: Predicate,
+        actual: &Value,
+        span: Span,
+    ) -> Checked<()> {
+        let value = engine.condition(actual, span)?;
+        self.bind_variable(engine, formal, value, span)
     }
     /// Product fields retain the exact actual projection selected by their source position.
     fn bind_product(
@@ -302,6 +316,26 @@ impl<'a> Substitution<'a> {
         }
         let actual = Self::family(engine, actual, false, span, depth)?;
         for item in formal.1 {
+            self.bind(engine, item, &actual, true, span, depth)?;
+        }
+        Ok(())
+    }
+    /// Whole-map arguments retain cardinality; universal value families remain independent.
+    fn bind_map(
+        &mut self,
+        engine: &mut Engine<'_>,
+        formal: (Predicate, &[(Option<Key>, Value)]),
+        actual: &Value,
+        family: bool,
+        span: Span,
+        depth: usize,
+    ) -> Checked<()> {
+        if !family {
+            let nonempty = engine.map_nonempty(actual, span, 0)?;
+            self.bind_variable(engine, formal.0, nonempty, span)?;
+        }
+        let actual = Self::family(engine, actual, true, span, depth)?;
+        for (_, item) in formal.1 {
             self.bind(engine, item, &actual, true, span, depth)?;
         }
         Ok(())
@@ -346,6 +380,11 @@ impl<'a> Substitution<'a> {
         }
         let mut children: Vec<&Value> = Vec::new();
         match &formal.node.kind {
+            Region::RecursiveCut {
+                origin: Some(id), ..
+            } => {
+                self.input_origins.insert(*id, empty.clone());
+            }
             Region::Sum {
                 origin, variants, ..
             } => {
@@ -495,6 +534,7 @@ impl<'a> Substitution<'a> {
                 .predicates
                 .and(parent, exists, &mut engine.work, span)?;
             let actual = engine.origin(None, span)?;
+            engine.origins[actual].aggregate = origin.aggregate;
             self.local_origins.insert(id, actual);
         }
         engine.path = parent;
@@ -521,7 +561,7 @@ impl<'a> Substitution<'a> {
                 .predicates
                 .and(parent, handled, &mut engine.work, span)?;
             if let Some(value) = self.input_origins.get(&id) {
-                engine.dispose(value, true, false, span)?;
+                engine.dispose(value, !origin.aggregate, false, span)?;
             } else if let Some(actual) = self.local_origins.get(&id) {
                 engine.origins[*actual].handled = engine.path;
             } else {
@@ -684,16 +724,10 @@ impl<'a> Substitution<'a> {
                 Region::Product(self.value_list(engine, values, span, depth + 1)?)
             }
             Region::Sum { .. } => self.sum_kind(engine, kind, span, depth + 1)?,
-            Region::Nominal { layout, expanded } => Region::Nominal {
-                layout: *layout,
-                expanded: RefCell::new(
-                    expanded
-                        .borrow()
-                        .as_ref()
-                        .map(|v| self.value(engine, v, span, depth + 1))
-                        .transpose()?,
-                ),
-            },
+            Region::RecursiveCut { layout, origin } => self.cut_kind(*layout, *origin, span)?,
+            Region::Nominal { layout, expanded } => {
+                self.nominal_kind(engine, *layout, expanded, span, depth + 1)?
+            }
             Region::Union { members, value } => {
                 engine.union_members_cost(members, span)?;
                 Region::Union {
@@ -710,11 +744,51 @@ impl<'a> Substitution<'a> {
                 items: self.value_list(engine, items, span, depth + 1)?,
                 exact: *exact,
             },
-            Region::Map { entries, exact } => {
-                self.map_values(engine, entries, *exact, span, depth + 1)?
-            }
+            Region::Map {
+                entries,
+                exact,
+                nonempty,
+            } => self.map_values(engine, entries, (*exact, *nonempty), span, depth + 1)?,
             Region::Choice(values) => self.choice_kind(engine, values, span, depth + 1)?,
         })
+    }
+    /// Lazy origin-free nominal expansion preserves only already materialized ordinary values.
+    fn nominal_kind(
+        &mut self,
+        engine: &mut Engine<'_>,
+        layout: usize,
+        expanded: &RefCell<Option<Value>>,
+        span: Span,
+        depth: usize,
+    ) -> Checked<Region> {
+        let expanded = expanded
+            .borrow()
+            .as_ref()
+            .map(|v| self.value(engine, v, span, depth))
+            .transpose()?;
+        Ok(Region::Nominal {
+            layout,
+            expanded: RefCell::new(expanded),
+        })
+    }
+    /// Whole-subtree effects bind to actual provenance, preserving sibling identity and partiality.
+    fn bind_cut(&mut self, id: usize, actual: &Value, family: bool) {
+        self.input_origins.insert(id, actual.clone());
+        if family {
+            self.family_origins.insert(id);
+        }
+    }
+    /// Fresh returned cuts receive fresh origins, never a copied structural descent certificate.
+    fn cut_kind(&self, layout: usize, origin: Option<usize>, span: Span) -> Checked<Region> {
+        let origin = origin
+            .map(|id| {
+                self.local_origins
+                    .get(&id)
+                    .copied()
+                    .ok_or_else(|| Diagnostic::new(span, "missing recursive subtree origin"))
+            })
+            .transpose()?;
+        Ok(Region::RecursiveCut { layout, origin })
     }
     /// Rebuild branch alternatives with the same substituted source predicates.
     fn choice_kind(
@@ -805,7 +879,7 @@ impl<'a> Substitution<'a> {
         &mut self,
         engine: &mut Engine<'_>,
         entries: &[(Option<Key>, Value)],
-        exact: bool,
+        metadata: (bool, Predicate),
         span: Span,
         depth: usize,
     ) -> Checked<Region> {
@@ -819,7 +893,8 @@ impl<'a> Substitution<'a> {
         }
         Ok(Region::Map {
             entries: result,
-            exact,
+            exact: metadata.0,
+            nonempty: self.predicate(engine, metadata.1, span, depth)?,
         })
     }
 }

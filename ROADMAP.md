@@ -54,7 +54,8 @@ for approval between milestones. C remains the default until the parity gates pa
 - [x] Modules/imports/visibility and a realistic application spanning multiple files (13 loader tests including visibility bypass regressions, native project execution).
 - [ ] Remaining executable language parity: remaining function/numeric/string operations, control flow and complete error handling.
 - [x] Replace reference-only Result checks with bounded reachable-path handling, call/alias provenance, complete collection coverage and deferred cleanup (Decision95).
-- [ ] Complete recursive nominal stored-Result tree handlers and wider recursive summary equations without granting unproved handling credit.
+- [x] Prove direct recursive nominal Result handlers, complete List/Map child traversals, exact recursive callbacks and deferred child handling (Decision95 R1–R2).
+- [ ] Complete mutual structural induction, recursive builders and wider recursive summary equations without granting unproved handling credit.
 - [ ] Standard-library/native ABI compatibility and executable application coverage.
 - [ ] Diagnostics, formatting, REPL/LSP, documentation and developer-command parity.
 - [x] Verify the 1006-test expanded Rust checkpoint, C quality gate and documentation on Linux arm64 with Rust 1.75; expose POSIX test APIs under glibc strict C11 without hiding Darwin extensions.

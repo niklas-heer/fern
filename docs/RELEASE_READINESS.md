@@ -37,8 +37,9 @@ engineering milestones; they do not certify the entire language.
   SQLite execute primitives.
 - **Result handling:** the Rust checker proves reachable-path handling through
   aliases, collections, generic calls and deferred cleanup. Metadata-only uses,
-  partial searches and uncovered early exits reject. Recursive nominal trees with
-  stored Results and general mutual structural proofs remain incomplete; see
+  partial searches and uncovered early exits reject. Direct recursive nominal handlers
+  and complete child-collection traversals are supported; mutual structural proofs
+  and general recursive builders remain incomplete. See
   [the handling contract](RESULT_HANDLING.md).
 - **Editor completeness:** the verified grammar corpus is bounded. Source-label completion supports closed and EOF-open calls; remaining syntax
   and broader malformed-source recovery remain open. Local Zed packaging does not publish its pinned grammar revision.

@@ -5,6 +5,7 @@ pub(super) enum Contract {
     Fresh,
     Alias(usize),
     Handler(usize),
+    TreeHandler(usize),
     Callables(recursive_callables::Contract),
 }
 /// A backedge may create an arbitrary result or promise an exact input identity, never discharge it.
@@ -37,6 +38,9 @@ pub(super) fn contract(
     }
     if super::nominal::closed_signature(program, function, work)? {
         return Ok(Contract::Fresh);
+    }
+    if let Some(index) = recursive_trees::candidate(program, function, work)? {
+        return Ok(Contract::TreeHandler(index));
     }
     if let Some(index) = super::recursive_handlers::candidate(program, function, work)? {
         return Ok(Contract::Handler(index));
@@ -93,6 +97,9 @@ pub(super) fn apply(
     span: Span,
 ) -> Checked<Value> {
     match contract {
+        Contract::TreeHandler(index) => {
+            recursive_trees::apply(engine, function, *index, args, span)
+        }
         Contract::Fresh => engine.fresh(&function.return_type, None, span, 0),
         Contract::Callables(contract) => recursive_callables::apply(engine, contract, args, span),
         Contract::Handler(index) => {
@@ -108,6 +115,9 @@ pub(super) fn apply(
 pub(super) fn verify(contract: &Contract, summary: &mut Summary, span: Span) -> Checked<()> {
     if let Contract::Callables(contract) = contract {
         return recursive_callables::verify(contract, summary, span);
+    }
+    if let Contract::TreeHandler(index) = contract {
+        return super::recursive_handlers::verify(*index, summary, span);
     }
     if let Contract::Handler(index) = contract {
         return super::recursive_handlers::verify(*index, summary, span);

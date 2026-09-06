@@ -368,6 +368,11 @@ impl Engine<'_> {
         }
         self.node(
             Region::Map {
+                nonempty: if values.is_empty() {
+                    Predicate::FALSE
+                } else {
+                    Predicate::TRUE
+                },
                 entries: values,
                 exact: true,
             },

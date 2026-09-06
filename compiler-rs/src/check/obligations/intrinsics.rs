@@ -42,6 +42,7 @@ impl Engine<'_> {
                 Region::Map {
                     entries: vec![],
                     exact: true,
+                    nonempty: Predicate::FALSE,
                 },
                 span,
             ),
@@ -53,9 +54,12 @@ impl Engine<'_> {
                 let empty = self.predicates.not(nonempty, &mut self.work, span)?;
                 self.node(Region::Boolean(empty), span)
             }
-            (StringEq | ListContains | MapIsEmpty | MapContains, _) => {
-                self.fresh(&Type::Bool, None, span, 0)
+            (MapIsEmpty, [map]) => {
+                let nonempty = self.map_nonempty(map, span, 0)?;
+                let empty = self.predicates.not(nonempty, &mut self.work, span)?;
+                self.node(Region::Boolean(empty), span)
             }
+            (StringEq | ListContains | MapContains, _) => self.fresh(&Type::Bool, None, span, 0),
             (Print | Println | StringConcat | StringLen | ListLen | MapLen | MapKeys, _) => {
                 self.node(Region::Empty, span)
             }
@@ -351,7 +355,7 @@ impl Engine<'_> {
             }
             return self.node(Region::Choice(output), span);
         }
-        let Region::Map { entries, exact } = &map.node.kind else {
+        let Region::Map { entries, exact, .. } = &map.node.kind else {
             return self.unsupported(span);
         };
         let key = self.key(key, span)?;
@@ -368,6 +372,7 @@ impl Engine<'_> {
             Region::Map {
                 entries: output,
                 exact: true,
+                nonempty: Predicate::TRUE,
             },
             span,
         )?;
@@ -389,26 +394,19 @@ impl Engine<'_> {
             Region::Map {
                 entries: output,
                 exact: false,
+                nonempty: Predicate::TRUE,
             },
             span,
         )
     }
     /// Values enumerates every retained entry, but cannot recreate overwritten entries.
     fn map_values(&mut self, map: &Value, span: Span) -> Checked<Value> {
-        let Region::Map { entries, exact } = &map.node.kind else {
+        let Region::Map { entries, exact, .. } = &map.node.kind else {
             return self.unsupported(span);
         };
         self.charge(entries.len(), span)?;
         let items = entries.iter().map(|(_, value)| value.clone()).collect();
-        let nonempty = if *exact {
-            if entries.is_empty() {
-                Predicate::FALSE
-            } else {
-                Predicate::TRUE
-            }
-        } else {
-            self.predicates.variable(&mut self.work, span)?
-        };
+        let nonempty = self.map_nonempty(map, span, 0)?;
         let value = self.node(
             Region::List {
                 items,

@@ -69,10 +69,14 @@ mod recursive;
 mod recursive_callables;
 #[path = "obligations/recursive_handlers.rs"]
 mod recursive_handlers;
+#[path = "obligations/recursive_trees.rs"]
+mod recursive_trees;
 #[path = "obligations/sequences.rs"]
 mod sequences;
 #[path = "obligations/substitute.rs"]
 mod substitute;
+#[path = "obligations/tree_iteration.rs"]
+mod tree_iteration;
 pub(super) use gate::{check, check_recovery, templates};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -87,6 +91,7 @@ const DEPTH_LIMIT: usize = 128;
 
 #[derive(Debug)]
 struct Origin {
+    aggregate: bool,
     input: Option<usize>,
     span: Span,
     exists: Predicate,
@@ -157,6 +162,10 @@ struct Engine<'a> {
     effect_cache: Rc<RefCell<effect_shapes::Cache>>,
     partitions: HashMap<usize, partitions::Partition>,
     sequence_offsets: HashMap<usize, (usize, usize)>,
+    active_nominals: Vec<(usize, usize)>,
+    nominal_roots: HashMap<usize, usize>,
+    nominal_descendants: HashMap<usize, usize>,
+    tree_context: Option<(usize, usize, usize)>,
 }
 
 /// Analyze supported typed bodies while refusing forms without a complete handling proof.
@@ -227,6 +236,10 @@ impl<'a> Engine<'a> {
             effect_cache: Rc::new(RefCell::new(effect_shapes::Cache::default())),
             partitions: HashMap::new(),
             sequence_offsets: HashMap::new(),
+            active_nominals: Vec::new(),
+            nominal_roots: HashMap::new(),
+            nominal_descendants: HashMap::new(),
+            tree_context: None,
         }
     }
     /// Bound every traversal, allocation and copied edge before doing its work.
@@ -249,6 +262,7 @@ impl<'a> Engine<'a> {
         self.charge(1, span)?;
         let id = self.origins.len();
         self.origins.push(Origin {
+            aggregate: false,
             input,
             span,
             exists: self.path,

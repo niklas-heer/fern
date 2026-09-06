@@ -84,6 +84,16 @@ termination.
 
 Exact recursive aliases and direct handlers over a strict suffix of their own
 list input have checked inductive contracts. Recursive nominal trees containing
-stored Results, general mutual structural induction and richer recursive
+stored Results support complete handlers of their own strict descendants, including
+List/Map child traversal, Option/newtype edges, exact recursive callbacks and
+per-child deferred handling. Equal types, reconstructed roots and partial searches
+confer no structural evidence. Every sibling and locally produced Result must be
+handled independently. Whole-tree aliases preserve the actual duties.
+
+Map emptiness keeps its actual conditional identity across full traversal and
+Map.values. Deleting a dynamically selected key may empty a map; it cannot reuse
+the old nonempty fact or erase removed Result duties.
+
+General mutual structural induction, recursive builders and richer recursive
 higher-order equations remain completion work. Origin-free recursive JSON
 payloads are supported; their enclosing codec Result still requires handling.

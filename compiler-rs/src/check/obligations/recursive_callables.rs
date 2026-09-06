@@ -150,6 +150,7 @@ pub(super) fn apply(
         Region::Map {
             entries: values.into_iter().map(|v| (None, v)).collect(),
             exact: false,
+            nonempty: engine.predicates.variable(&mut engine.work, span)?,
         }
     } else {
         Region::List {

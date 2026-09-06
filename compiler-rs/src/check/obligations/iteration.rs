@@ -21,9 +21,10 @@ impl Engine<'_> {
             _ => return self.unsupported(span),
         };
         let captures = self.iteration_captures(body, span)?;
-        let summary = self.iteration_summary(pattern, &item_type, body, &captures, span)?;
-        self.work = summary.work;
         let item = self.iteration_family(&collection, &iterable.ty, span)?;
+        let plan = tree_iteration::prepare(self, &item, span)?;
+        let summary = self.iteration_summary(pattern, &item_type, body, &captures, &plan, span)?;
+        self.work = summary.work;
         self.charge(captures.len().saturating_add(1), span)?;
         let mut args = vec![item];
         args.extend(captures.iter().map(|(_, _, value)| value.clone()));
@@ -46,16 +47,8 @@ impl Engine<'_> {
         if matches!(ty, Type::List(_)) {
             return self.list_nonempty(value, span, 0);
         }
-        if let Region::Map {
-            entries,
-            exact: true,
-        } = &value.node.kind
-        {
-            return Ok(if entries.is_empty() {
-                Predicate::FALSE
-            } else {
-                Predicate::TRUE
-            });
+        if matches!(ty, Type::Map(..)) {
+            return self.map_nonempty(value, span, 0);
         }
         self.predicates.variable(&mut self.work, span)
     }
@@ -113,6 +106,7 @@ impl Engine<'_> {
         item: &Type,
         body: &ir::Expr,
         captures: &[(usize, &Type, Value)],
+        plan: &Option<tree_iteration::Plan>,
         span: Span,
     ) -> Checked<Summary> {
         let mut engine = Engine::new(self.program);
@@ -122,7 +116,7 @@ impl Engine<'_> {
         engine.summaries = self.summaries;
         engine.relevance = self.relevance;
         engine.effect_cache = self.effect_cache.clone();
-        let value = engine.fresh(item, Some(0), span, 0)?;
+        let value = tree_iteration::input(&mut engine, item, plan.as_ref(), span)?;
         engine.inputs.push(value.clone());
         engine.pattern(pattern, &value, span, 0)?;
         for id in engine.locals.keys() {

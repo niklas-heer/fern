@@ -30,7 +30,7 @@ impl Engine<'_> {
             }
             return self.node(Region::Choice(output), span);
         }
-        let Region::Map { entries, exact } = &map.node.kind else {
+        let Region::Map { entries, exact, .. } = &map.node.kind else {
             return self.unsupported(span);
         };
         let key = self.key(key, span)?;
@@ -47,7 +47,7 @@ impl Engine<'_> {
             return self.exact_map_view(builtin, map, entries, index, span);
         }
         if builtin == ir::Builtin::MapDelete {
-            return Ok(map.partial());
+            return self.dynamic_map_delete(map, entries, span);
         }
         let choices = entries
             .iter()
@@ -61,6 +61,30 @@ impl Engine<'_> {
                 tag: None,
                 guards,
                 variants: vec![vec![value], vec![]],
+            },
+            span,
+        )
+    }
+    /// Deletion may remove the final entry; retained values cannot stand for the original whole map.
+    fn dynamic_map_delete(
+        &mut self,
+        map: &Value,
+        entries: &[(Option<Key>, Value)],
+        span: Span,
+    ) -> Checked<Value> {
+        let old = self.map_nonempty(map, span, 0)?;
+        let remains = self.predicates.variable(&mut self.work, span)?;
+        let nonempty = self.predicates.and(old, remains, &mut self.work, span)?;
+        self.charge(entries.len(), span)?;
+        let entries = entries
+            .iter()
+            .map(|(_, value)| (None, value.partial()))
+            .collect();
+        self.node(
+            Region::Map {
+                entries,
+                exact: false,
+                nonempty,
             },
             span,
         )
@@ -90,9 +114,14 @@ impl Engine<'_> {
             .enumerate()
             .filter(|(i, _)| Some(*i) != index)
             .map(|(_, entry)| entry.clone())
-            .collect();
+            .collect::<Vec<_>>();
         let value = self.node(
             Region::Map {
+                nonempty: if entries.is_empty() {
+                    Predicate::FALSE
+                } else {
+                    Predicate::TRUE
+                },
                 entries,
                 exact: true,
             },

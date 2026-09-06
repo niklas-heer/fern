@@ -1285,3 +1285,18 @@ uses x18, but the sample does not prove the precise trigger. Twenty scans rebuil
 with the correction pass with identical output. No GC, source-recursion, launcher
 or timeout workaround is introduced; this evidence does not establish that every
 possible native crash has been eliminated.
+
+
+## Recursive Result handlers (Decision95 R1–R2) — 2026-09-06
+
+Direct recursive nominal handlers prove each current-node Result and strict child
+subtree independently. Distinct siblings retain distinct duties; equal layouts,
+reconstructed roots and nondecreasing calls grant no induction credit. Complete
+List/Map child traversals, exact recursive callbacks, Option/newtype edges and
+per-child deferred cleanup preserve actual descent through private proof contexts.
+Dynamic map deletion may empty the map and cannot reuse its prior nonempty fact.
+
+Forty-two source cases independently pass ordinary parsing/type checking before
+their expected handling acceptance/rejection is verified. The existing accepted
+corpus remains 247/247. Mutual structural induction, recursive builders and richer
+recursive callable equations remain open; see [the contract](RESULT_HANDLING.md).

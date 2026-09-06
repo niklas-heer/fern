@@ -155,6 +155,10 @@ impl Engine<'_> {
                 function: *function,
                 captures: self.shadow_fields(captures, span, depth + 1)?,
             },
+            Region::RecursiveCut { layout, .. } => Region::RecursiveCut {
+                layout: *layout,
+                origin: None,
+            },
             Region::Nominal { layout, .. } => Region::Nominal {
                 layout: *layout,
                 expanded: RefCell::new(None),
@@ -198,6 +202,7 @@ impl Engine<'_> {
                 Region::Map {
                     entries,
                     exact: false,
+                    nonempty: self.predicates.variable(&mut self.work, span)?,
                 }
             }
             Region::Choice(choices) => {

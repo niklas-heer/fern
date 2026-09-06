@@ -27,8 +27,15 @@ impl Engine<'_> {
         } else {
             output.as_ref()
         };
-        let summary =
-            self.collection_callback(callback, &callback_expr.ty, item, callback_result, span)?;
+        let family = substitute::Substitution::family(self, list, false, span, 0)?;
+        let plan = tree_iteration::prepare(self, &family, span)?;
+        let summary = self.collection_callback(
+            callback,
+            &callback_expr.ty,
+            (item, callback_result),
+            plan.as_ref(),
+            span,
+        )?;
         self.work = summary.work;
         let nonempty = self.list_nonempty(list, span, 0)?;
         if nonempty == Predicate::FALSE {
@@ -45,7 +52,6 @@ impl Engine<'_> {
         self.path = self
             .predicates
             .and(parent, nonempty, &mut self.work, span)?;
-        let family = substitute::Substitution::family(self, list, false, span, 0)?;
         let mut substitution = substitute::Substitution::traversal(&summary);
         let output = substitution.apply(self, &[family.clone(), callback.clone()], span)?;
         let output = if builtin == ir::Builtin::ListFilter {
@@ -68,8 +74,8 @@ impl Engine<'_> {
         &mut self,
         callback: &Value,
         callable_type: &Type,
-        item: &Type,
-        result: &Type,
+        signature: (&Type, &Type),
+        plan: Option<&tree_iteration::Plan>,
         span: Span,
     ) -> Checked<Summary> {
         let mut engine = Engine::new(self.program);
@@ -78,12 +84,12 @@ impl Engine<'_> {
         engine.summaries = self.summaries;
         engine.relevance = self.relevance;
         engine.effect_cache = self.effect_cache.clone();
-        let input = engine.fresh(item, Some(0), span, 0)?;
+        let input = tree_iteration::input(&mut engine, signature.0, plan, span)?;
         let shape = engine.effect_shape(callback, span, 0)?;
         let callable = engine.fresh_shaped(callable_type, Some(1), Some(&shape), span, 0)?;
         engine.inputs = vec![input.clone(), callable.clone()];
         engine.used_inputs.extend([0, 1]);
-        let output = engine.invoke(&callable, &[input], result, span, 0)?;
+        let output = engine.invoke(&callable, &[input], signature.1, span, 0)?;
         engine.exit(&output, span, 0)?;
         let output = engine.output(span)?;
         engine.finish(output)

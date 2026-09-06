@@ -36,6 +36,10 @@ pub(super) enum Region {
         guards: Vec<Predicate>,
         variants: Vec<Vec<Value>>,
     },
+    RecursiveCut {
+        layout: usize,
+        origin: Option<usize>,
+    },
     Nominal {
         layout: usize,
         expanded: RefCell<Option<Value>>,
@@ -50,6 +54,7 @@ pub(super) enum Region {
         exact: bool,
     },
     Map {
+        nonempty: Predicate,
         entries: Vec<(Option<Key>, Value)>,
         exact: bool,
     },
@@ -107,10 +112,7 @@ impl Engine<'_> {
                 return self.union_value(types, value, span);
             }
             Type::List(inner) => return self.fresh_list(inner, input, span, depth + 1),
-            Type::Map(_, inner) => Region::Map {
-                entries: vec![(None, self.fresh(inner, input, span, depth + 1)?)],
-                exact: false,
-            },
+            Type::Map(_, inner) => return self.fresh_map(inner, input, span, depth + 1),
             Type::Named(..) => return self.fresh_nominal(ty, input, span, depth),
             Type::Generic(_) if self.mode != Mode::Concrete => Region::Symbolic,
             Type::Infer(_) | Type::Generic(_) | Type::Never => return self.unsupported(span),
@@ -179,15 +181,29 @@ impl Engine<'_> {
                 span,
             );
         }
-        self.charge(self.program.types.len(), span)?;
-        let layout = self
-            .program
-            .types
-            .iter()
-            .find(|layout| layout.ty == *ty)
-            .ok_or_else(|| {
-                Diagnostic::new(span, "Result obligation requires a concrete nominal layout")
-            })?;
+        let index = gate::layout_index(self.program, ty, &mut self.work, span)?;
+        self.charge(self.active_nominals.len(), span)?;
+        if let Some((_, anchor)) = self.active_nominals.iter().find(|(id, _)| *id == index) {
+            return self.recursive_cut(index, *anchor, input, span);
+        }
+        let anchor = self.node(Region::Empty, span)?.node.id;
+        self.active_nominals.push((index, anchor));
+        let value = self.fresh_nominal_fields(index, input, span, depth);
+        self.active_nominals.pop();
+        if let Ok(value) = &value {
+            self.nominal_roots.insert(value.node.id, anchor);
+        }
+        value
+    }
+    /// Expand stored fields once; repeated layout edges become finite, separately accountable cuts.
+    fn fresh_nominal_fields(
+        &mut self,
+        index: usize,
+        input: Option<usize>,
+        span: Span,
+        depth: usize,
+    ) -> Checked<Value> {
+        let layout = &self.program.types[index];
         if layout.storage == ir::LayoutStorage::Unboxed {
             let inner = layout
                 .variants
@@ -272,6 +288,11 @@ impl Engine<'_> {
             result.insert(id, Predicate::TRUE);
         }
         match &value.node.kind {
+            Region::RecursiveCut {
+                origin: Some(id), ..
+            } if !outer => {
+                result.insert(*id, Predicate::TRUE);
+            }
             Region::Nominal { expanded, .. } => {
                 if let Some(value) = expanded.borrow().as_ref() {
                     let found = self.coverage(value, outer, span, depth + 1, cache)?;

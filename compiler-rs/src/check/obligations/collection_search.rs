@@ -20,7 +20,7 @@ impl Engine<'_> {
             return self.unsupported(span);
         };
         let summary =
-            self.collection_callback(callback, &callback_expr.ty, item, &Type::Bool, span)?;
+            self.collection_callback(callback, &callback_expr.ty, (item, &Type::Bool), None, span)?;
         self.work = summary.work;
         let nonempty = self.list_nonempty(list, span, 0)?;
         let parent = self.path;
