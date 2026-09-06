@@ -12,9 +12,13 @@
   "fake_static": "fn target():1\nfn main():json.decode(\"1\",target())\n",
   "local_json": "fn main():\n    let json=1\n    json.decode(\"1\",Int)\n",
   "wrong_text": "fn main(): json.decode(42,Int)\n",
-  "generic_codec": "fn encode(x:a)->Result(String,json.Error):json.encode(x)\nfn main():()\n",
   "newtype_no_derive": "newtype Id=Id(Int)\nfn main():match json.encode(Id(1)):\n    Ok(_) -> ()\n    Err(_) -> ()\n",
   "newtype_result": "newtype Duty derive(Json)=Duty(Result(Int,String))\nfn main():()\n",
   "newtype_null_option": "newtype Empty derive(Json)=Empty(Unit)\nfn main():match json.decode(\"null\",Option(Empty)):\n    Ok(_) -> ()\n    Err(_) -> ()\n",
-  "newtype_map_key": "newtype Key derive(Json)=Key(String)\nfn main():match json.decode(\"\\{\\}\",Map(Key,Int)):\n    Ok(_) -> ()\n    Err(_) -> ()\n"
+  "newtype_map_key": "newtype Key derive(Json)=Key(String)\nfn main():match json.decode(\"\\{\\}\",Map(Key,Int)):\n    Ok(_) -> ()\n    Err(_) -> ()\n",
+  "generic_bad_component": "fn encode(x:a)->Result(String,json.Error):json.encode((x,(n:Int)->n))\nfn main():()\n",
+  "generic_nullable": "fn write(value:Option(a)):json.encode(value)\nfn main()->Result(Unit,json.Error):\n    println(write(Some(()))?)\n    Ok(())\n",
+  "generic_map_key": "fn write(value:Map(k,v)):json.encode(value)\nfn main()->Result(Unit,json.Error):\n    println(write(%{1:2})?)\n    Ok(())\n",
+  "generic_no_derive": "type Hidden:\n    value:Int\nfn write(value):json.encode(value)\nfn main()->Result(Unit,json.Error):\n    println(write(Hidden(1))?)\n    Ok(())\n",
+  "generic_stored_result": "fn produced()->Result(Int,String):Ok(1)\nfn write(value):json.encode(value)\nfn main()->Result(Unit,json.Error):\n    println(write(produced())?)\n    Ok(())\n"
 }

@@ -92,3 +92,39 @@ fn unused_plan_entries_share_the_aggregate_work_budget() {
         .message
         .contains("work limit"));
 }
+
+#[test]
+fn phantom_metadata_never_enables_unsupported_executable_entries() {
+    for arg in [
+        Type::Function(vec![Type::Int], Box::new(Type::Int)),
+        Type::Result(Box::new(Type::Int), Box::new(Type::String)),
+    ] {
+        let ty = Type::Named("Phantom".into(), vec![arg.clone()]);
+        let layout = ir::TypeLayout {
+            ty: ty.clone(),
+            storage: ir::LayoutStorage::Tagged,
+            fields: vec!["value".into()],
+            variants: vec![vec![Type::Int]],
+        };
+        let mut plan = scalar();
+        plan.entries.push(Entry {
+            ty,
+            kind: Kind::Record(vec![Field {
+                name: "value".into(),
+                index: 0,
+                codec: 0,
+                optional: false,
+            }]),
+        });
+        plan.root = 1;
+        plan.validate(&[layout.clone()], Span::default()).unwrap();
+        let mut stored = layout.clone();
+        stored.variants[0][0] = arg.clone();
+        assert!(plan.validate(&[stored], Span::default()).is_err());
+        plan.entries.push(Entry {
+            ty: arg,
+            kind: Kind::Int,
+        });
+        assert!(plan.validate(&[layout], Span::default()).is_err());
+    }
+}

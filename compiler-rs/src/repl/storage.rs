@@ -88,6 +88,9 @@ impl<'a> CodeBudget<'a> {
         self.bytes += std::mem::size_of::<ir::Expr>();
         self.pending.push(Part::Type(&expr.ty));
         match &expr.kind {
+            JsonCodecTemplate { .. } => {
+                return Err("JSON codec template cannot enter executable IR".into())
+            }
             EditorHole { .. } => return Err("editor hole cannot enter executable IR".into()),
             Probe { .. } => return Err("inference probe cannot enter executable IR".into()),
             JsonCodec { input, plan, .. } => {
@@ -139,10 +142,7 @@ impl<'a> CodeBudget<'a> {
                 then_branch,
                 else_branch,
             } => {
-                self.pending
-                    .extend([Part::Expr(condition), Part::Expr(then_branch)]);
-                self.pending
-                    .extend(else_branch.iter().map(|v| Part::Expr(v)));
+                self.conditional(condition, then_branch, else_branch.as_deref());
             }
             Match { value, arms } => self.match_values(value, arms),
             Block(statements) => self.statements(statements),
@@ -152,6 +152,17 @@ impl<'a> CodeBudget<'a> {
             Int(_) | Float(_) | Bool(_) | Local(_) | Unit | Break | Continue => {}
         }
         Ok(())
+    }
+    /// Retain every branch even when its condition is statically false.
+    fn conditional(
+        &mut self,
+        condition: &'a ir::Expr,
+        then_branch: &'a ir::Expr,
+        else_branch: Option<&'a ir::Expr>,
+    ) {
+        self.pending
+            .extend([Part::Expr(condition), Part::Expr(then_branch)]);
+        self.pending.extend(else_branch.map(Part::Expr));
     }
     /// Retain match subjects, pattern payloads, guards and branch bodies in the code budget.
     fn match_values(&mut self, value: &'a ir::Expr, arms: &'a [ir::MatchArm]) {
@@ -355,6 +366,39 @@ mod tests {
         source.functions[0].body.kind =
             ir::ExprKind::Block(vec![ir::Stmt::Expr(returning), ir::Stmt::Expr(hole)]);
         assert!(program_size(&source).unwrap_err().contains("editor hole"));
+    }
+    #[test]
+    fn template_execution_and_retained_inactive_programs_are_rejected() {
+        let mut source = (*program()).clone();
+        let input = source.functions[0].body.clone();
+        let template = ir::Expr {
+            span: input.span,
+            ty: Type::Result(
+                Box::new(Type::String),
+                Box::new(Type::Native(crate::runtime::NativeType::JsonError)),
+            ),
+            kind: ir::ExprKind::JsonCodecTemplate {
+                direction: crate::json_codec::Direction::Encode,
+                target: Type::String,
+                input: Box::new(input.clone()),
+                token: ir::CodecTemplateToken::new(),
+            },
+        };
+        let mut machine = Machine::new(Rc::new(source.clone()), HashMap::new());
+        assert!(
+            matches!(machine.expression(&template),Err(Failure::Message(s)) if s.contains("codec template"))
+        );
+        source.functions[0].body.kind = ir::ExprKind::Block(vec![
+            ir::Stmt::Expr(ir::Expr {
+                span: input.span,
+                ty: Type::Never,
+                kind: ir::ExprKind::Return(Box::new(input)),
+            }),
+            ir::Stmt::Expr(template),
+        ]);
+        assert!(program_size(&source)
+            .unwrap_err()
+            .contains("codec template"));
     }
     #[test]
     fn retained_programs_reject_inference_probes() {

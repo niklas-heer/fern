@@ -1,0 +1,14 @@
+fn input()->String:
+    println("input")
+    "wrong"
+fn decode(text:String)->Result(a,json.Error):json.decode(text,a)
+fn attempt()->Result(Unit,json.Error):
+    defer println("cleanup")
+    let value:Int=decode(input())?
+    println(value)
+    println("unreachable")
+    Ok(())
+fn main():
+    match attempt():
+        Ok(_) -> ()
+        Err(error) -> println(json.error_code(error))

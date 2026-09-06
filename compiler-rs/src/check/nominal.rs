@@ -7,6 +7,8 @@ mod newtypes;
 pub(super) use newtypes::charge_newtype_type;
 
 pub(super) struct Registry {
+    pub(super) codec_predicate_work: std::cell::Cell<usize>,
+    pub(super) codec_template_work: std::cell::Cell<usize>,
     pub(super) codec_work: std::cell::Cell<usize>,
     pub(super) codec_plans: std::cell::RefCell<HashMap<Type, std::rc::Rc<crate::json_codec::Plan>>>,
     pub(super) codec_aliases: HashMap<String, (Vec<String>, Type)>,
@@ -22,6 +24,8 @@ impl Registry {
     /// Validate all forward declarations before checking individual fields.
     pub(super) fn new(program: &ast::Program) -> Checked<Self> {
         let mut result = Self {
+            codec_predicate_work: std::cell::Cell::new(0),
+            codec_template_work: std::cell::Cell::new(0),
             codec_work: std::cell::Cell::new(0),
             codec_plans: Default::default(),
             codec_aliases: program

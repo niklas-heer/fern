@@ -237,3 +237,93 @@ fn unused_codec_inputs_cannot_hide_private_nodes() {
             .contains(message));
     }
 }
+
+fn codec_template_program() -> Program {
+    let mut p = crate::check::check(&crate::parse::parse("fn main()->Int:1\n").unwrap()).unwrap();
+    let input = p.functions[0].body.clone();
+    p.functions[0].body = Expr {
+        span: Span::default(),
+        ty: Type::Result(
+            Box::new(Type::String),
+            Box::new(Type::Native(crate::runtime::NativeType::JsonError)),
+        ),
+        kind: ExprKind::JsonCodecTemplate {
+            direction: crate::json_codec::Direction::Encode,
+            target: Type::Int,
+            input: Box::new(input),
+            token: CodecTemplateToken::new(),
+        },
+    };
+    p
+}
+#[test]
+fn codec_templates_are_private_to_validated_generic_proofs() {
+    let p = codec_template_program();
+    validate_codec_templates(&p, &mut 0).unwrap();
+    assert!(reject_probes(&p)
+        .unwrap_err()
+        .message
+        .contains("codec template"));
+    assert!(crate::qbe::emit(&p)
+        .unwrap_err()
+        .message
+        .contains("codec template"));
+}
+#[test]
+fn codec_template_proof_rejects_mismatched_targets_and_hidden_holes() {
+    let mut p = codec_template_program();
+    if let ExprKind::JsonCodecTemplate { target, .. } = &mut p.functions[0].body.kind {
+        *target = Type::Bool;
+    }
+    assert!(validate_codec_templates(&p, &mut 0).is_err());
+    for editor in [false, true] {
+        let mut p = codec_template_program();
+        if let ExprKind::JsonCodecTemplate { input, .. } = &mut p.functions[0].body.kind {
+            let leaf = input.clone();
+            input.kind = if editor {
+                ExprKind::EditorHole {
+                    token: EditorHoleToken::new(),
+                    receiver: leaf,
+                }
+            } else {
+                ExprKind::Probe {
+                    token: ProbeToken::new(0),
+                    children: vec![*leaf],
+                    bindings: vec![],
+                }
+            };
+        }
+        assert!(validate_codec_templates(&p, &mut 0).is_err());
+    }
+}
+
+#[test]
+fn template_validation_budget_is_shared_across_separate_generic_bodies() {
+    let p = codec_template_program();
+    let mut work = 399_995;
+    assert!(validate_codec_templates(&p, &mut work)
+        .unwrap_err()
+        .message
+        .contains("work limit"));
+    let before = work;
+    assert!(validate_codec_templates(&p, &mut work).is_err());
+    assert!(work > before);
+}
+#[test]
+fn unused_templates_cannot_hide_in_inactive_functions_or_test_publication() {
+    let mut p = codec_template_program();
+    let mut inactive = p.functions[0].clone();
+    inactive.name = "inactive".into();
+    inactive.id = FunctionId(1);
+    p.functions[0].body = Expr {
+        kind: ExprKind::Int(0),
+        ty: Type::Int,
+        span: Span::default(),
+    };
+    p.functions.push(inactive);
+    assert!(reject_probes(&p).is_err());
+    assert!(crate::qbe::emit(&p).is_err());
+    let ast=crate::parse::parse("fn write(value):json.encode(value)\nfn test_codec()->Result(Unit,json.Error):\n    let text=write(42)?\n    println(text)\n    Ok(())\n").unwrap();
+    let checked = crate::check::check_test(&ast, "test_codec").unwrap();
+    reject_probes(&checked).unwrap();
+}

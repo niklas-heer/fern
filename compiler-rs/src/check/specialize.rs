@@ -51,7 +51,10 @@ pub(super) fn run(
             scopes: vec![HashMap::new()],
             local_count: 0,
             expr_count: 0,
-            inference: Inference::default(),
+            inference: Inference {
+                codec_substitutions: substitutions,
+                ..Inference::default()
+            },
             function_return: Type::Unit,
             deferred: false,
             loop_depth: 0,

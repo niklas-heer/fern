@@ -24,6 +24,7 @@ impl Emitter<'_> {
             ExprKind::Field { value, .. }
             | ExprKind::Try(value)
             | ExprKind::Wrap(value)
+            | ExprKind::JsonCodecTemplate { input: value, .. }
             | ExprKind::JsonCodec { input: value, .. }
             | ExprKind::UnionInject { value }
             | ExprKind::UnionWiden { value }

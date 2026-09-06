@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity under both C and Rust frontends on five pinned fixtures, literal paths and all compiler/library source
-- Rust migration: `just rust-check` passing (1175 Rust tests (1176 on Linux; normal parallel capture fixtures restored), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: `just rust-check` passing (1196 Rust tests (1197 on Linux; normal parallel capture fixtures restored), 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
 
@@ -244,7 +244,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [x] Derive transparent JSON codecs for newtypes, preserving full-width payloads without wrapper allocations and distinguishing nullable fields from optional fields (Decision101 J5b).
 - [x] Verify newtype derivation syntax, the 32-trait limit, recovery, queries and incremental edits in native/WASM editor grammar (102 valid, 38 malformed and 41 edits).
 - [ ] Repin and verify the Zed package after the newtype derivation grammar commit.
-- [ ] Extend typed JSON with generic codec constraints (Decision101 J5c).
+- [x] Extend typed JSON with conditional generic codec requirements, exact specialization, private template boundaries and phantom-field semantics (Decision101 J5c; 13 native programs, 22 atomic invalids, native/REPL parity).
 - [ ] Define and implement sum/union wire formats and general/custom Json traits (J6–J7).
 - [x] Remove newly written executable races from native capture tests; preserve timeout/stream/descendant coverage and add 160 concurrent per-run output/status assertions.
 - [ ] Retain direct-child ownership through native documentation/unit-test capture cleanup (Decision102 proposal).

@@ -1,6 +1,8 @@
 //! Bounded typed JSON derivation and concrete plan construction.
 use super::*;
 mod execute;
+mod predicates;
+pub(super) use predicates::{is_json, require, retention};
 mod plan;
 #[cfg(test)]
 use plan::Plans;
@@ -42,7 +44,9 @@ impl<'a> Planner<'a> {
     /// Validate a whole candidate before recursive hashing, cloning or cache lookup.
     fn type_work(&mut self, ty: &Type, span: Span) -> Checked<()> {
         crate::unions::bound(ty, span)?;
-        validate_type_structure(ty, span, true)?;
+        if !self.symbolic {
+            validate_type_structure(ty, span, true)?;
+        }
         let mut pending = vec![ty];
         while let Some(ty) = pending.pop() {
             self.charge(1, span)?;

@@ -377,14 +377,10 @@ impl Emitter<'_> {
             | ExprKind::Defer(_)
             | ExprKind::Match { .. }
             | ExprKind::If { .. } => self.flow_expr(expr, locals, depth + 1)?,
-            ExprKind::EditorHole { .. } => {
-                return Err(invalid(expr.span, "editor hole cannot enter executable IR"))
-            }
-            ExprKind::Probe { .. } => {
-                return Err(invalid(
-                    expr.span,
-                    "inference probe cannot enter executable IR",
-                ))
+            ExprKind::JsonCodecTemplate { .. }
+            | ExprKind::EditorHole { .. }
+            | ExprKind::Probe { .. } => {
+                return Err(private_expression(expr));
             }
             ExprKind::Lambda { .. } | ExprKind::FunctionValue { .. } => {
                 return Err(invalid(expr.span, "unlifted callable expression"));
@@ -1389,4 +1385,15 @@ impl Emitter<'_> {
         ));
         Ok(buffer)
     }
+}
+
+/// Keep diagnostics for private proof nodes consistent before any executable lowering.
+fn private_expression(expr: &Expr) -> Exit {
+    let message = match expr.kind {
+        ExprKind::JsonCodecTemplate { .. } => "JSON codec template cannot enter executable IR",
+        ExprKind::EditorHole { .. } => "editor hole cannot enter executable IR",
+        ExprKind::Probe { .. } => "inference probe cannot enter executable IR",
+        _ => "invalid private expression",
+    };
+    invalid(expr.span, message)
 }

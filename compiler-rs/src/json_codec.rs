@@ -75,11 +75,17 @@ impl Validation {
                     self.charge(name.len())?;
                     args.as_slice()
                 }
-                Type::Tuple(args) => args.as_slice(),
+                Type::Tuple(args) | Type::Union(args) => args.as_slice(),
                 Type::List(a) | Type::Option(a) => std::slice::from_ref(a.as_ref()),
-                Type::Map(a, b) => {
+                Type::Map(a, b) | Type::Result(a, b) => {
                     self.charge(2)?;
                     pending.extend([a.as_ref(), b.as_ref()]);
+                    continue;
+                }
+                Type::Function(args, result) => {
+                    self.charge(args.len() + 1)?;
+                    pending.extend(args);
+                    pending.push(result);
                     continue;
                 }
                 Type::Int
@@ -87,7 +93,8 @@ impl Validation {
                 | Type::Bool
                 | Type::String
                 | Type::Unit
-                | Type::Native(NativeType::JsonValue) => &[],
+                | Type::Range
+                | Type::Native(_) => &[],
                 _ => {
                     return Err(
                         self.error("JSON codec plan contains a nonconcrete or unsupported type")

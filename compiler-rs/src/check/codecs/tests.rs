@@ -109,3 +109,102 @@ fn static_target_aliases_expand_before_dependency_and_specialization_analysis() 
         .callees
         .is_empty());
 }
+
+#[test]
+fn conditional_predicates_share_budget_across_queries_without_reset() {
+    let program = ast::Program::default();
+    let registry = nominal::Registry::new(&program).unwrap();
+    let inference = Inference::default();
+    registry.codec_predicate_work.set(WORK_LIMIT - 5);
+    require(
+        &inference,
+        &registry,
+        schemes::Capability::Json,
+        &Type::Int,
+        Span::default(),
+    )
+    .unwrap();
+    let error = require(
+        &inference,
+        &registry,
+        schemes::Capability::Json,
+        &Type::Int,
+        Span::default(),
+    )
+    .unwrap_err();
+    assert!(error.message.contains("work limit"));
+}
+#[test]
+fn conditional_recursive_graph_checks_siblings_and_phantom_arguments() {
+    let p=crate::parse::parse("type Node(a) derive(Json):\n    children:List(Node(a))\n    value:a\ntype Phantom(a) derive(Json):\n    value:Int\n").unwrap();
+    let registry = nominal::Registry::new(&p).unwrap();
+    let bad = Type::Function(vec![], Box::new(Type::Int));
+    let inference = Inference::default();
+    let node = Type::Named("Node".into(), vec![bad.clone()]);
+    assert!(require(
+        &inference,
+        &registry,
+        schemes::Capability::Json,
+        &node,
+        Span::default()
+    )
+    .is_err());
+    let phantom = Type::Named("Phantom".into(), vec![bad]);
+    require(
+        &inference,
+        &registry,
+        schemes::Capability::Json,
+        &phantom,
+        Span::default(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn conditional_discharge_matches_concrete_plan_for_small_type_combinations() {
+    let program = crate::parse::parse(
+        "type Box(a) derive(Json):\n    value:a\nnewtype Wrap(a) derive(Json)=Wrap(a)\n",
+    )
+    .unwrap();
+    let expanded = super::super::aliases::expand(&program).unwrap();
+    let program = expanded.program.as_ref();
+    let registry = nominal::Registry::new(program).unwrap();
+    let mut types = vec![
+        Type::Int,
+        Type::Float,
+        Type::Bool,
+        Type::String,
+        Type::Unit,
+        Type::Native(runtime::NativeType::JsonValue),
+        Type::Result(Box::new(Type::Int), Box::new(Type::String)),
+    ];
+    for _ in 0..2 {
+        let mut next = Vec::new();
+        for ty in &types {
+            for candidate in [
+                Type::List(Box::new(ty.clone())),
+                Type::Option(Box::new(ty.clone())),
+                Type::Named("Box".into(), vec![ty.clone()]),
+                Type::Named("Wrap".into(), vec![ty.clone()]),
+                Type::Map(Box::new(Type::String), Box::new(ty.clone())),
+            ] {
+                let accepted = require(
+                    &Inference::default(),
+                    &registry,
+                    schemes::Capability::Json,
+                    &candidate,
+                    Span::default(),
+                )
+                .is_ok();
+                let mut planner = Planner::new(program, &registry);
+                assert_eq!(
+                    accepted,
+                    planner.plan(&candidate, Span::default(), 0).is_ok(),
+                    "{candidate:?}"
+                );
+                next.push(candidate);
+            }
+        }
+        types = next;
+    }
+}

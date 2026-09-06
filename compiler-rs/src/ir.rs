@@ -1,4 +1,5 @@
 //! Checked expressions retain semantic types and resolved identities for lowering.
+mod codec_templates;
 use crate::{
     ast::{BinaryOp, UnaryOp},
     Constructor, Span, Type,
@@ -84,8 +85,26 @@ impl EditorHoleToken {
     }
 }
 
+/// Unforgeable identity for a discarded generic codec proof, never executable IR.
+/// ```compile_fail
+/// let token = fern_prototype::ir::CodecTemplateToken::new();
+/// ```
+#[derive(Clone, Debug)]
+pub struct CodecTemplateToken(());
+impl CodecTemplateToken {
+    pub(crate) fn new() -> Self {
+        Self(())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    JsonCodecTemplate {
+        direction: crate::json_codec::Direction,
+        input: Box<Expr>,
+        target: Type,
+        token: CodecTemplateToken,
+    },
     /// Concrete codec with exactly one executable input; static targets never enter IR.
     JsonCodec {
         direction: crate::json_codec::Direction,
@@ -337,7 +356,8 @@ pub(crate) fn children(expr: &Expr) -> Vec<&Expr> {
         ExprKind::Invoke { callee, args } => std::iter::once(callee.as_ref())
             .chain(args.iter())
             .collect(),
-        ExprKind::JsonCodec { input: value, .. }
+        ExprKind::JsonCodecTemplate { input: value, .. }
+        | ExprKind::JsonCodec { input: value, .. }
         | ExprKind::UnionInject { value }
         | ExprKind::UnionWiden { value }
         | ExprKind::Wrap(value)
@@ -380,6 +400,22 @@ pub(crate) fn children(expr: &Expr) -> Vec<&Expr> {
 
 /// Reject inference probes and editor holes, including syntactically unreachable expressions.
 pub(crate) fn reject_probes(program: &Program) -> Result<(), crate::Diagnostic> {
+    reject_incomplete(program, false, &mut 0)
+}
+
+/// Permit only genuine codec template tokens for a private generic effect proof.
+pub(crate) fn validate_codec_templates(
+    program: &Program,
+    work: &mut usize,
+) -> Result<(), crate::Diagnostic> {
+    reject_incomplete(program, true, work)
+}
+
+fn reject_incomplete(
+    program: &Program,
+    templates: bool,
+    type_work: &mut usize,
+) -> Result<(), crate::Diagnostic> {
     let mut count = 0;
     for function in &program.functions {
         let mut pending = vec![(&function.body, 0)];
@@ -390,6 +426,15 @@ pub(crate) fn reject_probes(program: &Program) -> Result<(), crate::Diagnostic> 
                     expr.span,
                     "typed IR publication complexity limit exceeded",
                 ));
+            }
+            if !templates && matches!(expr.kind, ExprKind::JsonCodecTemplate { .. }) {
+                return Err(crate::Diagnostic::new(
+                    expr.span,
+                    "JSON codec template cannot enter executable IR",
+                ));
+            }
+            if templates {
+                codec_templates::validate(expr, type_work)?;
             }
             if matches!(expr.kind, ExprKind::EditorHole { .. }) {
                 return Err(crate::Diagnostic::new(

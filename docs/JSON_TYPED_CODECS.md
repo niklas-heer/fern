@@ -37,7 +37,7 @@ are rejected. Int conversion preserves the full signed 64-bit range; Float and
 text conversion reuse the dynamic API's existing exact adapters.
 
 This checkpoint does not implement general Json traits, user codec implementations,
-generic codec function constraints, sums, or unions.
+sums, or unions.
 Unsupported derivations are diagnosed even when unused. Result-bearing values,
 including nested fields or containers, cannot be serialized: converting a Result
 to opaque JSON does not acknowledge its error obligation.
@@ -121,3 +121,31 @@ Regular recursive newtypes such as a wrapper over List of itself share the same
 finite-graph and runtime-budget rules as recursive records. Strict unboxed cycles
 remain invalid. Every transparent wrapper layer spends work and depth, even
 though it adds no native allocation. Result-bearing payloads remain unsupported.
+
+## Generic codec functions
+
+Source wrappers retain conditional codec requirements through inference, explicit
+generic signatures, recursive calls and function values:
+
+```fern
+fn write(value): json.encode(value)
+fn read(text: String) -> Result(a, json.Error): json.decode(text, a)
+```
+
+Each concrete call must satisfy the retained requirements. `Json` requires a
+supported wire representation; `JsonNonNull` additionally excludes null for Option
+payloads; `JsonStringKey` requires exactly String for Map keys. These are inferred
+compiler capabilities, not new source `where` syntax or user-defined traits.
+Source wrappers can be passed as callbacks; decode's target remains static.
+
+Requirements follow actual stored fields. An unused phantom type parameter creates
+no codec requirement, even when it names a function or Result. A real stored
+function or Result still rejects, including in an unused derived declaration.
+
+Generic checking retains real input effects in a private codec template. Concrete
+specialization validates the exact target again and creates the ordinary complete
+codec plan. Templates cannot be executed, lowered, or retained in REPL state;
+public IR validation rejects them even in inactive code. There is no default
+concrete witness. Predicate checking and generic-template validation each share a
+400,000-unit allowance across their respective pass; concrete plan and runtime
+limits above remain unchanged.

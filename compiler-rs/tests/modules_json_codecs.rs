@@ -116,3 +116,13 @@ fn imported_derived_newtypes_keep_type_identity_and_shift_trait_spans() {
         .message
         .contains("private"));
 }
+
+#[test]
+fn generic_static_targets_keep_module_identity_and_source_type_namespace() {
+    let project = Project::new();
+    project.write("codec.fn","pub fn read(text:String)->Result(a,json.Error):json.decode(text,a)\npub fn write(value:a)->Result(String,json.Error):json.encode(value)\n");
+    let main=project.write("main.fn","import codec as c\nfn main()->Result(Unit,json.Error):\n    let value:Int=c.read(\"42\")?\n    println(c.write(value)?)\n    Ok(())\n");
+    let loaded = modules::load(&main).unwrap();
+    let typed = fern_prototype::check::check(&loaded.program).unwrap();
+    fern_prototype::qbe::emit(&typed).unwrap();
+}

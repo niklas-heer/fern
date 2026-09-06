@@ -161,13 +161,9 @@ impl Machine {
     fn node(&mut self, expr: &ir::Expr) -> Eval<Value> {
         use ir::ExprKind::*;
         match &expr.kind {
-            JsonCodec {
-                direction,
-                input,
-                plan,
-            } => self.json_codec(*direction, input, plan),
-            EditorHole { .. } => Err(fault("editor hole cannot enter executable IR")),
-            Probe { .. } => Err(fault("inference probe cannot enter executable IR")),
+            JsonCodec { .. } | JsonCodecTemplate { .. } | EditorHole { .. } | Probe { .. } => {
+                self.codec_node(expr)
+            }
             UnionInject { value } => {
                 let member = value.ty.clone();
                 let value = self.expression(value)?;
@@ -226,6 +222,23 @@ impl Machine {
             } => self.conditional(condition, then_branch, else_branch.as_deref()),
             Match { value, arms } => self.match_expression(value, arms),
             Block(statements) => self.lexical_block(statements),
+        }
+    }
+    /// Execute concrete codecs and reject every private checking artifact.
+    fn codec_node(&mut self, expr: &ir::Expr) -> Eval<Value> {
+        use ir::ExprKind::*;
+        match &expr.kind {
+            JsonCodec {
+                direction,
+                input,
+                plan,
+            } => self.json_codec(*direction, input, plan),
+            JsonCodecTemplate { .. } => {
+                Err(fault("JSON codec template cannot enter executable IR"))
+            }
+            EditorHole { .. } => Err(fault("editor hole cannot enter executable IR")),
+            Probe { .. } => Err(fault("inference probe cannot enter executable IR")),
+            _ => Err(fault("invalid interactive codec node")),
         }
     }
     /// Preserve early Result propagation without changing the surrounding function's cleanup path.

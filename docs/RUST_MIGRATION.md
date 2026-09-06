@@ -1188,3 +1188,24 @@ without retries or serialization, alongside macOS checks and Clippy. Full platfo
 gates now use normal parallel Cargo execution. The separate existing lifecycle
 audit—retaining child identity until process-group cleanup—remains Decision102
 work and is not claimed fixed by this fixture change.
+
+
+## Conditional generic JSON requirements (J5c) — 2026-09-06
+
+Generic codec wrappers now infer and retain Json, non-null payload and exact
+String-key requirements through explicit signatures, recursive calls and source
+function values. Concrete specialization validates the exact static decoder type
+and produces the existing full-width plan. Phantom type parameters introduce no
+stored codec requirement; actual function and Result payloads remain unsupported.
+
+Private codec templates retain input effects during generic checking. Their
+constructor is inaccessible to external IR callers, relationships and aggregate
+work are validated, and ordinary IR/QBE/REPL publication rejects them. Runtime
+representation, numeric rules, error paths and operation budgets remain unchanged.
+A 210-case structural oracle compares conditional discharge to concrete eligibility.
+Sum/union formats and general/custom traits remain subsequent stages.
+
+Integrated macOS and Linux gates pass 1,196 and 1,197 Rust tests respectively,
+with normal parallel test execution, thirteen typed native programs and twenty-two
+atomic invalid cases, the shared REPL corpus, and native runtime debug/release/
+sanitizer checks. Prior dynamic JSON and native compiler suites remain green.

@@ -51,6 +51,7 @@ struct Signature {
 }
 #[derive(Default)]
 struct Inference {
+    codec_substitutions: HashMap<String, Type>,
     newtypes: std::rc::Rc<HashMap<String, (Vec<String>, Type)>>,
     newtype_work: std::rc::Rc<std::cell::Cell<usize>>,
     bindings: Vec<Option<Type>>,
@@ -1704,7 +1705,16 @@ impl Checker<'_> {
         shapes::reject(expr)?;
         expr.ty = self.inference.concrete(&expr.ty, expr.span)?;
         self.nominal_requirements(&expr.ty, expr.span)?;
+        self.finalize_children(expr)?;
+        self.finalize_union_conversion(expr)
+    }
+
+    /// Normalize each executable child while retaining private template metadata only in proofs.
+    fn finalize_children(&self, expr: &mut ir::Expr) -> Checked<()> {
         match &mut expr.kind {
+            ir::ExprKind::JsonCodecTemplate { input, target, .. } => {
+                self.finalize_codec_template(input, target, expr.span)?;
+            }
             ir::ExprKind::EditorHole { receiver, .. } => {
                 self.finalize_member_hole(receiver, expr.span)?;
             }
@@ -1767,7 +1777,7 @@ impl Checker<'_> {
             ir::ExprKind::Block(stmts) => self.finalize_block(stmts)?,
             _ => {}
         }
-        self.finalize_union_conversion(expr)
+        Ok(())
     }
 
     /// Normalize a computed callable before its ordered argument expressions.

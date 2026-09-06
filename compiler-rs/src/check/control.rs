@@ -252,6 +252,7 @@ pub(super) fn strict_divergence(kind: ir::ExprKind, ty: Type) -> TypedKind {
         For {
             iterable: value, ..
         }
+        | JsonCodecTemplate { input: value, .. }
         | JsonCodec { input: value, .. }
         | UnionInject { value }
         | UnionWiden { value }

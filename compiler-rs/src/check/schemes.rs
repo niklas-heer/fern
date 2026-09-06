@@ -3,6 +3,9 @@ use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum Capability {
+    Json,
+    JsonNonNull,
+    JsonStringKey,
     Add,
     Numeric,
     Order,
@@ -15,9 +18,9 @@ pub(super) enum Capability {
 
 #[derive(Clone, Debug)]
 pub(super) struct Requirement {
-    capability: Capability,
-    ty: Type,
-    span: Span,
+    pub(super) capability: Capability,
+    pub(super) ty: Type,
+    pub(super) span: Span,
 }
 
 pub(super) struct Call {
@@ -35,6 +38,7 @@ impl Capability {
     /// Mirror concrete language domains; representation width never determines membership.
     fn accepts(self, ty: &Type) -> bool {
         match self {
+            Self::Json | Self::JsonNonNull | Self::JsonStringKey => false,
             Self::Add => matches!(ty, Type::Int | Type::Float | Type::String),
             Self::Numeric | Self::Order => matches!(ty, Type::Int | Type::Float),
             Self::MapKey => scalar(ty),
@@ -47,6 +51,9 @@ impl Capability {
     /// Keep intrinsic diagnostics meaningful at both definitions and instantiated call sites.
     fn message(self) -> &'static str {
         match self {
+            Self::Json => "type requires a Json codec",
+            Self::JsonNonNull => "Json Option payload must not accept null",
+            Self::JsonStringKey => "JSON object keys must have type String",
             Self::Add => "addition operator requires Int, Float, or String operands",
             Self::Numeric => "numeric operator requires Int or Float operands",
             Self::Order => "ordering operator requires Int or Float operands",
@@ -229,7 +236,7 @@ impl Checker<'_> {
             arguments,
             span,
         };
-        instantiate_call(&call, signature, &self.inference)?;
+        instantiate_call(&call, signature, &self.inference, self.registry)?;
         if self.inference.template {
             self.inference.scheme_calls.borrow_mut().push(call);
         }
@@ -342,7 +349,17 @@ fn check_scheme(
     for ty in signature.params.iter().chain([&signature.result]) {
         checker.inference.concrete(ty, function.span)?;
     }
-    checker.function(function)?;
+    let checked = checker.function(function)?;
+    let mut proof_work = registry.codec_template_work.get();
+    let proof = ir::validate_codec_templates(
+        &ir::Program {
+            functions: vec![checked],
+            types: Vec::new(),
+        },
+        &mut proof_work,
+    );
+    registry.codec_template_work.set(proof_work);
+    proof?;
     let calls = checker.inference.scheme_calls.into_inner();
     Ok((
         Scheme {
@@ -380,10 +397,16 @@ fn propagate(
             returns::charge(&inference, Span::default())?;
             inference.template_names = signatures[&scheme.name].generics.iter().cloned().collect();
             for call in &scheme.calls {
-                instantiate_call(call, &signatures[&names[call.target.0]], &inference)?;
+                instantiate_call(
+                    call,
+                    &signatures[&names[call.target.0]],
+                    &inference,
+                    registry,
+                )?;
             }
             let target = signatures.get_mut(&scheme.name).expect("known scheme");
             for requirement in inference.requirements.take() {
+                codecs::retention(registry, &requirement, &target.requirements)?;
                 changed |= retain_requirement(&mut target.requirements, requirement, &inference)?;
             }
         }
@@ -394,7 +417,12 @@ fn propagate(
 }
 
 /// Substitute requirements through direct calls and function values without rechecking bodies.
-fn instantiate_call(call: &Call, signature: &Signature, inference: &Inference) -> Checked<()> {
+fn instantiate_call(
+    call: &Call,
+    signature: &Signature,
+    inference: &Inference,
+    registry: &nominal::Registry,
+) -> Checked<()> {
     returns::charge(inference, call.span)?;
     for argument in &call.arguments {
         returns::charge_output(inference, argument, call.span)?;
@@ -406,14 +434,19 @@ fn instantiate_call(call: &Call, signature: &Signature, inference: &Inference) -
         .zip(call.arguments.iter().cloned())
         .collect();
     for requirement in &signature.requirements {
+        codecs::retention(registry, requirement, &[])?;
         let ty = nominal::substitute(&requirement.ty, &values)?;
-        inference.require(requirement.capability, &ty, call.span)?;
+        if codecs::is_json(requirement.capability) {
+            codecs::require(inference, registry, requirement.capability, &ty, call.span)?;
+        } else {
+            inference.require(requirement.capability, &ty, call.span)?;
+        }
     }
     Ok(())
 }
 
 /// Bound linear deduplication scans as well as newly retained obligations.
-fn retain_requirement(
+pub(super) fn retain_requirement(
     requirements: &mut Vec<Requirement>,
     requirement: Requirement,
     inference: &Inference,
@@ -484,8 +517,13 @@ mod tests {
             arguments: vec![Type::Tuple(vec![Type::Int; 10])],
             span: Span::default(),
         };
-        let error = instantiate_call(&call, &signature, &inference)
-            .expect_err("type substitution setup cannot bypass the shared work budget");
+        let error = instantiate_call(
+            &call,
+            &signature,
+            &inference,
+            &nominal::Registry::new(&ast::Program::default()).unwrap(),
+        )
+        .expect_err("type substitution setup cannot bypass the shared work budget");
         assert!(error.message.contains("inference work limit"));
     }
 }
