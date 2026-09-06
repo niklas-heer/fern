@@ -1031,3 +1031,19 @@ syntax and edit cases, reproducible packaging and hostile-input checks. Isolated
 actual Zed runs verify initialization, opening a source and clean diagnostics through
 both the configured override and package discovery. This is local verification;
 the grammar and extension have not been published.
+
+## Project formatting — 2026-09-06
+
+`fern-rs fmt src/` formats a bounded directory of Fern sources. The matching
+`fern-rs fmt --check src/` reports every dirty path in sorted order without writing;
+the flag also works after the directory. Hidden/build/dependency directories and
+child symlinks are skipped. Explicit file and root-directory symlinks remain supported.
+
+Every source is validated before any file is staged. All changed files are staged
+with their original permissions before the first atomic per-file rename. Syntax,
+input-budget and staging failures leave originals untouched. Publication is not a
+project transaction: a later rename failure may follow earlier completed changes.
+Discovery limits are 256 files, 8192 entries, 32 levels and 4096-byte paths; input is
+at most 1 MiB per file and 8 MiB total, with a separate 8 MiB formatted-output cap.
+Twelve new regressions cover these boundaries, exclusions, sorted diagnostics,
+read-only checks and staging cleanup, alongside all six existing file-check tests.

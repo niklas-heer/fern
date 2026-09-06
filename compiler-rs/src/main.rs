@@ -2,13 +2,14 @@
 #![forbid(unsafe_code)]
 mod doctest_cli;
 mod documentation_cli;
+mod format_cli;
 mod native;
+mod source_directory;
 use fern_prototype::{check, modules, qbe};
 use std::{
     env,
     ffi::OsString,
     fs,
-    io::Read,
     path::{Path, PathBuf},
     process::{Command, ExitCode},
 };
@@ -32,8 +33,8 @@ Run arguments: fern-rs run source.fn -- [arguments]\n\
 Subset: generic functions, custom types, modules, Int/Bool/String, List/Option/Result, guarded match, and Result ?.\n\
 Documentation: fern-rs doc <source.fn|directory> [--html] [-o output] generates source documentation.\n\
 Tests: fern-rs test --doc [source.fn|directory] executes documentation examples.\n\
-Formatting: fern-rs fmt source.fn updates the file after syntax validation.\n\
-Format validation: fern-rs fmt --check source.fn checks canonical formatting without writing.\n\
+Formatting: fern-rs fmt <source.fn|directory> updates sources after validating every file.\n\
+Format validation: fern-rs fmt --check <source.fn|directory> checks canonical formatting without writing.\n\
 Interactive evaluation: fern-rs repl retains successful bindings and typed functions.\n\
 Editor protocol: fern-rs lsp communicates over standard input/output.\n\
 Native builds: run just rust-build; FERN_QBE and FERN_RUNTIME_LIB override backend paths."
@@ -97,7 +98,7 @@ Native builds: run just rust-build; FERN_QBE and FERN_RUNTIME_LIB override backe
 /// Parse and check source before producing any artifacts or running backend tools.
 fn run(options: Options) -> Result<u8, String> {
     if options.command == "fmt" {
-        return format_file(&options.source, options.format_check);
+        return format_cli::run(&options.source, options.format_check);
     }
     let loaded = modules::load(&options.source).map_err(|error| error.message)?;
     let typed = check::check(&loaded.program).map_err(|error| loaded.render(error))?;
@@ -132,48 +133,6 @@ fn run(options: Options) -> Result<u8, String> {
     }
     #[cfg(not(unix))]
     Ok(status.code().unwrap_or(1) as u8)
-}
-
-/// Validate formatting before atomically replacing the canonical source, preserving permissions.
-/// Reads are bounded; failed formatting and writes leave the original source intact.
-fn format_file(source: &Path, check_only: bool) -> Result<u8, String> {
-    let path = source
-        .canonicalize()
-        .map_err(|e| format!("{}: {e}", source.display()))?;
-    let mut text = String::new();
-    fs::File::open(&path)
-        .map_err(|e| e.to_string())?
-        .take(1024 * 1024 + 1)
-        .read_to_string(&mut text)
-        .map_err(|e| e.to_string())?;
-    let formatted = fern_prototype::format::format(&text).map_err(|e| {
-        let prefix = &text[..e.span.start.min(text.len())];
-        let line = prefix.bytes().filter(|b| *b == b'\n').count() + 1;
-        format!("{}:{line}: error: {}", source.display(), e.message)
-    })?;
-    if check_only {
-        return if text == formatted {
-            Ok(0)
-        } else {
-            Err(format!("{}: formatting changes required", source.display()))
-        };
-    }
-    if text != formatted {
-        let parent = path.parent().ok_or("source has no parent directory")?;
-        let workspace = native::Workspace::new(parent).map_err(|e| e.to_string())?;
-        let staged = workspace.file("formatted.fn");
-        fs::write(&staged, formatted).map_err(|e| e.to_string())?;
-        fs::set_permissions(
-            &staged,
-            fs::metadata(&path)
-                .map_err(|e| e.to_string())?
-                .permissions(),
-        )
-        .map_err(|e| e.to_string())?;
-        fs::rename(staged, path).map_err(|e| e.to_string())?;
-    }
-    println!("Formatted {}", source.display());
-    Ok(0)
 }
 
 /// Resolve `output` beside its canonical parent and reject aliases of `source`.

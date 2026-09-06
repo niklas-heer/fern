@@ -59,52 +59,7 @@ pub(super) fn run(root: &Path, output: Option<&Path>, format: Output) -> Result<
     Ok(0)
 }
 
-/// Traverse without following child links; bound depth, entries, path bytes and source count.
+/// Discover documentation sources using the shared bounded traversal.
 pub(super) fn discover(root: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut pending = vec![(root.to_path_buf(), 0)];
-    let mut files = Vec::new();
-    let mut count = 0;
-    while let Some((directory, depth)) = pending.pop() {
-        if depth > 32 {
-            return Err("documentation directory nesting exceeds 32".into());
-        }
-        for entry in
-            fs::read_dir(&directory).map_err(|error| format!("{}: {error}", directory.display()))?
-        {
-            count += 1;
-            if count > 8192 {
-                return Err("documentation directory entry limit exceeded".into());
-            }
-            let entry = entry.map_err(|error| error.to_string())?;
-            let path = entry.path();
-            if path.as_os_str().len() > 4096 {
-                return Err("documentation path exceeds 4096 bytes".into());
-            }
-            let kind = entry.file_type().map_err(|error| error.to_string())?;
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if name.starts_with('.') || kind.is_symlink() {
-                continue;
-            }
-            if kind.is_dir() {
-                if !matches!(
-                    name.as_ref(),
-                    "target" | "build" | "bin" | "deps" | "node_modules"
-                ) {
-                    pending.push((path, depth + 1));
-                }
-            } else if kind.is_file() && path.extension().is_some_and(|extension| extension == "fn")
-            {
-                if files.len() == 256 {
-                    return Err("documentation file limit exceeds 256".into());
-                }
-                files.push(path);
-            }
-        }
-    }
-    files.sort();
-    if files.is_empty() {
-        return Err("documentation directory contains no Fern source files".into());
-    }
-    Ok(files)
+    super::super::source_directory::discover(root, "documentation")
 }

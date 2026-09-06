@@ -96,12 +96,15 @@ Unsupported syntax produces diagnostics. Gaps include actor execution, named
 arguments and full private signature generalization.
 Full release parity remains migration work.
 
-`fmt` formats the supported syntax in place, preserves comments, and verifies that
-the complete syntax tree remains equivalent before replacing the file atomically.
+`fmt source.fn` and `fmt src/` format supported syntax in place, preserve comments,
+and verify that each complete syntax tree remains equivalent. Directory formatting
+validates all selected sources and stages all changed files before any replacement;
+publication is atomic per file. Hidden/build/dependency directories and child
+symlinks are skipped. `fmt --check src/` reports all dirty files without writing.
 Comments inside multiline arguments may move adjacent to their statement. Invalid
-source remains untouched. Every generic body is checked before specialization,
-including unused definitions; concrete instantiation supplies a second validation
-boundary.
+source leaves the selected files untouched. See the [directory formatting limits](../DECISIONS.md#99-format-source-directories-after-complete-input-validation).
+Every generic body is checked before specialization, including unused definitions;
+concrete instantiation supplies a second validation boundary.
 
 An expression such as `let empty = []` or `let missing = None` needs enough later
 usage or an annotation to determine its payload type. For example,
