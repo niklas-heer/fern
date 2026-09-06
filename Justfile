@@ -245,6 +245,7 @@ check:
     ./scripts/check_style src lib
     python3 scripts/test_style_default.py
     python3 scripts/test_qbe_apple_registers.py
+    python3 scripts/test_native_test_supervisor.py
     python3 scripts/test_c_int64.py
     python3 scripts/test_process_frontends.py --compiler bin/fern
     python3 scripts/test_stderr_frontends.py --compiler bin/fern
@@ -459,6 +460,7 @@ help:
 [private]
 _build-rust-backend:
     {{cc}} {{base_cflags}} compiler-rs/backend/qbe_driver.c build/qbe_*.o -lm -o bin/fern-qbe
+    {{cc}} {{base_cflags}} tools/test_supervisor.c -o bin/fern-test-supervisor
 
 # Build the independent Rust frontend and reusable QBE process adapter
 rust-build: debug
@@ -477,6 +479,7 @@ zed-package:
 # Rust safety/style/unit gates and native specification/differential checks
 rust-check: rust-build
     python3 scripts/test_qbe_apple_registers.py
+    python3 scripts/test_native_test_supervisor.py
     cargo fmt --manifest-path compiler-rs/Cargo.toml -- --check
     cargo clippy --locked --manifest-path compiler-rs/Cargo.toml --all-targets -- -D warnings
     cargo test --locked --manifest-path compiler-rs/Cargo.toml

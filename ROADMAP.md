@@ -250,7 +250,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [ ] Define and implement sum/union wire formats and general/custom Json traits (J6–J7).
 - [x] Reserve an ABI-permitted Apple arm64 QBE scratch register, verify swaps/calls/spills and independent native outputs, and preserve generic Linux assembly (Decision104).
 - [x] Remove newly written executable races from native capture tests; preserve timeout/stream/descendant coverage and add 160 concurrent per-run output/status assertions.
-- [ ] Retain direct-child ownership through native documentation/unit-test capture cleanup (Decision102 proposal).
+- [x] Retain direct-child ownership through native unit/doc test cleanup and validate the framed safe-Rust adapter (Decision102).
 - [ ] Verify default-command migration to Rust, retaining C as an explicit bootstrap/reference executable and documenting its legacy JSON source contract (Decision96).
 - [ ] Implement HTTP serving and the broader SQL query/resource APIs described in the design.
 - [ ] Complete function clauses/pattern parameters, labeled calls, aliases/newtypes/unions, traits/constraints and full private signature inference through native execution.

@@ -22,7 +22,8 @@ just rust-build
 just rust-check
 ```
 
-For frontend-only work, no C build or native dependencies are necessary:
+Frontend compilation needs no C runtime build. The complete Cargo test suite
+compiles a small native supervisor fixture with the host C compiler:
 
 ```sh
 cargo test --locked --offline --manifest-path compiler-rs/Cargo.toml
@@ -35,6 +36,19 @@ The helper and archive are located beside `fern-rs`, then in the development
 checkout. `FERN_QBE` and `FERN_RUNTIME_LIB` override their paths; `CC` selects a
 single compiler executable (not a shell command). `run source.fn -- args` forwards
 literal arguments, available through `System.arg`, `System.args`, and `System.args_count`.
+
+Native documentation/unit tests additionally require `fern-test-supervisor`, built by
+`just rust-build` (and the Rust release build). Discovery uses
+`FERN_TEST_SUPERVISOR`, an executable sibling, then the development `bin` directory.
+An absent or incompatible helper fails explicitly; there is no post-reap group-kill
+fallback. The helper is a trusted executable component, not an untrusted protocol
+server. Rust takes the stdin liveness guard before waiting, validates the bounded
+version-one binary frame and EOF, and uses no detached readers or numerical PID signals.
+Each output stream is limited to 256 KiB. Positive deadlines up to 60 seconds round
+up to milliseconds and initiate cleanup; kernel reaping can extend elapsed time.
+The native helper has another 1 second to publish after cleanup. Escaped process
+groups and deliberate same-user namespace races are outside containment. Native
+exit125 remains a test result, separate from helper transport failure.
 
 ## Supported language
 

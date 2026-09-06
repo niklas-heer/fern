@@ -1300,3 +1300,18 @@ Forty-two source cases independently pass ordinary parsing/type checking before
 their expected handling acceptance/rejection is verified. The existing accepted
 corpus remains 247/247. Mutual structural induction, recursive builders and richer
 recursive callable equations remain open; see [the contract](RESULT_HANDLING.md).
+
+
+## Retained native unit/doc test supervision (Decision102) — 2026-09-06
+
+The native test helper retains the direct child through group cleanup, then reaps
+it exactly once. Safe Rust validates complete bounded binary frames and keeps the
+stdin liveness guard open through wait. There are no detached Rust output readers
+or numerical test-group signals. Ordinary exit125 stays distinct from helper
+transport failure. Debug and Rust release builds include the helper component.
+
+Native lifecycle/protocol/ownership/cancellation/concurrency checks pass in debug,
+release and sanitizer profiles on macOS/Linux, including exact output caps and
+malformed transport. Existing unit/doc source tests retain their output and exit
+contracts. The Linux suite also verifies that escaped pipe holders cannot leave
+Rust reader threads behind. See [component requirements](../compiler-rs/README.md).

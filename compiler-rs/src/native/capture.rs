@@ -1,149 +1,190 @@
-//! Bounded native-test output and lifetime; child process groups are private to the test.
+//! Bounded native capture through a retained-child supervisor; no Rust group signals.
 use std::{
     io::Read,
-    path::Path,
-    process::{Child, Command, ExitStatus, Stdio},
-    sync::mpsc::{self, Receiver, TryRecvError},
-    time::{Duration, Instant},
+    path::{Path, PathBuf},
+    process::{Command, ExitStatus, Stdio},
+    time::Duration,
 };
+mod frame;
+use frame::decode;
 const OUTPUT_MAX: usize = 256 * 1024;
+const FRAME_MAX: usize = 2 * OUTPUT_MAX + 256;
 
 /// Captured native test result, bounded independently for stdout and stderr.
+#[derive(Debug)]
 pub struct Captured {
     pub status: ExitStatus,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
 }
-struct Process {
-    child: Child,
-    stopped: bool,
-}
-impl Process {
-    /// Terminate only this test's private process group, including inherited-output descendants.
-    fn stop(&mut self) {
-        if self.stopped {
-            return;
-        }
-        self.stopped = true;
-        #[cfg(unix)]
-        {
-            let _ = Command::new("/bin/kill")
-                .args(["-KILL", "--", &format!("-{}", self.child.id())])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-        }
-        let _ = self.child.kill();
-    }
-}
-impl Drop for Process {
-    /// Reap the owned child on all success, failure and timeout paths.
-    fn drop(&mut self) {
-        self.stop();
-        let _ = self.child.wait();
-    }
-}
 
-/// Execute a native test for at most sixty seconds and capture at most 256 KiB per stream.
-/// Standard input is closed; each Unix test owns a separate process group for cleanup.
+/// Execute with a positive timeout up to sixty seconds and 256 KiB per stream.
+/// The deadline initiates retained-child cleanup; kernel reaping can extend it.
 pub fn run(executable: &Path, timeout: Duration) -> Result<Captured, String> {
     run_command(Command::new(executable), timeout)
 }
 
-/// Apply the same capture limits to an already constructed literal command.
-/// The private seam lets tests use a stable interpreter without executing a freshly written inode.
-fn run_command(mut command: Command, timeout: Duration) -> Result<Captured, String> {
+/// Round a checked positive duration upward without allowing a zero deadline.
+fn timeout_ms(timeout: Duration) -> Result<u64, String> {
     if timeout.is_zero() || timeout > Duration::from_secs(60) {
-        return Err("test timeout must be between 1 and 60 seconds".into());
+        return Err("test timeout must be greater than zero and at most 60 seconds".into());
     }
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    let mut process = Process {
-        child: command
-            .spawn()
-            .map_err(|error| format!("cannot execute doc test: {error}"))?,
-        stopped: false,
-    };
-    let stdout = reader(process.child.stdout.take().ok_or("missing test stdout")?);
-    let stderr = reader(process.child.stderr.take().ok_or("missing test stderr")?);
-    let started = Instant::now();
-    let mut status = None;
-    let mut output = None;
-    let mut errors = None;
-    for _ in 0..6001 {
-        poll(&stdout, &mut output)?;
-        poll(&stderr, &mut errors)?;
-        if status.is_none() {
-            status = process
-                .child
-                .try_wait()
-                .map_err(|error| error.to_string())?;
-            if status.is_some() {
-                process.stop();
+    Ok(((timeout.as_nanos() + 999_999) / 1_000_000) as u64)
+}
+
+/// Keep native spool ownership separate from Rust; only remove the empty parent.
+struct Directory(PathBuf);
+impl Directory {
+    /// Allocate an exclusive private directory; no existing path is reused.
+    fn new() -> Result<Self, String> {
+        use std::os::unix::fs::DirBuilderExt;
+        let epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_nanos();
+        for attempt in 0..100 {
+            let path = std::env::temp_dir().join(format!(
+                ".fern-test-{}-{epoch}-{attempt}",
+                std::process::id()
+            ));
+            match std::fs::DirBuilder::new().mode(0o700).create(&path) {
+                Ok(()) => return Ok(Self(path)),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(format!("cannot create test capture directory: {error}")),
             }
         }
-        if let (Some(status), Some(stdout), Some(stderr)) = (status, &output, &errors) {
-            return Ok(Captured {
-                status,
-                stdout: stdout.clone(),
-                stderr: stderr.clone(),
-            });
-        }
-        if started.elapsed() >= timeout {
-            return Err("doc test timed out".into());
-        }
-        std::thread::sleep(Duration::from_millis(10));
+        Err("cannot allocate test capture directory".into())
     }
-    Err("doc test timed out".into())
+}
+impl Drop for Directory {
+    /// Never traverse remaining or replaced spool names; the helper owns those.
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir(&self.0);
+    }
 }
 
-/// Read fixed-size chunks and stop before retaining an over-limit native output stream.
-fn reader(input: impl Read + Send + 'static) -> Receiver<Result<Vec<u8>, String>> {
-    let (sender, receiver) = mpsc::sync_channel(1);
-    std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let result = input
-            .take(OUTPUT_MAX as u64 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|error| error.to_string())
-            .and_then(|_| {
-                if bytes.len() > OUTPUT_MAX {
-                    Err("doc test output limit exceeded".into())
-                } else {
-                    Ok(bytes)
-                }
-            });
-        let _ = sender.send(result);
-    });
-    receiver
+/// Resolve the trusted native component; tests inject one stable compiled fixture.
+fn helper() -> Result<PathBuf, String> {
+    #[cfg(not(test))]
+    {
+        super::component("FERN_TEST_SUPERVISOR", "fern-test-supervisor")
+    }
+    #[cfg(test)]
+    {
+        tests::helper()
+    }
 }
 
-/// Drain each stream result once, propagating capture failures before waiting for the child.
-fn poll(
-    receiver: &Receiver<Result<Vec<u8>, String>>,
-    target: &mut Option<Vec<u8>>,
-) -> Result<(), String> {
-    if target.is_some() {
-        return Ok(());
+/// Pass literal executable/arguments and capture only the bounded protocol pipe.
+/// A taken stdin guard remains alive through wait; wait must not signal parent death.
+fn run_command(command: Command, timeout: Duration) -> Result<Captured, String> {
+    timeout_ms(timeout)?;
+    run_supervised(command, Command::new(helper()?), timeout)
+}
+
+/// Execute a trusted supervisor command; tests can inject stable protocol producers.
+fn run_supervised(
+    command: Command,
+    mut supervisor: Command,
+    timeout: Duration,
+) -> Result<Captured, String> {
+    let milliseconds = timeout_ms(timeout)?;
+    let directory = Directory::new()?;
+    let executable = std::fs::canonicalize(command.get_program())
+        .map_err(|error| format!("cannot execute doc test: {error}"))?;
+    let mut child = supervisor
+        .arg(milliseconds.to_string())
+        .arg(&directory.0)
+        .arg("--")
+        .arg(executable)
+        .args(command.get_args())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("cannot execute test supervisor: {error}"))?;
+    let liveness = child.stdin.take();
+    let mut output = Vec::with_capacity(FRAME_MAX + 1);
+    let read = child
+        .stdout
+        .take()
+        .ok_or("missing test supervisor stdout")?
+        .take(FRAME_MAX as u64 + 1)
+        .read_to_end(&mut output);
+    // On read failure/overflow, closing liveness asks the helper to finish cleanup.
+    if read.is_err() || output.len() > FRAME_MAX {
+        drop(liveness);
+    } else {
+        let status = child.wait().map_err(|error| error.to_string())?;
+        drop(liveness);
+        read.map_err(|error| format!("test supervisor protocol: {error}"))?;
+        if !status.success() {
+            return Err("test supervisor failed to publish a complete result".into());
+        }
+        return decode(&output);
     }
-    match receiver.try_recv() {
-        Ok(result) => *target = Some(result?),
-        Err(TryRecvError::Empty) => {}
-        Err(TryRecvError::Disconnected) => return Err("doc test output reader disconnected".into()),
-    }
-    Ok(())
+    let _ = child.wait();
+    Err("test supervisor protocol exceeds capture limit or cannot be read".into())
 }
 
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use std::time::Instant;
+
+    /// Build stable native fixture executables once; never execute written shell scripts.
+    fn artifacts() -> Result<&'static (super::super::Workspace, PathBuf, PathBuf), String> {
+        type Artifacts = (super::super::Workspace, PathBuf, PathBuf);
+        static ARTIFACTS: std::sync::OnceLock<Result<Artifacts, String>> =
+            std::sync::OnceLock::new();
+        ARTIFACTS
+            .get_or_init(|| {
+                let workspace = super::super::Workspace::new(&std::env::temp_dir())
+                    .map_err(|e| e.to_string())?;
+                let helper = compile_fixture(&workspace, "tools/test_supervisor.c", "helper")?;
+                let child = compile_fixture(
+                    &workspace,
+                    "tests/fixtures/test_supervisor_child.c",
+                    "child",
+                )?;
+                Ok((workspace, helper, child))
+            })
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+
+    /// Compile one authored C fixture with an explicit bounded argument vector.
+    fn compile_fixture(
+        workspace: &super::super::Workspace,
+        source: &str,
+        name: &str,
+    ) -> Result<PathBuf, String> {
+        let executable = workspace.file(name);
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(source);
+        let result = Command::new("cc")
+            .args(["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror"])
+            .arg(source)
+            .arg("-o")
+            .arg(&executable)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !result.status.success() {
+            return Err(String::from_utf8_lossy(&result.stderr).into_owned());
+        }
+        Ok(executable)
+    }
+
+    /// Return the stable helper without changing process-global environment variables.
+    pub(super) fn helper() -> Result<PathBuf, String> {
+        Ok(artifacts()?.1.clone())
+    }
+
+    /// Return the stable literal-argument lifecycle child fixture.
+    pub(super) fn fixture() -> Result<PathBuf, String> {
+        Ok(artifacts()?.2.clone())
+    }
 
     /// Execute a fixed test body through the existing interpreter, avoiding write-to-exec races.
     fn script(body: &str, timeout: Duration) -> Result<Captured, String> {
@@ -179,9 +220,10 @@ mod tests {
             .err()
             .unwrap()
             .contains("timed out"));
-        let bytes = std::io::Cursor::new(vec![0; OUTPUT_MAX + 1]);
-        let result = reader(bytes).recv_timeout(Duration::from_secs(1)).unwrap();
-        assert!(result.unwrap_err().contains("output limit"));
+        assert!(script("head -c 262145 /dev/zero", Duration::from_secs(3))
+            .err()
+            .unwrap()
+            .contains("output limit"));
         assert!(run(Path::new("unused"), Duration::ZERO).is_err());
         assert!(run(Path::new("unused"), Duration::from_secs(61)).is_err());
     }
@@ -212,3 +254,7 @@ mod tests {
         });
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "capture/frame_tests.rs"]
+mod frame_tests;
