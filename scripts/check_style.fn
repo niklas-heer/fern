@@ -130,8 +130,14 @@ fn matching_flags(prefix: String, flags: List(String)) -> List(String):
         let name = List.head(flags)
         if String.starts_with(name, prefix): List.concat([name], rest) else: rest
 
+# Python3.14 argparse accepts a decimal scalar prefix after '-' or '-.'.
 fn negative_numeric_path(arg: String) -> Bool:
-    Regex.is_match(arg, "^-[0-9]+$") or Regex.is_match(arg, "^-[0-9]*[.][0-9]+$")
+    if not String.starts_with(arg, "-"):
+        false
+    else:
+        let start = if String.starts_with(arg, "-."): 2 else: 1
+        let end = prefix_end(arg, 1, start)
+        String.is_decimal(String.slice(arg, start, end))
 
 # argparse's paths operand occupies one contiguous positional argument group.
 fn cli_extras(index: Int, argc: Int, options: Bool, positional: Int, extras: List(String)) -> List(String):

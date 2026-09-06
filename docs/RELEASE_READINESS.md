@@ -16,7 +16,7 @@ engineering milestones; they do not certify the entire language.
 | Actor foundation | String FIFO mailboxes, lifecycle/monitor/restart, three deterministic strategies | Six invariant scenarios and 1,536 seeded strategy crash steps |
 | Terminal UI | Styled output, panels/tables, editable input/password prompts, cursor controls, immutable trees, logs | 13 native/PTY tests and a compiled example |
 | Editor | Rust LSP, bounded Tree-sitter corpus and locally staged Zed extension | Native/WASM source parity, reproducible package tests and isolated actual-Zed LSP startup |
-| Native checker | Style diagnostic parity and 47 build/test/example/Git/CLI workflows under both frontends | Required diagnostic and workflow gates on macOS/Linux arm64 |
+| Native checker | Style diagnostic parity and 66 build/test/example/Git/CLI workflows under both frontends | Required diagnostic and workflow gates on macOS/Linux arm64 |
 
 ## Blocking full language completion
 
@@ -33,8 +33,8 @@ engineering milestones; they do not certify the entire language.
   design-level application stack are not implemented by the current client and
   SQLite execute primitives.
 - **Bootstrapping:** native build/test/Git workflows and diagnostic parity are
-  covered. Unicode negative-path CLI classification and a reliable native default
-  launcher remain open. Python remains the default quality-workflow entry point;
+  covered, including Unicode negative-path CLI classification. A reliable native
+  default launcher remains open. Python remains the quality-workflow entry point;
   see [the checker contract](BOOTSTRAP_CHECKER.md).
 - **Result handling:** unused bindings and discarded Result expressions are
   rejected, but merely reading a collection's length or handling a value on only

@@ -15,7 +15,7 @@ messages, counts and exits on five fixtures and every compiler/library C source,
 then checks the full command workflow. `just check` includes the workflow cases,
 and `just rust-check` repeats diagnostic/workflow checks with the Rust compiler.
 
-The 47 workflow cases cover build warnings/failures, test counts, sorted literal
+The 66 workflow cases cover build warnings/failures, test counts, sorted literal
 example paths, bounded error details, missing tools/directories, advisory Git
 checks, CLI flags/abbreviations, summary mode and src-before-lib discovery.
 Argument failures write stderr and exit 2, including failure of the diagnostic
@@ -26,8 +26,12 @@ Normal tool output, diagnostic records and command ordering remain checked again
 the Python reference; terminal decoration and OS-specific exception wording are
 not byte-for-byte compatibility promises.
 
-Default migration remains open. One tracked argument-parser difference is Python's
-Unicode decimal-number classification: a path such as `-١` is positional in
-Python but requires `-- -١` in the current native checker. The native numeric-path
-recognizer currently covers ASCII negative integers/decimals. Further CLI parity
-and a stable native launch recipe must pass before changing defaults.
+Negative-path classification now matches the pinned Python 3.14 parser: the first
+scalar after `-` or `-.` must be a Unicode decimal digit, with arbitrary suffixes
+allowed. Thus `-1.c`, `-١abc` and `-.١tail` are positional; superscripts and other
+numeric categories are not decimal digits. Nineteen reference-first cases cover
+these prefixes, supplementary digits, actual files and explicit `--` termination.
+The [Unicode classifier](STRING_DECIMAL.md) pins the same Unicode 16 profile.
+
+Default migration still requires a reliable native launcher with cold-build,
+source/compiler/runtime invalidation, failure and concurrent-invocation tests.

@@ -185,6 +185,24 @@ def cli_cases():
 
 
 
+def numeric_path_cases():
+    """Python3.14 recognizes a decimal scalar prefix, not a complete numeric spelling."""
+    accepted = ["-1.c", "-١.c", "-𝟚.c", "-١abc", "-.١tail", "-.1tail", "-1e+2",
+                "-1.2.3", "-١/child.c", "-١=oops", "-١--bad"]
+    cases = []
+    for index, path in enumerate(accepted):
+        files = {path: ""} if path.endswith(".c") else {}
+        text = "Checked 1 files" if files else "No .c files found to check"
+        cases.append(dict(name=f"numeric_prefix_{index}", args=["--style-only", path],
+                          files=files, no_calls=True, contains=[text]))
+    for index, path in enumerate(["-²", "-Ⅳ", "-½", "-.", "-.²", "-é1", "--١"]):
+        cases.append(dict(name=f"nondecimal_prefix_{index}", args=["--style-only", path],
+                          code=2, no_calls=True, contains=[f"unrecognized arguments: {path}"]))
+    cases.append(dict(name="unicode_numeric_terminator", args=["--style-only", "--", "-١"],
+                      no_calls=True, contains=["No .c files found to check"]))
+    return cases
+
+
 def default_diagnostics(native, parent):
     """Retain the internal diagnostic hook and Python's src-then-lib default scan order."""
     directory = parent / 'default-diagnostics'; directory.mkdir()
@@ -215,19 +233,6 @@ def closed_diagnostic(native):
     print('  PASS closed stderr preserves CLI exit 2')
 
 
-def unicode_numeric_gap(native, parent):
-    """Keep the remaining Python Unicode-decimal classification gap visible until fixed."""
-    for label, command, expected in [('python', [sys.executable, str(REFERENCE)], 0),
-                                     ('native', [str(native)], 2)]:
-        directory = parent / ('unicode-numeric-' + label); directory.mkdir()
-        environment = setup(directory, {})
-        result = execute(command + ['--style-only', '-١'], directory, environment)
-        assert result[0] == expected, ('update the documented Unicode CLI gap', label, result)
-        terminated = execute(command + ['--style-only', '--', '-١'], directory, environment)
-        assert terminated[0] == 0 and not terminated[2], (label, terminated)
-    print('  KNOWN GAP Unicode numeric paths require -- in native CLI')
-
-
 def main():
     """Build an isolated checker or verify a supplied binary without switching defaults."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -237,7 +242,7 @@ def main():
     parser.add_argument('--case', help='Run one named regression')
     args = parser.parse_args()
     native = args.native.resolve() if args.native else None
-    cases = build_cases()+example_cases()+git_cases()+cli_cases()
+    cases = build_cases()+example_cases()+git_cases()+cli_cases()+numeric_path_cases()
     failures=[]
     with tempfile.TemporaryDirectory(prefix='fern-style-workflow-') as temporary:
         if native is None:
@@ -257,9 +262,8 @@ def main():
                 failures.append('default_diagnostics'); print('  FAIL', error)
             try:
                 closed_diagnostic(native)
-                unicode_numeric_gap(native, Path(temporary))
             except AssertionError as error:
-                failures.append('CLI stream/classification'); print('  FAIL', error)
+                failures.append('CLI stream'); print('  FAIL', error)
     assert not failures, f'Workflow parity failed: {failures}'
     print(f'Style workflow parity: {len(cases)+2 if not args.case else 1} cases passed')
 

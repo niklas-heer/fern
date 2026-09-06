@@ -936,3 +936,10 @@ diagnostic. Invalid input also exits1 and remains untouched. Six CLI regressions
 cover both flag positions, literal paths, metadata, read-only symlink targets and
 the transition from drift to clean after ordinary formatting. No backend/runtime
 is needed. Recursive formatting and the C CLI check mode are separate work.
+
+## Native checker argument parity — 2026-09-06
+
+The native checker's negative-path handling now matches Python 3.14's decimal
+prefix semantics, including supplementary Unicode digits and arbitrary suffixes.
+All 66 workflow cases pass under both frontends; the earlier executable known-gap
+case is closed. A native default launcher remains separate work.

@@ -46,6 +46,11 @@ This document tracks major architectural and technical decisions made during the
 * **Context**: Style-only parity did not cover build/test/example continuation, Git checks, command arguments or CLI failures. The shared process and stderr APIs now provide the required native contracts without a shell or lossy text capture.
 * **Consequences**: Every command has a 300-second deadline and independent 8 MiB stream limits. Ordinary tool output and argument order remain tested; OS-specific exception wording and terminal decoration are not byte-identical contracts. CLI write failures preserve exit 2. Workflow oracles pin Python 3.14 because argparse short-help clustering changed since Python 3.11; native CLI behavior is fixed across hosts. [The checker contract](docs/BOOTSTRAP_CHECKER.md) records 47 workflow scenarios and the remaining Unicode numeric-path classification gap. Python remains the reference and shipping default until remaining parity and launch gates pass. The unavailable `/decision` skill is replaced by this established format.
 
+The Decision92 follow-on closes the argument-classification gap: only the first
+scalar after `-` or `-.` is classified, matching Python 3.14 prefix semantics.
+Nineteen additional reference-first scenarios bring workflow coverage to 66 cases
+under both frontends. Native default launch and cache correctness remain separate.
+
 ### 87 Report stderr failures without changing global signal policy
 * **Date**: 2026-09-06
 * **Status**: Accepted for native developer tooling
