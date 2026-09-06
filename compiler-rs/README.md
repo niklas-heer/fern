@@ -114,9 +114,10 @@ exit125 remains a test result, separate from helper transport failure.
   HTTP clients, explicit mailboxes and terminal UI. Opaque annotations are qualified
   (`Tui.Panel`, `Tui.Tree`, etc.), keeping ordinary user-defined names available.
 
-Unsupported syntax produces diagnostics. Gaps include actor execution, named
-arguments and full private signature generalization.
-Full release parity remains migration work.
+Unsupported syntax produces diagnostics. [Bounded native actors](../docs/RUST_ACTORS.md)
+now execute; generalized suspension, typed supervision, actor REPL/FernSim parity
+and full private signature generalization remain open. Source argument labels
+are supported. Full release parity and default migration remain separate work.
 
 `fmt source.fn` and `fmt src/` format supported syntax in place, preserve comments,
 and verify that each complete syntax tree remains equivalent. Directory formatting

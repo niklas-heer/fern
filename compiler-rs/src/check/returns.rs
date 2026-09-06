@@ -131,6 +131,7 @@ pub(super) fn probe(
 ) -> Checked<ir::Expr> {
     let signature = &signatures[&function.name];
     let mut checker = Checker {
+        mailbox: signature.mailbox.clone(),
         editor: None,
         recovery: None,
         signatures,
@@ -244,7 +245,7 @@ pub(super) fn has_infer(ty: &Type) -> bool {
         match ty {
             Type::Infer(_) => return true,
             Type::List(a) | Type::Option(a) => pending.push(a),
-            Type::Result(a, b) | Type::Map(a, b) => {
+            Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
                 pending.push(a);
                 pending.push(b);
             }
@@ -309,7 +310,7 @@ pub(super) fn charge_output(inference: &Inference, ty: &Type, span: Span) -> Che
         charge_work(inference, span)?;
         match ty {
             Type::List(a) | Type::Option(a) => pending.push(a),
-            Type::Result(a, b) | Type::Map(a, b) => {
+            Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
                 pending.push(a);
                 pending.push(b);
             }

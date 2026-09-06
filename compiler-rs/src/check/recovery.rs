@@ -137,6 +137,7 @@ fn checker<'a>(
     site: Option<HoleSite>,
 ) -> Checker<'a> {
     Checker {
+        mailbox: None,
         editor: None,
         recovery: site.map(|site| State {
             site,
@@ -256,7 +257,7 @@ fn unresolved(ty: &Type, span: Span) -> Checked<Vec<u32>> {
             }
             Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
             Type::List(x) | Type::Option(x) => pending.push(x),
-            Type::Map(a, b) | Type::Result(a, b) => {
+            Type::ActorFunction(a, b) | Type::Map(a, b) | Type::Result(a, b) => {
                 pending.push(a);
                 pending.push(b);
             }

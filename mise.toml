@@ -97,6 +97,7 @@ python3 scripts/test_runtime_repeat.py
 python3 scripts/test_runtime_access.py
 python3 scripts/test_runtime_utf8.py
 python3 scripts/test_runtime_actor_subtree.py
+python3 scripts/test_runtime_managed.py
 python3 scripts/test_runtime_directory.py --c-only
 python3 scripts/test_string_codegen.py
 python3 tests/integration/test_print_types.py
@@ -462,6 +463,7 @@ python3 scripts/test_rust_labels.py
 python3 scripts/test_rust_unions.py
 python3 scripts/test_rust_global_identity.py
 python3 scripts/test_rust_stdlib.py
+python3 scripts/test_rust_actors.py
 python3 scripts/test_rust_json.py
 python3 scripts/test_rust_json_codecs.py
 python3 scripts/test_rust_doctests.py
@@ -469,6 +471,7 @@ python3 scripts/test_rust_units.py
 uv run --locked scripts/test_style_parity.py --compiler compiler-rs/target/debug/fern-rs
 uv run --locked scripts/test_style_workflow.py --compiler compiler-rs/target/debug/fern-rs
 python3 scripts/test_runtime_actor_subtree.py
+python3 scripts/test_runtime_managed.py
 python3 scripts/test_runtime_directory.py
 python3 scripts/test_runtime_file_text.py
 python3 scripts/test_file_text_frontends.py

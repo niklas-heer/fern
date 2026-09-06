@@ -208,7 +208,7 @@ pub(super) fn type_cost(ty: &Type, work: &mut usize, span: Span) -> Checked<()> 
                 pending.extend(fields.iter().map(|t| (t, depth + 1)));
             }
             Type::Option(t) | Type::List(t) => pending.push((t, depth + 1)),
-            Type::Map(a, b) | Type::Result(a, b) => {
+            Type::ActorFunction(a, b) | Type::Map(a, b) | Type::Result(a, b) => {
                 pending.push((a, depth + 1));
                 pending.push((b, depth + 1));
             }
@@ -237,6 +237,7 @@ mod tests {
     #[test]
     fn concrete_publication_continues_the_template_proof_budget() {
         let function = ir::Function {
+            mailbox: None,
             id: ir::FunctionId(0),
             name: "unit".into(),
             params: vec![],

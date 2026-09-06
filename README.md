@@ -67,16 +67,18 @@ What you can use today:
 - Filesystem operations, HTTP/HTTPS GET and POST, and SQLite open/execute calls.
 - Terminal styling, panels, tables, editable input/password prompts, cursor
   controls, immutable trees, and deterministic log formatting.
-- Explicit actor FIFO mailboxes with lifecycle, monitoring, and deterministic
-  supervision policies. These are foundations for the future execution model.
+- Legacy C actor FIFO mailboxes with lifecycle, monitoring and deterministic
+  supervision policies; opt-in Rust native actors with typed mailboxes, selective
+  receive and bounded cooperative execution.
 - CLI diagnostics, formatter, REPL, LSP, and generated editor support.
 
-Features in [DESIGN.md](DESIGN.md) can still be planned. In particular, spawned
-Fern functions do not execute as concurrent actors, HTTP serving is absent,
-and the current JSON compatibility API copies strings rather than validating
-JSON. Native compilation rejects unsupported actor execution syntax with a
-clear diagnostic. Read the [actor contract](docs/ACTOR_RUNTIME.md) and
-[readiness checklist](docs/RELEASE_READINESS.md) before building on those areas.
+Features in [DESIGN.md](DESIGN.md) can still be planned. The opt-in Rust frontend
+executes [bounded native actors](docs/RUST_ACTORS.md); generalized suspension,
+typed supervision and actor REPL/FernSim parity remain open. The default C
+frontend retains explicit mailbox APIs and rejects actor execution syntax.
+HTTP serving is absent. Rust uses validating JSON, while the legacy C JSON
+compatibility API still copies strings. Read the [actor contracts](docs/ACTOR_RUNTIME.md)
+and [readiness checklist](docs/RELEASE_READINESS.md) before building on those areas.
 
 ## Modules and examples
 

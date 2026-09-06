@@ -70,7 +70,7 @@ pub(super) fn closed_type(ty: &Type, results: bool, work: &mut usize, span: Span
             | Type::String
             | Type::Range
             | Type::Native(_) => {}
-            Type::List(inner) | Type::Option(inner) => pending.push(inner),
+            Type::Pid(inner) | Type::List(inner) | Type::Option(inner) => pending.push(inner),
             Type::Map(key, value) => {
                 charge(work, 2, span)?;
                 pending.extend([key.as_ref(), value.as_ref()]);

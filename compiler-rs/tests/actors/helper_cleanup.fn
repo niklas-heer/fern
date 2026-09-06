@@ -1,0 +1,10 @@
+fn fail() -> ():
+    defer println("cleanup")
+    println(1 / 0)
+
+fn worker() -> ():
+    fail()
+
+fn main() -> ():
+    let pid: Pid(()) = spawn(worker)
+    println("main")

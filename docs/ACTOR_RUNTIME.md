@@ -1,15 +1,16 @@
 # Actor runtime status and contracts
 
-Fern currently provides deterministic actor mailbox and supervision primitives.
-It does **not** yet run spawned Fern functions as autonomous actors. The concurrency
-chapter in [DESIGN.md](../DESIGN.md) describes the target language, including typed
-PIDs, selective receive, timeouts, and request/reply calls; it is not a claim that
-those features are executable today. Native build, run, and IR emission reject
-`spawn`, `spawn_link`, and `receive` with an explicit diagnostic directing users
-to the mailbox APIs. `fern check` still accepts their syntax and type signatures
-for language tooling; a successful type check does not imply execution support.
+This page describes the legacy C mailbox and supervision runtime. It does not
+execute spawned Fern functions. The opt-in Rust frontend separately supports
+[bounded typed native actor execution](RUST_ACTORS.md); the two runtimes do not
+yet share a complete supervision or FernSim execution model. For the default C
+frontend, native build, run and IR emission reject `spawn`, `spawn_link` and
+`receive` with an explicit diagnostic directing users to mailbox APIs. C
+`fern check` accepts their syntax and type signatures for tooling; a successful
+check does not imply execution support. [DESIGN.md](../DESIGN.md) describes the
+broader target language.
 
-## Available behavior
+## Legacy C behavior
 
 `actors.start(name)` creates a process-local integer ID and an empty mailbox.
 `actors.post(pid, message)` and `send(pid, message)` copy a string into its FIFO mailbox
@@ -78,7 +79,7 @@ runs it through `test_runtime_actor_seeded_lifecycle_invariants`:
 - Nested supervision registration, cycle rejection, and conflicting-owner rejection.
 - Invalid PID handling and normally terminated siblings remaining stopped.
 - Compiled `send` preserves both runtime errors and the successful `Ok(0)` payload.
-- Native builds reject unsupported actor execution instead of generating placeholder
+- C native builds reject unsupported actor execution instead of generating placeholder
   worker/receive behavior.
 - Eight reproducible seeds across all three strategies, with 64 crash steps each
   (1,536 total). Every step checks affected-child membership, notification counts,
@@ -110,17 +111,26 @@ Rust quality gates run this suite; it is verified on macOS and Linux arm64.
 
 ## Work still required before concurrency is ready for applications
 
-The scheduler does not execute actor functions, suspend/resume them, or isolate
-per-process heaps. Typed `Pid(Message)`, typed transport, selective receive,
-receive timeouts, and synchronous request/reply calls remain incomplete.
-Supervision relationships form an acyclic hierarchy and supervisor death stops
-descendants. Automatic escalation through ancestors and recreation of a descendant
-subtree when its supervisor restarts remain incomplete. Linked exits are
-notifications rather than full bidirectional Erlang exit propagation. The
-single-threaded runtime has no parallel-worker synchronization.
+The legacy scheduler does not execute actor functions or suspend/resume them.
+The opt-in Rust scheduler provides those capabilities within the [105A limits](RUST_ACTORS.md),
+but generalized suspension, isolated per-actor heaps, synchronous request/reply,
+typed supervision and REPL/FernSim parity remain open. Legacy supervision
+relationships form an acyclic hierarchy and supervisor death stops descendants.
+Automatic ancestor escalation and descendant subtree recreation after supervisor
+restart remain incomplete. Linked exits are notifications rather than full
+bidirectional Erlang exit propagation. Neither contract promises parallel workers.
 
-The compiler rejects `spawn(worker)` until it can actually execute `worker`.
-The tests establish mailbox and policy behavior; they do not demonstrate the
-complete actor execution model or the planned million-step reliability target.
+The C compiler rejects `spawn(worker)`; the Rust frontend executes supported
+forms and diagnoses unsupported ones. The legacy tests establish mailbox and
+supervision-policy behavior. Together with the bounded Rust execution tests,
+they still do not establish the complete actor model or the planned million-step
+reliability target.
 See [ROADMAP.md](../ROADMAP.md) for the remaining milestone work and
 [COMPATIBILITY_POLICY.md](COMPATIBILITY_POLICY.md) for project-wide guarantees.
+
+## Rust native execution
+
+The opt-in Rust frontend now has a separate [typed native actor contract](RUST_ACTORS.md)
+with cooperative execution, selective receive, monotonic deadlines and bounded
+continuations. The C mailbox/supervision APIs above retain their current behavior.
+Generalized suspension, typed supervision and REPL/FernSim parity remain open.

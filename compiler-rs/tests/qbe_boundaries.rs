@@ -13,6 +13,7 @@ fn program(body: Expr, returned: Type) -> Program {
     Program {
         types: vec![],
         functions: vec![Function {
+            mailbox: None,
             id: FunctionId(0),
             name: "main".into(),
             params: vec![],

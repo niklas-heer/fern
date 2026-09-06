@@ -78,6 +78,7 @@ impl Session {
         let program = format!("{definitions}\nfn main():\n{indented}");
         let syntax = parse::parse(&program).map_err(|e| e.message)?;
         let typed = Rc::new(check::check(&syntax).map_err(|e| e.message)?);
+        crate::actors::reject_interactive(&syntax)?;
         let main = typed
             .functions
             .iter()
@@ -161,6 +162,9 @@ impl Machine {
     fn node(&mut self, expr: &ir::Expr) -> Eval<Value> {
         use ir::ExprKind::*;
         match &expr.kind {
+            Actor(_) => Err(Failure::Message(
+                "managed actors are not supported in the REPL yet".into(),
+            )),
             JsonCodec { .. } | JsonCodecTemplate { .. } | EditorHole { .. } | Probe { .. } => {
                 self.codec_node(expr)
             }

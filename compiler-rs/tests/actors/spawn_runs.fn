@@ -1,0 +1,6 @@
+fn worker() -> ():
+    println("worker")
+
+fn main() -> ():
+    let pid: Pid(()) = spawn(worker)
+    println("main")

@@ -38,11 +38,3 @@ function $fern_rs_report_fault(l %code) {
     ret
 @check_6
     %is_6 =w ceql %code, 6
-    jnz %is_6, @message_6, @check_7
-@message_6
-    call $write(w 2, l $fern_rs_fault_6, l 77)
-    ret
-@check_7
-    call $write(w 2, l $fern_rs_fault_7, l 61)
-    ret
-}

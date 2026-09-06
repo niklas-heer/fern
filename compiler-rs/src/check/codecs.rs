@@ -64,7 +64,9 @@ impl<'a> Planner<'a> {
                     pending.push(result);
                 }
                 Type::List(a) | Type::Option(a) => pending.push(a),
-                Type::Map(a, b) | Type::Result(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+                Type::ActorFunction(a, b) | Type::Map(a, b) | Type::Result(a, b) => {
+                    pending.extend([a.as_ref(), b.as_ref()])
+                }
                 _ => {}
             }
         }
@@ -255,7 +257,7 @@ impl<'a> Planner<'a> {
                         pending.push(result);
                     }
                     Type::List(a) | Type::Option(a) => pending.push(a),
-                    Type::Map(a, b) | Type::Result(a, b) => {
+                    Type::ActorFunction(a, b) | Type::Map(a, b) | Type::Result(a, b) => {
                         pending.extend([a.as_ref(), b.as_ref()])
                     }
                     _ => {}

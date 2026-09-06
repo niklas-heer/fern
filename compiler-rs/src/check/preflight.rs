@@ -39,7 +39,7 @@ impl Budget {
                 }
                 Type::Union(args) | Type::Tuple(args) => pending.extend(args),
                 Type::List(a) | Type::Option(a) => pending.push(a),
-                Type::Result(a, b) | Type::Map(a, b) => {
+                Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
                     pending.push(a);
                     pending.push(b);
                 }
@@ -238,6 +238,13 @@ impl Budget {
         depth: usize,
     ) -> Checked<bool> {
         match &expr.kind {
+            ast::ExprKind::TypeTarget(_) => {
+                return Err(Diagnostic::new(
+                    expr.span,
+                    "compile-time type target cannot be used as a value",
+                ))
+            }
+
             ast::ExprKind::GlobalName { name, resolved } => {
                 self.charge(name.len(), expr.span)?;
                 self.charge(resolved.len(), expr.span)?;
@@ -369,6 +376,25 @@ impl Budget {
         Ok(true)
     }
 
+    /// Bound receive metadata before pushing its independently scoped expression children.
+    fn receive<'a>(
+        &mut self,
+        arms: &'a [ast::MatchArm],
+        timeout: &'a Option<(Box<ast::Expr>, Box<ast::Expr>)>,
+        span: Span,
+        pending: &mut Vec<(&'a ast::Expr, usize)>,
+        depth: usize,
+    ) -> Checked<()> {
+        if arms.is_empty() || arms.len() > 128 {
+            return Err(Diagnostic::new(span, "receive arm limit exceeded"));
+        }
+        self.match_arms(arms, pending, depth)?;
+        if let Some((duration, body)) = timeout {
+            pending.extend([(duration.as_ref(), depth + 1), (body.as_ref(), depth + 1)]);
+        }
+        Ok(())
+    }
+
     /// Validate expression depth and annotations before source-instance cloning.
     fn expression(&mut self, expr: &ast::Expr) -> Checked<()> {
         let mut pending = vec![(expr, 0)];
@@ -382,11 +408,8 @@ impl Budget {
                 continue;
             }
             match &expr.kind {
-                ast::ExprKind::TypeTarget(_) => {
-                    return Err(Diagnostic::new(
-                        expr.span,
-                        "compile-time type target cannot be used as a value",
-                    ))
+                ast::ExprKind::Receive { arms, timeout } => {
+                    self.receive(arms, timeout, expr.span, &mut pending, depth)?
                 }
                 ast::ExprKind::ConditionMatch(arms) => queue_conditions(arms, &mut pending, depth),
                 ast::ExprKind::Interpolate(parts) | ast::ExprKind::MultilineString(parts) => {

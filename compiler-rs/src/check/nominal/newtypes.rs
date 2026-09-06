@@ -199,8 +199,10 @@ pub(in crate::check) fn charge_newtype_type(
                 pending.extend(xs);
                 pending.push(result);
             }
-            Type::List(t) | Type::Option(t) => pending.push(t),
-            Type::Map(a, b) | Type::Result(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+            Type::Pid(t) | Type::List(t) | Type::Option(t) => pending.push(t),
+            Type::ActorFunction(a, b) | Type::Map(a, b) | Type::Result(a, b) => {
+                pending.extend([a.as_ref(), b.as_ref()])
+            }
             _ => {}
         }
     }

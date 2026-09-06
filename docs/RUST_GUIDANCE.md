@@ -35,6 +35,14 @@ documentation tests ran separately. Linux provisioned the pinned mise/Python/uv
 tools and rust-src successfully. The workflow gate includes 23 task, literal-flag
 and script-lock checks; Criterion fixtures and all 10 smoke phases pass on both.
 
+The tools also caught regressions during the subsequent actor integration: paired
+Criterion measurements exposed redundant cloning and validation during QBE
+emission. Reusing already validated immutable data removed 77–86% of that added
+phase cost while preserving all original public-IR checks. Non-actor emitted bytes
+match the earlier compiler. The [measurement record and limits](../benchmarks/compiler-phases/README.md#actor-preparation-review)
+include remaining cost, host contention and independent malformed-IR/native fault
+audits. Later gate counts are tracked in [the current roadmap](../ROADMAP.md).
+
 ## Enforced lint policy
 
 Cargo's package lint table is supported by the existing toolchain; it does not

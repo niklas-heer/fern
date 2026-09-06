@@ -16,6 +16,7 @@ impl Engine<'_> {
         }
         use ir::ExprKind as E;
         match &expr.kind {
+            E::Actor(actor) => self.actor(actor, expr, depth + 1),
             E::JsonCodec { input, .. } => self.codec_input(input, expr, depth + 1),
             E::JsonCodecTemplate { input, .. } if self.mode != Mode::Concrete => {
                 self.codec_input(input, expr, depth + 1)
@@ -49,11 +50,7 @@ impl Engine<'_> {
                 body,
                 handlers,
             } => self.with(steps, body, handlers, expr.span, depth + 1),
-            E::Return(value) => {
-                let value = self.expression(value, depth + 1)?;
-                self.function_exit(&value, expr.span, depth + 1)?;
-                self.node(Region::Empty, expr.span)
-            }
+            E::Return(value) => self.return_value(value, expr.span, depth + 1),
             E::Try(value) => self.propagate(value, expr.span, depth + 1),
             E::Defer(value) => self.defer(value, expr.span, depth + 1),
             E::Unary {
@@ -72,6 +69,12 @@ impl Engine<'_> {
             }
             _ => self.value_expression(expr, depth),
         }
+    }
+    /// Evaluate the returned value before proving all remaining duties at this actual function exit.
+    fn return_value(&mut self, value: &ir::Expr, span: Span, depth: usize) -> Checked<Value> {
+        let value = self.expression(value, depth)?;
+        self.function_exit(&value, span, depth)?;
+        self.node(Region::Empty, span)
     }
     /// Serialization borrows its one executable input and creates a separate fresh Result duty.
     fn codec_input(&mut self, input: &ir::Expr, expr: &ir::Expr, depth: usize) -> Checked<Value> {
@@ -378,5 +381,47 @@ impl Engine<'_> {
             },
             span,
         )
+    }
+}
+
+impl Engine<'_> {
+    /// Sending borrows its message; only the newly returned enqueue Result gains a fresh duty.
+    fn actor(&mut self, actor: &ir::ActorExpr, expr: &ir::Expr, depth: usize) -> Checked<Value> {
+        match actor {
+            ir::ActorExpr::Spawn { entry, .. } => {
+                self.expression(entry, depth)?;
+                self.node(Region::Empty, expr.span)
+            }
+            ir::ActorExpr::Send { pid, message } => {
+                self.expression(pid, depth)?;
+                self.expression(message, depth)?;
+                self.fresh(&expr.ty, None, expr.span, depth)
+            }
+            ir::ActorExpr::Receive {
+                mailbox,
+                arms,
+                timeout,
+            } => {
+                if let Some((duration, _)) = timeout {
+                    self.expression(duration, depth)?;
+                }
+                let value = self.fresh(mailbox, None, expr.span, depth)?;
+                self.matching_region(
+                    value,
+                    arms,
+                    timeout.as_ref().map(|(_, b)| b.as_ref()),
+                    true,
+                    expr.span,
+                    depth,
+                )
+            }
+            ir::ActorExpr::Call { args, .. } => {
+                for arg in args {
+                    self.expression(arg, depth + 1)?;
+                }
+                self.node(Region::Empty, expr.span)
+            }
+            ir::ActorExpr::Lowered(_) => self.unsupported(expr.span),
+        }
     }
 }

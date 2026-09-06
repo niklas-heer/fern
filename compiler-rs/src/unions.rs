@@ -71,7 +71,7 @@ pub(crate) fn bound(ty: &Type, span: Span) -> Result<(), Diagnostic> {
                 pending.push((result, depth + 1));
             }
             Type::List(x) | Type::Option(x) => pending.push((x, depth + 1)),
-            Type::Result(a, b) | Type::Map(a, b) => {
+            Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
                 pending.push((a, depth + 1));
                 pending.push((b, depth + 1));
             }
@@ -116,7 +116,9 @@ pub(crate) fn cost(ty: &Type, span: Span) -> Result<usize, Diagnostic> {
                 pending.push(result);
             }
             Type::List(x) | Type::Option(x) => pending.push(x),
-            Type::Result(a, b) | Type::Map(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+            Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
+                pending.extend([a.as_ref(), b.as_ref()])
+            }
             _ => {}
         }
         if work > 1_048_576 {

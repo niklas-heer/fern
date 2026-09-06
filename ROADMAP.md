@@ -13,7 +13,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 - Release readiness: `mise run release-package` and `mise run release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: Fern-native default checker, exact native/Python diagnostic and 66 workflow parity cases, bounded content cache and native supervision verified on macOS/Linux; ordinary style checks need no Python/Cargo
-- Rust migration: `mise run rust-check` passing (1473 Rust checks (1476 on Linux; literal native library paths and inline JSON type targets), 4 measurement-harness tests, 197 core native programs, 13 newtype programs, 12 namespace programs, 5 labeled-call programs, 27 union programs, 22 entry/access programs, 9 controlled-fault cases, 241 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
+- Rust migration: full Rust/native, C quality, documentation and nextest gates pass on macOS/Linux arm64, including bounded native actors (Decision105A); the expanded frontend remains opt-in.
 
 ## Canonical Documents
 
@@ -252,7 +252,8 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [x] Format explicit source directories and check all dirty paths without writes; validate all inputs and stage all replacements before publication (Decision99).
 - [x] Expose canonical full-document formatting through Rust LSP over current unsaved buffers, with UTF-16 edits, no server-side publication and explicit syntax/parameter errors (Decision100).
 - [ ] Complete Tree-sitter parity for remaining Rust syntax and publish a fetchable matching grammar revision when release is authorized.
-- [ ] Execute actor functions with suspension, typed messages/receive/timeouts, ancestor escalation and descendant subtree reconstruction.
+- [x] Execute bounded Rust native actor functions with typed mailboxes, selective receive/timeouts, explicit continuation frames, invocation-owned quotas and fault cleanup (Decision105A; native20-program and independent lifecycle/sanitizer gates).
+- [ ] Extend actor execution to generalized suspension, typed ancestor escalation/descendant subtree reconstruction, REPL and FernSim parity.
 - [x] Immutable native JSON parser/accessors/stringifier with exact numbers, Unicode validation and bounded resources (14,309 API checks, 24 budget checks and 6,000 numeric oracle cases in debug/release/sanitizer builds).
 - [x] Migrate Rust native JSON to opaque values/errors, immutable builders and bounded lossless collection adapters (ten native programs, twelve semantic rejections, eight Rust integration tests and 248 native builder checks per build).
 - [x] Evaluate dynamic JSON in the Rust REPL with exact native semantics, independent cleanup budgets and bounded shared storage (21 new Rust regressions and 12,000 numeric/formatting oracles).
@@ -289,6 +290,6 @@ Control flow, closures, maps, function clauses and generic-body validation have
 verified checkpoints. Preserve the concrete type/ABI and native-output gates in
 [migration progress](docs/RUST_MIGRATION.md).
 
-1. Implement real actor execution and descendant lifecycle; preserve the deterministic contracts.
+1. Extend the bounded native actor checkpoint to generalized suspension, typed supervision and REPL/FernSim parity; preserve the verified mailbox and lifecycle contracts.
 2. Preserve the verified native checker default and its C-bootstrap/reference parity while completing the Rust command migration.
 3. Close remaining spec-to-execution gaps using native-output tests, starting with JSON and server/data APIs.

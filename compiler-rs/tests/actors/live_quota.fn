@@ -1,0 +1,6 @@
+fn worker(): println("wrong")
+fn main():
+    defer println("cleanup")
+    for index in 0..1025:
+        let pid: Pid(Int) = spawn(worker)
+        ()

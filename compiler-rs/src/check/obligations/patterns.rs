@@ -94,6 +94,26 @@ impl Engine<'_> {
         depth: usize,
     ) -> Checked<Value> {
         let value = self.expression(value, depth)?;
+        self.matching_region(value, arms, None, false, span, depth)
+    }
+    /// A receive may remain suspended on unmatched messages; timeout adds an independent exit path.
+    pub(super) fn matching_region(
+        &mut self,
+        value: Value,
+        arms: &[ir::MatchArm],
+        timeout: Option<&ir::Expr>,
+        partial: bool,
+        span: Span,
+        depth: usize,
+    ) -> Checked<Value> {
+        let entry = self.path;
+        let mut timeout_path = Predicate::FALSE;
+        if timeout.is_some() {
+            let ready = self.predicates.variable(&mut self.work, span)?;
+            let inverse = self.predicates.not(ready, &mut self.work, span)?;
+            self.path = self.predicates.and(entry, ready, &mut self.work, span)?;
+            timeout_path = self.predicates.and(entry, inverse, &mut self.work, span)?;
+        }
         let mut pending = self.path;
         let mut output = Vec::new();
         self.charge(arms.len(), span)?;
@@ -129,11 +149,16 @@ impl Engine<'_> {
             let body = self.expression(&arm.body, depth)?;
             output.push((self.path, body));
         }
+        if let Some(body) = timeout {
+            self.path = timeout_path;
+            let value = self.expression(body, depth)?;
+            output.push((self.path, value));
+        }
         self.path = Predicate::FALSE;
         for (path, _) in &output {
             self.path = self.predicates.or(self.path, *path, &mut self.work, span)?;
         }
-        if pending != Predicate::FALSE {
+        if !partial && pending != Predicate::FALSE {
             return self.unsupported(span);
         }
         self.node(Region::Choice(output), span)

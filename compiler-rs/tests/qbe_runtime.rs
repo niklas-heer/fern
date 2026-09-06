@@ -28,6 +28,7 @@ fn emit(body: Expr) -> Result<String, fern_prototype::Diagnostic> {
     qbe::emit(&Program {
         types: vec![],
         functions: vec![Function {
+            mailbox: None,
             captures: vec![],
             id: FunctionId(0),
             name: "main".into(),
@@ -260,6 +261,7 @@ fn every_registered_signature_lowers_with_its_audited_result_contract() {
             .map(|param| ex(ExprKind::Local(param.id), param.ty.clone()))
             .collect();
         let helper = Function {
+            mailbox: None,
             id: FunctionId(1),
             name: "audited_runtime".into(),
             captures: vec![],
@@ -269,6 +271,7 @@ fn every_registered_signature_lowers_with_its_audited_result_contract() {
             body: call(name, args, concrete(&signature.return_type)),
         };
         let main = Function {
+            mailbox: None,
             id: FunctionId(0),
             name: "main".into(),
             captures: vec![],

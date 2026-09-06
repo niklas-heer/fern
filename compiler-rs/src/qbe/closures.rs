@@ -36,10 +36,13 @@ impl Emitter<'_> {
                 "closure capture count differs from lifted function",
             ));
         }
-        let ty = Type::Function(
+        let mut ty = Type::Function(
             function.params.iter().map(|p| p.ty.clone()).collect(),
             Box::new(function.return_type.clone()),
         );
+        if let Some(mailbox) = &function.mailbox {
+            ty = Type::ActorFunction(Box::new(mailbox.clone()), Box::new(ty));
+        }
         let expected: Vec<_> = function.captures.iter().map(|p| p.ty.clone()).collect();
         let mut values = Vec::new();
         for (capture, expected) in captures.iter().zip(expected) {
@@ -52,8 +55,13 @@ impl Emitter<'_> {
             ty.clone(),
             &format!("call $fern_alloc(l {})", 8 * (values.len() + 1)),
         );
+        let identity = if self.actors.entries.contains_key(&id.0) {
+            format!("actor_identity{}", id.0)
+        } else {
+            format!("f{}", id.0)
+        };
         self.output
-            .push_str(&format!("    storel $f{}, {object}\n", id.0));
+            .push_str(&format!("    storel ${identity}, {object}\n"));
         for (index, value) in values.iter().enumerate() {
             let address = self.assign(
                 locals,

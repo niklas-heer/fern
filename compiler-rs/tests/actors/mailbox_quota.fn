@@ -1,0 +1,7 @@
+fn worker(): println("done")
+fn main():
+    let pid: Pid(Int) = spawn(worker)
+    for value in 0..4097:
+        match send(pid, value):
+            Ok(()) -> ()
+            Err(code) -> println(code)

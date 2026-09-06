@@ -1,0 +1,11 @@
+fn worker():
+    receive:
+        1 -> println("message")
+        _ after 0 -> println("wrong")
+    receive:
+        2 -> println("wrong")
+        _ after 0 -> println("timeout")
+fn main() -> Result((), Int):
+    let pid: Pid(Int) = spawn(worker)
+    send(pid, 1)?
+    Ok(())

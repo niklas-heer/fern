@@ -42,6 +42,7 @@ impl Capability {
             Self::Add => matches!(ty, Type::Int | Type::Float | Type::String),
             Self::Numeric | Self::Order => matches!(ty, Type::Int | Type::Float),
             Self::MapKey => scalar(ty),
+            Self::Equality if matches!(ty, Type::Pid(_)) => true,
             Self::Equality | Self::Display | Self::Print | Self::Contains => {
                 scalar(ty) || *ty == Type::Float
             }
@@ -201,6 +202,18 @@ impl Checker<'_> {
         result: &Type,
         span: Span,
     ) -> Checked<()> {
+        self.named_requirements_with_mailbox(target, params, result, None, span)
+    }
+
+    /// Actor mailbox schemes participate in exactly the same residual capability substitution.
+    pub(super) fn named_requirements_with_mailbox(
+        &self,
+        target: ir::CallTarget,
+        params: &[Type],
+        result: &Type,
+        mailbox: Option<&Type>,
+        span: Span,
+    ) -> Checked<()> {
         let ir::CallTarget::Function(id) = target else {
             return Ok(());
         };
@@ -215,6 +228,7 @@ impl Checker<'_> {
             .iter()
             .zip(params)
             .chain([(&signature.result, result)])
+            .chain(signature.mailbox.as_ref().zip(mailbox))
             .collect::<Vec<_>>();
         for (template, actual) in &pairs {
             returns::charge_output(&self.inference, template, span)?;
@@ -276,7 +290,7 @@ impl Checker<'_> {
                     }
                 }
                 Type::List(a) | Type::Option(a) => pending.push((*a, depth + 1)),
-                Type::Result(a, b) | Type::Map(a, b) => {
+                Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
                     pending.extend([(*a, depth + 1), (*b, depth + 1)])
                 }
                 Type::Union(args) | Type::Tuple(args) => {
@@ -357,6 +371,7 @@ fn check_scheme(
         ..Inference::default()
     };
     let mut checker = Checker {
+        mailbox: None,
         editor: None,
         recovery: None,
         signatures,
@@ -527,6 +542,7 @@ mod tests {
             ..Inference::default()
         };
         let signature = Signature {
+            mailbox: None,
             labels: Vec::new(),
             required_labels: Vec::new(),
             id: ir::FunctionId(0),

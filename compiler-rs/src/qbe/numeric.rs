@@ -9,7 +9,10 @@ pub(super) fn binary_type(op: BinaryOp, operand: &Type, span: Span) -> Lowering<
         Add | Subtract | Multiply | Divide | Power => matches!(operand, Type::Int | Type::Float),
         Remainder | BitAnd | BitOr | BitXor | ShiftLeft | ShiftRight => *operand == Type::Int,
         Lt | Le | Gt | Ge => matches!(operand, Type::Int | Type::Float),
-        Eq | Ne => matches!(operand, Type::Int | Type::Float | Type::Bool | Type::String),
+        Eq | Ne => matches!(
+            operand,
+            Type::Int | Type::Float | Type::Bool | Type::String | Type::Pid(_)
+        ),
         And | Or => {
             return Err(invalid(
                 span,

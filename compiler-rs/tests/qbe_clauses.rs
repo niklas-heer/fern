@@ -51,6 +51,7 @@ fn wide_unconstrained_public_ir_patterns_still_spend_the_coverage_budget() {
     let program = Program {
         types: vec![],
         functions: vec![Function {
+            mailbox: None,
             id: FunctionId(0),
             name: "main".into(),
             params: vec![],

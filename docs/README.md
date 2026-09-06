@@ -6,7 +6,8 @@ This folder contains project-level reference documents. Use this file as the can
 
 - [Language guide](LANGUAGE_GUIDE.md): runnable first programs and everyday workflow.
 - [Release readiness](RELEASE_READINESS.md): implemented features, remaining gaps, and release gates.
-- [Actor runtime](ACTOR_RUNTIME.md): exact mailbox/supervision commitments and execution limits.
+- [Actor runtime](ACTOR_RUNTIME.md): exact C mailbox/supervision commitments and execution limits.
+- [Rust native actors](RUST_ACTORS.md): typed execution, suspension, deadlines and resource limits.
 - [Rust frontend evaluation](RUST_FRONTEND_EVALUATION.md): prototype scope, native correctness, measured costs, and migration criteria.
 - [Native checker progress](BOOTSTRAP_CHECKER.md): bounded command workflows and remaining default-migration gates.
 - [Rust migration progress](RUST_MIGRATION.md): collections, error values, verification, and remaining parity work.

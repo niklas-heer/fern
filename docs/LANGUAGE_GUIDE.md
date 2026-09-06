@@ -131,6 +131,8 @@ locations and hints; fix the earliest error first, then check again. Use
 
 The four runnable programs above and the first three canonical examples run
 with exact output assertions in `mise run test-user-workflows` and `mise run test`.
-Actors currently expose a deterministic mailbox/lifecycle model; they do not
-yet run arbitrary spawned Fern functions concurrently. The
-[readiness checklist](RELEASE_READINESS.md) records the remaining language work.
+The default C frontend exposes the deterministic mailbox/lifecycle model used by
+these examples. The opt-in Rust frontend additionally runs [bounded typed native
+actors](RUST_ACTORS.md). Generalized suspension, typed supervision and actor
+REPL/FernSim parity remain open. The [readiness checklist](RELEASE_READINESS.md)
+records the remaining language work.

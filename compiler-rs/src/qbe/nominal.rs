@@ -115,13 +115,15 @@ pub(super) fn resolved(
                 resolved(field, layouts, span, depth + 1)?;
             }
         }
-        Type::List(item) | Type::Option(item) => resolved(item, layouts, span, depth + 1)?,
+        Type::Pid(item) | Type::List(item) | Type::Option(item) => {
+            resolved(item, layouts, span, depth + 1)?
+        }
         Type::Map(key, value) => {
             maps::types(ty, layouts, span)?;
             resolved(key, layouts, span, depth + 1)?;
             resolved(value, layouts, span, depth + 1)?;
         }
-        Type::Result(ok, err) => {
+        Type::ActorFunction(ok, err) | Type::Result(ok, err) => {
             resolved(ok, layouts, span, depth + 1)?;
             resolved(err, layouts, span, depth + 1)?;
         }
@@ -372,7 +374,12 @@ struct PatternState<'a> {
 
 impl Emitter<'_> {
     /// Normalize match patterns and prove coverage using only unguarded arms.
-    fn checked_match(&self, value: &Expr, arms: &[MatchArm]) -> Lowering<(Type, Vec<Pattern>)> {
+    fn checked_match(
+        &self,
+        value: &Expr,
+        arms: &[MatchArm],
+        partial: bool,
+    ) -> Lowering<(Type, Vec<Pattern>)> {
         arms.first()
             .ok_or_else(|| invalid(value.span, "match requires arms"))?;
         let mut result = Type::Never;
@@ -404,7 +411,9 @@ impl Emitter<'_> {
             }
             patterns.push(pattern);
         }
-        if !self.exhaustive(std::slice::from_ref(&value.ty), &covering, &mut budget, 0)? {
+        if !partial
+            && !self.exhaustive(std::slice::from_ref(&value.ty), &covering, &mut budget, 0)?
+        {
             return Err(invalid(value.span, "nonexhaustive match"));
         }
         Ok((result, patterns))
@@ -483,7 +492,20 @@ impl Emitter<'_> {
         depth: usize,
         tail: bool,
     ) -> Lowering<(Type, String)> {
-        let (ty, patterns) = self.checked_match(value, arms)?;
+        self.matching_mode(value, arms, locals, depth, tail, false)
+    }
+
+    /// Partial compiler selectors return zero only after every arm fails.
+    pub(super) fn matching_mode(
+        &mut self,
+        value: &Expr,
+        arms: &[MatchArm],
+        locals: &mut Locals,
+        depth: usize,
+        tail: bool,
+        partial: bool,
+    ) -> Lowering<(Type, String)> {
+        let (ty, patterns) = self.checked_match(value, arms, partial)?;
         let scrutinee = self.expr(value, locals, depth)?;
         let merge = locals.label();
         let mut incoming = Vec::new();
@@ -506,8 +528,12 @@ impl Emitter<'_> {
             self.incoming(result, &mut incoming, &merge, locals)?;
             self.start_block(locals, &failure);
         }
-        // The validated pattern matrix proves this last failure block unreachable.
-        self.output.push_str("    hlt\n");
+        // Ordinary matches are exhaustive; selector failure preserves the unmatched message.
+        if partial {
+            self.incoming(Ok("0".into()), &mut incoming, &merge, locals)?;
+        } else {
+            self.output.push_str("    hlt\n");
+        }
         self.join(ty, incoming, &merge, locals)
     }
 

@@ -180,6 +180,7 @@ impl Expander<'_> {
             Type::Named(name, arguments) => {
                 self.named(name, arguments, values, span, depth, nodes)?
             }
+            Type::Pid(a) => Type::Pid(Box::new(self.ty(a, values, span, depth + 1, nodes)?)),
             Type::List(a) => Type::List(Box::new(self.ty(a, values, span, depth + 1, nodes)?)),
             Type::Option(a) => {
                 Type::Option(Box::new(self.ty(a, values, span, depth + 1, nodes)?))

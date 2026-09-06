@@ -9,6 +9,7 @@ pub(super) fn expression(expr: &mut ast::Expr, expander: &mut Expander<'_>) -> C
 /// Dispatch each already-charged source node, preserving static annotations and value children.
 fn expression_kind(expr: &mut ast::Expr, expander: &mut Expander<'_>) -> Checked<()> {
     match &mut expr.kind {
+        ast::ExprKind::Receive { arms, timeout } => substitute_receive(arms, timeout, expander)?,
         ast::ExprKind::TypeTarget(ty) => *ty = expander.expand(ty, expr.span)?,
         ast::ExprKind::Range { .. } | ast::ExprKind::For { .. } | ast::ExprKind::With { .. } => {
             substitute_iteration(expr, expander)?
@@ -23,12 +24,7 @@ fn expression_kind(expr: &mut ast::Expr, expander: &mut Expander<'_>) -> Checked
             substitute_update(value, fields, expander)?
         }
         ast::ExprKind::Lambda { params, body } => substitute_lambda(params, body, expander)?,
-        ast::ExprKind::Apply { callee, args } => {
-            expression(callee, expander)?;
-            for arg in args {
-                expression(arg, expander)?;
-            }
-        }
+        ast::ExprKind::Apply { callee, args } => substitute_apply(callee, args, expander)?,
         ast::ExprKind::Return(value)
         | ast::ExprKind::Defer(value)
         | ast::ExprKind::Unary { value, .. }
@@ -254,6 +250,38 @@ fn pattern(pattern: &mut ast::Pattern, expander: &mut Expander<'_>) -> Checked<(
 fn arguments(args: &mut [ast::Argument], expander: &mut Expander<'_>) -> Checked<()> {
     for arg in args {
         expression(&mut arg.value, expander)?;
+    }
+    Ok(())
+}
+
+/// Substitute receive guards, bodies, and deadlines while preserving their source order.
+fn substitute_receive(
+    arms: &mut [ast::MatchArm],
+    timeout: &mut Option<(Box<ast::Expr>, Box<ast::Expr>)>,
+    expander: &mut Expander<'_>,
+) -> Checked<()> {
+    for arm in arms {
+        if let Some(guard) = &mut arm.guard {
+            expression(guard, expander)?;
+        }
+        expression(&mut arm.body, expander)?;
+    }
+    if let Some((duration, body)) = timeout {
+        expression(duration, expander)?;
+        expression(body, expander)?;
+    }
+    Ok(())
+}
+
+/// Preserve callee-before-arguments traversal while substituting all explicit annotations.
+fn substitute_apply(
+    callee: &mut ast::Expr,
+    args: &mut [ast::Argument],
+    expander: &mut Expander<'_>,
+) -> Checked<()> {
+    expression(callee, expander)?;
+    for arg in args {
+        expression(arg, expander)?;
     }
     Ok(())
 }

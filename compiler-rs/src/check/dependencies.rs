@@ -305,6 +305,13 @@ impl<'a> Walker<'a, '_> {
                 self.pending.push(Task::Enter);
                 self.pending.push(Task::Expression(iterable));
             }
+            ast::ExprKind::Receive { arms, timeout } => {
+                if let Some((duration, body)) = timeout {
+                    self.scoped(body);
+                    self.pending.push(Task::Expression(duration));
+                }
+                self.pending.extend(arms.iter().rev().map(Task::Arm));
+            }
             ast::ExprKind::Match { value, arms } => {
                 self.pending.extend(arms.iter().rev().map(Task::Arm));
                 self.pending.push(Task::Expression(value));
@@ -397,6 +404,15 @@ impl<'a> Walker<'a, '_> {
     }
 
     /// Queue value children exhaustively so new syntax cannot silently lose dependencies.
+    fn string_parts(&mut self, parts: &'a [ast::StringPart]) {
+        for part in parts.iter().rev() {
+            if let ast::StringPart::Value(value) = part {
+                self.pending.push(Task::Expression(value));
+            }
+        }
+    }
+
+    /// Queue ordinary expression children in source evaluation order.
     fn plain(&mut self, expr: &'a ast::Expr) -> Checked<()> {
         use ast::ExprKind::*;
         if self.global(expr)? {
@@ -429,13 +445,7 @@ impl<'a> Walker<'a, '_> {
                     .extend(fields.iter().rev().map(|f| Task::Expression(&f.value)));
                 self.pending.push(Task::Expression(value));
             }
-            Interpolate(parts) | MultilineString(parts) => {
-                for part in parts.iter().rev() {
-                    if let ast::StringPart::Value(value) = part {
-                        self.pending.push(Task::Expression(value));
-                    }
-                }
-            }
+            Interpolate(parts) | MultilineString(parts) => self.string_parts(parts),
             Field { value, .. } | Unary { value, .. } | Try(value) | Return(value) => {
                 self.pending.push(Task::Expression(value));
             }
@@ -459,6 +469,7 @@ impl<'a> Walker<'a, '_> {
             Block(_)
             | Lambda { .. }
             | For { .. }
+            | Receive { .. }
             | Match { .. }
             | With { .. }
             | If { .. }

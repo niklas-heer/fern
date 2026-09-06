@@ -19,6 +19,7 @@ pub(super) fn resolve<'a>(
     let mut prepared = program.clone();
     let signatures = HashMap::new();
     let mut checker = Checker {
+        mailbox: None,
         editor: None,
         recovery: None,
         signatures: &signatures,
@@ -143,7 +144,10 @@ pub(super) fn infer_group(
 }
 
 /// Revisit only tuple-rest obligations whose fixed arity another clause can establish.
-fn constrain(checker: &mut Checker<'_>, mut pending: Vec<Constraint<'_>>) -> Checked<()> {
+pub(super) fn constrain(
+    checker: &mut Checker<'_>,
+    mut pending: Vec<Constraint<'_>>,
+) -> Checked<()> {
     loop {
         let mut deferred = Vec::new();
         let mut progressed = false;

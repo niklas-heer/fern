@@ -1,6 +1,7 @@
 //! Resolve source names and types once, including local compound-type inference.
 use crate::{ast, ir, runtime, Constructor, Diagnostic, Span, Type};
 use std::collections::{HashMap, HashSet};
+mod actors;
 mod aliases;
 mod clauses;
 mod closures;
@@ -40,6 +41,7 @@ type Checked<T> = Result<T, Diagnostic>;
 type TypedKind = (ir::ExprKind, Type);
 
 struct Signature {
+    mailbox: Option<Type>,
     labels: Vec<Option<ast::ArgumentLabel>>,
     required_labels: Vec<bool>,
     id: ir::FunctionId,
@@ -74,6 +76,7 @@ struct Inference {
     checked_nominals: std::cell::RefCell<HashSet<Type>>,
 }
 struct Checker<'a> {
+    mailbox: Option<Type>,
     editor: Option<editor::Recorder>,
     recovery: Option<recovery::State>,
     signatures: &'a HashMap<String, Signature>,
@@ -175,6 +178,7 @@ fn pipeline_mode<T>(
     let ir = specialize::run(&program, &registry, &signatures)?;
     ir::reject_probes(&ir)?;
     crate::json_codec::validate_program(&ir)?;
+    crate::actors::contracts::validate(&ir)?;
     if prove_results {
         let roots = templates.iter().map(|f| f.id.0).collect();
         let templates = schemes::proof_bodies(&program, &registry, &signatures, templates, work)?;
@@ -234,6 +238,7 @@ fn signatures(
         signatures.insert(
             function.name.clone(),
             Signature {
+                mailbox: None,
                 labels: labels::parameters(function),
                 required_labels: Vec::new(),
                 id: ir::FunctionId(index),
@@ -252,6 +257,7 @@ fn signatures(
             },
         );
     }
+    actors::attach(program, registry, &mut signatures)?;
     Ok(signatures)
 }
 
@@ -266,7 +272,8 @@ fn reserved(name: &str) -> bool {
         || runtime::reserved_namespace(name)
         || matches!(
             name,
-            "Range"
+            "Pid"
+                | "Range"
                 | "String"
                 | "List"
                 | "Map"
@@ -368,9 +375,9 @@ fn validate_type_structure(ty: &Type, span: Span, _aliases: bool) -> Checked<()>
             }
             Type::Never => return Err(Diagnostic::new(span, "Never is an internal control-flow type")),
             Type::Infer(_) => return Err(Diagnostic::new(span, "explicit types cannot contain inference variables; generic definitions are unsupported")),
-            Type::List(inner) | Type::Option(inner) => pending.push((inner, depth + 1)),
+            Type::Pid(inner) | Type::List(inner) | Type::Option(inner) => pending.push((inner, depth + 1)),
             Type::Map(key, value) => { if !matches!(key.as_ref(), Type::Named(_, _)) { maps::validate_key(key, span, true)?; } pending.push((key, depth + 1)); pending.push((value, depth + 1)); }
-            Type::Result(ok, err) => { pending.push((ok, depth + 1)); pending.push((err, depth + 1)); }
+            Type::ActorFunction(ok, err) | Type::Result(ok, err) => { pending.push((ok, depth + 1)); pending.push((err, depth + 1)); }
             Type::Union(args) => {
                 if args.is_empty() || args.len() > 128 { return Err(Diagnostic::new(span, "union alternative limit exceeded")); }
                 pending.extend(args.iter().map(|a| (a, depth + 1)));
@@ -420,9 +427,7 @@ impl Inference {
                 None => return Err(Diagnostic::new(span, "invalid inference variable")),
             },
             Type::Function(args, result) => Type::Function(
-                args.iter()
-                    .map(|a| self.resolve_inner(a, span, depth + 1, budget))
-                    .collect::<Checked<Vec<_>>>()?,
+                self.resolve_fields(args, span, depth, budget)?,
                 Box::new(self.resolve_inner(result, span, depth + 1, budget)?),
             ),
             Type::Union(args) => {
@@ -434,17 +439,16 @@ impl Inference {
                     span,
                 )?
             }
-            Type::Tuple(args) => Type::Tuple(
-                args.iter()
-                    .map(|a| self.resolve_inner(a, span, depth + 1, budget))
-                    .collect::<Checked<Vec<_>>>()?,
-            ),
+            Type::Tuple(args) => Type::Tuple(self.resolve_fields(args, span, depth, budget)?),
             Type::Named(name, args) => Type::Named(
                 name.clone(),
-                args.iter()
-                    .map(|a| self.resolve_inner(a, span, depth + 1, budget))
-                    .collect::<Checked<Vec<_>>>()?,
+                self.resolve_fields(args, span, depth, budget)?,
             ),
+            Type::ActorFunction(a, b) => Type::ActorFunction(
+                Box::new(self.resolve_inner(a, span, depth + 1, budget)?),
+                Box::new(self.resolve_inner(b, span, depth + 1, budget)?),
+            ),
+            Type::Pid(inner) => Type::Pid(self.resolve_box(inner, span, depth, budget)?),
             Type::List(inner) => Type::List(Box::new(self.resolve_inner(
                 inner,
                 span,
@@ -469,6 +473,35 @@ impl Inference {
         })
     }
 
+    /// Resolve one nested payload without resetting depth or the shared node budget.
+    fn resolve_box(
+        &self,
+        inner: &Type,
+        span: Span,
+        depth: usize,
+        budget: &mut usize,
+    ) -> Checked<Box<Type>> {
+        Ok(Box::new(self.resolve_inner(
+            inner,
+            span,
+            depth + 1,
+            budget,
+        )?))
+    }
+
+    /// Resolve ordered type arguments while sharing the parent traversal allowance.
+    fn resolve_fields(
+        &self,
+        args: &[Type],
+        span: Span,
+        depth: usize,
+        budget: &mut usize,
+    ) -> Checked<Vec<Type>> {
+        args.iter()
+            .map(|a| self.resolve_inner(a, span, depth + 1, budget))
+            .collect()
+    }
+
     /// Unify `actual` with `expected`, reporting incompatible types at `span`.
     fn unify(&mut self, actual: &Type, expected: &Type, span: Span, context: &str) -> Checked<()> {
         let actual = self.resolve(actual, span)?;
@@ -486,9 +519,9 @@ impl Inference {
                     .collect();
                 self.unify_signature(&pairs, span, context)
             }
-            (Type::List(a), Type::List(b)) | (Type::Option(a), Type::Option(b)) => {
-                self.unify(a, b, span, context)
-            }
+            (Type::Pid(a), Type::Pid(b))
+            | (Type::List(a), Type::List(b))
+            | (Type::Option(a), Type::Option(b)) => self.unify(a, b, span, context),
             (Type::Named(a, xs), Type::Named(b, ys)) if a == b && xs.len() == ys.len() => {
                 for (x, y) in xs.iter().zip(ys) {
                     self.unify(x, y, span, context)?;
@@ -502,7 +535,9 @@ impl Inference {
                 }
                 Ok(())
             }
-            (Type::Result(a, b), Type::Result(c, d)) | (Type::Map(a, b), Type::Map(c, d)) => {
+            (Type::ActorFunction(a, b), Type::ActorFunction(c, d))
+            | (Type::Result(a, b), Type::Result(c, d))
+            | (Type::Map(a, b), Type::Map(c, d)) => {
                 self.unify(a, c, span, context)?;
                 self.unify(b, d, span, context)
             }
@@ -529,7 +564,7 @@ impl Inference {
                         "recursive inferred type is unsupported",
                     ))
                 }
-                Type::List(inner) | Type::Option(inner) => pending.push(inner),
+                Type::Pid(inner) | Type::List(inner) | Type::Option(inner) => pending.push(inner),
                 Type::Result(ok, err) | Type::Map(ok, err) => {
                     pending.push(ok);
                     pending.push(err);
@@ -586,7 +621,7 @@ impl Inference {
                         "cannot infer compound payload type; add a concrete type annotation",
                     ))
                 }
-                Type::List(inner) | Type::Option(inner) => pending.push(inner),
+                Type::Pid(inner) | Type::List(inner) | Type::Option(inner) => pending.push(inner),
                 Type::Result(ok, err) | Type::Map(ok, err) => {
                     pending.push(ok);
                     pending.push(err);
@@ -617,6 +652,17 @@ impl Checker<'_> {
         let id = signature.id;
         let return_type = function_result(function)?;
         self.function_return = return_type.clone();
+        self.mailbox = signature
+            .mailbox
+            .as_ref()
+            .map(|ty| nominal::substitute(ty, &self.inference.codec_substitutions))
+            .transpose()?;
+        if function.name == "main" && self.mailbox.is_some() {
+            return Err(Diagnostic::new(
+                function.span,
+                "receive requires an actor context; main cannot receive",
+            ));
+        }
         let params: Vec<ir::Param> = function
             .params
             .iter()
@@ -655,6 +701,7 @@ impl Checker<'_> {
             reject_discard(&body, self.registry)?;
         }
         Ok(ir::Function {
+            mailbox: self.mailbox.clone(),
             id,
             name: function.name.clone(),
             params,
@@ -739,6 +786,9 @@ impl Checker<'_> {
         depth: usize,
     ) -> Checked<TypedKind> {
         Ok(match &expr.kind {
+            ast::ExprKind::Receive { arms, timeout } => {
+                self.receive(arms, timeout.as_ref(), expected, expr.span, depth + 1)?
+            }
             ast::ExprKind::TypeTarget(_) => {
                 return Err(Diagnostic::new(
                     expr.span,
@@ -1720,7 +1770,13 @@ impl Checker<'_> {
     /// Normalize all expression types after constraints from the whole function are known.
     fn finalize(&self, expr: &mut ir::Expr) -> Checked<()> {
         shapes::reject(expr)?;
-        expr.ty = self.inference.concrete(&expr.ty, expr.span)?;
+        expr.ty = self.inference.concrete(&expr.ty, expr.span).map_err(|e| {
+            if matches!(expr.ty, Type::Pid(_) | Type::ActorFunction(_, _)) {
+                Diagnostic::new(e.span, format!("cannot infer actor mailbox: {}", e.message))
+            } else {
+                e
+            }
+        })?;
         self.nominal_requirements(&expr.ty, expr.span)?;
         self.finalize_children(expr)?;
         self.finalize_union_conversion(expr)
@@ -1729,6 +1785,7 @@ impl Checker<'_> {
     /// Normalize each executable child while retaining private template metadata only in proofs.
     fn finalize_children(&self, expr: &mut ir::Expr) -> Checked<()> {
         match &mut expr.kind {
+            ir::ExprKind::Actor(actor) => self.finalize_actor(actor, expr.span)?,
             ir::ExprKind::JsonCodecTemplate { input, target, .. } => {
                 self.finalize_codec_template(input, target, expr.span)?;
             }
@@ -2045,7 +2102,9 @@ fn binary_result(op: ast::BinaryOp, left: &Type, right: &Type) -> Option<Type> {
             Some(Type::Int)
         }
         Add | Subtract | Multiply | Divide | Power if *left == Type::Float => Some(Type::Float),
-        Eq | Ne if scalar(left) || *left == Type::Float => Some(Type::Bool),
+        Eq | Ne if scalar(left) || *left == Type::Float || matches!(left, Type::Pid(_)) => {
+            Some(Type::Bool)
+        }
         Lt | Le | Gt | Ge if matches!(left, Type::Int | Type::Float) => Some(Type::Bool),
         And | Or if *left == Type::Bool => Some(Type::Bool),
         _ => None,

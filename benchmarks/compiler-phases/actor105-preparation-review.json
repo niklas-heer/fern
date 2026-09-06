@@ -1,0 +1,486 @@
+{
+  "purpose": "Exploratory paired QBE emit-phase review; not an end-to-end or quiet-host release benchmark",
+  "environment": {
+    "os": "macOS-15.7.9-arm64-arm-64bit-Mach-O",
+    "logical_cpus": 12,
+    "rustc": "rustc 1.75.0 (82e1608df 2023-12-21)\nbinary: rustc\ncommit-hash: 82e1608dfa6e0b5569232559e3d385fea5a93112\ncommit-date: 2023-12-21\nhost: aarch64-apple-darwin\nrelease: 1.75.0\nLLVM version: 17.0.6\n",
+    "criterion": "0.5.1",
+    "profile": "default release optimized",
+    "samples": 30,
+    "warmup_seconds": 0.2,
+    "measurement_seconds": 1,
+    "concurrent_work": "Shared host: parent integration/gates; own compiler/test builds completed before final measurements"
+  },
+  "identity": {
+    "pre_actor_commit": "05c4d277d5e7eabfddbf347712e6acff47b132e0",
+    "actor_patch_sha256": "e2a435b0399a6bc4e5efb18da835b1d235ae672359b65ac8f3a35006375aaae0",
+    "actor_reference_note": "Frozen rebased actor candidate precedes final no-else type-validation correction; that receiving-only branch never runs for these non-actor fixtures. Optimized source retains the correction.",
+    "optimized_source_sha256": {
+      "compiler-rs/src/actors/contracts.rs": "5b1d9629aee97913d3010f3a29ad45705c67c013c2dee8405411234df77ebc6c",
+      "compiler-rs/src/qbe.rs": "ff0655e10ac3a14dbc2e79d045034bc17582434bf451e24ef1d268944d541526",
+      "compiler-rs/src/qbe/actors.rs": "16d137e60e4f6fe20e48f898f666e40c3aca781696ccea86bd0a02305f9528b9",
+      "compiler-rs/src/qbe/fault.ssa": "f8672e1dfdc91c522234c2fd7309e6c637878bec458d7371f88df5e46e776a41",
+      "compiler-rs/src/qbe/fault_tail.ssa": "a74c69608ef41370e57e28d29293cc0a41bcafa24a3b4032fecc0c519135f5a7",
+      "compiler-rs/src/qbe/actor_fault_tail.ssa": "07f5846abcd5d3fdbfedbddac57dbb966a296674d88c4e9fec083e811514d1ae",
+      "compiler-rs/tests/qbe_actor_preparation.rs": "93d96e405bc20be5d902ce20d7f4f52f1dcacea72f8a16bb4708c4b15bd2b7af"
+    },
+    "fixture_path": "benchmarks/compiler-phases/src/lib.rs",
+    "fixture_sha256": "92761e42bf5296c22b1d42acea4aca97a0b0f7501cfddd8ca962eb377554b9a2",
+    "lock_sha256": "dada28000563913e3e68022156c50ad6991630e9ddc2fd85058db8fcbc8ae7ce"
+  },
+  "order": [
+    "before",
+    "actor",
+    "optimized",
+    "optimized",
+    "actor",
+    "before"
+  ],
+  "measurement_scope": "Prepared checked IR -> qbe::emit and returned String lifetime; parsing/checking/preverification excluded. Existing scalar64, generic_scc and json_record fixtures unchanged.",
+  "runs": [
+    {
+      "index": 0,
+      "variant": "before",
+      "load_before": [
+        3.6142578125,
+        5.0341796875,
+        4.7734375
+      ],
+      "load_after": [
+        3.64501953125,
+        5.0166015625,
+        4.7685546875
+      ],
+      "wall_seconds": 4.739317893981934,
+      "benchmark_executable_sha256": "0ff39a40fc70af0b739c306c82ed41abadb270c663d11653efc2788a8adaabe9",
+      "median_ns": {
+        "json_record/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 13399.839903846154,
+            "upper_bound": 13524.3732421875
+          },
+          "point_estimate": 13475.466666666667,
+          "standard_error": 36.7676027760774
+        },
+        "generic_scc/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 41884.41387111874,
+            "upper_bound": 42581.515597147954
+          },
+          "point_estimate": 42224.57679738562,
+          "standard_error": 191.16486094657768
+        },
+        "scalar/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 183410.76527777777,
+            "upper_bound": 186773.8619047619
+          },
+          "point_estimate": 185113.558908046,
+          "standard_error": 883.4098002612228
+        }
+      },
+      "started_epoch_seconds": 1788717984.169821
+    },
+    {
+      "index": 1,
+      "variant": "actor",
+      "load_before": [
+        3.64501953125,
+        5.0166015625,
+        4.7685546875
+      ],
+      "load_after": [
+        3.64501953125,
+        5.0166015625,
+        4.7685546875
+      ],
+      "wall_seconds": 4.496050119400024,
+      "benchmark_executable_sha256": "ee83c57b3c23885df5b6d38c5e48819f41cf44762b2abc3c3de029b14e7f36ab",
+      "median_ns": {
+        "json_record/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 16863.731364829397,
+            "upper_bound": 16942.588393117527
+          },
+          "point_estimate": 16884.123172103486,
+          "standard_error": 20.909899265099476
+        },
+        "generic_scc/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 57802.35585585586,
+            "upper_bound": 58567.2068029568
+          },
+          "point_estimate": 58148.00514800515,
+          "standard_error": 191.77404410529394
+        },
+        "scalar/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 272375.27665607986,
+            "upper_bound": 275299.92410714284
+          },
+          "point_estimate": 273526.7427884615,
+          "standard_error": 796.4900372292464
+        }
+      },
+      "started_epoch_seconds": 1788717988.91347
+    },
+    {
+      "index": 2,
+      "variant": "optimized",
+      "load_before": [
+        3.64501953125,
+        5.0166015625,
+        4.7685546875
+      ],
+      "load_after": [
+        3.51318359375,
+        4.96630859375,
+        4.751953125
+      ],
+      "wall_seconds": 4.401997804641724,
+      "benchmark_executable_sha256": "eb0d9add8cd55204f057c369268036e8d616c37d6c5c3a9533bc49fc5f56e92e",
+      "median_ns": {
+        "json_record/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 13886.812196356275,
+            "upper_bound": 13982.94172932331
+          },
+          "point_estimate": 13919.344543343654,
+          "standard_error": 21.91522801321937
+        },
+        "generic_scc/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 45818.05407801418,
+            "upper_bound": 46133.00975177305
+          },
+          "point_estimate": 45884.66288217415,
+          "standard_error": 85.64782851280219
+        },
+        "scalar/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 201665.45243055557,
+            "upper_bound": 203736.041
+          },
+          "point_estimate": 202744.22894736842,
+          "standard_error": 560.0048877841932
+        }
+      },
+      "started_epoch_seconds": 1788717993.413603
+    },
+    {
+      "index": 3,
+      "variant": "optimized",
+      "load_before": [
+        3.51318359375,
+        4.96630859375,
+        4.751953125
+      ],
+      "load_after": [
+        3.4716796875,
+        4.93359375,
+        4.7412109375
+      ],
+      "wall_seconds": 4.588966131210327,
+      "benchmark_executable_sha256": "eb0d9add8cd55204f057c369268036e8d616c37d6c5c3a9533bc49fc5f56e92e",
+      "median_ns": {
+        "json_record/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 13929.17496229261,
+            "upper_bound": 14334.915321030374
+          },
+          "point_estimate": 13988.487867177522,
+          "standard_error": 126.38062269469036
+        },
+        "generic_scc/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 45613.05605564648,
+            "upper_bound": 46232.03221040189
+          },
+          "point_estimate": 45995.68658707397,
+          "standard_error": 152.83993176855614
+        },
+        "scalar/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 204503.03800865798,
+            "upper_bound": 206755.95707070705
+          },
+          "point_estimate": 205678.65404040404,
+          "standard_error": 719.7219870302904
+        }
+      },
+      "started_epoch_seconds": 1788717997.8193128
+    },
+    {
+      "index": 4,
+      "variant": "actor",
+      "load_before": [
+        3.4716796875,
+        4.93359375,
+        4.7412109375
+      ],
+      "load_after": [
+        3.43359375,
+        4.9013671875,
+        4.73095703125
+      ],
+      "wall_seconds": 4.462146043777466,
+      "benchmark_executable_sha256": "ee83c57b3c23885df5b6d38c5e48819f41cf44762b2abc3c3de029b14e7f36ab",
+      "median_ns": {
+        "json_record/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 16993.085267302115,
+            "upper_bound": 17091.75248406449
+          },
+          "point_estimate": 17031.284547764863,
+          "standard_error": 26.454676917053575
+        },
+        "generic_scc/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 58469.287332375476,
+            "upper_bound": 58861.88734567902
+          },
+          "point_estimate": 58675.990226337446,
+          "standard_error": 100.6587749418554
+        },
+        "scalar/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 271712.3225490196,
+            "upper_bound": 273997.2425595238
+          },
+          "point_estimate": 272648.43583333335,
+          "standard_error": 623.3406437405174
+        }
+      },
+      "started_epoch_seconds": 1788718002.412044
+    },
+    {
+      "index": 5,
+      "variant": "before",
+      "load_before": [
+        3.43359375,
+        4.9013671875,
+        4.73095703125
+      ],
+      "load_after": [
+        3.478515625,
+        4.88623046875,
+        4.7265625
+      ],
+      "wall_seconds": 4.615307092666626,
+      "benchmark_executable_sha256": "0ff39a40fc70af0b739c306c82ed41abadb270c663d11653efc2788a8adaabe9",
+      "median_ns": {
+        "json_record/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 13397.678996394232,
+            "upper_bound": 13477.11130952381
+          },
+          "point_estimate": 13451.1278515625,
+          "standard_error": 25.305939196171582
+        },
+        "generic_scc/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 42135.57216538789,
+            "upper_bound": 42452.23501400561
+          },
+          "point_estimate": 42220.775443510734,
+          "standard_error": 83.90026513740428
+        },
+        "scalar/qbe/checked_ir": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 182631.6511752137,
+            "upper_bound": 184096.57738095237
+          },
+          "point_estimate": 183403.03942528737,
+          "standard_error": 408.13716745737594
+        }
+      },
+      "started_epoch_seconds": 1788718006.878387
+    }
+  ],
+  "summary": {
+    "json_record/qbe/checked_ir": {
+      "medians_us": {
+        "before": [
+          13.475466666666668,
+          13.4511278515625
+        ],
+        "actor": [
+          16.884123172103486,
+          17.031284547764862
+        ],
+        "optimized": [
+          13.919344543343653,
+          13.988487867177522
+        ]
+      },
+      "actor_reduction_percent": 17.713410255798912,
+      "residual_vs_before_percent": 3.6441217682678495,
+      "introduced_cost_removed_percent": 85.95987810831939,
+      "ci95_us": {
+        "before": [
+          [
+            13.399839903846154,
+            13.5243732421875
+          ],
+          [
+            13.397678996394232,
+            13.47711130952381
+          ]
+        ],
+        "actor": [
+          [
+            16.8637313648294,
+            16.942588393117525
+          ],
+          [
+            16.993085267302114,
+            17.09175248406449
+          ]
+        ],
+        "optimized": [
+          [
+            13.886812196356276,
+            13.98294172932331
+          ],
+          [
+            13.929174962292612,
+            14.334915321030374
+          ]
+        ]
+      }
+    },
+    "generic_scc/qbe/checked_ir": {
+      "medians_us": {
+        "before": [
+          42.22457679738562,
+          42.22077544351073
+        ],
+        "actor": [
+          58.14800514800515,
+          58.67599022633745
+        ],
+        "optimized": [
+          45.88466288217415,
+          45.99568658707397
+        ]
+      },
+      "actor_reduction_percent": 21.35147477636491,
+      "residual_vs_before_percent": 8.804507330542034,
+      "introduced_cost_removed_percent": 77.03734156583104,
+      "ci95_us": {
+        "before": [
+          [
+            41.88441387111874,
+            42.581515597147956
+          ],
+          [
+            42.13557216538789,
+            42.45223501400561
+          ]
+        ],
+        "actor": [
+          [
+            57.80235585585586,
+            58.567206802956804
+          ],
+          [
+            58.46928733237547,
+            58.861887345679015
+          ]
+        ],
+        "optimized": [
+          [
+            45.818054078014185,
+            46.133009751773045
+          ],
+          [
+            45.613056055646474,
+            46.23203221040189
+          ]
+        ]
+      }
+    },
+    "scalar/qbe/checked_ir": {
+      "medians_us": {
+        "before": [
+          185.113558908046,
+          183.40303942528737
+        ],
+        "actor": [
+          273.5267427884615,
+          272.64843583333334
+        ],
+        "optimized": [
+          202.7442289473684,
+          205.67865404040404
+        ]
+      },
+      "actor_reduction_percent": 25.22126618452768,
+      "residual_vs_before_percent": 10.828897486550337,
+      "introduced_cost_removed_percent": 77.53765419624322,
+      "ci95_us": {
+        "before": [
+          [
+            183.41076527777776,
+            186.7738619047619
+          ],
+          [
+            182.63165117521368,
+            184.09657738095237
+          ]
+        ],
+        "actor": [
+          [
+            272.37527665607985,
+            275.29992410714283
+          ],
+          [
+            271.7123225490196,
+            273.9972425595238
+          ]
+        ],
+        "optimized": [
+          [
+            201.66545243055558,
+            203.736041
+          ],
+          [
+            204.503038008658,
+            206.75595707070704
+          ]
+        ]
+      }
+    }
+  },
+  "byte_parity": {
+    "scalar": "d7a802375a8d425ac4f905d66c344932df5ceb1182bc927f318ae040bb4b9e73",
+    "generic_scc": "d5ea870564f80c2d6f20420ab8c12bd7a66e59066b2c6c98fec424bc14ea0e02",
+    "json_record": "ffeac34eafab372b002b933cb28b08cc1ae38bfa906c1b182dd32e7e86c53700",
+    "actor_vs_unoptimized": "0e22cd28fdcd8495bff02fef03f22c8d4ef0e52ccb66e1ea78514b489911b20a"
+  },
+  "caveats": [
+    "Report averages paired run medians; it is not an aggregate per-invocation percentile.",
+    "Host contention and thermal/frequency state were not controlled; paired reversal and recorded intervals limit interpretation.",
+    "Performance change includes preparation, validation, cloning, allocation and fault-support formatting; individual contributors were not profiled.",
+    "Residual 3.6\u201310.8% vs pre-actor remains; original universal actor/Closure/inactive validation stays enabled.",
+    "No native runtime throughput, other workload or Linux result is claimed."
+  ]
+}

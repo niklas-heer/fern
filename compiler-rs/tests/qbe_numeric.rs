@@ -22,6 +22,7 @@ fn binary(op: BinaryOp, a: Expr, b: Expr) -> Expr {
 }
 fn function(id: usize, name: &str, body: Expr) -> Function {
     Function {
+        mailbox: None,
         id: FunctionId(id),
         name: name.into(),
         params: vec![],

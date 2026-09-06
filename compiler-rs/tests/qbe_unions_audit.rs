@@ -11,6 +11,7 @@ fn expr(ty: Type, kind: ExprKind) -> Expr {
 }
 fn function(id: usize, body: Expr) -> Function {
     Function {
+        mailbox: None,
         id: FunctionId(id),
         name: if id == 0 {
             "main".into()

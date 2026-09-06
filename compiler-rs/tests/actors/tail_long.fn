@@ -1,0 +1,11 @@
+fn worker(count: Int):
+    if count > 0:
+        worker(count - 1)
+    else:
+        receive:
+            true -> println(count)
+
+fn main() -> Result((), Int):
+    let pid: Pid(Bool) = spawn(() -> worker(100000))
+    send(pid, true)?
+    Ok(())

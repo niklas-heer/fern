@@ -1947,6 +1947,11 @@ point.x  # 10
 
 Fern uses an **actor-based concurrency model** inspired by Erlang/Elixir, with type-safe message passing.
 
+**Implementation boundary:** the opt-in Rust frontend executes the bounded native
+subset in [Decision105A](docs/RUST_ACTORS.md). Generalized suspension, typed
+supervision, isolated heaps and actor REPL/FernSim parity remain planned. The
+default C frontend retains its separate [mailbox/supervision contract](docs/ACTOR_RUNTIME.md).
+
 ### Lightweight Processes
 
 Spawn isolated processes (actors) that communicate via messages:

@@ -1,0 +1,11 @@
+fn worker():
+    let pending: Result(Int, String) = Ok(42)
+    receive:
+        1 -> ()
+    match pending:
+        Ok(value) -> println(value)
+        Err(message) -> println(message)
+fn main() -> Result((), Int):
+    let pid: Pid(Int) = spawn(worker)
+    send(pid, 1)?
+    Ok(())

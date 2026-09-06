@@ -136,14 +136,15 @@ collection-heavy compilation separately.
 
 ## Remaining migration work
 
-`with`, delayed Result ownership, full actor execution, multiline strings,
-block comments, and diagnostic/tooling parity remain open. Main Result exit semantics, safe
-collection indexing, and packed Option interoperability also need follow-up.
-REPL/native semantic coverage, additional LSP features, packaging, and full release
-parity must pass before switching defaults.
+Bounded native actors now execute; generalized suspension, typed supervision,
+actor REPL/FernSim parity and broader language/runtime parity remain open.
+Packaging, complete release parity and verified default-command migration
+remain separate requirements. The dated
+sections below record successive checkpoints rather than the current list of
+unsupported features.
 
-See the [supported-feature guide](../compiler-rs/README.md),
-[decision 46](../DECISIONS.md), and the [roadmap](../ROADMAP.md).
+See [Rust native actors](RUST_ACTORS.md),
+the [supported-feature guide](../compiler-rs/README.md), and the [roadmap](../ROADMAP.md).
 
 Directory native parity exposed a C backend defect: matched Result payloads were
 classified as Strings solely because their storage was 64 bits. Pattern binders and expressions

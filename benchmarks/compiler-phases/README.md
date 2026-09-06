@@ -54,3 +54,24 @@ claiming improvement. CI uses the deterministic smoke run, not timing thresholds
 These measurements complement `scripts/evaluate_rust_frontend.py`, which measures
 subprocess cold/warm compilation and backend comparison. They do not replace
 native correctness, memory/resource, platform, or backend evaluation gates.
+
+## Actor preparation review
+
+The [paired phase record](actor105-preparation-review.json) compares exact unchanged
+fixtures on Rust 1.75/Criterion 0.5.1 in release mode: pre-actor commit 05c4d27, the
+frozen actor candidate, and the borrowed-program optimization. Order was
+pre-actor/actor/optimized/optimized/actor/pre-actor, giving paired reversals.
+It records source/build identities, load, per-run 95% intervals and timing scope.
+
+| Fixture | Pre-actor µs | Actor µs | Optimized µs | Improvement from actor |
+| --- | ---: | ---: | ---: | ---: |
+| Scalar 64 functions | 184.26 | 273.09 | 204.21 | 25.22% |
+| Generic SCC | 42.22 | 58.41 | 45.94 | 21.35% |
+| JSON record | 13.46 | 16.96 | 13.95 | 17.71% |
+
+Values average two run medians on macOS arm64. This exploratory shared-host run
+removes 77–86% of the added phase time; 3.6–10.8% remains versus pre-actor with all
+original universal validation retained. Host contention/frequency was not controlled.
+This does not measure end-to-end compilation or native execution, and does not
+isolate the cost of each internal pass. Non-actor IL matches pre-actor bytes;
+actor IL and fault mappings match the unoptimized actor candidate.

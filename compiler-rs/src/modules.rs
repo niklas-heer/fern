@@ -1022,8 +1022,8 @@ fn qualify_type(ty: &mut Type, names: &Names) -> Result<(), Error> {
                 qualify_type(field, names)?;
             }
         }
-        Type::List(t) | Type::Option(t) => qualify_type(t, names)?,
-        Type::Result(a, b) | Type::Map(a, b) => {
+        Type::Pid(t) | Type::List(t) | Type::Option(t) => qualify_type(t, names)?,
+        Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
             qualify_type(a, names)?;
             qualify_type(b, names)?;
         }
@@ -1160,7 +1160,9 @@ fn rewrite(
         ast::ExprKind::RecordUpdate { value, fields } => {
             rewrite_update(value, fields, names, prefixes, scopes, offset)?
         }
-        kind @ (ast::ExprKind::For { .. } | ast::ExprKind::With { .. }) => {
+        kind @ (ast::ExprKind::Receive { .. }
+        | ast::ExprKind::For { .. }
+        | ast::ExprKind::With { .. }) => {
             rewrite_binding_flow(kind, names, prefixes, scopes, offset)?
         }
         _ => {}
@@ -1177,6 +1179,7 @@ fn rewrite_binding_flow(
     offset: usize,
 ) -> Result<(), Error> {
     match kind {
+        ast::ExprKind::Receive { .. } => rewrite_receive(kind, names, prefixes, scopes, offset),
         ast::ExprKind::For {
             pattern,
             iterable,
@@ -1606,5 +1609,25 @@ fn mark_global(
         },
         _ => unreachable!("only named references reach global marking"),
     };
+    Ok(())
+}
+
+/// Rewrite each receive arm in its own binder scope; timeout expressions use the outer scope.
+fn rewrite_receive(
+    kind: &mut ast::ExprKind,
+    names: &Names,
+    prefixes: &BTreeSet<String>,
+    scopes: &mut Vec<BTreeSet<String>>,
+    offset: usize,
+) -> Result<(), Error> {
+    if let ast::ExprKind::Receive { arms, timeout } = kind {
+        for arm in arms {
+            rewrite_arm(arm, names, prefixes, scopes, offset)?;
+        }
+        if let Some((duration, body)) = timeout {
+            rewrite(duration, names, prefixes, scopes, offset)?;
+            rewrite(body, names, prefixes, scopes, offset)?;
+        }
+    }
     Ok(())
 }

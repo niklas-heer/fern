@@ -56,6 +56,10 @@ pub enum Type {
     Union(Vec<Type>),
     Tuple(Vec<Type>),
     Function(Vec<Type>, Box<Type>),
+    /// Invariant managed actor identity; the payload is its mailbox type.
+    Pid(Box<Type>),
+    /// Internal receiving callable effect and its ordinary function signature.
+    ActorFunction(Box<Type>, Box<Type>),
     List(Box<Type>),
     Map(Box<Type>, Box<Type>),
     Option(Box<Type>),
@@ -82,3 +86,5 @@ mod decimal;
 mod decimal_table;
 
 pub(crate) mod codec_syntax;
+
+pub(crate) mod actors;

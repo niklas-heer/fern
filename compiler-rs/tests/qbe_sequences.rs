@@ -43,6 +43,7 @@ fn emit(body: Expr) -> Result<String, Diagnostic> {
     qbe::emit(&Program {
         types: vec![],
         functions: vec![Function {
+            mailbox: None,
             id: FunctionId(0),
             name: "main".into(),
             params: vec![],

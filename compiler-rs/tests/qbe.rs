@@ -22,6 +22,7 @@ fn string(value: &str) -> Expr {
 }
 fn function(id: usize, name: &str, body: Expr) -> Function {
     Function {
+        mailbox: None,
         captures: vec![],
         id: FunctionId(id),
         name: name.into(),

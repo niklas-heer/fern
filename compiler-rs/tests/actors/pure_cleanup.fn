@@ -1,0 +1,6 @@
+fn main():
+    let pid: Pid(()) = spawn(() ->
+        defer println("cleanup")
+        println("body")
+    )
+    println("main")

@@ -40,6 +40,9 @@ mod unions;
 #[path = "qbe/with.rs"]
 mod with;
 
+#[path = "qbe/actors.rs"]
+mod actor_backend;
+
 const MAX_DEPTH: usize = 128;
 const MAX_NODES: usize = 200_000;
 const STRING_RUN: usize = 512;
@@ -60,7 +63,16 @@ pub fn emit_test(program: &ir::Program) -> Result<String, Diagnostic> {
 fn emit_mode(program: &ir::Program, test_mode: bool) -> Result<String, Diagnostic> {
     ir::reject_probes(program)?;
     crate::json_codec::validate_program(program)?;
-    emit_inner(program, test_mode).map_err(|exit| match exit {
+    let lowered = actor_backend::prepare(program);
+    let result = lowered.and_then(|prepared| {
+        emit_inner(
+            &prepared.program,
+            test_mode,
+            prepared.plan,
+            prepared.layouts,
+        )
+    });
+    result.map_err(|exit| match exit {
         Exit::Diagnostic(error) => error,
         Exit::Terminated => Diagnostic::new(
             Span::default(),
@@ -83,10 +95,12 @@ impl From<Diagnostic> for Exit {
 }
 
 /// Validate signatures and lower complete function bodies through their exit handlers.
-fn emit_inner(program: &ir::Program, test_mode: bool) -> Lowering<String> {
-    union_validation::preflight(program)?;
-    let layouts = nominal::layouts(&program.types)?;
-    union_validation::references(program, &layouts)?;
+fn emit_inner(
+    program: &ir::Program,
+    test_mode: bool,
+    actors: actor_backend::Plan,
+    layouts: HashMap<Type, &ir::TypeLayout>,
+) -> Lowering<String> {
     let mut functions = BTreeMap::new();
     let mut main = None;
     for function in &program.functions {
@@ -121,7 +135,27 @@ fn emit_inner(program: &ir::Program, test_mode: bool) -> Lowering<String> {
         }
     }
     let main = main.ok_or_else(|| invalid(Span::default(), "missing main function"))?;
-    let mut emitter = Emitter {
+    let mut emitter = new_emitter(functions, layouts, actors, test_mode);
+    emitter.actor_descriptors()?;
+    for function in &program.functions {
+        if !emitter.actors.entries.contains_key(&function.id.0) {
+            emitter.function(function)?;
+        }
+    }
+    emitter.support_helpers(main);
+    emitter.data.push_str(&emitter.output);
+    Ok(emitter.data)
+}
+
+/// Initialize emission state only after source signatures and nominal layouts are validated.
+fn new_emitter<'a>(
+    functions: BTreeMap<usize, &'a Function>,
+    layouts: HashMap<Type, &'a ir::TypeLayout>,
+    actors: actor_backend::Plan,
+    test_mode: bool,
+) -> Emitter<'a> {
+    Emitter {
+        actors,
         test_mode,
         codec_tables: HashMap::new(),
         codec_data_bytes: 0,
@@ -139,13 +173,7 @@ fn emit_inner(program: &ir::Program, test_mode: bool) -> Lowering<String> {
         repeat_used: false,
         slice_used: false,
         pattern_tail_used: false,
-    };
-    for function in &program.functions {
-        emitter.function(function)?;
     }
-    emitter.support_helpers(main);
-    emitter.data.push_str(&emitter.output);
-    Ok(emitter.data)
 }
 
 /// Build an IR-boundary diagnostic at `span`; `message` describes the invariant.
@@ -170,6 +198,8 @@ fn scalar_width(ty: Type) -> char {
         | Type::Union(_)
         | Type::Native(_)
         | Type::Named(_, _)
+        | Type::Pid(_)
+        | Type::ActorFunction(_, _)
         | Type::Function(_, _) => 'l',
         Type::Bool | Type::Unit => 'w',
         Type::Float => 'd',
@@ -191,6 +221,7 @@ fn expect_type(actual: Type, expected: Type, span: Span) -> Lowering<()> {
 }
 
 struct Emitter<'a> {
+    actors: actor_backend::Plan,
     codec_tables: HashMap<usize, String>,
     codec_data_bytes: usize,
     test_mode: bool,
@@ -260,6 +291,11 @@ impl Emitter<'_> {
         }
         self.output.push_str(include_str!("qbe/control.ssa"));
         self.output.push_str(include_str!("qbe/fault.ssa"));
+        self.output.push_str(if self.actors.active {
+            include_str!("qbe/actor_fault_tail.ssa")
+        } else {
+            include_str!("qbe/fault_tail.ssa")
+        });
         if self.numeric_used {
             self.output.push_str(include_str!("qbe/numeric.ssa"));
         }
@@ -303,6 +339,9 @@ impl Emitter<'_> {
             current: "@start".into(),
         };
         let mut params = vec!["l %env".to_owned(), "l %fault".to_owned()];
+        if self.actors.managed.contains(&function.id.0) {
+            params.push("l %exec".into());
+        }
         for param in &function.params {
             let value = format!("%v{}", param.id.0);
             locals.define(
@@ -344,6 +383,10 @@ impl Emitter<'_> {
 
     /// Bridge the C runtime's 32-bit entry ABI to the resolved Fern main signature.
     fn main_wrapper(&mut self, main: &Function) {
+        if self.actors.active {
+            self.actor_main(main);
+            return;
+        }
         self.output
             .push_str("export function w $fern_main() {\n@start\n    %fault =l alloc8 8\n    storel 0, %fault\n");
         self.output.push_str(&format!(
@@ -367,6 +410,7 @@ impl Emitter<'_> {
         self.validate_expr(expr, depth)?;
         self.strict_termination(expr, locals, depth + 1)?;
         let (actual, value) = match &expr.kind {
+            ExprKind::Actor(actor) => self.actor_expression(actor, expr.span, locals, depth + 1)?,
             ExprKind::JsonCodec { .. } => self.json_codec(expr, locals, depth + 1)?,
             ExprKind::With { .. }
             | ExprKind::For { .. }
@@ -696,6 +740,11 @@ impl Emitter<'_> {
         } else {
             Vec::new()
         };
+        if let CallTarget::Function(id) = target {
+            if self.actors.managed.contains(&id.0) {
+                arguments.push("l %exec".into());
+            }
+        }
         for (arg, expected) in args.iter().zip(params) {
             expect_type(arg.ty.clone(), expected.clone(), arg.span)?;
             let mut value = self.expr(arg, locals, depth)?;
@@ -1014,8 +1063,8 @@ fn concrete(ty: &Type, span: Span, depth: usize) -> Lowering<()> {
             }
             Ok(())
         }
-        Type::List(item) | Type::Option(item) => concrete(item, span, depth + 1),
-        Type::Result(ok, err) | Type::Map(ok, err) => {
+        Type::Pid(item) | Type::List(item) | Type::Option(item) => concrete(item, span, depth + 1),
+        Type::ActorFunction(ok, err) | Type::Result(ok, err) | Type::Map(ok, err) => {
             concrete(ok, span, depth + 1)?;
             concrete(err, span, depth + 1)
         }

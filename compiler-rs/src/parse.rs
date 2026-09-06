@@ -1,4 +1,5 @@
 //! Independent, bounded lexer and recursive-descent parser for the prototype.
+mod actors;
 mod inspection;
 mod type_arguments;
 pub use inspection::{debug_ast, debug_tokens};
@@ -2175,6 +2176,9 @@ impl Parser {
 
     /// Parse unary operators, literals, calls, grouping, and conditionals.
     fn prefix(&mut self) -> ParseResult<Parsed> {
+        if self.word("receive") {
+            return self.receive_expression();
+        }
         if self.word("with") {
             return self.with_expression();
         }
@@ -2217,7 +2221,9 @@ impl Parser {
             Kind::Name(name) if name == "true" || name == "false" => {
                 expression(ExprKind::Bool(name == "true"), token.span, 1)
             }
-            Kind::Name(name) if !reserved(&name) => self.named(name, token.span),
+            Kind::Name(name) if !reserved(&name) || name == "spawn" || name == "send" => {
+                self.named(name, token.span)
+            }
             Kind::LeftBracket => self.list(token.span),
             Kind::Percent => self.map_or_update(token.span),
             Kind::Left => self.parenthesized(token.span),
@@ -3426,7 +3432,7 @@ fn pipe(left: Parsed, right: Parsed) -> ParseResult<Parsed> {
 /// Share type-name arity and primitive identities with canonical static codec targets.
 pub(crate) fn named_type(name: String, mut arguments: Vec<Type>, span: Span) -> ParseResult<Type> {
     let arity = match name.as_str() {
-        "List" | "Option" => Some(1),
+        "Pid" | "List" | "Option" => Some(1),
         "Result" | "Map" => Some(2),
         "Int" | "Float" | "Bool" | "String" | "Unit" | "Range" => Some(0),
         _ => None,
@@ -3444,6 +3450,7 @@ pub(crate) fn named_type(name: String, mut arguments: Vec<Type>, span: Span) -> 
         "Unit" => Type::Unit,
         "Bool" => Type::Bool,
         "String" => Type::String,
+        "Pid" => Type::Pid(Box::new(arguments.remove(0))),
         "List" => Type::List(Box::new(arguments.remove(0))),
         "Option" => Type::Option(Box::new(arguments.remove(0))),
         "Result" | "Map" => {

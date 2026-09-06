@@ -1,0 +1,18 @@
+fn worker() -> ():
+    let first = receive:
+        value -> value
+    println(first)
+    let second = receive:
+        value -> value
+    println(second)
+
+fn sender(pid: Pid(String)) -> ():
+    match send(pid, "two"):
+        Ok(()) -> ()
+        Err(_) -> println("send failed")
+
+fn main() -> Result((), Int):
+    let pid: Pid(String) = spawn(worker)
+    send(pid, "one")?
+    let sender_pid: Pid(()) = spawn(() -> sender(pid))
+    Ok(())

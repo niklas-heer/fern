@@ -65,7 +65,7 @@ fn type_work(ty: &Type, span: Span, work: &mut usize) -> Result<(), Diagnostic> 
                 charge(work, 1, span)?;
                 pending.push(a);
             }
-            Type::Map(a, b) | Type::Result(a, b) => {
+            Type::ActorFunction(a, b) | Type::Map(a, b) | Type::Result(a, b) => {
                 charge(work, 2, span)?;
                 pending.extend([a.as_ref(), b.as_ref()]);
             }

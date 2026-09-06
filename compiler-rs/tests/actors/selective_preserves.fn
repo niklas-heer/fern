@@ -1,0 +1,15 @@
+type Message:
+    First(String)
+    Second(Int)
+
+fn worker() -> ():
+    receive:
+        Second(value) -> println(value)
+    receive:
+        First(value) -> println(value)
+
+fn main() -> Result((), Int):
+    let pid: Pid(Message) = spawn(worker)
+    send(pid, First("retained"))?
+    send(pid, Second(42))?
+    Ok(())

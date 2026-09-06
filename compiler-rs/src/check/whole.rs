@@ -69,6 +69,7 @@ fn prepare(
         rename_group(&mut program.functions[group.clauses.clone()], index)?;
         let signatures = HashMap::new();
         let mut checker = Checker {
+            mailbox: None,
             editor: None,
             recovery: None,
             signatures: &signatures,
@@ -164,6 +165,7 @@ fn signatures(
         signatures.insert(
             function.name.clone(),
             Signature {
+                mailbox: None,
                 labels: labels::parameters(function),
                 required_labels: Vec::new(),
                 id: ir::FunctionId(index),
@@ -176,6 +178,7 @@ fn signatures(
             },
         );
     }
+    actors::attach(program, registry, &mut signatures)?;
     Ok(signatures)
 }
 
@@ -288,7 +291,8 @@ fn publish(
             .params
             .iter()
             .cloned()
-            .chain([signature.result.clone()]),
+            .chain([signature.result.clone()])
+            .chain(signature.mailbox.clone()),
     );
     signature.monotype = false;
     Ok(())
@@ -308,7 +312,9 @@ fn contains(ty: &Type, needle: &Type) -> bool {
             }
             Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
             Type::List(a) | Type::Option(a) => pending.push(a),
-            Type::Result(a, b) | Type::Map(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+            Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
+                pending.extend([a.as_ref(), b.as_ref()])
+            }
             _ => {}
         }
     }

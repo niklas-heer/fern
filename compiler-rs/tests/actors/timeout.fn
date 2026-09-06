@@ -1,0 +1,8 @@
+fn worker() -> ():
+    receive:
+        "go" -> println("received")
+        _ after 5 -> println("timeout")
+
+fn main() -> ():
+    let pid: Pid(String) = spawn(worker)
+    println("main")

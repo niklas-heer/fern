@@ -1,0 +1,7 @@
+fn worker():
+    receive:
+        1 -> ()
+        _ after -1 -> println("wrong")
+fn main():
+    let pid: Pid(Int) = spawn(worker)
+    ()

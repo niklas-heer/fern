@@ -338,7 +338,9 @@ fn contains_union(ty: &Type) -> bool {
                 pending.push(result);
             }
             Type::List(x) | Type::Option(x) => pending.push(x),
-            Type::Result(a, b) | Type::Map(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+            Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
+                pending.extend([a.as_ref(), b.as_ref()])
+            }
             _ => {}
         }
     }

@@ -1,0 +1,5 @@
+fn worker(): println("wrong")
+fn main() -> Result((), Int):
+    defer println("main cleanup")
+    let pid: Pid(Int) = spawn(worker)
+    Err(9)

@@ -241,8 +241,12 @@ For single-threaded WASM, `refcount` can be non-atomic for better performance.
 
 ### Handling Special Cases
 
-#### Actors (Future)
-When actors are added, each actor will have its own heap with Perceus RC. Messages between actors are copied (not shared), so no cross-heap references.
+#### Per-actor heaps (Future)
+
+The current bounded Rust actor runtime uses the shared Boehm GC heap with
+invocation-owned roots and logical resource accounting. Separate per-actor heaps
+with Perceus reference counting and copied cross-heap messages remain a future
+design; [105A](RUST_ACTORS.md) does not establish that memory model.
 
 #### FFI
 C functions that receive Fern values must follow the convention:

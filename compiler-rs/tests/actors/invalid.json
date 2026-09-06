@@ -1,0 +1,82 @@
+[
+  {
+    "name": "invalid_0",
+    "source": "fn main():\n    receive:\n        1 -> ()\n",
+    "diagnostic": "receive requires an actor"
+  },
+  {
+    "name": "invalid_1",
+    "source": "fn worker(): ()\nfn main():\n    let pid: Pid(Int) = spawn(worker)\n    send(pid, 1)\n    ()\n",
+    "diagnostic": "Result"
+  },
+  {
+    "name": "invalid_2",
+    "source": "fn worker(): ()\nfn main():\n    let pid: Pid(Result(Int, String)) = spawn(worker)\n    let result: Result(Int, String) = Ok(1)\n    match send(pid, result):\n        Ok(()) -> ()\n        Err(_) -> ()\n",
+    "diagnostic": "Result"
+  },
+  {
+    "name": "invalid_3",
+    "source": "fn effect() -> Bool:\n    println(1)\n    true\nfn worker():\n    receive:\n        value if effect() -> println(value)\nfn main():\n    let pid: Pid(Int) = spawn(worker)\n    ()\n",
+    "diagnostic": "receive guard"
+  },
+  {
+    "name": "invalid_4",
+    "source": "fn worker():\n    defer println(\"cleanup\")\n    receive:\n        1 -> ()\nfn main():\n    let pid: Pid(Int) = spawn(worker)\n    ()\n",
+    "diagnostic": "defer"
+  },
+  {
+    "name": "invalid_5",
+    "source": "fn worker():\n    receive:\n        value -> ()\nfn main():\n    let pid = spawn(worker)\n    ()\n",
+    "diagnostic": "mailbox"
+  },
+  {
+    "name": "invalid_6",
+    "source": "fn worker():\n    receive:\n        value if 1 / value == 0 -> ()\nfn main():\n    let pid: Pid(Int) = spawn(worker)\n    ()\n",
+    "diagnostic": "guard"
+  },
+  {
+    "name": "invalid_7",
+    "source": "fn worker(): ()\nfn main():\n    let pid: Pid(() -> ()) = spawn(worker)\n    ()\n",
+    "diagnostic": "messages"
+  },
+  {
+    "name": "invalid_8",
+    "source": "fn worker(): ()\nfn main():\n    let a: Pid(Int) = spawn(worker)\n    println(a)\n",
+    "diagnostic": "print"
+  },
+  {
+    "name": "invalid_9",
+    "source": "fn worker(): ()\nfn enqueue(pid: Pid(Int)) -> Result((), Int): send(pid, 1)\nfn main():\n    let pid: Pid(Int) = spawn(worker)\n    let callback = enqueue\n    match callback(pid):\n        Ok(()) -> ()\n        Err(_) -> ()\n",
+    "diagnostic": "first-class actor helper"
+  },
+  {
+    "name": "invalid_10",
+    "source": "fn worker(): ()\nfn helper():\n    let pid: Pid(Int) = spawn(worker)\n    ()\nfn main():\n    defer helper()\n    ()\n",
+    "diagnostic": "first-class actor helper"
+  },
+  {
+    "name": "invalid_11",
+    "source": "fn worker():\n    for index in 0..2:\n        receive:\n            1 -> ()\nfn main():\n    let pid: Pid(Int) = spawn(worker)\n    ()\n",
+    "diagnostic": "suspension position"
+  },
+  {
+    "name": "invalid_12",
+    "source": "fn worker():\n    receive:\n        1 -> worker()\n    println(\"after recursive actor\")\nfn main():\n    let pid: Pid(Int) = spawn(worker)\n    ()\n",
+    "diagnostic": "tail position"
+  },
+  {
+    "name": "invalid_13",
+    "source": "fn launch(panel: Tui.Panel) -> Pid(()):\n    spawn(() ->\n        let retained = panel\n        ()\n    )\nfn main(): ()\n",
+    "diagnostic": "actor capture"
+  },
+  {
+    "name": "invalid_14",
+    "source": "fn worker():\n    receive:\n        \"x\" if \"a\" + \"b\" == \"ab\" -> ()\nfn main():\n    let pid: Pid(String) = spawn(worker)\n    ()\n",
+    "diagnostic": "guard"
+  },
+  {
+    "name": "invalid_15",
+    "source": "fn worker():\n    receive:\n        1 -> ()\n        1 -> ()\nfn main():\n    let pid: Pid(Int) = spawn(worker)\n    ()\n",
+    "diagnostic": "unreachable"
+  }
+]

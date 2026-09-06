@@ -1,0 +1,24 @@
+fn receiver():
+    let text = String.repeat("🌿", 4096)
+    let values = [9223372036854775807, -9223372036854775808]
+    let pending: Result(String, Int) = Ok(text)
+    receive:
+        1 -> ()
+    println(String.len(text))
+    println(List.head(values))
+    match pending:
+        Ok(saved) -> println(String.len(saved))
+        Err(code) -> println(code)
+
+fn sender(target: Pid(Int)):
+    for index in 0..4096:
+        let noise = String.repeat("x", 16384)
+        if String.len(noise) != 16384: println(index)
+    match send(target, 1):
+        Ok(()) -> ()
+        Err(code) -> println(code)
+
+fn main():
+    let target: Pid(Int) = spawn(receiver)
+    let source: Pid(()) = spawn(() -> sender(target))
+    ()

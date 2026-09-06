@@ -1,0 +1,5 @@
+fn main() -> ():
+    let value = "🌿"
+    let pid: Pid(()) = spawn(() -> println(value))
+    let value = "later"
+    println(value)

@@ -46,12 +46,23 @@ fn walk(
     }
     for function in &program.functions {
         visit(&function.return_type, false)?;
+        if let Some(mailbox) = &function.mailbox {
+            visit(mailbox, false)?;
+        }
         for param in function.params.iter().chain(&function.captures) {
             visit(&param.ty, false)?;
         }
         let mut pending = vec![&function.body];
         while let Some(expr) = pending.pop() {
             visit(&expr.ty, false)?;
+            if let ExprKind::Actor(
+                ir::ActorExpr::Spawn { mailbox, .. }
+                | ir::ActorExpr::Receive { mailbox, .. }
+                | ir::ActorExpr::Call { mailbox, .. },
+            ) = &expr.kind
+            {
+                visit(mailbox, false)?;
+            }
             if let ExprKind::UnionInject { value } | ExprKind::UnionWiden { value } = &expr.kind {
                 visit(&value.ty, false)?;
                 conversion_shape(expr, value)?;
@@ -102,6 +113,13 @@ fn type_work(ty: &Type, selected: bool, work: &mut usize) -> Lowering<()> {
         if matches!(ty, Type::Union(_)) {
             charge_type(ty, work)?;
         }
+        if matches!(ty, Type::ActorFunction(_, signature) if !matches!(signature.as_ref(), Type::Function(_, _)))
+        {
+            return Err(invalid(
+                Span::default(),
+                "actor callable requires a function signature",
+            ));
+        }
         let children = type_children(ty);
         if children.size_hint().1.unwrap_or(MAX_NODES)
             > MAX_NODES.saturating_sub(nodes + pending.len())
@@ -138,8 +156,12 @@ fn type_children(ty: &Type) -> impl Iterator<Item = &Type> {
             (fields.as_slice(), None, None)
         }
         Type::Function(fields, result) => (fields.as_slice(), Some(result.as_ref()), None),
-        Type::List(item) | Type::Option(item) => (&[][..], Some(item.as_ref()), None),
-        Type::Map(a, b) | Type::Result(a, b) => (&[][..], Some(a.as_ref()), Some(b.as_ref())),
+        Type::Pid(item) | Type::List(item) | Type::Option(item) => {
+            (&[][..], Some(item.as_ref()), None)
+        }
+        Type::ActorFunction(a, b) | Type::Map(a, b) | Type::Result(a, b) => {
+            (&[][..], Some(a.as_ref()), Some(b.as_ref()))
+        }
         _ => (&[][..], None, None),
     };
     fields.iter().chain(first).chain(second)
@@ -148,7 +170,9 @@ fn type_children(ty: &Type) -> impl Iterator<Item = &Type> {
 /// Locate statement and expression patterns without revisiting their value/body expressions.
 fn expression_patterns(expr: &Expr) -> Vec<&Pattern> {
     match &expr.kind {
-        ExprKind::Match { arms, .. } => arms.iter().map(|arm| &arm.pattern).collect(),
+        ExprKind::Actor(ir::ActorExpr::Receive { arms, .. }) | ExprKind::Match { arms, .. } => {
+            arms.iter().map(|arm| &arm.pattern).collect()
+        }
         ExprKind::For { pattern, .. } => vec![pattern],
         ExprKind::With { steps, .. } => steps.iter().map(|step| &step.pattern).collect(),
         ExprKind::Block(stmts) => stmts

@@ -26,28 +26,20 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
-        let mut names = HashSet::new();
-        if params.len() > MAX_PARAMETERS {
-            return Err(Diagnostic::new(span, "lambda parameter limit exceeded"));
-        }
-        let mut types = Vec::new();
-        for param in params {
-            if !names.insert(&param.name) {
-                return Err(Diagnostic::new(param.span, "duplicate lambda parameter"));
-            }
-            if let Some(ty) = &param.annotation {
-                self.registry
-                    .validate(ty, &self.inference.template_names, param.span)?;
-            }
-            types.push(
-                param
-                    .annotation
-                    .clone()
-                    .unwrap_or_else(|| self.inference.fresh()),
-            );
-        }
+        let types = self.lambda_parameter_types(params, span)?;
         let result = self.inference.fresh();
-        let ty = Type::Function(types.clone(), Box::new(result.clone()));
+        let ordinary = Type::Function(types.clone(), Box::new(result.clone()));
+        let mailbox = expected.and_then(|t| {
+            if let Type::ActorFunction(m, _) = t {
+                Some((**m).clone())
+            } else {
+                None
+            }
+        });
+        let ty = mailbox
+            .as_ref()
+            .map(|m| Type::ActorFunction(Box::new(m.clone()), Box::new(ordinary.clone())))
+            .unwrap_or(ordinary);
         if let Some(expected) = expected {
             let expected = self.inference.resolve(expected, span)?;
             if matches!(expected, Type::Union(_)) {
@@ -68,8 +60,10 @@ impl Checker<'_> {
             .collect();
         let previous = std::mem::replace(&mut self.function_return, result.clone());
         let previous_loop = std::mem::replace(&mut self.loop_depth, 0);
+        let previous_mailbox = std::mem::replace(&mut self.mailbox, mailbox);
         let checked = self.expression_expected(body, Some(&result), depth);
         self.loop_depth = previous_loop;
+        self.mailbox = previous_mailbox;
         self.function_return = previous;
         self.scopes.pop();
         let body = checked?;
@@ -83,6 +77,35 @@ impl Checker<'_> {
             },
             ty,
         ))
+    }
+
+    /// Validate lambda binders and their optional annotations before creating lexical locals.
+    fn lambda_parameter_types(
+        &mut self,
+        params: &[ast::LambdaParam],
+        span: Span,
+    ) -> Checked<Vec<Type>> {
+        let mut names = HashSet::new();
+        if params.len() > MAX_PARAMETERS {
+            return Err(Diagnostic::new(span, "lambda parameter limit exceeded"));
+        }
+        let mut types = Vec::new();
+        for param in params {
+            if !names.insert(&param.name) {
+                return Err(Diagnostic::new(param.span, "duplicate lambda parameter"));
+            }
+            if let Some(ty) = &param.annotation {
+                self.registry
+                    .validate(ty, &self.inference.template_names, param.span)?;
+            }
+            types.push(
+                param
+                    .annotation
+                    .clone()
+                    .unwrap_or_else(|| self.inference.fresh()),
+            );
+        }
+        Ok(types)
     }
 
     /// Push tuple annotation fields into contained function values before checking their bodies.
@@ -229,6 +252,16 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
+        if name == "spawn" || name == "send" {
+            return self.actor_call(name, args, expected, span, depth);
+        }
+        if self
+            .signatures
+            .get(name)
+            .is_some_and(|s| s.mailbox.is_some())
+        {
+            return self.actor_named_call(name, args, expected, span, depth);
+        }
         if crate::codec_syntax::is_codec(name) {
             return self.json_codec(name, args, expected, span, depth);
         }
@@ -299,7 +332,7 @@ impl Checker<'_> {
     }
 
     /// Gather ordinary argument constraints before lambdas while retaining source evaluation order.
-    fn call_arguments(
+    pub(super) fn call_arguments(
         &mut self,
         args: &[ast::Argument],
         params: &[Type],
@@ -380,9 +413,12 @@ impl Checker<'_> {
         ty: &Type,
         span: Span,
     ) -> Checked<()> {
-        let Type::Function(params, result) = ty else {
+        let Some((mailbox, params, result)) = crate::actors::function(ty) else {
             return Err(Diagnostic::new(span, "invalid function value type"));
         };
+        if let Some(mailbox) = mailbox {
+            return self.actor_requirements(target, params, result, mailbox, span);
+        }
         let args = params
             .iter()
             .enumerate()

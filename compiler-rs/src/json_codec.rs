@@ -88,7 +88,7 @@ impl Validation {
                 }
                 Type::Tuple(args) | Type::Union(args) => args.as_slice(),
                 Type::List(a) | Type::Option(a) => std::slice::from_ref(a.as_ref()),
-                Type::Map(a, b) | Type::Result(a, b) => {
+                Type::ActorFunction(a, b) | Type::Map(a, b) | Type::Result(a, b) => {
                     self.charge(2)?;
                     pending.extend([a.as_ref(), b.as_ref()]);
                     continue;
@@ -380,7 +380,9 @@ fn type_size(ty: &Type) -> usize {
                 pending.push(result);
             }
             Type::List(a) | Type::Option(a) => pending.push(a),
-            Type::Map(a, b) | Type::Result(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+            Type::ActorFunction(a, b) | Type::Map(a, b) | Type::Result(a, b) => {
+                pending.extend([a.as_ref(), b.as_ref()])
+            }
             _ => {}
         }
     }

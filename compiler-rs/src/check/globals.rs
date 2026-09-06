@@ -34,6 +34,9 @@ impl Checker<'_> {
     }
     /// Resolve a proven global without consulting lexical bindings of its canonical prefix.
     pub(super) fn global_name(&mut self, name: &str, span: Span) -> Checked<TypedKind> {
+        if let Some(value) = self.actor_name(name, span)? {
+            return Ok(value);
+        }
         if self.registry.is_alias(name)
             && !self.signatures.contains_key(name)
             && self.registry.constructor(name).is_none()

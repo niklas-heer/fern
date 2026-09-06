@@ -44,6 +44,7 @@ pub(super) fn run(
             .collect();
         let function = source_instance(original, &substitutions)?;
         let mut checked = Checker {
+            mailbox: None,
             editor: None,
             recovery: None,
             signatures,
@@ -103,6 +104,7 @@ impl Driver<'_> {
             template,
             &args.iter().map(|a| a.ty.clone()).collect::<Vec<_>>(),
             result,
+            None,
         )
     }
 
@@ -111,6 +113,7 @@ impl Driver<'_> {
         template: usize,
         args: &[Type],
         result: &Type,
+        mailbox: Option<&Type>,
     ) -> Checked<ir::FunctionId> {
         let function = &self.source.functions[template];
         let signature = &self.signatures[&function.name];
@@ -120,6 +123,7 @@ impl Driver<'_> {
             .iter()
             .zip(args)
             .chain([(&signature.result, result)])
+            .chain(signature.mailbox.as_ref().zip(mailbox))
             .collect::<Vec<_>>();
         super::unions::capture_pairs(&pairs, &mut values)?;
         let arguments = signature
@@ -140,6 +144,14 @@ impl Driver<'_> {
             self.rewrite(child)?;
         }
         match &mut expr.kind {
+            ir::ExprKind::Actor(ir::ActorExpr::Call {
+                function,
+                args,
+                mailbox,
+            }) => {
+                let types: Vec<_> = args.iter().map(|a| a.ty.clone()).collect();
+                *function = self.target_types(function.0, &types, &expr.ty, Some(mailbox))?;
+            }
             ir::ExprKind::Call {
                 target: ir::CallTarget::Function(id),
                 args,
@@ -147,10 +159,10 @@ impl Driver<'_> {
             ir::ExprKind::FunctionValue {
                 target: ir::CallTarget::Function(id),
             } => {
-                let Type::Function(params, result) = &expr.ty else {
+                let Some((mailbox, params, result)) = crate::actors::function(&expr.ty) else {
                     return Err(Diagnostic::new(expr.span, "invalid function value type"));
                 };
-                *id = self.target_types(id.0, params, result)?;
+                *id = self.target_types(id.0, params, result, mailbox)?;
             }
             _ => {}
         }
@@ -182,6 +194,7 @@ fn source_instance(
 /// Substitute the bounded expression tree's explicit local annotations and guards.
 pub(super) fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Type>) -> Checked<()> {
     match &mut expr.kind {
+        ast::ExprKind::Receive { arms, timeout } => substitute_receive(arms, timeout, values)?,
         ast::ExprKind::TypeTarget(ty) => *ty = nominal::substitute(ty, values)?,
         ast::ExprKind::Range { .. } | ast::ExprKind::For { .. } | ast::ExprKind::With { .. } => {
             substitute_iteration(expr, values)?
@@ -194,12 +207,7 @@ pub(super) fn substitute_expr(expr: &mut ast::Expr, values: &HashMap<String, Typ
         }
         ast::ExprKind::RecordUpdate { value, fields } => substitute_update(value, fields, values)?,
         ast::ExprKind::Lambda { params, body } => substitute_lambda(params, body, values)?,
-        ast::ExprKind::Apply { callee, args } => {
-            substitute_expr(callee, values)?;
-            for arg in args {
-                substitute_expr(arg, values)?;
-            }
-        }
+        ast::ExprKind::Apply { callee, args } => substitute_apply(callee, args, values)?,
         ast::ExprKind::Return(value)
         | ast::ExprKind::Defer(value)
         | ast::ExprKind::Unary { value, .. }
@@ -410,6 +418,38 @@ fn substitute_pattern(pattern: &mut ast::Pattern, values: &HashMap<String, Type>
             substitute_pattern(rest, values)?;
         }
         _ => {}
+    }
+    Ok(())
+}
+
+/// Substitute receive guards, bodies, and deadlines while preserving their source order.
+fn substitute_receive(
+    arms: &mut [ast::MatchArm],
+    timeout: &mut Option<(Box<ast::Expr>, Box<ast::Expr>)>,
+    values: &HashMap<String, Type>,
+) -> Checked<()> {
+    for arm in arms {
+        if let Some(guard) = &mut arm.guard {
+            substitute_expr(guard, values)?;
+        }
+        substitute_expr(&mut arm.body, values)?;
+    }
+    if let Some((duration, body)) = timeout {
+        substitute_expr(duration, values)?;
+        substitute_expr(body, values)?;
+    }
+    Ok(())
+}
+
+/// Preserve callee-before-arguments traversal while substituting all explicit annotations.
+fn substitute_apply(
+    callee: &mut ast::Expr,
+    args: &mut [ast::Argument],
+    values: &HashMap<String, Type>,
+) -> Checked<()> {
+    substitute_expr(callee, values)?;
+    for arg in args {
+        substitute_expr(arg, values)?;
     }
     Ok(())
 }

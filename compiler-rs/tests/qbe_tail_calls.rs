@@ -29,6 +29,7 @@ fn call(id: usize, args: Vec<Expr>, ty: Type) -> Expr {
 }
 fn function(id: usize, params: Vec<Param>, body: Expr, ty: Type) -> Function {
     Function {
+        mailbox: None,
         id: FunctionId(id),
         name: if id == 0 {
             "main".into()

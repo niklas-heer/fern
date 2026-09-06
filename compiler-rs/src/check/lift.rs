@@ -61,16 +61,17 @@ impl Lifter {
         else {
             unreachable!()
         };
-        let Type::Function(_, result) = &expr.ty else {
+        let Some((mailbox, _, result)) = crate::actors::function(&expr.ty) else {
             return Err(Diagnostic::new(expr.span, "invalid lambda type"));
         };
         let (capture_params, values) = captures.into_iter().map(|c| (c.param, c.value)).unzip();
         self.generated.push(ir::Function {
+            mailbox: mailbox.cloned(),
             id,
             name: format!("$lambda{}", id.0),
             params,
             captures: capture_params,
-            return_type: (**result).clone(),
+            return_type: result.clone(),
             body: *body,
             local_count,
         });
@@ -118,6 +119,7 @@ impl Lifter {
             })
             .collect();
         self.generated.push(ir::Function {
+            mailbox: None,
             id,
             name: format!("$callable{}", id.0),
             local_count: params.len(),
@@ -139,6 +141,7 @@ impl Lifter {
 pub(super) fn children_mut(expr: &mut ir::Expr) -> Vec<&mut ir::Expr> {
     use ir::ExprKind::*;
     match &mut expr.kind {
+        Actor(actor) => crate::actors::children_mut(actor),
         Probe { children, .. } => children.iter_mut().collect(),
         Range { start, end, .. } => vec![start, end],
         For { iterable, body, .. } => vec![iterable, body],

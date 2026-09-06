@@ -258,7 +258,7 @@ impl Writer {
                 self.collect(result, depth + 1)?;
             }
             Type::List(a) | Type::Option(a) => self.collect(a, depth + 1)?,
-            Type::Map(a, b) | Type::Result(a, b) => {
+            Type::ActorFunction(a, b) | Type::Map(a, b) | Type::Result(a, b) => {
                 self.collect(a, depth + 1)?;
                 self.collect(b, depth + 1)?;
             }
@@ -333,6 +333,10 @@ impl Writer {
                 }
                 self.types("(", params, ") -> ", depth, false)?;
                 self.ty(result, depth + 1)
+            }
+            Type::Pid(a) => self.container("Pid", &[a], depth),
+            Type::ActorFunction(_, _) => {
+                Err(error("cannot present an internal actor function type"))
             }
             Type::List(a) => self.container("List", &[a], depth),
             Type::Option(a) => self.container("Option", &[a], depth),

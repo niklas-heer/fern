@@ -26,6 +26,12 @@ impl Checker<'_> {
         span: Span,
         depth: usize,
     ) -> Checked<TypedKind> {
+        if self.mailbox.is_some() {
+            return Err(Diagnostic::new(
+                span,
+                "defer is unsupported in receiving actor functions",
+            ));
+        }
         let function_type = Type::Function(vec![], Box::new(Type::Unit));
         let previous = self.deferred;
         self.deferred = true;

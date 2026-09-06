@@ -14,17 +14,20 @@ engineering milestones; they do not certify the entire language.
 | HTTP | GET/POST clients, response bodies on 2xx, integer errors otherwise | Local HTTP/TLS runtime tests; offline error example |
 | SQLite | Open a handle and execute statements | Runtime database regression tests |
 | Actor foundation | String FIFO mailboxes, lifecycle/monitor/restart, three deterministic strategies | Six invariant scenarios and 1,536 seeded strategy crash steps |
+| Rust native actors | Typed Pid, cooperative execution, selective receive/deadlines and bounded continuation frames | Twenty native programs, semantic rejections, independent IR and lifecycle/sanitizer gates |
 | Terminal UI | Styled output, panels/tables, editable input/password prompts, cursor controls, immutable trees, logs | 13 native/PTY tests and a compiled example |
 | Editor | Rust LSP, bounded Tree-sitter corpus and locally staged Zed extension | Native/WASM source parity, reproducible package tests and isolated actual-Zed LSP startup |
 | Native checker | Default C-bootstrap cached launcher; ordinary style checks need no Python/Cargo | 66 independent workflow cases, exact diagnostics, cache/concurrency/ownership and sanitizer gates on macOS/Linux |
 
 ## Blocking full language completion
 
-- **Concurrency execution:** spawn does not run a function, and the complete typed
-  receive/suspension/timeout/request-reply model is absent. Native compilation
-  rejects the unsupported execution syntax; use `actors.start/post/next` for the
-  available explicit mailbox operations. Descendant termination is verified; ancestor escalation and subtree reconstruction remain incomplete.
-  See [the exact actor contract](ACTOR_RUNTIME.md).
+- **Complete concurrency:** the opt-in Rust frontend executes bounded typed actors
+  with selective receive, timeouts and explicit continuation frames. Generalized
+  suspension, typed ancestor escalation and descendant subtree reconstruction,
+  actor REPL/FernSim parity and the planned million-step reliability target remain
+  open. The default C frontend retains explicit mailbox/supervision primitives
+  and rejects execution syntax. See [Rust native actors](RUST_ACTORS.md) and
+  [the legacy actor contract](ACTOR_RUNTIME.md).
 - **JSON:** Rust native execution and its REPL use the bounded, validating opaque
   JSON model with exact numbers and immutable builders. The legacy C source API
   still copies strings and can accept invalid JSON. Explicitly derived record codecs
@@ -38,9 +41,9 @@ engineering milestones; they do not certify the entire language.
   SQLite execute primitives.
 - **Result handling:** the Rust checker proves reachable-path handling through
   aliases, collections, generic calls and deferred cleanup. Metadata-only uses,
-  partial searches and uncovered early exits reject. Direct recursive nominal handlers
-  and complete child-collection traversals are supported; mutual structural proofs
-  and general recursive builders remain incomplete. See
+  partial searches and uncovered early exits reject. Direct recursive nominal handlers,
+  complete child-collection traversals and mutual structural handler proofs are
+  supported; general recursive builders and wider summary equations remain incomplete. See
   [the handling contract](RESULT_HANDLING.md).
 - **Editor completeness:** the verified grammar corpus is bounded. Source-label completion supports closed and EOF-open calls; remaining syntax
   and broader malformed-source recovery remain open. Local Zed packaging does not publish its pinned grammar revision.

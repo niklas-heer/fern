@@ -183,7 +183,7 @@ impl Registry {
                     pending.extend(args);
                 }
                 Type::Tuple(args) => pending.extend(args),
-                Type::List(t) | Type::Option(t) => pending.push(t),
+                Type::Pid(t) | Type::List(t) | Type::Option(t) => pending.push(t),
                 Type::Map(a, b) => {
                     super::maps::validate_key(&self.representation(a, span)?, span, true)?;
                     pending.extend([a.as_ref(), b.as_ref()]);
@@ -429,6 +429,8 @@ impl Registry {
         let mut pending = Vec::new();
         for function in functions {
             pending.push(function.return_type.clone());
+            pending.extend(function.mailbox.iter().cloned());
+            pending.extend(function.captures.iter().map(|p| p.ty.clone()));
             pending.extend(function.params.iter().map(|p| p.ty.clone()));
             let mut expressions = vec![&function.body];
             while let Some(expr) = expressions.pop() {
@@ -460,8 +462,8 @@ impl Registry {
                     pending.push((**result).clone());
                 }
                 Type::Union(fields) | Type::Tuple(fields) => pending.extend(fields.iter().cloned()),
-                Type::List(a) | Type::Option(a) => pending.push((**a).clone()),
-                Type::Result(a, b) | Type::Map(a, b) => {
+                Type::Pid(a) | Type::List(a) | Type::Option(a) => pending.push((**a).clone()),
+                Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
                     pending.push((**a).clone());
                     pending.push((**b).clone());
                 }
@@ -491,8 +493,8 @@ pub(super) fn generics(types: impl IntoIterator<Item = Type>) -> Vec<String> {
                 pending.push(*result);
             }
             Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => pending.extend(args),
-            Type::List(a) | Type::Option(a) => pending.push(*a),
-            Type::Result(a, b) | Type::Map(a, b) => {
+            Type::Pid(a) | Type::List(a) | Type::Option(a) => pending.push(*a),
+            Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
                 pending.push(*a);
                 pending.push(*b);
             }
@@ -529,27 +531,28 @@ fn substitute_inner(
             None => ty.clone(),
         },
         Type::Function(args, result) => Type::Function(
-            args.iter()
-                .map(|a| substitute_inner(a, values, depth + 1, budget, expand))
-                .collect::<Checked<Vec<_>>>()?,
+            substitute_fields(args, values, depth, budget, expand)?,
             Box::new(substitute_inner(result, values, depth + 1, budget, expand)?),
         ),
         Type::Union(args) => crate::unions::make(
-            args.iter()
-                .map(|a| substitute_inner(a, values, depth + 1, budget, expand))
-                .collect::<Checked<Vec<_>>>()?,
+            substitute_fields(args, values, depth, budget, expand)?,
             Span::default(),
         )?,
-        Type::Tuple(args) => Type::Tuple(
-            args.iter()
-                .map(|a| substitute_inner(a, values, depth + 1, budget, expand))
-                .collect::<Checked<Vec<_>>>()?,
-        ),
+        Type::Tuple(args) => Type::Tuple(substitute_fields(args, values, depth, budget, expand)?),
         Type::Named(n, args) => Type::Named(
             n.clone(),
-            args.iter()
-                .map(|a| substitute_inner(a, values, depth + 1, budget, expand))
-                .collect::<Checked<Vec<_>>>()?,
+            substitute_fields(args, values, depth, budget, expand)?,
+        ),
+        Type::Pid(a) => Type::Pid(Box::new(substitute_inner(
+            a,
+            values,
+            depth + 1,
+            budget,
+            expand,
+        )?)),
+        Type::ActorFunction(a, b) => Type::ActorFunction(
+            Box::new(substitute_inner(a, values, depth + 1, budget, expand)?),
+            Box::new(substitute_inner(b, values, depth + 1, budget, expand)?),
         ),
         Type::List(a) => Type::List(Box::new(substitute_inner(
             a,
@@ -575,6 +578,19 @@ fn substitute_inner(
         ),
         _ => ty.clone(),
     })
+}
+
+/// Substitute ordered fields without resetting the enclosing expansion budget.
+fn substitute_fields(
+    args: &[Type],
+    values: &HashMap<String, Type>,
+    depth: usize,
+    budget: &mut usize,
+    expand: bool,
+) -> Checked<Vec<Type>> {
+    args.iter()
+        .map(|a| substitute_inner(a, values, depth + 1, budget, expand))
+        .collect()
 }
 
 /// Infer a template's generic arguments from concrete argument and result types.
@@ -620,10 +636,12 @@ pub(super) fn capture(
             }
             capture(ar, br, values, depth + 1)?;
         }
-        (Type::List(a), Type::List(b)) | (Type::Option(a), Type::Option(b)) => {
-            capture(a, b, values, depth + 1)?
-        }
-        (Type::Result(a, b), Type::Result(c, d)) | (Type::Map(a, b), Type::Map(c, d)) => {
+        (Type::Pid(a), Type::Pid(b))
+        | (Type::List(a), Type::List(b))
+        | (Type::Option(a), Type::Option(b)) => capture(a, b, values, depth + 1)?,
+        (Type::ActorFunction(a, b), Type::ActorFunction(c, d))
+        | (Type::Result(a, b), Type::Result(c, d))
+        | (Type::Map(a, b), Type::Map(c, d)) => {
             capture(a, c, values, depth + 1)?;
             capture(b, d, values, depth + 1)?;
         }
@@ -654,8 +672,8 @@ fn validate_layout_type(ty: &Type, span: Span) -> Checked<()> {
             Type::Union(args) | Type::Tuple(args) | Type::Named(_, args) => {
                 pending.extend(args.iter().map(|t| (t, depth + 1)))
             }
-            Type::List(a) | Type::Option(a) => pending.push((a, depth + 1)),
-            Type::Result(a, b) | Type::Map(a, b) => {
+            Type::Pid(a) | Type::List(a) | Type::Option(a) => pending.push((a, depth + 1)),
+            Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
                 pending.push((a, depth + 1));
                 pending.push((b, depth + 1));
             }

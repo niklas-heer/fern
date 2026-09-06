@@ -97,6 +97,7 @@ impl<'a> CodeBudget<'a> {
         self.bytes += std::mem::size_of::<ir::Expr>();
         self.pending.push(Part::Type(&expr.ty));
         match &expr.kind {
+            Actor(_) => return Err("managed actors are not supported in the REPL yet".into()),
             JsonCodecTemplate { .. } => {
                 return Err("JSON codec template cannot enter executable IR".into())
             }
@@ -129,10 +130,7 @@ impl<'a> CodeBudget<'a> {
             | Closure { captures: xs, .. }
             | CustomConstruct { fields: xs, .. }
             | Call { args: xs, .. } => self.expressions(xs),
-            Invoke { callee, args } => {
-                self.pending.push(Part::Expr(callee));
-                self.expressions(args);
-            }
+            Invoke { callee, args } => self.invocation(callee, args),
             UnionInject { value }
             | UnionWiden { value }
             | Wrap(value)
@@ -161,6 +159,11 @@ impl<'a> CodeBudget<'a> {
             Int(_) | Float(_) | Bool(_) | Local(_) | Unit | Break | Continue => {}
         }
         Ok(())
+    }
+    /// Account callee and arguments without losing captured closure storage.
+    fn invocation(&mut self, callee: &'a ir::Expr, args: &'a [ir::Expr]) {
+        self.pending.push(Part::Expr(callee));
+        self.expressions(args);
     }
     /// Retain every branch even when its condition is statically false.
     fn conditional(
@@ -236,7 +239,7 @@ impl<'a> CodeBudget<'a> {
         self.bytes += std::mem::size_of::<Type>();
         match ty {
             Type::List(a) | Type::Option(a) => self.pending.push(Part::Type(a)),
-            Type::Result(a, b) | Type::Map(a, b) => {
+            Type::ActorFunction(a, b) | Type::Result(a, b) | Type::Map(a, b) => {
                 self.pending.extend([Part::Type(a), Part::Type(b)])
             }
             Type::Function(args, result) => {
@@ -344,6 +347,7 @@ mod tests {
         Rc::new(ir::Program {
             types: Vec::new(),
             functions: vec![ir::Function {
+                mailbox: None,
                 id: ir::FunctionId(0),
                 name: "retained".into(),
                 params: Vec::new(),

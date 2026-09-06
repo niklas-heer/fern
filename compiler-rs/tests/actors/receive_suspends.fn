@@ -1,0 +1,16 @@
+type Message:
+    Value(Int)
+
+fn worker() -> ():
+    println("waiting")
+    receive:
+        Value(value) -> println(value)
+
+fn sender(pid: Pid(Message)) -> ():
+    match send(pid, Value(9223372036854775807)):
+        Ok(()) -> ()
+        Err(_) -> println("send failed")
+
+fn main() -> ():
+    let pid: Pid(Message) = spawn(worker)
+    let sender_pid: Pid(()) = spawn(() -> sender(pid))

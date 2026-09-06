@@ -1,0 +1,7 @@
+fn worker(): ()
+fn main():
+    let first: Pid(Int) = spawn(worker)
+    let same = first
+    let second: Pid(Int) = spawn(worker)
+    println(first == same)
+    println(first != second)

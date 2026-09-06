@@ -129,6 +129,10 @@ pub struct Expr {
 }
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    Receive {
+        arms: Vec<MatchArm>,
+        timeout: Option<(Box<Expr>, Box<Expr>)>,
+    },
     /// A compile-time decoder target, legal only in a canonically resolved static argument slot.
     TypeTarget(Type),
     Int(i64),

@@ -1,0 +1,14 @@
+type Message:
+    Payload(Float, List(Int), String)
+
+fn worker():
+    receive:
+        Payload(number, values, text) ->
+            println(number)
+            println(List.head(values))
+            println(text)
+
+fn main() -> Result((), Int):
+    let pid: Pid(Message) = spawn(worker)
+    send(pid, Payload(-0.5, [9223372036854775807], "🌿 alive"))?
+    Ok(())

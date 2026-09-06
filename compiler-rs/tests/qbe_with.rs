@@ -20,6 +20,7 @@ fn result(value: Expr, error: Type) -> Expr {
 }
 fn emit(body: Expr, return_type: Type) -> Result<String, fern_prototype::Diagnostic> {
     let helper = Function {
+        mailbox: None,
         id: FunctionId(1),
         name: "helper".into(),
         params: vec![],
@@ -29,6 +30,7 @@ fn emit(body: Expr, return_type: Type) -> Result<String, fern_prototype::Diagnos
         local_count: 8,
     };
     let main = Function {
+        mailbox: None,
         id: FunctionId(0),
         name: "main".into(),
         params: vec![],

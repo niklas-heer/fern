@@ -39,6 +39,29 @@ pub(super) fn retained(
     span: Span,
     prune: bool,
 ) -> Checked<Vec<bool>> {
+    retained_mode(subject, arms, registry, span, prune, false)
+}
+
+/// Selective mailbox matching checks usefulness while allowing unmatched messages to remain queued.
+pub(super) fn selective(
+    subject: &Type,
+    arms: &[ir::MatchArm],
+    registry: &Registry,
+    span: Span,
+    prune: bool,
+) -> Checked<Vec<bool>> {
+    retained_mode(subject, arms, registry, span, prune, true)
+}
+
+/// Share the bounded matrix walk across exhaustive matches and partial mailbox selection.
+fn retained_mode(
+    subject: &Type,
+    arms: &[ir::MatchArm],
+    registry: &Registry,
+    span: Span,
+    prune: bool,
+    partial: bool,
+) -> Checked<Vec<bool>> {
     let mut matrix = Vec::new();
     let mut kept = Vec::new();
     let mut budget = 20_000;
@@ -68,15 +91,17 @@ pub(super) fn retained(
             matrix.push(vec![pattern]);
         }
     }
-    if useful(
-        &matrix,
-        &[Pattern::Any],
-        std::slice::from_ref(subject),
-        registry,
-        0,
-        &mut budget,
-        span,
-    )? {
+    if !partial
+        && useful(
+            &matrix,
+            &[Pattern::Any],
+            std::slice::from_ref(subject),
+            registry,
+            0,
+            &mut budget,
+            span,
+        )?
+    {
         return Err(Diagnostic::new(
             span,
             "match must be exhaustive; guards do not guarantee coverage",

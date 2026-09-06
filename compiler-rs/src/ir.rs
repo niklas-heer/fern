@@ -32,6 +32,7 @@ pub struct TypeLayout {
 }
 #[derive(Clone, Debug)]
 pub struct Function {
+    pub mailbox: Option<Type>,
     pub id: FunctionId,
     pub name: String,
     pub params: Vec<Param>,
@@ -101,6 +102,7 @@ impl CodecTemplateToken {
 
 #[derive(Clone, Debug)]
 pub enum ExprKind {
+    Actor(ActorExpr),
     JsonCodecTemplate {
         direction: crate::json_codec::Direction,
         input: Box<Expr>,
@@ -334,6 +336,7 @@ pub enum Builtin {
 /// List child expressions, including guards, without traversing type layouts.
 pub(crate) fn children(expr: &Expr) -> Vec<&Expr> {
     match &expr.kind {
+        ExprKind::Actor(actor) => crate::actors::children(actor),
         ExprKind::Probe { children, .. } => children.iter().collect(),
         ExprKind::EditorHole { receiver, .. } => vec![receiver],
         ExprKind::Range { start, end, .. } => vec![start, end],
@@ -468,4 +471,28 @@ fn statement_children(stmt: &Stmt) -> Vec<&Expr> {
         } => vec![value, else_branch],
         Stmt::Let { value, .. } | Stmt::Expr(value) => vec![value],
     }
+}
+
+/// Actor operations retain semantic mailbox identity through concrete specialization.
+#[derive(Clone, Debug)]
+pub enum ActorExpr {
+    Lowered(crate::actors::Lowered),
+    Spawn {
+        entry: Box<Expr>,
+        mailbox: Type,
+    },
+    Send {
+        pid: Box<Expr>,
+        message: Box<Expr>,
+    },
+    Receive {
+        mailbox: Type,
+        arms: Vec<MatchArm>,
+        timeout: Option<(Box<Expr>, Box<Expr>)>,
+    },
+    Call {
+        function: FunctionId,
+        args: Vec<Expr>,
+        mailbox: Type,
+    },
 }

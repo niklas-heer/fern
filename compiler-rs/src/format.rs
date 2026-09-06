@@ -392,7 +392,8 @@ impl Renderer<'_> {
                 if *inclusive { "=" } else { "" },
                 self.inline(end, indent)?
             ),
-            ExprKind::For { .. }
+            ExprKind::Receive { .. }
+            | ExprKind::For { .. }
             | ExprKind::With { .. }
             | ExprKind::Return(_)
             | ExprKind::Defer(_)
@@ -447,9 +448,33 @@ impl Renderer<'_> {
         Ok(vec![line(indent, text, expression.span.start)])
     }
 
+    /// Format receive arms and the optional timeout as independently scoped suites.
+    fn receive(
+        &self,
+        arms: &[ast::MatchArm],
+        timeout: &Option<(Box<Expr>, Box<Expr>)>,
+        span: Span,
+        indent: usize,
+    ) -> Result<Vec<Line>> {
+        let mut lines = vec![line(indent, "receive:", span.start)];
+        lines.extend(self.match_arms(arms, indent + 1)?);
+        if let Some((duration, body)) = timeout {
+            lines.extend(self.suite(
+                format!("_ after {} ->", self.inline(duration, indent)?),
+                duration.span.start,
+                body,
+                indent + 1,
+            )?);
+        }
+        Ok(lines)
+    }
+
     /// Dispatch scoped and terminating expressions separately from ordinary values.
     fn control_expression(&self, expression: &Expr, indent: usize) -> Result<Vec<Line>> {
         match &expression.kind {
+            ExprKind::Receive { arms, timeout } => {
+                self.receive(arms, timeout, expression.span, indent)
+            }
             ExprKind::For {
                 pattern,
                 iterable,
@@ -1104,6 +1129,13 @@ fn module_anchor(source: &str) -> usize {
 /// Render concrete/generic source type syntax; inference variables never originate in parsing.
 fn type_text(ty: &Type) -> Result<String> {
     Ok(match ty {
+        Type::Pid(value) => format!("Pid({})", type_text(value)?),
+        Type::ActorFunction(_, _) => {
+            return Err(Diagnostic::new(
+                Span::default(),
+                "internal actor function type cannot be formatted",
+            ))
+        }
         Type::Int => "Int".into(),
         Type::Range => "Range".into(),
         Type::Float => "Float".into(),
@@ -1472,6 +1504,7 @@ fn structural(mut program: ast::Program) -> String {
 fn clear_expression(expression: &mut Expr) {
     expression.span = Span::default();
     match &mut expression.kind {
+        ExprKind::Receive { arms, timeout } => clear_receive(arms, timeout),
         ExprKind::TypeTarget(_) => {}
         ExprKind::Unary { value, .. }
         | ExprKind::Try(value)
@@ -1744,4 +1777,13 @@ fn derive_text(derives: &[ast::Derivation]) -> String {
     }
     let names: Vec<_> = derives.iter().map(|d| d.name.as_str()).collect();
     format!(" derive({})", names.join(", "))
+}
+
+/// Clear receive children without leaking arm or timeout source positions into equivalence checks.
+fn clear_receive(arms: &mut [ast::MatchArm], timeout: &mut Option<(Box<Expr>, Box<Expr>)>) {
+    clear_arms(arms);
+    if let Some((duration, body)) = timeout {
+        clear_expression(duration);
+        clear_expression(body);
+    }
 }

@@ -162,6 +162,7 @@ fn final_checker<'a>(
     query: Query,
 ) -> Checker<'a> {
     Checker {
+        mailbox: None,
         signatures,
         registry,
         scopes: vec![HashMap::new()],
@@ -371,8 +372,8 @@ impl Budget {
                 return Err(limit());
             }
             match ty {
-                Type::List(t) | Type::Option(t) => stack.push((t, depth + 1)),
-                Type::Map(a, b) | Type::Result(a, b) => {
+                Type::Pid(t) | Type::List(t) | Type::Option(t) => stack.push((t, depth + 1)),
+                Type::ActorFunction(a, b) | Type::Map(a, b) | Type::Result(a, b) => {
                     stack.push((a, depth + 1));
                     stack.push((b, depth + 1));
                 }

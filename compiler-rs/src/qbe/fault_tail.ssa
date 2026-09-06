@@ -1,0 +1,8 @@
+    jnz %is_6, @message_6, @check_7
+@message_6
+    call $write(w 2, l $fern_rs_fault_6, l 77)
+    ret
+@check_7
+    call $write(w 2, l $fern_rs_fault_7, l 61)
+    ret
+}
