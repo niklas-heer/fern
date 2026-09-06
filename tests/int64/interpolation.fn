@@ -1,0 +1,3 @@
+fn main():
+    let number = 4294967297
+    println("value:{number}, negative:{-number}")

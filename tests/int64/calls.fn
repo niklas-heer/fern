@@ -1,0 +1,9 @@
+fn add(x: Int, y: Int) -> Int: x + y
+fn negative() -> Int: -4294967295
+fn main():
+    let large = 4294967297
+    let total = add(large, negative())
+    println(large)
+    println(negative())
+    println(total)
+    println(add(large, large))

@@ -1,0 +1,5 @@
+fn main():
+    for value in 4294967297..4294967300:
+        println(value)
+    for value in -4294967295..=-4294967294:
+        println(value)

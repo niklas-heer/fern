@@ -242,6 +242,9 @@ fmt:
 # Full quality check (build + test + style, strict mode)
 check:
     uv run scripts/check_style.py src lib
+    python3 scripts/test_c_int64.py
+    python3 scripts/test_process_frontends.py --compiler bin/fern
+    python3 scripts/test_stderr_frontends.py --compiler bin/fern
 
 # Style check only (no build/test)
 style:
@@ -460,6 +463,10 @@ rust-check: rust-build
     python3 scripts/test_rust_units.py
     uv run scripts/test_style_parity.py --compiler compiler-rs/target/debug/fern-rs
     python3 scripts/test_runtime_directory.py
+    python3 scripts/test_runtime_stderr.py
+    python3 scripts/test_stderr_frontends.py --compiler compiler-rs/target/debug/fern-rs
+    python3 scripts/test_runtime_process_bounded.py
+    python3 scripts/test_process_frontends.py --compiler compiler-rs/target/debug/fern-rs
     python3 scripts/test_runtime_json.py
     python3 scripts/test_rust_fuzz.py
 

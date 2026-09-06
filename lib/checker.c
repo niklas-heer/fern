@@ -289,6 +289,14 @@ static Type* lookup_module_function(Checker* checker, const char* module, const 
     TypeVec* result_args;
     Type* result_type;
 
+    /* C packed Options support the workflow's byte/index Int payloads. */
+    if (strcmp(module, "Option") == 0 && strcmp(func, "unwrap_or") == 0) {
+        params = TypeVec_new(arena);
+        TypeVec_push(arena, params, type_option(arena, type_int(arena)));
+        TypeVec_push(arena, params, type_int(arena));
+        return type_fn(arena, params, type_int(arena));
+    }
+
     /* ===== String module ===== */
     if (strcmp(module, "String") == 0) {
         /* String.len(String) -> Int */
@@ -661,6 +669,12 @@ static Type* lookup_module_function(Checker* checker, const char* module, const 
             TypeVec_push(arena, params, type_int(arena));
             return type_fn(arena, params, type_unit(arena));
         }
+        /* System.write_stderr(String) -> Result(Unit, Int), without an added newline. */
+        if (strcmp(func, "write_stderr") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_string(arena));
+            return type_fn(arena, params, type_result(arena, type_unit(arena), type_int(arena)));
+        }
         /* System.exec(String) -> (Int, String, String) - exit code, stdout, stderr */
         if (strcmp(func, "exec") == 0) {
             params = TypeVec_new(arena);
@@ -670,6 +684,19 @@ static Type* lookup_module_function(Checker* checker, const char* module, const 
             TypeVec_push(arena, tuple_elems, type_string(arena));
             TypeVec_push(arena, tuple_elems, type_string(arena));
             return type_fn(arena, params, type_tuple(arena, tuple_elems));
+        }
+        /* Bounded capture reports policy failures separately from normal child statuses. */
+        if (strcmp(func, "exec_args_bounded") == 0) {
+            params = TypeVec_new(arena);
+            TypeVec_push(arena, params, type_list(arena, type_string(arena)));
+            TypeVec_push(arena, params, type_int(arena));
+            TypeVec_push(arena, params, type_int(arena));
+            TypeVec* fields = TypeVec_new(arena);
+            TypeVec_push(arena, fields, type_int(arena));
+            TypeVec_push(arena, fields, type_string(arena));
+            TypeVec_push(arena, fields, type_string(arena));
+            Type* result = type_result(arena, type_tuple(arena, fields), type_int(arena));
+            return type_fn(arena, params, result);
         }
         /* System.exec_args(List(String)) -> (Int, String, String) */
         if (strcmp(func, "exec_args") == 0) {
@@ -2574,7 +2601,7 @@ static Type* check_if_expr(Checker* checker, IfExpr* expr) {
     
     /* Check then branch */
     Type* then_type = checker_infer_expr(checker, expr->then_branch);
-    if (then_type->kind == TYPE_ERROR) return then_type;
+    if (then_type->kind == TYPE_ERROR) return substitute(checker->arena, then_type);
     
     /* If no else branch, the whole expression returns Unit */
     if (expr->else_branch == NULL) {
@@ -2586,13 +2613,13 @@ static Type* check_if_expr(Checker* checker, IfExpr* expr) {
     if (else_type->kind == TYPE_ERROR) return else_type;
     
     /* Both branches must have the same type */
-    if (!type_equals(then_type, else_type)) {
+    if (!unify(then_type, else_type)) {
         return error_type(checker, "If branches have different types: %s vs %s",
             string_cstr(type_to_string(checker->arena, then_type)),
             string_cstr(type_to_string(checker->arena, else_type)));
     }
     
-    return then_type;
+    return substitute(checker->arena, then_type);
 }
 
 /* ========== Block Expression Type Checking ========== */
@@ -3487,7 +3514,7 @@ static Type* resolve_type_expr(Checker* checker, TypeExpr* type_expr) {
             if (strcmp(name_str, "Bool") == 0) {
                 return type_bool(checker->arena);
             }
-            if (strcmp(name_str, "()") == 0) {
+            if (strcmp(name_str, "()") == 0 || strcmp(name_str, "Unit") == 0) {
                 return type_unit(checker->arena);
             }
             
@@ -3588,7 +3615,7 @@ static Type* resolve_type_expr_strict(Checker* checker, TypeExpr* type_expr) {
         if (strcmp(name_str, "Int") == 0 ||
             strcmp(name_str, "Float") == 0 ||
             strcmp(name_str, "String") == 0 ||
-            strcmp(name_str, "Bool") == 0) {
+            strcmp(name_str, "Bool") == 0 || strcmp(name_str, "Unit") == 0) {
             return resolve_type_expr(checker, type_expr);
         }
         
@@ -3650,6 +3677,8 @@ static bool bind_pattern(Checker* checker, Pattern* pattern, Type* type) {
             return true;
             
         case PATTERN_TUPLE: {
+            /* The empty tuple spelling denotes Unit, not an arbitrary tuple. */
+            if (type->kind == TYPE_UNIT && pattern->data.tuple->len == 0) return true;
             /* Type must be a tuple with matching arity */
             if (type->kind != TYPE_TUPLE) {
                 add_error(checker, "Cannot destructure non-tuple type %s",

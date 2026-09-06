@@ -4,6 +4,27 @@ This document tracks major architectural and technical decisions made during the
 
 ## Project Decision Log
 
+### 87 Report stderr failures without changing global signal policy
+* **Date**: 2026-09-06
+* **Status**: Accepted for native developer tooling
+* **Decision**: I will expose `System.write_stderr(String) -> Result(Unit, Int)` as exact UTF-8 output without an inserted newline. Validate at most 16 MiB before writing; return stable errors for invalid text, size and IO. An output failure does not implicitly replace the caller's primary exit status.
+* **Context**: The Fern checker must emit argument errors on stderr, and a closed pipe must produce a handled error instead of terminating the process. Reopening descriptors, toggling shared flags or changing process-global SIGPIPE handlers would interfere with embedding callers.
+* **Consequences**: Writes use 16 KiB chunks and at most 65,536 attempts, including EINTR. Only the calling thread masks SIGPIPE; its prior mask and preexisting pending signal are preserved. After EPIPE, only a newly pending signal is consumed before restoration. Embedding excludes competing consumers, disposition changes and simultaneous SIGPIPE injection into that thread. Partial output can precede an error, and blocking kernel writes have no hard deadline. Empty text succeeds without descriptor access. Native heap Result needs no Rust adapter; C also canonicalizes Unit annotations. REPL native effects remain explicitly unavailable. [The API contract](docs/PROCESS_EXECUTION.md#standard-error-output) records these limits. The unavailable `/decision` skill is replaced by this established format.
+
+### 86 Preserve signed 64-bit Int through the C frontend ABI
+* **Date**: 2026-09-06
+* **Status**: Accepted for the shared runtime migration
+* **Decision**: I will lower checked C-frontend Int values as QBE `l` through literals, parameters, returns, locals, arithmetic, comparison operands, heap Result payloads, tuples, lists and ranges. Bool/Unit retain `w`, Float retains `d`, and actual native C `int` results receive sign extension when exposed as Fern Int.
+* **Context**: Passing a timeout such as 4294967297 through a 32-bit intermediate silently converts an invalid limit into a valid one. Changing only the final runtime call cannot repair values already narrowed in helpers or local arithmetic. Raw function pointers also need their own callable identity rather than managed-pointer cleanup.
+* **Consequences**: Decimal accumulation checks signed bounds; unary MIN is accepted. Add/subtract/multiply/negation wrap, MIN/-1 division yields MIN and remainder zero, and inclusive MAX ranges stop before incrementing. Typed direct/indirect calls and nested Result tuple bindings preserve their native widths. C's legacy packed Option still has a 32-bit payload; power/bitwise and controlled zero-divisor cleanup gaps remain open. This is scoped compatibility work, not full C/Rust parity. The unavailable `/decision` skill is replaced by this established format.
+
+### 85 Capture bounded literal processes with explicit cleanup ownership
+* **Date**: 2026-09-06
+* **Status**: Accepted for native execution and bootstrap workflows
+* **Decision**: I will expose `System.exec_args_bounded(List(String), Int, Int) -> Result((Int, String, String), Int)` through a shared heap Result ABI. Normal exit statuses, including 127, remain successful captures; configuration, spawn, deadline, size, IO, text and signal failures have separate stable Int codes.
+* **Context**: Developer tooling needs literal argv, independent stdout/stderr and explicit resource limits. C and Rust tuple representations differ, so Rust adapts only the successful native tuple after checking the Result tag. Full-width source arguments are required by decision 86.
+* **Consequences**: [The execution contract](docs/PROCESS_EXECUTION.md) specifies argument/PATH/text limits, 1–600,000 ms deadlines, independent 0–16 MiB streams, stdin EOF and preserved caller descriptors/signals. Explicit bounded PATH search uses `posix_spawn`, because macOS `posix_spawnp` can run a shell on ENOEXEC. Every child owns a private process group and retains its unreaped identity until cleanup; escaped descendants are not contained, and OS cleanup can extend wall-clock time. Only confirmed exited-child-only Darwin groups allow the documented conservative EPERM exception. Embedding excludes competing reapers and concurrent signal/environment policy mutation. Debug/release/sanitizer and source-native tests cover failure paths and resource boundaries. Legacy process APIs remain compatibility surfaces. The unavailable `/decision` skill is replaced by this established format.
+
 ### 84 Generate the indentation-aware editor grammar from authored templates
 * **Date**: 2026-09-06
 * **Status**: Accepted; bounded native/query/WASM corpus verified

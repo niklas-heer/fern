@@ -48,6 +48,10 @@ struct Codegen {
     String* owned_ptr_vars[MAX_WIDE_VARS];
     int owned_ptr_var_count;
     
+    /* Raw function pointers are callable locals, never reference-counted objects. */
+    String* function_vars[MAX_WIDE_VARS];
+    int function_var_count;
+
     /* Track functions that return tuples (pointers) */
     String* tuple_return_funcs[MAX_TUPLE_FUNCS];
     int tuple_func_count;
@@ -167,6 +171,7 @@ static const char* canonical_builtin_module_name(const char* name) {
     assert(name[0] != '\0');
     if (strcmp(name, "String") == 0 || strcmp(name, "List") == 0 ||
         strcmp(name, "System") == 0 || strcmp(name, "Regex") == 0 ||
+        strcmp(name, "Option") == 0 ||
         strcmp(name, "Tui.Term") == 0 || strcmp(name, "Tui.Panel") == 0 ||
         strcmp(name, "Tui.Table") == 0 || strcmp(name, "Tui.Style") == 0 ||
         strcmp(name, "Tui.Status") == 0 || strcmp(name, "Tui.Live") == 0 ||
@@ -258,7 +263,7 @@ static char pattern_width(Type* type, char fallback) {
     if (!type || type->kind == TYPE_VAR) return fallback;
     assert(type->kind != TYPE_ERROR);
     if (type->kind == TYPE_FLOAT) return 'd';
-    if (type->kind == TYPE_STRING || type->kind == TYPE_CON ||
+    if (type->kind == TYPE_INT || type->kind == TYPE_STRING || type->kind == TYPE_CON ||
         type->kind == TYPE_TUPLE || type->kind == TYPE_FN) return 'l';
     return 'w';
 }
@@ -295,6 +300,75 @@ static void emit_pattern_binding(Codegen* cg, Pattern* pattern, String* value, c
     emit(cg, "    %%%s =%c %s %s\n", string_cstr(pattern->data.ident), width,
         width == 'd' ? "cast" : "copy", string_cstr(value));
     if (width == 'l') register_wide_var(cg, pattern->data.ident);
+}
+
+/**
+ * Identify a lexically bound callable, including typed constructor payload binders.
+ * @param cg Current code generation context.
+ * @param name Source local name.
+ * @return Whether the identifier requires an indirect call.
+ */
+static bool is_function_var(Codegen* cg, String* name) {
+    assert(cg != NULL);
+    assert(name != NULL);
+    Type* bound = bound_pattern_type(cg, name);
+    if (bound && bound->kind == TYPE_FN) return true;
+    for (int i = cg->function_var_count - 1; i >= 0; i--) {
+        if (string_equal(cg->function_vars[i], name)) return true;
+    }
+    return false;
+}
+
+/**
+ * Check whether a callable identifier names a declared source function.
+ * @param cg Context containing source declarations and lexical callable bindings.
+ * @param name Identifier being emitted as a value.
+ * @return True for a global function that is not shadowed by a local callable.
+ */
+static bool is_global_function(Codegen* cg, String* name) {
+    assert(cg != NULL);
+    assert(name != NULL);
+    if (is_function_var(cg, name) || !cg->program_stmts) return false;
+    for (size_t i = 0; i < cg->program_stmts->len; i++) {
+        Stmt* stmt = cg->program_stmts->data[i];
+        if (stmt->type == STMT_FN && string_equal(stmt->data.fn.name, name)) return true;
+    }
+    return false;
+}
+
+/**
+ * Remember a raw callable binding within the current lexical scope.
+ * @param cg Current code generation context.
+ * @param name Source local name.
+ */
+static void register_function_var(Codegen* cg, String* name) {
+    assert(cg != NULL && name != NULL);
+    assert(cg->function_var_count < MAX_WIDE_VARS);
+    cg->function_vars[cg->function_var_count++] = name;
+}
+
+/**
+ * Bind checked tuple payload leaves after the surrounding Result tag succeeds.
+ * @param cg Current code generation context.
+ * @param pattern Irrefutable tuple, identifier or wildcard payload pattern.
+ * @param value Full-width tuple address or scalar payload.
+ * @param depth Bounded recursive tuple nesting.
+ */
+static void emit_payload_bindings(Codegen* cg, Pattern* pattern, String* value, int depth) {
+    assert(cg != NULL && pattern != NULL && value != NULL);
+    assert(depth < MAX_WIDE_VARS);
+    if (pattern->type == PATTERN_IDENT) {
+        emit_pattern_binding(cg, pattern, value, 'l');
+    } else if (pattern->type == PATTERN_TUPLE) {
+        PatternVec* fields = pattern->data.tuple;
+        for (size_t i = 0; i < fields->len; i++) {
+            String* address = fresh_temp(cg);
+            String* field = fresh_temp(cg);
+            emit(cg, "    %s =l add %s, %zu\n", string_cstr(address), string_cstr(value), i * 8);
+            emit(cg, "    %s =l loadl %s\n", string_cstr(field), string_cstr(address));
+            emit_payload_bindings(cg, fields->data[i], field, depth + 1);
+        }
+    }
 }
 
 static void clear_wide_vars(Codegen* cg) __attribute__((unused));
@@ -642,7 +716,7 @@ static PrintType get_print_type(Codegen* cg, Expr* expr) {
 
 /**
  * Get QBE type specifier for an expression.
- * Returns 'l' for pointer types (lists, strings), 'w' for word types (int, bool).
+ * Returns 'l' for Int and pointers, 'w' for Bool/Unit, and 'd' for Float.
  * @param cg The codegen context (for checking wide variables).
  * @param expr The expression to check.
  * @return 'l' for 64-bit, 'w' for 32-bit.
@@ -664,6 +738,7 @@ static char qbe_type_for_expr(Codegen* cg, Expr* expr) {
         
         /* Word types (32-bit) */
         case EXPR_INT_LIT:
+            return 'l';
         case EXPR_BOOL_LIT:
             return 'w';
         
@@ -869,7 +944,7 @@ static char qbe_type_for_expr(Codegen* cg, Expr* expr) {
                     }
                 }
             }
-            return 'w';
+            return bin->op >= BINOP_EQ && bin->op <= BINOP_OR ? 'w' : 'l';
         }
         
         /* Block expressions: check the final expression's type */
@@ -941,6 +1016,7 @@ Codegen* codegen_new(Arena* arena) {
     cg->wide_var_count = 0;
     cg->bound_pattern_count = 0;
     cg->owned_ptr_var_count = 0;
+    cg->function_var_count = 0;
     cg->tuple_func_count = 0;
     cg->returned = false;
     return cg;
@@ -1064,6 +1140,41 @@ static String* codegen_result_payload(Codegen* cg, Expr* expr) {
 }
 
 /**
+ * Wrap the sole signed division overflow instead of executing a target-dependent trap.
+ * @param cg Current emitter and label allocator.
+ * @param result Destination for the selected64-bit result.
+ * @param left Already evaluated numerator, never evaluated again.
+ * @param right Already evaluated denominator, never evaluated again.
+ * @param remainder True for remainder, false for quotient.
+ */
+static void codegen_int_division(Codegen* cg, String* result, String* left,
+                                 String* right, bool remainder) {
+    assert(cg != NULL && result != NULL);
+    assert(left != NULL && right != NULL);
+    String* minimum = fresh_temp(cg);
+    String* negative_one = fresh_temp(cg);
+    String* overflow = fresh_temp(cg);
+    String* wrapped = fresh_label(cg);
+    String* normal = fresh_label(cg);
+    String* done = fresh_label(cg);
+    String* quotient = fresh_temp(cg);
+    emit(cg, "    %s =w ceql %s, -9223372036854775808\n",
+        string_cstr(minimum), string_cstr(left));
+    emit(cg, "    %s =w ceql %s, -1\n", string_cstr(negative_one), string_cstr(right));
+    emit(cg, "    %s =w and %s, %s\n", string_cstr(overflow),
+        string_cstr(minimum), string_cstr(negative_one));
+    emit(cg, "    jnz %s, %s, %s\n", string_cstr(overflow),
+        string_cstr(wrapped), string_cstr(normal));
+    emit(cg, "%s\n    jmp %s\n", string_cstr(wrapped), string_cstr(done));
+    emit(cg, "%s\n    %s =l %s %s, %s\n    jmp %s\n", string_cstr(normal),
+        string_cstr(quotient), remainder ? "rem" : "div", string_cstr(left),
+        string_cstr(right), string_cstr(done));
+    emit(cg, "%s\n    %s =l phi %s %s, %s %s\n", string_cstr(done), string_cstr(result),
+        string_cstr(wrapped), remainder ? "0" : "-9223372036854775808",
+        string_cstr(normal), string_cstr(quotient));
+}
+
+/**
  * Generate QBE IR code for an expression.
  * @param cg The codegen context.
  * @param expr The expression to compile.
@@ -1077,7 +1188,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
     switch (expr->type) {
         case EXPR_INT_LIT: {
             String* tmp = fresh_temp(cg);
-            emit(cg, "    %s =w copy %lld\n", string_cstr(tmp), expr->data.int_lit.value);
+            emit(cg, "    %s =l copy %lld\n", string_cstr(tmp), expr->data.int_lit.value);
             return tmp;
         }
         
@@ -1246,14 +1357,14 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             }
                             if (strcmp(func, "padding") == 0 && call->args->len == 1) {
                                 String* pad = codegen_expr(cg, call->args->data[0].value);
-                                emit(cg, "    %s =l call $fern_panel_padding(l %s, w %s)\n",
+                                emit(cg, "    %s =l call $fern_panel_padding(l %s, l %s)\n",
                                     string_cstr(tmp), string_cstr(piped_val), string_cstr(pad));
                                 register_wide_var(cg, tmp);
                                 return tmp;
                             }
                             if (strcmp(func, "width") == 0 && call->args->len == 1) {
                                 String* w = codegen_expr(cg, call->args->data[0].value);
-                                emit(cg, "    %s =l call $fern_panel_width(l %s, w %s)\n",
+                                emit(cg, "    %s =l call $fern_panel_width(l %s, l %s)\n",
                                     string_cstr(tmp), string_cstr(piped_val), string_cstr(w));
                                 register_wide_var(cg, tmp);
                                 return tmp;
@@ -1307,7 +1418,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 char piped_type = qbe_type_for_expr(cg, bin->left);
                 if (call->func->type == EXPR_IDENT || call->func->type == EXPR_DOT) {
                     const char* target_name = NULL;
-                    char ret_type = 'w';
+                    char ret_type = qbe_type_for_expr(cg, expr);
 
                     if (call->func->type == EXPR_IDENT) {
                         target_name = string_cstr(call->func->data.ident.name);
@@ -1322,13 +1433,17 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         register_wide_var(cg, tmp);
                     }
 
+                    String** arguments = arena_alloc(cg->arena,
+                        sizeof(String*) * (call->args->len + 1));
+                    for (size_t i = 0; i < call->args->len; i++) {
+                        arguments[i] = codegen_expr(cg, call->args->data[i].value);
+                    }
                     emit(cg, "    %s =%c call $%s(",
                         string_cstr(tmp), ret_type, target_name);
                     emit(cg, "%c %s", piped_type, string_cstr(piped_val));
                     for (size_t i = 0; i < call->args->len; i++) {
-                        String* arg = codegen_expr(cg, call->args->data[i].value);
                         char arg_type = qbe_type_for_expr(cg, call->args->data[i].value);
-                        emit(cg, ", %c %s", arg_type, string_cstr(arg));
+                        emit(cg, ", %c %s", arg_type, string_cstr(arguments[i]));
                     }
                     emit(cg, ")\n");
                     return tmp;
@@ -1346,11 +1461,11 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 /* Use string version for string elements */
                 PrintType elem_pt = get_print_type(cg, bin->left);
                 if (elem_pt == PRINT_STRING) {
-                    emit(cg, "    %s =w call $fern_list_contains_str(l %s, l %s)\n",
+                    emit(cg, "    %s =l call $fern_list_contains_str(l %s, l %s)\n",
                         string_cstr(tmp), string_cstr(list), string_cstr(elem));
                 } else {
                     char elem_type = qbe_type_for_expr(cg, bin->left);
-                    emit(cg, "    %s =w call $fern_list_contains(l %s, %c %s)\n",
+                    emit(cg, "    %s =l call $fern_list_contains(l %s, %c %s)\n",
                         string_cstr(tmp), string_cstr(list), elem_type, string_cstr(elem));
                 }
                 return tmp;
@@ -1376,6 +1491,11 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             String* left = codegen_expr(cg, bin->left);
             String* right = codegen_expr(cg, bin->right);
             
+            if ((bin->op == BINOP_DIV || bin->op == BINOP_MOD) &&
+                qbe_type_for_expr(cg, bin->left) == 'l') {
+                codegen_int_division(cg, tmp, left, right, bin->op == BINOP_MOD);
+                return tmp;
+            }
             const char* op = NULL;
             switch (bin->op) {
                 case BINOP_ADD: op = "add"; break;
@@ -1383,12 +1503,12 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 case BINOP_MUL: op = "mul"; break;
                 case BINOP_DIV: op = "div"; break;
                 case BINOP_MOD: op = "rem"; break;
-                case BINOP_EQ:  op = "ceqw"; break;
-                case BINOP_NE:  op = "cnew"; break;
-                case BINOP_LT:  op = "csltw"; break;
-                case BINOP_LE:  op = "cslew"; break;
-                case BINOP_GT:  op = "csgtw"; break;
-                case BINOP_GE:  op = "csgew"; break;
+                case BINOP_EQ:  op = "ceq"; break;
+                case BINOP_NE:  op = "cne"; break;
+                case BINOP_LT:  op = "cslt"; break;
+                case BINOP_LE:  op = "csle"; break;
+                case BINOP_GT:  op = "csgt"; break;
+                case BINOP_GE:  op = "csge"; break;
                 case BINOP_AND: op = "and"; break;  /* Bitwise/logical AND (eager) */
                 case BINOP_OR:  op = "or"; break;   /* Bitwise/logical OR (eager) */
                 default:
@@ -1397,8 +1517,21 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                     return tmp;
             }
             
-            emit(cg, "    %s =w %s %s, %s\n", 
-                string_cstr(tmp), op, string_cstr(left), string_cstr(right));
+            bool comparison = bin->op >= BINOP_EQ && bin->op <= BINOP_GE;
+            char result_width = qbe_type_for_expr(cg, expr);
+            char comparison_op[8];
+            if (comparison) {
+                char operand_width = qbe_type_for_expr(cg, bin->left);
+                if (operand_width == 'd' && op[1] == 's') {
+                    snprintf(comparison_op, sizeof(comparison_op), "c%sd", op + 2);
+                } else {
+                    snprintf(comparison_op, sizeof(comparison_op), "%s%c", op, operand_width);
+                }
+                op = comparison_op;
+                result_width = 'w';
+            }
+            emit(cg, "    %s =%c %s %s, %s\n",
+                string_cstr(tmp), result_width, op, string_cstr(left), string_cstr(right));
             return tmp;
         }
         
@@ -1409,7 +1542,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             
             switch (unary->op) {
                 case UNOP_NEG:
-                    emit(cg, "    %s =w sub 0, %s\n", string_cstr(tmp), string_cstr(operand));
+                    emit(cg, "    %s =l sub 0, %s\n", string_cstr(tmp), string_cstr(operand));
                     break;
                 case UNOP_NOT:
                     emit(cg, "    %s =w ceqw %s, 0\n", string_cstr(tmp), string_cstr(operand));
@@ -1425,13 +1558,17 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             String* tmp = fresh_temp(cg);
             /* Check if variable is a wide type (pointer) */
             char type_spec = qbe_type_for_expr(cg, expr);
-            emit(cg, "    %s =%c copy %%%s\n", string_cstr(tmp), type_spec, 
-                string_cstr(expr->data.ident.name));
+            Type* semantic = checked_expr_type(expr);
+            bool global = semantic && semantic->kind == TYPE_FN &&
+                is_global_function(cg, expr->data.ident.name);
+            emit(cg, "    %s =%c copy %c%s\n", string_cstr(tmp), type_spec,
+                global ? '$' : '%', string_cstr(expr->data.ident.name));
             return tmp;
         }
         
         case EXPR_BLOCK: {
             BlockExpr* block = &expr->data.block;
+            int function_scope = cg->function_var_count;
             String* last = NULL;
             
             /* Generate code for each statement, stopping if we hit a return */
@@ -1440,6 +1577,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 if (cg->returned) {
                     /* A return was hit - don't generate more unreachable code */
                     last = fresh_temp(cg);  /* Dummy value, won't be used */
+                    cg->function_var_count = function_scope;
                     return last;
                 }
             }
@@ -1453,6 +1591,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 emit(cg, "    %s =w copy 0\n", string_cstr(last));
             }
             
+            cg->function_var_count = function_scope;
             return last;
         }
         
@@ -1530,8 +1669,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         
                     case PATTERN_IDENT:
                         /* Identifier pattern - bind value and jump to body */
-                        emit(cg, "    %%%s =w copy %s\n", 
-                            string_cstr(arm->pattern->data.ident), string_cstr(scrutinee));
+                        emit_pattern_binding(cg, arm->pattern, scrutinee, qbe_type_for_expr(cg, match->value));
                         emit(cg, "    jmp %s\n", string_cstr(arm_body_label));
                         break;
                         
@@ -1540,8 +1678,9 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         Expr* lit = arm->pattern->data.literal;
                         String* lit_temp = codegen_expr(cg, lit);
                         String* cmp = fresh_temp(cg);
-                        emit(cg, "    %s =w ceqw %s, %s\n", 
-                            string_cstr(cmp), string_cstr(scrutinee), string_cstr(lit_temp));
+                        emit(cg, "    %s =w ceq%c %s, %s\n",
+                            string_cstr(cmp), qbe_type_for_expr(cg, lit),
+                            string_cstr(scrutinee), string_cstr(lit_temp));
                         emit(cg, "    jnz %s, %s, %s\n",
                             string_cstr(cmp), string_cstr(arm_body_label), string_cstr(next_arm_label));
                         break;
@@ -1617,21 +1756,21 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         }
                     } else if (strcmp(ctor_name, "Ok") == 0 && ctor->args && ctor->args->len > 0) {
                         Pattern* inner = ctor->args->data[0];
-                        if (inner->type == PATTERN_IDENT) {
+                        if (inner->type == PATTERN_IDENT || inner->type == PATTERN_TUPLE) {
                             String* val_ptr = fresh_temp(cg);
                             String* val = fresh_temp(cg);
                             emit(cg, "    %s =l add %s, 8\n", string_cstr(val_ptr), string_cstr(scrutinee));
                             emit(cg, "    %s =l loadl %s\n", string_cstr(val), string_cstr(val_ptr));
-                            emit_pattern_binding(cg, inner, val, 'l');
+                            emit_payload_bindings(cg, inner, val, 0);
                         }
                     } else if (strcmp(ctor_name, "Err") == 0 && ctor->args && ctor->args->len > 0) {
                         Pattern* inner = ctor->args->data[0];
-                        if (inner->type == PATTERN_IDENT) {
+                        if (inner->type == PATTERN_IDENT || inner->type == PATTERN_TUPLE) {
                             String* val_ptr = fresh_temp(cg);
                             String* val = fresh_temp(cg);
                             emit(cg, "    %s =l add %s, 8\n", string_cstr(val_ptr), string_cstr(scrutinee));
                             emit(cg, "    %s =l loadl %s\n", string_cstr(val), string_cstr(val_ptr));
-                            emit_pattern_binding(cg, inner, val, 'l');
+                            emit_payload_bindings(cg, inner, val, 0);
                         }
                     }
                 }
@@ -1678,7 +1817,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 String* label = fresh_string_label(cg);
                 emit_data(cg, "data %s = { b \"%s\", b 0 }\n",
                     string_cstr(label), actor_name);
-                emit(cg, "    %s =w call $fern_actor_spawn_link(l %s)\n",
+                emit(cg, "    %s =l call $fern_actor_spawn_link(l %s)\n",
                     string_cstr(result), string_cstr(label));
                 return result;
             }
@@ -1693,12 +1832,21 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                     assert(module != NULL);
                     const char* func = string_cstr(dot->field);
                     
+                    if (strcmp(module, "Option") == 0 && strcmp(func, "unwrap_or") == 0 &&
+                        call->args->len == 2) {
+                        String* option = codegen_expr(cg, call->args->data[0].value);
+                        String* fallback = codegen_expr(cg, call->args->data[1].value);
+                        emit(cg, "    %s =l call $fern_option_unwrap_or(l %s, l %s)\n",
+                            string_cstr(result), string_cstr(option), string_cstr(fallback));
+                        return result;
+                    }
+
                     /* ===== String module ===== */
                     if (strcmp(module, "String") == 0) {
                         /* String.len(s) -> Int */
                         if (strcmp(func, "len") == 0 && call->args->len == 1) {
                             String* s = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =w call $fern_str_len(l %s)\n",
+                            emit(cg, "    %s =l call $fern_str_len(l %s)\n",
                                 string_cstr(result), string_cstr(s));
                             return result;
                         }
@@ -1714,7 +1862,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "eq") == 0 && call->args->len == 2) {
                             String* a = codegen_expr(cg, call->args->data[0].value);
                             String* b = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =w call $fern_str_eq(l %s, l %s)\n",
+                            emit(cg, "    %s =l call $fern_str_eq(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(a), string_cstr(b));
                             return result;
                         }
@@ -1722,7 +1870,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "starts_with") == 0 && call->args->len == 2) {
                             String* s = codegen_expr(cg, call->args->data[0].value);
                             String* prefix = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =w call $fern_str_starts_with(l %s, l %s)\n",
+                            emit(cg, "    %s =l call $fern_str_starts_with(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(s), string_cstr(prefix));
                             return result;
                         }
@@ -1730,7 +1878,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "ends_with") == 0 && call->args->len == 2) {
                             String* s = codegen_expr(cg, call->args->data[0].value);
                             String* suffix = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =w call $fern_str_ends_with(l %s, l %s)\n",
+                            emit(cg, "    %s =l call $fern_str_ends_with(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(s), string_cstr(suffix));
                             return result;
                         }
@@ -1738,7 +1886,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "contains") == 0 && call->args->len == 2) {
                             String* s = codegen_expr(cg, call->args->data[0].value);
                             String* substr = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =w call $fern_str_contains(l %s, l %s)\n",
+                            emit(cg, "    %s =l call $fern_str_contains(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(s), string_cstr(substr));
                             return result;
                         }
@@ -1747,7 +1895,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* s = codegen_expr(cg, call->args->data[0].value);
                             String* start = codegen_expr(cg, call->args->data[1].value);
                             String* end = codegen_expr(cg, call->args->data[2].value);
-                            emit(cg, "    %s =l call $fern_str_slice(l %s, w %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_str_slice(l %s, l %s, l %s)\n",
                                 string_cstr(result), string_cstr(s), string_cstr(start), string_cstr(end));
                             return result;
                         }
@@ -1799,14 +1947,14 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "repeat") == 0 && call->args->len == 2) {
                             String* s = codegen_expr(cg, call->args->data[0].value);
                             String* n = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_str_repeat(l %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_str_repeat(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(s), string_cstr(n));
                             return result;
                         }
                         /* String.is_empty(s) -> Bool */
                         if (strcmp(func, "is_empty") == 0 && call->args->len == 1) {
                             String* s = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =w call $fern_str_is_empty(l %s)\n",
+                            emit(cg, "    %s =l call $fern_str_is_empty(l %s)\n",
                                 string_cstr(result), string_cstr(s));
                             return result;
                         }
@@ -1839,7 +1987,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* idx = codegen_expr(cg, call->args->data[1].value);
                             /* Extend index to 64-bit for runtime call */
                             String* idx_ext = fresh_temp(cg);
-                            emit(cg, "    %s =l extsw %s\n", string_cstr(idx_ext), string_cstr(idx));
+                            emit(cg, "    %s =l copy %s\n", string_cstr(idx_ext), string_cstr(idx));
                             emit(cg, "    %s =l call $fern_str_char_at(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(s), string_cstr(idx_ext));
                             return result;
@@ -1859,7 +2007,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         /* List.len(list) -> Int */
                         if (strcmp(func, "len") == 0 && call->args->len == 1) {
                             String* list = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =w call $fern_list_len(l %s)\n",
+                            emit(cg, "    %s =l call $fern_list_len(l %s)\n",
                                 string_cstr(result), string_cstr(list));
                             return result;
                         }
@@ -1867,7 +2015,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "get") == 0 && call->args->len == 2) {
                             String* list = codegen_expr(cg, call->args->data[0].value);
                             String* index = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_list_get(l %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_list_get(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(list), string_cstr(index));
                             register_wide_var(cg, result);
                             return result;
@@ -1914,7 +2062,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         /* List.is_empty(list) -> Bool */
                         if (strcmp(func, "is_empty") == 0 && call->args->len == 1) {
                             String* list = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =w call $fern_list_is_empty(l %s)\n",
+                            emit(cg, "    %s =l call $fern_list_is_empty(l %s)\n",
                                 string_cstr(result), string_cstr(list));
                             return result;
                         }
@@ -1925,11 +2073,11 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             /* Use string version for string elements */
                             PrintType elem_pt = get_print_type(cg, call->args->data[1].value);
                             if (elem_pt == PRINT_STRING) {
-                                emit(cg, "    %s =w call $fern_list_contains_str(l %s, l %s)\n",
+                                emit(cg, "    %s =l call $fern_list_contains_str(l %s, l %s)\n",
                                     string_cstr(result), string_cstr(list), string_cstr(elem));
                             } else {
                                 char elem_type = qbe_type_for_expr(cg, call->args->data[1].value);
-                                emit(cg, "    %s =w call $fern_list_contains(l %s, %c %s)\n",
+                                emit(cg, "    %s =l call $fern_list_contains(l %s, %c %s)\n",
                                     string_cstr(result), string_cstr(list), elem_type, string_cstr(elem));
                             }
                             return result;
@@ -1938,7 +2086,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "any") == 0 && call->args->len == 2) {
                             String* list = codegen_expr(cg, call->args->data[0].value);
                             String* pred = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =w call $fern_list_any(l %s, l %s)\n",
+                            emit(cg, "    %s =l call $fern_list_any(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(list), string_cstr(pred));
                             return result;
                         }
@@ -1946,7 +2094,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "all") == 0 && call->args->len == 2) {
                             String* list = codegen_expr(cg, call->args->data[0].value);
                             String* pred = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =w call $fern_list_all(l %s, l %s)\n",
+                            emit(cg, "    %s =l call $fern_list_all(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(list), string_cstr(pred));
                             return result;
                         }
@@ -1980,7 +2128,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         /* File.exists(path) -> Bool */
                         if (strcmp(func, "exists") == 0 && call->args->len == 1) {
                             String* path = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =w call $fern_file_exists(l %s)\n",
+                            emit(cg, "    %s =l call $fern_file_exists(l %s)\n",
                                 string_cstr(result), string_cstr(path));
                             return result;
                         }
@@ -2001,7 +2149,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         /* File.is_dir(path) -> Bool */
                         if (strcmp(func, "is_dir") == 0 && call->args->len == 1) {
                             String* path = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =w call $fern_is_dir(l %s)\n",
+                            emit(cg, "    %s =l call $fern_is_dir(l %s)\n",
                                 string_cstr(result), string_cstr(path));
                             return result;
                         }
@@ -2064,7 +2212,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "execute") == 0 && call->args->len == 2) {
                             String* handle = codegen_expr(cg, call->args->data[0].value);
                             String* query = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_sql_execute(w %s, l %s)\n",
+                            emit(cg, "    %s =l call $fern_sql_execute(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(handle), string_cstr(query));
                             return result;
                         }
@@ -2075,7 +2223,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         /* actors.start(name) -> Int */
                         if (strcmp(func, "start") == 0 && call->args->len == 1) {
                             String* name = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =w call $fern_actor_start(l %s)\n",
+                            emit(cg, "    %s =l call $fern_actor_start(l %s)\n",
                                 string_cstr(result), string_cstr(name));
                             return result;
                         }
@@ -2083,14 +2231,14 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "post") == 0 && call->args->len == 2) {
                             String* actor_id = codegen_expr(cg, call->args->data[0].value);
                             String* msg = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_actor_post(w %s, l %s)\n",
+                            emit(cg, "    %s =l call $fern_actor_post(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(actor_id), string_cstr(msg));
                             return result;
                         }
                         /* actors.next(actor_id) -> Result(String, Int) */
                         if (strcmp(func, "next") == 0 && call->args->len == 1) {
                             String* actor_id = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =l call $fern_actor_next(w %s)\n",
+                            emit(cg, "    %s =l call $fern_actor_next(l %s)\n",
                                 string_cstr(result), string_cstr(actor_id));
                             return result;
                         }
@@ -2098,7 +2246,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "monitor") == 0 && call->args->len == 2) {
                             String* supervisor_id = codegen_expr(cg, call->args->data[0].value);
                             String* worker_id = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_actor_monitor(w %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_actor_monitor(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(supervisor_id), string_cstr(worker_id));
                             return result;
                         }
@@ -2106,14 +2254,14 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "demonitor") == 0 && call->args->len == 2) {
                             String* supervisor_id = codegen_expr(cg, call->args->data[0].value);
                             String* worker_id = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_actor_demonitor(w %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_actor_demonitor(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(supervisor_id), string_cstr(worker_id));
                             return result;
                         }
                         /* actors.restart(actor_id) -> Result(Int, Int) */
                         if (strcmp(func, "restart") == 0 && call->args->len == 1) {
                             String* actor_id = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =l call $fern_actor_restart(w %s)\n",
+                            emit(cg, "    %s =l call $fern_actor_restart(l %s)\n",
                                 string_cstr(result), string_cstr(actor_id));
                             return result;
                         }
@@ -2123,7 +2271,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* worker_id = codegen_expr(cg, call->args->data[1].value);
                             String* max_restarts = codegen_expr(cg, call->args->data[2].value);
                             String* period_sec = codegen_expr(cg, call->args->data[3].value);
-                            emit(cg, "    %s =l call $fern_actor_supervise(w %s, w %s, w %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_actor_supervise(l %s, l %s, l %s, l %s)\n",
                                 string_cstr(result), string_cstr(supervisor_id), string_cstr(worker_id),
                                 string_cstr(max_restarts), string_cstr(period_sec));
                             return result;
@@ -2134,7 +2282,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* worker_id = codegen_expr(cg, call->args->data[1].value);
                             String* max_restarts = codegen_expr(cg, call->args->data[2].value);
                             String* period_sec = codegen_expr(cg, call->args->data[3].value);
-                            emit(cg, "    %s =l call $fern_actor_supervise_one_for_all(w %s, w %s, w %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_actor_supervise_one_for_all(l %s, l %s, l %s, l %s)\n",
                                 string_cstr(result), string_cstr(supervisor_id), string_cstr(worker_id),
                                 string_cstr(max_restarts), string_cstr(period_sec));
                             return result;
@@ -2145,7 +2293,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* worker_id = codegen_expr(cg, call->args->data[1].value);
                             String* max_restarts = codegen_expr(cg, call->args->data[2].value);
                             String* period_sec = codegen_expr(cg, call->args->data[3].value);
-                            emit(cg, "    %s =l call $fern_actor_supervise_rest_for_one(w %s, w %s, w %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_actor_supervise_rest_for_one(l %s, l %s, l %s, l %s)\n",
                                 string_cstr(result), string_cstr(supervisor_id), string_cstr(worker_id),
                                 string_cstr(max_restarts), string_cstr(period_sec));
                             return result;
@@ -2161,21 +2309,27 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         }
                         /* System.args_count() -> Int */
                         if (strcmp(func, "args_count") == 0 && call->args->len == 0) {
-                            emit(cg, "    %s =w call $fern_args_count()\n", string_cstr(result));
+                            emit(cg, "    %s =l call $fern_args_count()\n", string_cstr(result));
                             return result;
                         }
                         /* System.arg(index) -> String */
                         if (strcmp(func, "arg") == 0 && call->args->len == 1) {
                             String* idx = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =l call $fern_arg(w %s)\n",
+                            emit(cg, "    %s =l call $fern_arg(l %s)\n",
                                 string_cstr(result), string_cstr(idx));
                             return result;
                         }
                         /* System.exit(code) -> Unit */
                         if (strcmp(func, "exit") == 0 && call->args->len == 1) {
                             String* code = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    call $fern_exit(w %s)\n", string_cstr(code));
+                            emit(cg, "    call $fern_exit(l %s)\n", string_cstr(code));
                             emit(cg, "    %s =w copy 0\n", string_cstr(result));
+                            return result;
+                        }
+                        if (strcmp(func, "write_stderr") == 0 && call->args->len == 1) {
+                            String* text = codegen_expr(cg, call->args->data[0].value);
+                            emit(cg, "    %s =l call $fern_write_stderr(l %s)\n",
+                                string_cstr(result), string_cstr(text));
                             return result;
                         }
                         /* System.exec(cmd) -> (Int, String, String) */
@@ -2183,6 +2337,16 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* cmd = codegen_expr(cg, call->args->data[0].value);
                             emit(cg, "    %s =l call $fern_exec(l %s)\n",
                                 string_cstr(result), string_cstr(cmd));
+                            return result;
+                        }
+                        /* Preserve every native argument/result bit, including rejected limits. */
+                        if (strcmp(func, "exec_args_bounded") == 0 && call->args->len == 3) {
+                            String* args = codegen_expr(cg, call->args->data[0].value);
+                            String* timeout = codegen_expr(cg, call->args->data[1].value);
+                            String* cap = codegen_expr(cg, call->args->data[2].value);
+                            emit(cg, "    %s =l call $fern_exec_args_bounded(l %s, l %s, l %s)\n",
+                                string_cstr(result), string_cstr(args), string_cstr(timeout),
+                                string_cstr(cap));
                             return result;
                         }
                         /* System.exec_args(args) -> (Int, String, String) */
@@ -2203,7 +2367,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "setenv") == 0 && call->args->len == 2) {
                             String* name = codegen_expr(cg, call->args->data[0].value);
                             String* value = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =w call $fern_setenv(l %s, l %s)\n",
+                            emit(cg, "    %s =l call $fern_setenv(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(name), string_cstr(value));
                             return result;
                         }
@@ -2215,7 +2379,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         /* System.chdir(path) -> Int */
                         if (strcmp(func, "chdir") == 0 && call->args->len == 1) {
                             String* path = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =w call $fern_chdir(l %s)\n",
+                            emit(cg, "    %s =l call $fern_chdir(l %s)\n",
                                 string_cstr(result), string_cstr(path));
                             return result;
                         }
@@ -2242,7 +2406,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "is_match") == 0 && call->args->len == 2) {
                             String* s = codegen_expr(cg, call->args->data[0].value);
                             String* pattern = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =w call $fern_regex_is_match(l %s, l %s)\n",
+                            emit(cg, "    %s =l call $fern_regex_is_match(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(s), string_cstr(pattern));
                             return result;
                         }
@@ -2322,12 +2486,12 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             strcmp(func, "right") == 0) {
                             String* first_value = codegen_expr(cg, call->args->data[0].value);
                             String* first = fresh_temp(cg);
-                            emit(cg, "    %s =l extsw %s\n", string_cstr(first),
+                            emit(cg, "    %s =l copy %s\n", string_cstr(first),
                                 string_cstr(first_value));
                             if (call->args->len == 2) {
                                 String* second_value = codegen_expr(cg, call->args->data[1].value);
                                 String* second = fresh_temp(cg);
-                                emit(cg, "    %s =l extsw %s\n", string_cstr(second),
+                                emit(cg, "    %s =l copy %s\n", string_cstr(second),
                                     string_cstr(second_value));
                                 emit(cg, "    call $fern_term_%s(l %s, l %s)\n", func,
                                     string_cstr(first), string_cstr(second));
@@ -2351,12 +2515,12 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         }
                         /* Tui.Term.is_tty() -> Bool */
                         if (strcmp(func, "is_tty") == 0 && call->args->len == 0) {
-                            emit(cg, "    %s =w call $fern_term_is_tty()\n", string_cstr(result));
+                            emit(cg, "    %s =l call $fern_term_is_tty()\n", string_cstr(result));
                             return result;
                         }
                         /* Tui.Term.color_support() -> Int */
                         if (strcmp(func, "color_support") == 0 && call->args->len == 0) {
-                            emit(cg, "    %s =w call $fern_term_color_support()\n", string_cstr(result));
+                            emit(cg, "    %s =l call $fern_term_color_support()\n", string_cstr(result));
                             return result;
                         }
                     }
@@ -2495,7 +2659,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         /* Live.sleep(ms) -> Unit */
                         if (strcmp(func, "sleep") == 0 && call->args->len == 1) {
                             String* ms = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    call $fern_sleep_ms(w %s)\n", string_cstr(ms));
+                            emit(cg, "    call $fern_sleep_ms(l %s)\n", string_cstr(ms));
                             emit(cg, "    %s =w copy 0\n", string_cstr(result));
                             return result;
                         }
@@ -2538,7 +2702,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "width") == 0 && call->args->len == 2) {
                             String* panel = codegen_expr(cg, call->args->data[0].value);
                             String* width = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_panel_width(l %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_panel_width(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(panel), string_cstr(width));
                             return result;
                         }
@@ -2546,7 +2710,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "padding") == 0 && call->args->len == 2) {
                             String* panel = codegen_expr(cg, call->args->data[0].value);
                             String* padding = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_panel_padding(l %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_panel_padding(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(panel), string_cstr(padding));
                             return result;
                         }
@@ -2610,7 +2774,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "show_header") == 0 && call->args->len == 2) {
                             String* table = codegen_expr(cg, call->args->data[0].value);
                             String* show = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_table_show_header(l %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_table_show_header(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(table), string_cstr(show));
                             return result;
                         }
@@ -2628,7 +2792,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         /* Progress.new(total) -> Progress */
                         if (strcmp(func, "new") == 0 && call->args->len == 1) {
                             String* total = codegen_expr(cg, call->args->data[0].value);
-                            emit(cg, "    %s =l call $fern_progress_new(w %s)\n",
+                            emit(cg, "    %s =l call $fern_progress_new(l %s)\n",
                                 string_cstr(result), string_cstr(total));
                             return result;
                         }
@@ -2644,7 +2808,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "width") == 0 && call->args->len == 2) {
                             String* prog = codegen_expr(cg, call->args->data[0].value);
                             String* width = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_progress_width(l %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_progress_width(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(prog), string_cstr(width));
                             return result;
                         }
@@ -2659,7 +2823,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "set") == 0 && call->args->len == 2) {
                             String* prog = codegen_expr(cg, call->args->data[0].value);
                             String* value = codegen_expr(cg, call->args->data[1].value);
-                            emit(cg, "    %s =l call $fern_progress_set(l %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_progress_set(l %s, l %s)\n",
                                 string_cstr(result), string_cstr(prog), string_cstr(value));
                             return result;
                         }
@@ -2731,8 +2895,10 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                         if (strcmp(func, "select") == 0 && call->args->len == 2) {
                             String* prompt = codegen_expr(cg, call->args->data[0].value);
                             String* choices = codegen_expr(cg, call->args->data[1].value);
+                            String* native = fresh_temp(cg);
                             emit(cg, "    %s =w call $fern_prompt_select(l %s, l %s)\n",
-                                string_cstr(result), string_cstr(prompt), string_cstr(choices));
+                                string_cstr(native), string_cstr(prompt), string_cstr(choices));
+                            emit(cg, "    %s =l extsw %s\n", string_cstr(result), string_cstr(native));
                             return result;
                         }
                         /* Tui.Prompt.password(prompt) -> String */
@@ -2747,7 +2913,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             String* prompt = codegen_expr(cg, call->args->data[0].value);
                             String* min = codegen_expr(cg, call->args->data[1].value);
                             String* max = codegen_expr(cg, call->args->data[2].value);
-                            emit(cg, "    %s =w call $fern_prompt_int(l %s, w %s, w %s)\n",
+                            emit(cg, "    %s =l call $fern_prompt_int(l %s, l %s, l %s)\n",
                                 string_cstr(result), string_cstr(prompt), 
                                 string_cstr(min), string_cstr(max));
                             return result;
@@ -2825,7 +2991,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 /* Handle str_len(s) -> Int */
                 if (strcmp(fn_name, "str_len") == 0 && call->args->len == 1) {
                     String* s = codegen_expr(cg, call->args->data[0].value);
-                    emit(cg, "    %s =w call $fern_str_len(l %s)\n",
+                    emit(cg, "    %s =l call $fern_str_len(l %s)\n",
                         string_cstr(result), string_cstr(s));
                     return result;
                 }
@@ -2843,7 +3009,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 if (strcmp(fn_name, "str_eq") == 0 && call->args->len == 2) {
                     String* a = codegen_expr(cg, call->args->data[0].value);
                     String* b = codegen_expr(cg, call->args->data[1].value);
-                    emit(cg, "    %s =w call $fern_str_eq(l %s, l %s)\n",
+                    emit(cg, "    %s =l call $fern_str_eq(l %s, l %s)\n",
                         string_cstr(result), string_cstr(a), string_cstr(b));
                     return result;
                 }
@@ -2851,7 +3017,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 /* Handle list_len(list) -> Int */
                 if (strcmp(fn_name, "list_len") == 0 && call->args->len == 1) {
                     String* list = codegen_expr(cg, call->args->data[0].value);
-                    emit(cg, "    %s =w call $fern_list_len(l %s)\n",
+                    emit(cg, "    %s =l call $fern_list_len(l %s)\n",
                         string_cstr(result), string_cstr(list));
                     return result;
                 }
@@ -2860,7 +3026,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 if (strcmp(fn_name, "list_get") == 0 && call->args->len == 2) {
                     String* list = codegen_expr(cg, call->args->data[0].value);
                     String* index = codegen_expr(cg, call->args->data[1].value);
-                    emit(cg, "    %s =l call $fern_list_get(l %s, w %s)\n",
+                    emit(cg, "    %s =l call $fern_list_get(l %s, l %s)\n",
                         string_cstr(result), string_cstr(list), string_cstr(index));
                     register_wide_var(cg, result);
                     return result;
@@ -2872,7 +3038,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 if (strcmp(fn_name, "str_starts_with") == 0 && call->args->len == 2) {
                     String* s = codegen_expr(cg, call->args->data[0].value);
                     String* prefix = codegen_expr(cg, call->args->data[1].value);
-                    emit(cg, "    %s =w call $fern_str_starts_with(l %s, l %s)\n",
+                    emit(cg, "    %s =l call $fern_str_starts_with(l %s, l %s)\n",
                         string_cstr(result), string_cstr(s), string_cstr(prefix));
                     return result;
                 }
@@ -2881,7 +3047,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 if (strcmp(fn_name, "str_ends_with") == 0 && call->args->len == 2) {
                     String* s = codegen_expr(cg, call->args->data[0].value);
                     String* suffix = codegen_expr(cg, call->args->data[1].value);
-                    emit(cg, "    %s =w call $fern_str_ends_with(l %s, l %s)\n",
+                    emit(cg, "    %s =l call $fern_str_ends_with(l %s, l %s)\n",
                         string_cstr(result), string_cstr(s), string_cstr(suffix));
                     return result;
                 }
@@ -2890,7 +3056,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 if (strcmp(fn_name, "str_contains") == 0 && call->args->len == 2) {
                     String* s = codegen_expr(cg, call->args->data[0].value);
                     String* substr = codegen_expr(cg, call->args->data[1].value);
-                    emit(cg, "    %s =w call $fern_str_contains(l %s, l %s)\n",
+                    emit(cg, "    %s =l call $fern_str_contains(l %s, l %s)\n",
                         string_cstr(result), string_cstr(s), string_cstr(substr));
                     return result;
                 }
@@ -2900,7 +3066,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                     String* s = codegen_expr(cg, call->args->data[0].value);
                     String* start = codegen_expr(cg, call->args->data[1].value);
                     String* end = codegen_expr(cg, call->args->data[2].value);
-                    emit(cg, "    %s =l call $fern_str_slice(l %s, w %s, w %s)\n",
+                    emit(cg, "    %s =l call $fern_str_slice(l %s, l %s, l %s)\n",
                         string_cstr(result), string_cstr(s), string_cstr(start), string_cstr(end));
                     return result;
                 }
@@ -2959,7 +3125,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 if (strcmp(fn_name, "str_repeat") == 0 && call->args->len == 2) {
                     String* s = codegen_expr(cg, call->args->data[0].value);
                     String* n = codegen_expr(cg, call->args->data[1].value);
-                    emit(cg, "    %s =l call $fern_str_repeat(l %s, w %s)\n",
+                    emit(cg, "    %s =l call $fern_str_repeat(l %s, l %s)\n",
                         string_cstr(result), string_cstr(s), string_cstr(n));
                     return result;
                 }
@@ -2967,7 +3133,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 /* Handle str_is_empty(s) -> Bool */
                 if (strcmp(fn_name, "str_is_empty") == 0 && call->args->len == 1) {
                     String* s = codegen_expr(cg, call->args->data[0].value);
-                    emit(cg, "    %s =w call $fern_str_is_empty(l %s)\n",
+                    emit(cg, "    %s =l call $fern_str_is_empty(l %s)\n",
                         string_cstr(result), string_cstr(s));
                     return result;
                 }
@@ -3021,7 +3187,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 /* Handle list_is_empty(list) -> Bool */
                 if (strcmp(fn_name, "list_is_empty") == 0 && call->args->len == 1) {
                     String* list = codegen_expr(cg, call->args->data[0].value);
-                    emit(cg, "    %s =w call $fern_list_is_empty(l %s)\n",
+                    emit(cg, "    %s =l call $fern_list_is_empty(l %s)\n",
                         string_cstr(result), string_cstr(list));
                     return result;
                 }
@@ -3057,7 +3223,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 /* Handle file_exists(path) -> Bool */
                 if (strcmp(fn_name, "file_exists") == 0 && call->args->len == 1) {
                     String* path = codegen_expr(cg, call->args->data[0].value);
-                    emit(cg, "    %s =w call $fern_file_exists(l %s)\n",
+                    emit(cg, "    %s =l call $fern_file_exists(l %s)\n",
                         string_cstr(result), string_cstr(path));
                     return result;
                 }
@@ -3101,15 +3267,16 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 if (ret_type == 'l') {
                     register_wide_var(cg, result);
                 }
-                emit(cg, "    %s =%c call $%s(", 
-                    string_cstr(result), ret_type, func_name);
+                emit(cg, "    %s =%c call %c%s(",
+                    string_cstr(result), ret_type,
+                    is_function_var(cg, call->func->data.ident.name) ? '%' : '$', func_name);
                 for (size_t i = 0; i < call->args->len; i++) {
                     if (i > 0) emit(cg, ", ");
                     emit(cg, "%c %s", arg_types[i], string_cstr(arg_temps[i]));
                 }
                 emit(cg, ")\n");
             } else {
-                char ret_type = 'w';
+                char ret_type = qbe_type_for_expr(cg, expr);
                 String* callee = codegen_expr(cg, call->func);
                 if (ret_type == 'l') {
                     register_wide_var(cg, result);
@@ -3250,7 +3417,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             String* unwrapped = fresh_temp(cg);
             
             /* Call fern_result_is_ok to check the tag */
-            emit(cg, "    %s =w call $fern_result_is_ok(l %s)\n", 
+            emit(cg, "    %s =l call $fern_result_is_ok(l %s)\n",
                 string_cstr(is_ok), string_cstr(result_val));
             
             /* Branch: if Ok continue, if Err return early */
@@ -3281,7 +3448,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             String* result = fresh_temp(cg);
             
             /* Call runtime function to get element */
-            emit(cg, "    %s =l call $fern_list_get(l %s, w %s)\n",
+            emit(cg, "    %s =l call $fern_list_get(l %s, l %s)\n",
                 string_cstr(result), string_cstr(obj), string_cstr(index));
             register_wide_var(cg, result);
             
@@ -3320,7 +3487,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 
                 /* Initialize current to start */
                 String* current = fresh_temp(cg);
-                emit(cg, "    %s =w copy %s\n", string_cstr(current), string_cstr(start_val));
+                emit(cg, "    %s =l copy %s\n", string_cstr(current), string_cstr(start_val));
                 
                 /* Generate labels */
                 String* loop_start = fresh_label(cg);
@@ -3332,11 +3499,11 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 String* cond = fresh_temp(cg);
                 if (range->inclusive) {
                     /* current <= end for ..= */
-                    emit(cg, "    %s =w cslew %s, %s\n", 
+                    emit(cg, "    %s =w cslel %s, %s\n",
                         string_cstr(cond), string_cstr(current), string_cstr(end_val));
                 } else {
                     /* current < end for .. */
-                    emit(cg, "    %s =w csltw %s, %s\n", 
+                    emit(cg, "    %s =w csltl %s, %s\n",
                         string_cstr(cond), string_cstr(current), string_cstr(end_val));
                 }
                 emit(cg, "    jnz %s, %s, %s\n", 
@@ -3346,16 +3513,26 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 emit(cg, "%s\n", string_cstr(loop_body));
                 
                 /* Bind loop variable to current value */
-                emit(cg, "    %%%s =w copy %s\n", 
+                emit(cg, "    %%%s =l copy %s\n",
                     string_cstr(for_loop->var_name), string_cstr(current));
                 
                 /* Execute body */
                 codegen_expr(cg, for_loop->body);
                 
+                /* At the inclusive endpoint, stop before increment can wrap INT64_MAX. */
+                if (range->inclusive) {
+                    String* finished = fresh_temp(cg);
+                    String* increment = fresh_label(cg);
+                    emit(cg, "    %s =w ceql %s, %s\n", string_cstr(finished),
+                        string_cstr(current), string_cstr(end_val));
+                    emit(cg, "    jnz %s, %s, %s\n", string_cstr(finished),
+                        string_cstr(loop_end), string_cstr(increment));
+                    emit(cg, "%s\n", string_cstr(increment));
+                }
                 /* Increment current */
                 String* new_current = fresh_temp(cg);
-                emit(cg, "    %s =w add %s, 1\n", string_cstr(new_current), string_cstr(current));
-                emit(cg, "    %s =w copy %s\n", string_cstr(current), string_cstr(new_current));
+                emit(cg, "    %s =l add %s, 1\n", string_cstr(new_current), string_cstr(current));
+                emit(cg, "    %s =l copy %s\n", string_cstr(current), string_cstr(new_current));
                 
                 /* Jump back to loop start */
                 emit(cg, "    jmp %s\n", string_cstr(loop_start));
@@ -3391,12 +3568,12 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             
             /* Get list length */
             String* len = fresh_temp(cg);
-            emit(cg, "    %s =w call $fern_list_len(l %s)\n", 
+            emit(cg, "    %s =l call $fern_list_len(l %s)\n",
                 string_cstr(len), string_cstr(list));
             
             /* Initialize index to 0 */
             String* idx = fresh_temp(cg);
-            emit(cg, "    %s =w copy 0\n", string_cstr(idx));
+            emit(cg, "    %s =l copy 0\n", string_cstr(idx));
             
             /* Generate labels */
             String* loop_start = fresh_label(cg);
@@ -3406,7 +3583,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             /* Loop start: check condition */
             emit(cg, "%s\n", string_cstr(loop_start));
             String* cond = fresh_temp(cg);
-            emit(cg, "    %s =w csltw %s, %s\n", 
+            emit(cg, "    %s =w csltl %s, %s\n",
                 string_cstr(cond), string_cstr(idx), string_cstr(len));
             emit(cg, "    jnz %s, %s, %s\n", 
                 string_cstr(cond), string_cstr(loop_body), string_cstr(loop_end));
@@ -3417,7 +3594,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             /* Get element at current index and bind to var_name
              * Use 'l' type since list elements may be pointers (strings, etc.) */
             String* elem = fresh_temp(cg);
-            emit(cg, "    %s =l call $fern_list_get(l %s, w %s)\n",
+            emit(cg, "    %s =l call $fern_list_get(l %s, l %s)\n",
                 string_cstr(elem), string_cstr(list), string_cstr(idx));
             register_wide_var(cg, elem);
             emit(cg, "    %%%s =l copy %s\n", 
@@ -3429,8 +3606,8 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             
             /* Increment index */
             String* new_idx = fresh_temp(cg);
-            emit(cg, "    %s =w add %s, 1\n", string_cstr(new_idx), string_cstr(idx));
-            emit(cg, "    %s =w copy %s\n", string_cstr(idx), string_cstr(new_idx));
+            emit(cg, "    %s =l add %s, 1\n", string_cstr(new_idx), string_cstr(idx));
+            emit(cg, "    %s =l copy %s\n", string_cstr(idx), string_cstr(new_idx));
             
             /* Jump back to loop start */
             emit(cg, "    jmp %s\n", string_cstr(loop_start));
@@ -3475,7 +3652,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                 
                 /* Check if Ok */
                 String* is_ok = fresh_temp(cg);
-                emit(cg, "    %s =w call $fern_result_is_ok(l %s)\n",
+                emit(cg, "    %s =l call $fern_result_is_ok(l %s)\n",
                     string_cstr(is_ok), string_cstr(res_val));
                 
                 /* Branch: if Err, jump to error handling */
@@ -3534,7 +3711,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
                             Expr* lit = arm->pattern->data.literal;
                             String* lit_temp = codegen_expr(cg, lit);
                             String* cmp = fresh_temp(cg);
-                            emit(cg, "    %s =w ceqw %s, %s\n",
+                            emit(cg, "    %s =w ceql %s, %s\n",
                                 string_cstr(cmp), string_cstr(failed_result), string_cstr(lit_temp));
                             emit(cg, "    jnz %s, %s, %s\n",
                                 string_cstr(cmp), string_cstr(arm_body_label), string_cstr(next_arm_label));
@@ -3652,7 +3829,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             String* result = fresh_temp(cg);
             emit_data(cg, "data %s = { b \"%s\", b 0 }\n",
                 string_cstr(label), actor_name);
-            emit(cg, "    %s =w call $fern_actor_spawn(l %s)\n",
+            emit(cg, "    %s =l call $fern_actor_spawn(l %s)\n",
                 string_cstr(result), string_cstr(label));
             return result;
         }
@@ -3664,7 +3841,7 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
             String* result = fresh_temp(cg);
 
             /* The runtime already returns a Result pointer, including send errors. */
-            emit(cg, "    %s =l call $fern_actor_send(w %s, l %s)\n",
+            emit(cg, "    %s =l call $fern_actor_send(l %s, l %s)\n",
                 string_cstr(result), string_cstr(pid), string_cstr(msg));
             register_wide_var(cg, result);
             return result;
@@ -3691,6 +3868,15 @@ String* codegen_expr(Codegen* cg, Expr* expr) {
              * Field "0" is at offset 0, "1" at offset 8, "2" at offset 16 (64-bit aligned)
              */
             DotExpr* dot = &expr->data.dot;
+            Type* semantic = checked_expr_type(expr);
+            if (semantic && semantic->kind == TYPE_FN && dot->object->type == EXPR_IDENT &&
+                strcmp(string_cstr(dot->object->data.ident.name), "System") == 0 &&
+                (strcmp(string_cstr(dot->field), "exec_args_bounded") == 0 ||
+                 strcmp(string_cstr(dot->field), "write_stderr") == 0)) {
+                String* pointer = fresh_temp(cg);
+                emit(cg, "    %s =l copy $fern_%s\n", string_cstr(pointer), string_cstr(dot->field));
+                return pointer;
+            }
             String* obj = codegen_expr(cg, dot->object);
             String* result = fresh_temp(cg);
             const char* field = string_cstr(dot->field);
@@ -3749,6 +3935,7 @@ static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
     cg->wide_var_count = 0;
     cg->bound_pattern_count = 0;
     cg->owned_ptr_var_count = 0;
+    cg->function_var_count = 0;
     cg->returned = false;
     
     /* Check if this is main() with no return type (Unit return) */
@@ -3759,13 +3946,15 @@ static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
     /* Determine return type: tuples, strings, lists return 'l' (pointer), others return 'w' */
     char ret_type = 'w';
     if (fn->return_type != NULL) {
-        if (fn->return_type->kind == TYPEEXPR_TUPLE) {
+        if (fn->return_type->kind == TYPEEXPR_TUPLE ||
+            fn->return_type->kind == TYPEEXPR_FUNCTION) {
             ret_type = 'l';
         } else if (fn->return_type->kind == TYPEEXPR_NAMED) {
             const char* type_name = string_cstr(fn->return_type->data.named.name);
             /* String and List are pointer types */
             if (strcmp(type_name, "String") == 0 || strcmp(type_name, "List") == 0 ||
-                strcmp(type_name, "Result") == 0 || strcmp(type_name, "Option") == 0) {
+                strcmp(type_name, "Result") == 0 || strcmp(type_name, "Option") == 0 ||
+                strcmp(type_name, "Int") == 0) {
                 ret_type = 'l';
             } else if (strcmp(type_name, "Float") == 0) {
                 ret_type = 'd';
@@ -3773,6 +3962,10 @@ static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
         }
     }
     
+    if (!fn->return_type && !is_main_unit) {
+        ret_type = qbe_type_for_expr(cg, fn->body);
+    }
+
     /* Function header - rename main to fern_main so C runtime can provide entry point */
     const char* emit_name = is_main ? "fern_main" : fn_name;
     emit(cg, "export function %c $%s(", ret_type, emit_name);
@@ -3785,7 +3978,10 @@ static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
             char param_type = 'w';
             Parameter* param = &fn->params->data[i];
             if (param->type_ann != NULL) {
-                if (param->type_ann->kind == TYPEEXPR_TUPLE) {
+                if (param->type_ann->kind == TYPEEXPR_FUNCTION) {
+                    param_type = 'l';
+                    register_function_var(cg, param->name);
+                } else if (param->type_ann->kind == TYPEEXPR_TUPLE) {
                     /* Tuples are heap-allocated pointers */
                     param_type = 'l';
                     register_wide_var(cg, param->name);
@@ -3793,6 +3989,7 @@ static void codegen_fn_def(Codegen* cg, FunctionDef* fn) {
                 } else if (param->type_ann->kind == TYPEEXPR_NAMED) {
                     const char* type_name = string_cstr(param->type_ann->data.named.name);
                     if (strcmp(type_name, "Float") == 0) param_type = 'd';
+                    if (strcmp(type_name, "Int") == 0) param_type = 'l';
                     /* String, List are heap pointers; Option is packed 64-bit; Result is heap pointer */
                     if (strcmp(type_name, "String") == 0 || strcmp(type_name, "List") == 0 ||
                         strcmp(type_name, "Option") == 0 || strcmp(type_name, "Result") == 0) {
@@ -3849,10 +4046,12 @@ void codegen_stmt(Codegen* cg, Stmt* stmt) {
                 /* Use type annotation to determine QBE type */
                 if (let->type_ann->kind == TYPEEXPR_NAMED) {
                     const char* type_name = string_cstr(let->type_ann->data.named.name);
-                    if (strcmp(type_name, "String") == 0 || strcmp(type_name, "List") == 0) {
+                    if (strcmp(type_name, "Int") == 0 || strcmp(type_name, "String") == 0 ||
+                        strcmp(type_name, "List") == 0) {
                         type_spec = 'l';
                     }
-                } else if (let->type_ann->kind == TYPEEXPR_TUPLE) {
+                } else if (let->type_ann->kind == TYPEEXPR_TUPLE ||
+                    let->type_ann->kind == TYPEEXPR_FUNCTION) {
                     type_spec = 'l';
                 }
             } else {
@@ -3913,6 +4112,14 @@ void codegen_stmt(Codegen* cg, Stmt* stmt) {
                             is_pointer_type = true;
                         }
                     }
+                }
+                Type* value_type = checked_expr_type(let->value);
+                if (value_type && (value_type->kind == TYPE_INT || value_type->kind == TYPE_BOOL ||
+                    value_type->kind == TYPE_FLOAT || value_type->kind == TYPE_UNIT || value_type->kind == TYPE_FN)) {
+                    is_pointer_type = false;
+                }
+                if (value_type && value_type->kind == TYPE_FN) {
+                    register_function_var(cg, let->pattern->data.ident);
                 }
                 if (is_pointer_type) {
                     register_wide_var(cg, let->pattern->data.ident);

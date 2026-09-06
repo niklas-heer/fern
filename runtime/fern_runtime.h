@@ -36,6 +36,20 @@ void fern_println_int(int64_t n);
  */
 void fern_print_str(const char* s);
 
+/** Stable stderr failure codes; IO retains the ordinary File error code3. */
+enum FernStderrError { FERN_STDERR_INVALID=1, FERN_STDERR_LIMIT=2, FERN_STDERR_IO=3 };
+
+/**
+ * Write exact text to descriptor2, with no newline and no global SIGPIPE handler change.
+ * @param text UTF8 native CString, <=16MiB; native CStrings cannot carry interior NUL.
+ * @return Heap Result: Ok(Unit0), Err1 invalid text, Err2 size limit, Err3 IO/work failure.
+ * Partial output may precede Err3. Empty input succeeds even with closed stderr.
+ * At most65536 write attempts; blocking kernel writes have no hard deadline.
+ * Preserve descriptors, thread mask and preexisting pending SIGPIPE. Hosts must not
+ * concurrently change SIGPIPE disposition or consume/inject SIGPIPE in this thread.
+ */
+int64_t fern_write_stderr(const char* text);
+
 /**
  * Print a string to stdout with newline.
  * @param s The null-terminated string to print.
@@ -600,6 +614,27 @@ FernExecResult* fern_exec(const char* cmd);
  * @return FernExecResult with exit code, stdout, and stderr.
  */
 FernExecResult* fern_exec_args(FernStringList* args);
+
+/** Stable bounded-process failure codes; normal child statuses, including127, stay in Ok. */
+enum FernExecError {
+    FERN_EXEC_INVALID = 1, FERN_EXEC_SPAWN = 2, FERN_EXEC_TIMEOUT = 3,
+    FERN_EXEC_OUTPUT_LIMIT = 4, FERN_EXEC_IO = 5, FERN_EXEC_TEXT = 6,
+    FERN_EXEC_SIGNAL = 7
+};
+
+/**
+ * Execute literal UTF8 argv with a private process group and bounded text captures.
+ * @param args 1..4096 strings, nonempty argv0, <=1MiB including terminators.
+ * @param timeout_ms Monotonic capture deadline in1..600000ms; kernel reap may extend it.
+ * @param max_output_bytes Independent stdout/stderr caps in0..16MiB.
+ * @return Existing heap Result: Ok(pointer to24-byte FernExecResult), or Err(FernExecError).
+ * Requires initialized Fern GC and no competing child reaper or concurrent SIGCHLD policy changes.
+ * SIGCHLD ignored/SA_NOCLDWAIT is rejected. Private-group cleanup is not descendant containment.
+ * Basename PATH lookup allows <=1MiB/4096 components; unset PATH uses /usr/bin:/bin.
+ * Slash paths bypass lookup. No implicit ENOEXEC shell fallback occurs.
+ */
+int64_t fern_exec_args_bounded(FernStringList* args, int64_t timeout_ms, int64_t max_output_bytes);
+
 
 /**
  * Get environment variable.

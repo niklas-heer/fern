@@ -6,14 +6,14 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 
 ## Current Status Snapshot
 
-- Quality gate: `just check` passing (553 C tests, native workflow/string/print tests, 13 TUI tests, 18 examples, strict style); validated with stale host `LIBRARY_PATH` excluded
+- Quality gate: `just check` passing (574 C tests, 16 full-width Int programs, native process/stderr/workflow/string/print tests, 13 TUI tests, 18 examples, strict style); validated with stale host `LIBRARY_PATH` excluded
 - Perf gate: `just perf-budget` passing on macOS arm64 (7.49 s build, 549,384-byte compiler, 2.82 ms startup p95)
 - Fuzz gate: `just fuzz-smoke` passing (64 cases, seed `0xC0FFEE`)
 - Docs gate: `just docs-check` passing (consistency, generation, doc tests); LSP RPC smoke passing
 - Release readiness: `just release-package` and `just release-package-check` passing; full-language blockers remain in `docs/RELEASE_READINESS.md`
 - Sanitizer gate: AddressSanitizer/UndefinedBehaviorSanitizer passing on six actor scenarios and three TUI scenarios (GC leak reporting excluded).
 - Bootstrap gate: exact native/Python style diagnostic parity under both C and Rust frontends on five pinned fixtures, literal paths and all compiler/library source
-- Rust migration: `just rust-check` passing (1006 Rust tests, 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 27 union programs, 21 entry/access programs, 9 controlled-fault cases, 233 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in
+- Rust migration: `just rust-check` passing (1015 Rust tests, 4 measurement-harness tests, 194 core native programs, 13 newtype programs, 12 namespace programs, 27 union programs, 21 entry/access programs, 9 controlled-fault cases, 233 invalid inputs, dual-frontend directory/Result contracts, 192 mutations); expanded frontend remains opt-in; process/stdio and full C/Rust gates also pass on Linux arm64
 
 ## Canonical Documents
 
@@ -74,6 +74,8 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Return explicit directory listing errors in both frontends and migrate native callers (four ABI, eight native, two binder and two alias checks).
 - [x] Preserve complete C lexer state across lookahead and speculative rollback, including bracket nesting, interpolation and pending indentation (three replay regressions).
 - [x] Preserve semantic C argument/payload widths and multiline match-arm scope; parser errors terminate (seven parser regressions and native bootstrap parity).
+- [x] Preserve signed 64-bit C Int through literals, arithmetic, inferred returns, containers, typed function values and native calls; guard MIN/-1 and inclusive MAX endpoints (16 native programs in debug/release).
+- [x] Canonicalize C Unit annotations/empty patterns, unify contextual if branches and expose the existing packed Int Option fallback for checker workflows (annotation, pattern, ABI and branch regressions).
 - [x] Verify the complete expanded checkpoint and record test counts (Rust/C/docs/fuzz/native style parity).
 - [x] Functions/closures and ten higher-order collection/error operations (287 Rust tests, six new native programs, six negative cases; delayed Result-bearing captures remain restricted).
 - [x] Retain originating compiled code for interactive closures, preserve capture/effect order and bound unique retained programs (interactive closure and storage regressions).
@@ -156,6 +158,9 @@ Status: Diagnostic parity complete; workflow parity remains open
 
 - [x] Compare exact diagnostics, severity, messages, and exits on pinned failing fixtures and all `src`/`lib` sources (strict, lenient, summary, nested paths)
 - [x] Port the Fern checker to immutable returned state and verify exact diagnostics, file counts and exits under both C and Rust frontends, including continuation after a failed build.
+- [x] Capture bounded literal processes through both native frontends with full-width limits, distinct normal/error results and owned cleanup (31 native scenarios and five atomic rejections per frontend; 21 runtime groups in debug/release/sanitizer builds).
+- [x] Add fallible exact stderr output with thread-local SIGPIPE preservation (nine native groups in debug/release/sanitizer builds; six source-native cases and two atomic rejections per frontend).
+- [x] Accept interpolated strings as indented C-parser body expressions (three AST regressions), including final branches followed by else.
 - [ ] Reach feature parity for `scripts/check_style.py` in `scripts/check_style.fn`
 - [x] Add parity assertions to CI (`just style-parity` as a required gate)
 - [ ] Make Fern-native checker the default once parity is stable

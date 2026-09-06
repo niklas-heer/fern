@@ -239,7 +239,8 @@ impl Emitter<'_> {
                 ty.clone(),
                 &format!("call $fern_rs_json_members(l {raw})"),
             ),
-            ValueAbi::HeapStringListResult => self.native_list_result(&raw, locals),
+            ValueAbi::HeapStringListResult => self.native_adapted_result(&raw, false, locals),
+            ValueAbi::HeapExecResult => self.native_adapted_result(&raw, true, locals),
             ValueAbi::ExecResult => self.native_tuple(&raw, 3, &[1, 2], locals),
             ValueAbi::TermSize => self.native_tuple(&raw, 2, &[], locals),
             ValueAbi::RegexMatch => self.native_match(&raw, locals),
@@ -569,8 +570,13 @@ impl Emitter<'_> {
 }
 
 impl Emitter<'_> {
-    /// Preserve directory errors and translate only successful native StringList payloads.
-    fn native_list_result(&mut self, result: &str, locals: &mut Locals) -> String {
+    /// Preserve native errors and translate only successful list or process tuple payloads.
+    fn native_adapted_result(
+        &mut self,
+        result: &str,
+        process: bool,
+        locals: &mut Locals,
+    ) -> String {
         self.require_native_pointer(result, locals);
         let success = self.assign(
             locals,
@@ -589,11 +595,15 @@ impl Emitter<'_> {
             &format!("call $fern_result_unwrap(l {result})"),
         );
         self.require_native_pointer(&native, locals);
-        let list = self.emit_string_list_result(&native, locals);
+        let payload = if process {
+            self.native_tuple(&native, 3, &[1, 2], locals)
+        } else {
+            self.emit_string_list_result(&native, locals)
+        };
         let wrapped = self.assign(
             locals,
             Type::Int,
-            &format!("call $fern_result_ok(l {list})"),
+            &format!("call $fern_result_ok(l {payload})"),
         );
         let ok_end = locals.current.clone();
         self.output.push_str(&format!("    jmp {merge}\n"));

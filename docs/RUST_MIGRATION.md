@@ -855,3 +855,18 @@ additional valid sources, four recovery cases and five incremental edits establi
 function-type precedence, subset patterns, module aliases and query captures. All
 38 accepted source trees agree between native and WASM parsers, with the Rust
 frontend checking their actual types. Other syntax and Zed packaging remain open.
+
+## Bounded native process capture — 2026-09-06
+
+`System.exec_args_bounded` captures literal argv with independent UTF-8 stdout and
+stderr, explicit time/byte limits and a fallible Result. Both frontends preserve
+full-width limits through helpers and function values. Rust adapts only a successful
+native tuple; errors keep their original payload. [The process contract](PROCESS_EXECUTION.md)
+documents exact limits, error codes, PATH behavior and cleanup boundaries.
+
+The supporting C ABI repair preserves signed 64-bit Int arithmetic, parameters,
+returns and heap Result payloads, including inclusive MAX ranges and MIN/-1.
+Its legacy packed Option and other recorded C limitations remain separate.
+The previous 1006-test checkpoint also passes C/Rust/docs gates on Linux arm64
+with Rust 1.75; this does not establish Linux amd64, current performance or default
+migration readiness. Full checker workflow parity is still being integrated.

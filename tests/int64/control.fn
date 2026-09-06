@@ -1,0 +1,11 @@
+fn choose(flag: Bool, x: Int) -> Int:
+    if flag: x else: -x
+fn match_value(x: Int) -> Int:
+    match x:
+        4294967297 -> 9
+        other -> other
+fn main():
+    println(choose(true, 4294967297))
+    println(choose(false, 4294967297))
+    println(match_value(1))
+    println(match_value(4294967297))

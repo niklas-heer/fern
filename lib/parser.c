@@ -263,7 +263,7 @@ static bool can_start_block_expr(Parser* parser) {
     TokenType t = parser->current.type;
     /* Tokens that can start expressions within a function body */
     return t == TOKEN_IDENT || t == TOKEN_INT || t == TOKEN_FLOAT ||
-           t == TOKEN_STRING || t == TOKEN_TRUE || t == TOKEN_FALSE ||
+           t == TOKEN_STRING || t == TOKEN_STRING_BEGIN || t == TOKEN_TRUE || t == TOKEN_FALSE ||
            t == TOKEN_LPAREN || t == TOKEN_LBRACKET || t == TOKEN_LBRACE ||
            t == TOKEN_IF || t == TOKEN_MATCH || t == TOKEN_NOT ||
            t == TOKEN_MINUS || t == TOKEN_LET || t == TOKEN_RETURN ||
@@ -587,6 +587,29 @@ static Expr* parse_power(Parser* parser) {
 }
 
 /**
+ * Accumulate a decimal token without signed overflow or accepting out-of-range integers.
+ * @param parser Parser positioned at the integer token for precise diagnostics.
+ * @param limit Maximum permitted magnitude, including the one signed-MIN exception.
+ * @return Magnitude, or zero after recording an input diagnostic.
+ */
+static uint64_t parse_integer_magnitude(Parser* parser, uint64_t limit) {
+    assert(parser != NULL);
+    assert(parser->current.type == TOKEN_INT);
+    const char* text = string_cstr(parser->current.text);
+    size_t length = string_len(parser->current.text);
+    uint64_t value = 0;
+    for (size_t i = 0; i < length; i++) {
+        uint64_t digit = (uint64_t)(text[i] - '0');
+        if (digit > 9 || value > (limit - digit) / 10) {
+            error_at_current(parser, "Integer literal outside signed 64-bit range");
+            return 0;
+        }
+        value = value * 10 + digit;
+    }
+    return value;
+}
+
+/**
  * Parse unary expressions (- !).
  * @param parser The parser to use.
  * @return The parsed expression.
@@ -595,6 +618,13 @@ static Expr* parse_unary(Parser* parser) {
     // FERN_STYLE: allow(assertion-density) simple precedence level
     if (match(parser, TOKEN_MINUS)) {
         SourceLoc loc = parser->previous.loc;
+        if (check(parser, TOKEN_INT)) {
+            uint64_t magnitude = parse_integer_magnitude(parser, (uint64_t)INT64_MAX + 1);
+            if (magnitude == (uint64_t)INT64_MAX + 1) {
+                advance(parser);
+                return expr_int_lit(parser->arena, INT64_MIN, loc);
+            }
+        }
         Expr* operand = parse_unary(parser);
         return expr_unary(parser->arena, UNOP_NEG, operand, loc);
     }
@@ -847,14 +877,11 @@ static Pattern* parse_pattern(Parser* parser) {
 static Expr* parse_primary_internal(Parser* parser) {
     // FERN_STYLE: allow(assertion-density, function-length, bounded-loops) main parsing entry point handles all expression types
     // Integer literal
-    if (match(parser, TOKEN_INT)) {
-        Token tok = parser->previous;
-        const char* text = string_cstr(tok.text);
-        int64_t value = 0;
-        for (const char* p = text; *p; p++) {
-            value = value * 10 + (*p - '0');
-        }
-        return expr_int_lit(parser->arena, value, tok.loc);
+    if (check(parser, TOKEN_INT)) {
+        Token tok = parser->current;
+        uint64_t value = parse_integer_magnitude(parser, INT64_MAX);
+        advance(parser);
+        return expr_int_lit(parser->arena, (int64_t)value, tok.loc);
     }
 
     // Float literal

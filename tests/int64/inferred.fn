@@ -1,0 +1,8 @@
+fn identity(x: Int): x
+fn chosen(flag: Bool):
+    if flag: 4294967297 else: -4294967295
+fn main():
+    let same: Int = identity(4294967297)
+    let copy: Int = same
+    println(copy)
+    println(chosen(false))

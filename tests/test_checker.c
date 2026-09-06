@@ -2389,7 +2389,95 @@ void test_check_tui_prompt_int_returns_int(void) {
 
 /* ========== Test Runner ========== */
 
+void test_check_exec_args_bounded_signature(void) {
+    Arena* arena = arena_create(8192);
+    ASSERT_TRUE(check_stmt_ok(arena,
+        "fn run(args: List(String), timeout: Int, cap: Int) -> Result((Int, String, String), Int):\n"
+        "    System.exec_args_bounded(args, timeout, cap)\n"));
+    ASSERT_NOT_NULL(check_expr_error(arena, "System.exec_args_bounded([1], 10, 20)"));
+    ASSERT_NOT_NULL(check_expr_error(arena, "System.exec_args_bounded([\"x\"], true, 20)"));
+    ASSERT_NOT_NULL(check_expr_error(arena, "System.exec_args_bounded([\"x\"], 10)"));
+    ASSERT_NOT_NULL(check_stmt_error(arena,
+        "fn main():\n    System.exec_args_bounded([\"x\"], 10, 20)\n    ()\n"));
+    arena_destroy(arena);
+}
+
+void test_check_unit_annotation_is_canonical(void) {
+    Arena* arena = arena_create(8192);
+    ASSERT_TRUE(check_stmt_ok(arena, "fn inspect() -> Unit: ()\n"));
+    ASSERT_TRUE(check_stmt_ok(arena, "fn identity(value: Unit) -> (): value\n"));
+    ASSERT_TRUE(check_stmt_ok(arena, "fn success() -> Result(Unit, Int): Ok(())\n"));
+    ASSERT_TRUE(check_stmt_ok(arena, "type Empty:\n    Empty(Unit)\n"));
+    ASSERT_NOT_NULL(check_stmt_error(arena, "fn invalid() -> Unit: 1\n"));
+    arena_destroy(arena);
+}
+
+void test_check_write_stderr_signature(void) {
+    Arena* arena = arena_create(8192);
+    ASSERT_TRUE(check_stmt_ok(arena,
+        "fn write(text: String) -> Result((), Int): System.write_stderr(text)\n"));
+    ASSERT_TRUE(check_stmt_ok(arena,
+        "fn write(text: String) -> Result((), Int):\n"
+        "    let output: (String) -> Result((), Int) = System.write_stderr\n"
+        "    output(text)\n"));
+    ASSERT_NOT_NULL(check_expr_error(arena, "System.write_stderr(1)"));
+    ASSERT_NOT_NULL(check_expr_error(arena, "System.write_stderr()"));
+    ASSERT_NOT_NULL(check_expr_error(arena, "System.write_stderr(\"a\", \"b\")"));
+    ASSERT_NOT_NULL(check_stmt_error(arena,
+        "fn main():\n    System.write_stderr(\"warning\")\n    ()\n"));
+    ASSERT_NOT_NULL(check_stmt_error(arena,
+        "fn wrong() -> Result(Int, Int): System.write_stderr(\"warning\")\n"));
+    arena_destroy(arena);
+}
+
+void test_check_option_unwrap_or_packed_int_signature(void) {
+    Arena* arena = arena_create(8192);
+    Type* result = check_expr(arena, "Option.unwrap_or(String.char_at(\"byte\", 0), 4294967297)");
+    ASSERT_NOT_NULL(result);
+    ASSERT_EQ(result->kind, TYPE_INT);
+    ASSERT_NOT_NULL(check_expr_error(arena, "Option.unwrap_or(String.char_at(\"byte\", 0), true)"));
+    ASSERT_NOT_NULL(check_expr_error(arena, "Option.unwrap_or(1, 0)"));
+    ASSERT_NOT_NULL(check_expr_error(arena, "Option.unwrap_or(String.char_at(\"byte\", 0))"));
+    arena_destroy(arena);
+}
+
+void test_check_empty_unit_pattern_is_exact(void) {
+    Arena* arena = arena_create(8192);
+    ASSERT_TRUE(check_stmt_ok(arena,
+        "fn main() -> Int:\n    match System.write_stderr(\"diagnostic 🌿\"):\n"
+        "        Ok(()) -> 7\n        Err(code) ->\n            println(code)\n            7\n"));
+    ASSERT_NOT_NULL(check_stmt_error(arena,
+        "fn bad(value: Result(Int, Int)) -> Int:\n"
+        "    match value:\n        Ok(()) -> 7\n        Err(_) -> 7\n"));
+    ASSERT_NOT_NULL(check_stmt_error(arena,
+        "fn bad(value: Result(Unit, Int)) -> Int:\n"
+        "    match value:\n        Ok((item)) -> 7\n        Err(_) -> 7\n"));
+    arena_destroy(arena);
+}
+
+void test_check_if_empty_list_infers_concrete_branch_type(void) {
+    Arena* arena = arena_create(8192);
+    Type* result = check_expr(arena, "if true: [] else: [\"text\"]");
+    ASSERT_NOT_NULL(result);
+    ASSERT_EQ(result->kind, TYPE_CON);
+    ASSERT_EQ(result->data.con.args->data[0]->kind, TYPE_STRING);
+    ASSERT_TRUE(check_stmt_ok(arena,
+        "fn choose(flag: Bool) -> String:\n"
+        "    let items = if flag: [\"text\"] else: []\n    List.head(items)\n"));
+    ASSERT_NOT_NULL(check_expr_error(arena, "if true: [1] else: [\"text\"]"));
+    ASSERT_NOT_NULL(check_stmt_error(arena,
+        "fn invalid(flag: Bool) -> List(Int):\n"
+        "    let items = if flag: [] else: [\"text\"]\n    List.push(items, 1)\n"));
+    arena_destroy(arena);
+}
+
 void run_checker_tests(void) {
+    TEST_RUN(test_check_if_empty_list_infers_concrete_branch_type);
+    TEST_RUN(test_check_empty_unit_pattern_is_exact);
+    TEST_RUN(test_check_option_unwrap_or_packed_int_signature);
+    TEST_RUN(test_check_unit_annotation_is_canonical);
+    TEST_RUN(test_check_write_stderr_signature);
+    TEST_RUN(test_check_exec_args_bounded_signature);
     printf("\n--- Type Checker Tests ---\n");
     
     // Literals

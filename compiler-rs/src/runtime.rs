@@ -74,6 +74,8 @@ pub enum ValueAbi {
     NullableStringList,
     /// Native full-width process triple without the Rust tuple tag.
     ExecResult,
+    /// Heap Result whose successful native process triple requires a tuple tag.
+    HeapExecResult,
     /// Native match record uses negative start and a NULL text for absence.
     RegexMatch,
     /// Native count and contiguous match-record array.
@@ -124,6 +126,7 @@ impl Signature {
                             | ValueAbi::StringList
                             | ValueAbi::NullableStringList
                             | ValueAbi::HeapStringListResult
+                            | ValueAbi::HeapExecResult
                             | ValueAbi::ExecResult
                             | ValueAbi::RegexMatch
                             | ValueAbi::RegexCaptures
@@ -251,9 +254,11 @@ enum Shape {
     ResultAE,
     ResultSI,
     ResultII,
+    ResultUnitInt,
     Native(NativeType),
     DirectoryResult,
     ExecTuple,
+    BoundedExecResult,
     MatchOption,
     CapturesList,
     TermTuple,
@@ -269,6 +274,9 @@ impl Shape {
                 Box::new(Type::List(Box::new(Type::String))),
                 Box::new(Type::Int),
             ),
+            Self::BoundedExecResult => {
+                Type::Result(Box::new(Self::ExecTuple.ty()), Box::new(Type::Int))
+            }
             Self::ExecTuple => Type::Tuple(vec![Type::Int, Type::String, Type::String]),
             Self::MatchOption => Type::Option(Box::new(Type::Tuple(vec![
                 Type::Int,
@@ -297,6 +305,7 @@ impl Shape {
             ),
             Self::ResultSI => Type::Result(Box::new(Type::String), Box::new(Type::Int)),
             Self::ResultII => Type::Result(Box::new(Type::Int), Box::new(Type::Int)),
+            Self::ResultUnitInt => Type::Result(Box::new(Type::Unit), Box::new(Type::Int)),
         }
     }
 
@@ -307,7 +316,9 @@ impl Shape {
             Self::Json(shape) => shape.abi(),
             Self::Unit => ValueAbi::Void,
             Self::OptionA | Self::OptionInt => ValueAbi::HeapOption,
-            Self::ResultAE | Self::ResultSI | Self::ResultII => ValueAbi::HeapResult,
+            Self::ResultAE | Self::ResultSI | Self::ResultII | Self::ResultUnitInt => {
+                ValueAbi::HeapResult
+            }
             _ => ValueAbi::Word64,
         }
     }
@@ -1353,6 +1364,24 @@ const ENTRIES: &[Entry] = &[
             "fern_json_value_from_object",
         ),
         Operation::JsonObject,
+    ),
+    returned(
+        arguments(
+            entry(
+                &["System.exec_args_bounded"],
+                &[ListString, Int, Int],
+                BoundedExecResult,
+                "fern_exec_args_bounded",
+            ),
+            &[(0, ValueAbi::StringList)],
+        ),
+        ValueAbi::HeapExecResult,
+    ),
+    entry(
+        &["System.write_stderr"],
+        &[String],
+        ResultUnitInt,
+        "fern_write_stderr",
     ),
 ];
 

@@ -1,0 +1,9 @@
+fn large(value: Int) -> Int: value + 4294967297
+fn apply(call: (Int) -> Int, value: Int) -> Int: call(value)
+fn choose() -> (Int) -> Int: large
+fn main():
+    let call: (Int) -> Int = large
+    println(call(-4294967295))
+    println(apply(large, 4294967297))
+    let selected = choose()
+    println(selected(0))

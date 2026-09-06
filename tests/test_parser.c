@@ -3001,7 +3001,87 @@ void test_parse_try_method(void) {
     arena_destroy(arena);
 }
 
+void test_parse_int64_literal_bounds(void) {
+    Arena* arena = arena_create(8192);
+    const char* invalid[] = {"9223372036854775808", "-9223372036854775809", "999999999999999999999999999"};
+    for (size_t i = 0; i < 3; i++) {
+        Parser* parser = parser_new(arena, invalid[i]);
+        parse_expr(parser);
+        ASSERT_TRUE(parser->had_error);
+    }
+    Parser* parser = parser_new(arena, "-9223372036854775808");
+    Expr* value = parse_expr(parser);
+    ASSERT_NOT_NULL(value);
+    ASSERT_FALSE(parser->had_error);
+    ASSERT_EQ(value->type, EXPR_INT_LIT);
+    ASSERT_EQ(value->data.int_lit.value, INT64_MIN);
+    arena_destroy(arena);
+}
+
+/* Interpolated strings must be accepted as complete indented branch bodies. */
+void test_parse_interpolation_preserves_if_else_layout(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena,
+        "fn f(flag: String) -> String:\n"
+        "    if true:\n        \"argument {flag}: ignored '{flag}'\"\n"
+        "    else:\n        \"\"\nfn main() -> Int: 0\n");
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_FALSE(parser->had_error);
+    ASSERT_EQ(stmts->len, 2);
+    Expr* body = stmts->data[0]->data.fn.body;
+    ASSERT_EQ(body->type, EXPR_IF);
+    ASSERT_EQ(body->data.if_expr.then_branch->type, EXPR_INTERP_STRING);
+    ASSERT_EQ(body->data.if_expr.then_branch->data.interp_string.parts->len, 5);
+    ASSERT_NOT_NULL(body->data.if_expr.else_branch);
+    ASSERT_EQ(body->data.if_expr.else_branch->type, EXPR_STRING_LIT);
+    arena_destroy(arena);
+}
+
+/* A final interpolation remains inside the function after earlier statements. */
+void test_parse_interpolation_as_final_block_expression(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena,
+        "fn f(flag: String) -> String:\n"
+        "    let prefix = \"argument\"\n"
+        "    \"{prefix}: {flag}\" # final value\n\n"
+        "fn main() -> Int: 0\n");
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_FALSE(parser->had_error);
+    ASSERT_EQ(stmts->len, 2);
+    Expr* body = stmts->data[0]->data.fn.body;
+    ASSERT_EQ(body->type, EXPR_BLOCK);
+    ASSERT_EQ(body->data.block.stmts->len, 1);
+    ASSERT_EQ(body->data.block.final_expr->type, EXPR_INTERP_STRING);
+    arena_destroy(arena);
+}
+
+/* Nested match suites consume only their own dedents after an interpolation. */
+void test_parse_interpolation_preserves_nested_match_layout(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena,
+        "fn f(flag: String) -> String:\n"
+        "    if true:\n        match true:\n"
+        "            true ->\n                \"yes {flag}\"\n"
+        "            false ->\n                \"no {flag}\"\n"
+        "    else:\n        \"else {flag}\"\nfn main() -> Int: 0\n");
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_FALSE(parser->had_error);
+    ASSERT_EQ(stmts->len, 2);
+    Expr* body = stmts->data[0]->data.fn.body;
+    ASSERT_EQ(body->type, EXPR_IF);
+    Expr* inner = body->data.if_expr.then_branch;
+    ASSERT_EQ(inner->type, EXPR_MATCH);
+    ASSERT_EQ(inner->data.match_expr.arms->len, 2);
+    ASSERT_EQ(inner->data.match_expr.arms->data[0].body->type, EXPR_INTERP_STRING);
+    ASSERT_EQ(body->data.if_expr.else_branch->type, EXPR_INTERP_STRING);
+    arena_destroy(arena);
+}
+
 void run_parser_tests(void) {
+    TEST_RUN(test_parse_interpolation_preserves_if_else_layout);
+    TEST_RUN(test_parse_interpolation_as_final_block_expression);
+    TEST_RUN(test_parse_interpolation_preserves_nested_match_layout);
+    TEST_RUN(test_parse_int64_literal_bounds);
     printf("\n=== Parser Tests ===\n");
     TEST_RUN(test_parse_int_literal);
     TEST_RUN(test_parse_string_literal);

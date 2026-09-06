@@ -1,0 +1,10 @@
+fn same(a: Bool, b: Bool) -> Bool: a == b
+fn choose(b: Bool) -> Int:
+    match b:
+        true -> 4294967297
+        false -> -4294967295
+fn main():
+    println(same(true, false))
+    println(true != false)
+    println(choose(true))
+    println(choose(false))

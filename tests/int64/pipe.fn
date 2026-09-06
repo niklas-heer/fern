@@ -1,0 +1,3 @@
+fn add(x: Int, y: Int) -> Int: x + y
+fn main():
+    println(4294967297 |> add(2 + 3))

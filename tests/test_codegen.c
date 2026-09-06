@@ -138,7 +138,7 @@ void test_codegen_eq(void) {
     const char* qbe = generate_expr_qbe(arena, "1 == 2");
     
     ASSERT_NOT_NULL(qbe);
-    ASSERT_TRUE(strstr(qbe, "ceqw") != NULL);
+    ASSERT_TRUE(strstr(qbe, "ceql") != NULL);
     
     arena_destroy(arena);
 }
@@ -149,7 +149,7 @@ void test_codegen_lt(void) {
     const char* qbe = generate_expr_qbe(arena, "1 < 2");
     
     ASSERT_NOT_NULL(qbe);
-    ASSERT_TRUE(strstr(qbe, "csltw") != NULL);
+    ASSERT_TRUE(strstr(qbe, "csltl") != NULL);
     
     arena_destroy(arena);
 }
@@ -299,7 +299,7 @@ void test_codegen_match_int(void) {
     ASSERT_NOT_NULL(qbe);
     ASSERT_TRUE(strstr(qbe, "$test") != NULL);
     /* Should have comparison and jumps */
-    ASSERT_TRUE(strstr(qbe, "ceqw") != NULL);  /* compare equal */
+    ASSERT_TRUE(strstr(qbe, "ceql") != NULL);  /* compare equal */
     ASSERT_TRUE(strstr(qbe, "jnz") != NULL);   /* conditional jump */
     
     arena_destroy(arena);
@@ -337,14 +337,14 @@ void test_codegen_result_pattern_binding_semantic_types(void) {
     Codegen* cg = codegen_new(arena);
     codegen_program(cg, stmts);
     const char* qbe = string_cstr(codegen_output(cg));
-    ASSERT_TRUE(strstr(qbe, "%code =w copy") != NULL);
-    ASSERT_TRUE(strstr(qbe, "%number =w copy") != NULL);
+    ASSERT_TRUE(strstr(qbe, "%code =l copy") != NULL);
+    ASSERT_TRUE(strstr(qbe, "%number =l copy") != NULL);
     ASSERT_TRUE(strstr(qbe, "%message =l copy") != NULL);
     ASSERT_TRUE(strstr(qbe, "call $ints(l %") != NULL);
     ASSERT_TRUE(strstr(qbe, "call $texts(l %") != NULL);
     ASSERT_TRUE(strstr(qbe, "call $fern_result_err(w ") == NULL);
     ASSERT_TRUE(strstr(qbe, "call $fern_result_err(l ") != NULL);
-    ASSERT_TRUE(strstr(qbe, "=l extsw") != NULL);
+    ASSERT_TRUE(strstr(qbe, "=l extsw") == NULL);
     const char* concat = strstr(qbe, "call $fern_str_concat");
     ASSERT_NOT_NULL(concat);
     ASSERT_TRUE(strstr(concat + 1, "call $fern_str_concat") == NULL);
@@ -718,7 +718,7 @@ void test_codegen_fn_string_param(void) {
     
     ASSERT_NOT_NULL(qbe);
     /* Parameter should be 'l' (pointer) for String */
-    ASSERT_TRUE(strstr(qbe, "function w $process(l %s)") != NULL);
+    ASSERT_TRUE(strstr(qbe, "function l $process(l %s)") != NULL);
     
     arena_destroy(arena);
 }
@@ -733,7 +733,7 @@ void test_codegen_fn_list_param(void) {
     
     ASSERT_NOT_NULL(qbe);
     /* Parameter should be 'l' (pointer) for List */
-    ASSERT_TRUE(strstr(qbe, "function w $process(l %items)") != NULL);
+    ASSERT_TRUE(strstr(qbe, "function l $process(l %items)") != NULL);
     
     arena_destroy(arena);
 }
@@ -963,7 +963,7 @@ void test_codegen_tui_prompt_int(void) {
 
     ASSERT_NOT_NULL(qbe);
     ASSERT_TRUE(strstr(qbe, "$fern_prompt_int") != NULL);
-    ASSERT_TRUE(strstr(qbe, "=w call") != NULL);
+    ASSERT_TRUE(strstr(qbe, "=l call") != NULL);
 
     arena_destroy(arena);
 }
@@ -1062,7 +1062,166 @@ void test_codegen_named_field_access_no_todo(void) {
 
 /* ========== Test Runner ========== */
 
+void test_codegen_exec_args_bounded_full_width_abi(void) {
+    Arena* arena = arena_create(8192);
+    const char* qbe = generate_expr_qbe(arena,
+        "System.exec_args_bounded([\"printf\", \"x\"], 4294967297, -4294967295)");
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "call $fern_exec_args_bounded(l ") != NULL);
+    ASSERT_TRUE(strstr(qbe, "=l copy 4294967297") != NULL);
+    ASSERT_TRUE(strstr(qbe, "=l sub 0") != NULL);
+    ASSERT_TRUE(strstr(qbe, ", w ") == NULL);
+    arena_destroy(arena);
+}
+
+void test_codegen_inferred_int64_function_abi(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena, "fn large(): 4294967297\n");
+    StmtVec* stmts = parse_stmts(parser);
+    Checker* checker = checker_new(arena);
+    checker_check_stmts(checker, stmts);
+    ASSERT_FALSE(checker_has_errors(checker));
+    Codegen* cg = codegen_new(arena);
+    codegen_program(cg, stmts);
+    ASSERT_TRUE(strstr(string_cstr(codegen_output(cg)), "function l $large()") != NULL);
+    arena_destroy(arena);
+}
+
+void test_codegen_bool_comparison_keeps_word_operands(void) {
+    Arena* arena = arena_create(8192);
+    const char* qbe = generate_expr_qbe(arena, "true == false");
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "ceqw") != NULL);
+    qbe = generate_qbe(arena, "fn main():\n    match true:\n        true -> 1\n        false -> 0\n");
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "ceqw") != NULL);
+    arena_destroy(arena);
+}
+
+void test_codegen_native_c_int_return_is_sign_extended(void) {
+    Arena* arena = arena_create(8192);
+    const char* qbe = generate_expr_qbe(arena, "Tui.Prompt.select(\"choose\", [\"x\"])");
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "=w call $fern_prompt_select") != NULL);
+    ASSERT_TRUE(strstr(qbe, "=l extsw") != NULL);
+    arena_destroy(arena);
+}
+
+void test_codegen_inclusive_range_stops_before_endpoint_overflow(void) {
+    Arena* arena = arena_create(8192);
+    const char* qbe = generate_qbe(arena,
+        "fn main():\n    for n in 9223372036854775807..=9223372036854775807:\n        println(n)\n");
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "ceql") != NULL);
+    ASSERT_TRUE(strstr(qbe, "=l add") != NULL);
+    arena_destroy(arena);
+}
+
+void test_codegen_int64_division_overflow_wraps_without_native_trap(void) {
+    Arena* arena = arena_create(8192);
+    const char* qbe = generate_expr_qbe(arena, "-9223372036854775808 / -1");
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "ceql") != NULL);
+    ASSERT_TRUE(strstr(qbe, "=l phi") != NULL);
+    arena_destroy(arena);
+}
+
+void test_codegen_bounded_process_callable_abi(void) {
+    Arena* arena = arena_create(16384);
+    const char* source =
+        "fn invoke(args: List(String)) -> Result((Int, String, String), Int):\n"
+        "    let call: (List(String), Int, Int) -> Result((Int, String, String), Int) = System.exec_args_bounded\n"
+        "    let result = call(args, 1000, 4096)?\n    Ok(result)\n"
+        "fn main():\n    match invoke([\"unused\"]):\n"
+        "        Ok((status, out, err)) -> println(status)\n        Err(code) -> println(code)\n";
+    Parser* parser = parser_new(arena, source);
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_FALSE(parser->had_error);
+    Checker* checker = checker_new(arena);
+    ASSERT_TRUE(checker_check_stmts(checker, stmts));
+    Codegen* cg = codegen_new(arena);
+    codegen_program(cg, stmts);
+    const char* qbe = string_cstr(codegen_output(cg));
+    ASSERT_TRUE(strstr(qbe, "=l copy $fern_exec_args_bounded") != NULL);
+    ASSERT_TRUE(strstr(qbe, "%call =l copy") != NULL);
+    ASSERT_TRUE(strstr(qbe, "call %call(l ") != NULL);
+    ASSERT_TRUE(strstr(qbe, "fern_drop(l %call)") == NULL);
+    ASSERT_TRUE(strstr(qbe, "%status =l copy") != NULL);
+    ASSERT_TRUE(strstr(qbe, "%out =l copy") != NULL);
+    ASSERT_TRUE(strstr(qbe, "%err =l copy") != NULL);
+    arena_destroy(arena);
+}
+
+void test_codegen_function_parameter_preserves_int64(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena,
+        "fn invoke(call: (Int) -> Int) -> Int: call(4294967297)\n");
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_FALSE(parser->had_error);
+    Checker* checker = checker_new(arena);
+    ASSERT_TRUE(checker_check_stmts(checker, stmts));
+    Codegen* cg = codegen_new(arena);
+    codegen_program(cg, stmts);
+    const char* qbe = string_cstr(codegen_output(cg));
+    ASSERT_TRUE(strstr(qbe, "$invoke(l %call)") != NULL);
+    ASSERT_TRUE(strstr(qbe, "=l call %call(l ") != NULL);
+    ASSERT_TRUE(strstr(qbe, "fern_drop(l %call)") == NULL);
+    arena_destroy(arena);
+}
+
+void test_codegen_write_stderr_native_abi(void) {
+    Arena* arena = arena_create(8192);
+    const char* qbe = generate_expr_qbe(arena, "System.write_stderr(\"warning λ\")");
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "=l call $fern_write_stderr(l ") != NULL);
+    ASSERT_EQ(count_substring(qbe, "call $fern_write_stderr"), 1);
+    ASSERT_TRUE(strstr(qbe, "fern_print") == NULL);
+    arena_destroy(arena);
+}
+
+void test_codegen_write_stderr_callable_abi(void) {
+    Arena* arena = arena_create(8192);
+    Parser* parser = parser_new(arena,
+        "fn write(text: String) -> Result((), Int):\n"
+        "    let output: (String) -> Result((), Int) = System.write_stderr\n"
+        "    output(text)\n");
+    StmtVec* stmts = parse_stmts(parser);
+    ASSERT_FALSE(parser->had_error);
+    Checker* checker = checker_new(arena);
+    ASSERT_TRUE(checker_check_stmts(checker, stmts));
+    Codegen* cg = codegen_new(arena);
+    codegen_program(cg, stmts);
+    const char* qbe = string_cstr(codegen_output(cg));
+    ASSERT_TRUE(strstr(qbe, "=l copy $fern_write_stderr") != NULL);
+    ASSERT_TRUE(strstr(qbe, "%output =l copy") != NULL);
+    ASSERT_TRUE(strstr(qbe, "=l call %output(l ") != NULL);
+    ASSERT_TRUE(strstr(qbe, "fern_drop(l %output)") == NULL);
+    arena_destroy(arena);
+}
+
+void test_codegen_option_unwrap_or_packed_int_abi(void) {
+    Arena* arena = arena_create(8192);
+    const char* qbe = generate_expr_qbe(arena,
+        "Option.unwrap_or(String.char_at(\"byte\", 0), 4294967297)");
+    ASSERT_NOT_NULL(qbe);
+    ASSERT_TRUE(strstr(qbe, "=l call $fern_option_unwrap_or(l ") != NULL);
+    ASSERT_TRUE(strstr(qbe, "=l copy 4294967297") != NULL);
+    ASSERT_EQ(count_substring(qbe, "call $fern_str_char_at"), 1);
+    arena_destroy(arena);
+}
+
 void run_codegen_tests(void) {
+    TEST_RUN(test_codegen_option_unwrap_or_packed_int_abi);
+    TEST_RUN(test_codegen_write_stderr_native_abi);
+    TEST_RUN(test_codegen_write_stderr_callable_abi);
+    TEST_RUN(test_codegen_bounded_process_callable_abi);
+    TEST_RUN(test_codegen_function_parameter_preserves_int64);
+    TEST_RUN(test_codegen_int64_division_overflow_wraps_without_native_trap);
+    TEST_RUN(test_codegen_bool_comparison_keeps_word_operands);
+    TEST_RUN(test_codegen_native_c_int_return_is_sign_extended);
+    TEST_RUN(test_codegen_inclusive_range_stops_before_endpoint_overflow);
+    TEST_RUN(test_codegen_inferred_int64_function_abi);
+    TEST_RUN(test_codegen_exec_args_bounded_full_width_abi);
     printf("\n--- Code Generator Tests ---\n");
     
     /* Integer literals */

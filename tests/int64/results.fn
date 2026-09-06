@@ -1,0 +1,9 @@
+fn value() -> Result(Int, Int): Ok(4294967297)
+fn failure() -> Result(Int, Int): Err(-4294967295)
+fn main():
+    match value():
+        Ok(n) -> println(n)
+        Err(e) -> println(e)
+    match failure():
+        Ok(n) -> println(n)
+        Err(e) -> println(e)
