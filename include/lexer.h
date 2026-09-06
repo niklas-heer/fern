@@ -84,10 +84,20 @@ bool lexer_is_eof(Lexer* lex);
  *
  * @see lexer_save, lexer_restore
  */
+#define FERN_LEXER_MAX_INDENT_LEVELS 100
+
 typedef struct {
     const char* current;  /**< Current position in source */
     size_t line;          /**< Current line number */
     size_t column;        /**< Current column number */
+    int interp_depth;     /**< Active string interpolation depth */
+    int interp_brace_depth; /**< Nested braces inside interpolation */
+    int bracket_depth;    /**< Layout suppression inside delimiters */
+    int indent_stack[FERN_LEXER_MAX_INDENT_LEVELS]; /**< Saved indentation columns */
+    int indent_top;       /**< Active indentation stack index */
+    int pending_dedents;  /**< Dedents still awaiting emission */
+    bool at_line_start;   /**< Whether indentation must be scanned */
+    bool emit_newline;    /**< Whether a newline token is pending */
 } LexerState;
 
 /**
@@ -104,7 +114,7 @@ LexerState lexer_save(Lexer* lex);
  * @brief Restore a previously saved lexer state.
  *
  * @param lex Lexer instance (must not be NULL)
- * @param state Previously saved state from lexer_save()
+ * @param state Unmodified state from lexer_save() for this same live lexer
  *
  * @see lexer_save
  */

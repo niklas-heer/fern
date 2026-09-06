@@ -6,7 +6,7 @@ This file is the only active roadmap. Historical context is in [`docs/HISTORY.md
 
 ## Current Status Snapshot
 
-- Quality gate: `just check` passing (550 C tests, native workflow/string/print tests, 13 TUI tests, 18 examples, strict style); validated with stale host `LIBRARY_PATH` excluded
+- Quality gate: `just check` passing (553 C tests, native workflow/string/print tests, 13 TUI tests, 18 examples, strict style); validated with stale host `LIBRARY_PATH` excluded
 - Perf gate: `just perf-budget` passing on macOS arm64 (7.49 s build, 549,384-byte compiler, 2.82 ms startup p95)
 - Fuzz gate: `just fuzz-smoke` passing (64 cases, seed `0xC0FFEE`)
 - Docs gate: `just docs-check` passing (consistency, generation, doc tests); LSP RPC smoke passing
@@ -71,6 +71,7 @@ Status: Expanded checkpoint verified on macOS arm64; the default remains C.
 - [x] Module-aware LSP diagnostics over unsaved buffers and UTF-16 edits.
 - [x] Replace unsafe argv shell reconstruction with literal process spawning (nine native regressions).
 - [x] Return explicit directory listing errors in both frontends and migrate native callers (four ABI, eight native, two binder and two alias checks).
+- [x] Preserve complete C lexer state across lookahead and speculative rollback, including bracket nesting, interpolation and pending indentation (three replay regressions).
 - [x] Preserve semantic C argument/payload widths and multiline match-arm scope; parser errors terminate (seven parser regressions and native bootstrap parity).
 - [x] Verify the complete expanded checkpoint and record test counts (Rust/C/docs/fuzz/native style parity).
 - [x] Functions/closures and ten higher-order collection/error operations (287 Rust tests, six new native programs, six negative cases; delayed Result-bearing captures remain restricted).

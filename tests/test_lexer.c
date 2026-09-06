@@ -778,8 +778,58 @@ void test_lex_indent_blank_lines(void) {
     arena_destroy(arena);
 }
 
+/* Compare every token to a fresh lexer after speculative lookahead and rollback. */
+static void check_lexer_replay(const char* source, bool peek_only) {
+    Arena* arena = arena_create(4096);
+    Lexer* actual = lexer_new(arena, source);
+    Lexer* reference = lexer_new(arena, source);
+    for (int index = 0; index < 256; index++) {
+        Token expected = lexer_next(reference);
+        if (peek_only && (expected.type == TOKEN_LPAREN || expected.type == TOKEN_LBRACKET)) {
+            for (int repeat = 0; repeat < 3; repeat++) {
+                Token peeked = lexer_peek(actual);
+                ASSERT_EQ(peeked.type, expected.type);
+            }
+        } else if (!peek_only) {
+            LexerState state = lexer_save(actual);
+            for (int advance = 0; advance < 7; advance++) {
+                if (lexer_next(actual).type == TOKEN_EOF) break;
+            }
+            lexer_restore(actual, state);
+        }
+        Token got = lexer_next(actual);
+        ASSERT_EQ(got.type, expected.type);
+        ASSERT_EQ(got.loc.line, expected.loc.line);
+        ASSERT_EQ(got.loc.column, expected.loc.column);
+        if (got.text && expected.text) {
+            ASSERT_STR_EQ(string_cstr(got.text), string_cstr(expected.text));
+        }
+        if (expected.type == TOKEN_EOF) {
+            arena_destroy(arena);
+            return;
+        }
+    }
+    ASSERT_TRUE(false);
+    arena_destroy(arena);
+}
+
+void test_lex_peek_preserves_bracket_layout(void) {
+    check_lexer_replay("fn main():\n    let x = f(g(1), [2, 3])\n    if x:\n        x\n    x\n", true);
+}
+
+void test_lex_restore_preserves_brackets_and_pending_dedents(void) {
+    check_lexer_replay("fn main():\n    if true:\n        if false:\n            f((1), [2])\n    3\nfn end():4\n", false);
+}
+
+void test_lex_restore_preserves_interpolation_and_blank_lines(void) {
+    check_lexer_replay("fn main():\n    let x = \"a{f(1)}b{2}c\"\n\n    # comment\n    x\n", false);
+}
+
 void run_lexer_tests(void) {
     printf("\n=== Lexer Tests ===\n");
+    TEST_RUN(test_lex_peek_preserves_bracket_layout);
+    TEST_RUN(test_lex_restore_preserves_brackets_and_pending_dedents);
+    TEST_RUN(test_lex_restore_preserves_interpolation_and_blank_lines);
     TEST_RUN(test_lex_integer);
     TEST_RUN(test_lex_identifier);
     TEST_RUN(test_lex_keywords);

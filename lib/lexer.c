@@ -5,7 +5,7 @@
 #include <ctype.h>
 #include <string.h>
 
-#define MAX_INDENT_LEVELS 100
+#define MAX_INDENT_LEVELS FERN_LEXER_MAX_INDENT_LEVELS
 
 struct Lexer {
     Arena* arena;
@@ -948,33 +948,10 @@ Token lexer_peek(Lexer* lex) {
     assert(lex != NULL);
     assert(lex->current != NULL);
     
-    /* Save ALL lexer state - not just position */
-    const char* saved_current = lex->current;
-    size_t saved_line = lex->line;
-    size_t saved_column = lex->column;
-    int saved_interp_depth = lex->interp_depth;
-    int saved_interp_brace_depth = lex->interp_brace_depth;
-    int saved_indent_top = lex->indent_top;
-    int saved_pending_dedents = lex->pending_dedents;
-    bool saved_at_line_start = lex->at_line_start;
-    bool saved_emit_newline = lex->emit_newline;
-    int saved_indent_stack[MAX_INDENT_LEVELS];
-    memcpy(saved_indent_stack, lex->indent_stack, sizeof(lex->indent_stack));
-    
+    LexerState state = lexer_save(lex);
     Token tok = lexer_next(lex);
-    
-    /* Restore ALL lexer state */
-    lex->current = saved_current;
-    lex->line = saved_line;
-    lex->column = saved_column;
-    lex->interp_depth = saved_interp_depth;
-    lex->interp_brace_depth = saved_interp_brace_depth;
-    lex->indent_top = saved_indent_top;
-    lex->pending_dedents = saved_pending_dedents;
-    lex->at_line_start = saved_at_line_start;
-    lex->emit_newline = saved_emit_newline;
-    memcpy(lex->indent_stack, saved_indent_stack, sizeof(lex->indent_stack));
-    
+    lexer_restore(lex, state);
+
     return tok;
 }
 
@@ -986,11 +963,20 @@ Token lexer_peek(Lexer* lex) {
 LexerState lexer_save(Lexer* lex) {
     assert(lex != NULL);
     assert(lex->current != NULL);
-    return (LexerState){
+    LexerState state = {
         .current = lex->current,
         .line = lex->line,
         .column = lex->column,
+        .interp_depth = lex->interp_depth,
+        .interp_brace_depth = lex->interp_brace_depth,
+        .bracket_depth = lex->bracket_depth,
+        .indent_top = lex->indent_top,
+        .pending_dedents = lex->pending_dedents,
+        .at_line_start = lex->at_line_start,
+        .emit_newline = lex->emit_newline,
     };
+    memcpy(state.indent_stack, lex->indent_stack, sizeof(state.indent_stack));
+    return state;
 }
 
 /**
@@ -1004,6 +990,14 @@ void lexer_restore(Lexer* lex, LexerState state) {
     lex->current = state.current;
     lex->line = state.line;
     lex->column = state.column;
+    lex->interp_depth = state.interp_depth;
+    lex->interp_brace_depth = state.interp_brace_depth;
+    lex->bracket_depth = state.bracket_depth;
+    lex->indent_top = state.indent_top;
+    lex->pending_dedents = state.pending_dedents;
+    lex->at_line_start = state.at_line_start;
+    lex->emit_newline = state.emit_newline;
+    memcpy(lex->indent_stack, state.indent_stack, sizeof(lex->indent_stack));
 }
 
 /**
