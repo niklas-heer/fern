@@ -1239,3 +1239,19 @@ Integrated macOS and Linux gates pass 1,302 and 1,303 Rust tests respectively,
 including native compiler programs, runtime sanitizer profiles, fuzz smoke tests,
 full C checks, source/native checker diagnostic and workflow parity, and
 documentation checks.
+
+
+## Shared Apple arm64 backend register correction — 2026-09-06
+
+The vendored QBE emitter used Apple's reserved x18 register for integer swaps and
+constant spills. The Apple allocator now reserves x17 for those scratch paths,
+while generic arm64/Linux output remains byte-identical. Both compiler frontends
+use this backend. New assembly and native-result tests cover integer/Float swaps,
+forty live values across calls, constant spills and a permitted caller x17 clobber.
+A controlled scalar x18 corruption probe demonstrates the old defect on Linux.
+
+The investigation began with a crashed native style scan. Its tuple-return path
+uses x18, but the sample does not prove the precise trigger. Twenty scans rebuilt
+with the correction pass with identical output. No GC, source-recursion, launcher
+or timeout workaround is introduced; this evidence does not establish that every
+possible native crash has been eliminated.

@@ -55,3 +55,6 @@ docs/generated/
 
 # Rust frontend experiment build artifacts
 compiler-rs/target/
+
+# Authored backend ABI regression input.
+!tests/fixtures/qbe_apple_registers.ssa

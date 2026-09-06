@@ -247,6 +247,7 @@ Do not interpret the historical Gate A–D labels as language completion.
 - [ ] Repin and verify the Zed package after the newtype derivation grammar commit.
 - [x] Extend typed JSON with conditional generic codec requirements, exact specialization, private template boundaries and phantom-field semantics (Decision101 J5c; 13 native programs, 22 atomic invalids, native/REPL parity).
 - [ ] Define and implement sum/union wire formats and general/custom Json traits (J6–J7).
+- [x] Reserve an ABI-permitted Apple arm64 QBE scratch register, verify swaps/calls/spills and independent native outputs, and preserve generic Linux assembly (Decision104).
 - [x] Remove newly written executable races from native capture tests; preserve timeout/stream/descendant coverage and add 160 concurrent per-run output/status assertions.
 - [ ] Retain direct-child ownership through native documentation/unit-test capture cleanup (Decision102 proposal).
 - [ ] Verify default-command migration to Rust, retaining C as an explicit bootstrap/reference executable and documenting its legacy JSON source contract (Decision96).

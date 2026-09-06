@@ -9,6 +9,16 @@ struct E {
 	uint padding;
 };
 
+/* Return the allocator-reserved integer scratch, respecting Apple's x18 ABI. */
+static int
+scratchreg(void)
+{
+	int reg = T.apple ? IP1 : R18;
+	assert(T.rglob & BIT(reg));
+	assert(!T.apple || reg != R18);
+	return reg;
+}
+
 #define CMP(X) \
 	X(Cieq,       "eq") \
 	X(Cine,       "ne") \
@@ -194,7 +204,7 @@ emitf(char *s, Ins *i, E *e)
 			goto Switch;
 		case '?':
 			if (KBASE(k) == 0)
-				fputs(rname(R18, k), e->f);
+				fputs(rname(scratchreg(), k), e->f);
 			else
 				fputs(k==Ks ? "s31" : "d31", e->f);
 			break;
@@ -384,7 +394,7 @@ emitins(Ins *i, E *e)
 		if (rtype(i->to) == RSlot) {
 			r = i->to;
 			if (!isreg(i->arg[0])) {
-				i->to = TMP(R18);
+				i->to = TMP(scratchreg());
 				emitins(i, e);
 				i->arg[0] = i->to;
 			}
@@ -405,7 +415,7 @@ emitins(Ins *i, E *e)
 			emitins(i, e);
 			break;
 		default:
-			assert(i->to.val != R18);
+			assert(i->to.val != scratchreg());
 			goto Table;
 		}
 		break;

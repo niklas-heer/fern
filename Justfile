@@ -243,6 +243,7 @@ fmt:
 # Full quality check (build + test + style, strict mode)
 check:
     uv run scripts/check_style.py src lib
+    python3 scripts/test_qbe_apple_registers.py
     python3 scripts/test_c_int64.py
     python3 scripts/test_process_frontends.py --compiler bin/fern
     python3 scripts/test_stderr_frontends.py --compiler bin/fern
@@ -448,6 +449,7 @@ zed-package:
 
 # Rust safety/style/unit gates and native specification/differential checks
 rust-check: rust-build
+    python3 scripts/test_qbe_apple_registers.py
     cargo fmt --manifest-path compiler-rs/Cargo.toml -- --check
     cargo clippy --locked --manifest-path compiler-rs/Cargo.toml --all-targets -- -D warnings
     cargo test --locked --manifest-path compiler-rs/Cargo.toml

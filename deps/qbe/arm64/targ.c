@@ -30,8 +30,6 @@ arm64_memargs(int op)
 	.ngpr = NGPR, \
 	.fpr0 = V0, \
 	.nfpr = NFPR, \
-	.rglob = RGLOB, \
-	.nrglob = 3, \
 	.rsave = arm64_rsave, \
 	.nrsave = {NGPS, NFPS}, \
 	.retregs = arm64_retregs, \
@@ -43,6 +41,8 @@ arm64_memargs(int op)
 
 Target T_arm64 = {
 	.name = "arm64",
+	.rglob = RGLOB,
+	.nrglob = 3,
 	.abi0 = elimsb,
 	.emitfin = elf_emitfin,
 	.asloc = ".L",
@@ -51,6 +51,9 @@ Target T_arm64 = {
 
 Target T_arm64_apple = {
 	.name = "arm64_apple",
+	/* Apple reserves x18; reserve x17 separately for emitter scratch. */
+	.rglob = RGLOB | BIT(IP1),
+	.nrglob = 4,
 	.apple = 1,
 	.abi0 = apple_extsb,
 	.emitfin = macho_emitfin,
