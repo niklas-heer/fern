@@ -10,6 +10,10 @@
         {
           "type": "expression",
           "named": true
+        },
+        {
+          "type": "labeled_argument",
+          "named": true
         }
       ]
     }
@@ -651,6 +655,32 @@
     }
   },
   {
+    "type": "labeled_argument",
+    "named": true,
+    "fields": {
+      "label": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "lambda_expression",
     "named": true,
     "fields": {},
@@ -969,6 +999,16 @@
     "type": "parameter",
     "named": true,
     "fields": {
+      "label": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "pattern": {
         "multiple": false,
         "required": true,

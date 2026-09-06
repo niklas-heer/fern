@@ -42,9 +42,16 @@ lambdas, runtime/compiler builtins and constructors use positional calls and rej
 labels. The C frontend is not an oracle for source label semantics.
 
 Formatting roundtrips labels, external pattern names and labeled pipe holes.
-LSP label tokens deliberately have no navigation target in this checkpoint;
-ordinary local pattern-binding navigation remains available. Full label navigation
-and Tree-sitter grammar support remain open.
+LSP definition requests on labels select the original parameter interface, independently
+of same-spelled caller locals and internal pattern bindings. Hover shows the finalized
+declared parameter type, including generic identities. Both require the complete
+current source graph to check successfully. Imports, reexports and unsaved dependency
+buffers retain exact source and UTF-16 identities. Incomplete-member recovery also
+preserves mandatory-label validation in unaffected functions.
+
+The editor grammar verifies labeled patterns, reordered calls, multiline arguments
+and pipe holes, with distinct external-label highlights. The verified profile uses
+ASCII labels; complete Unicode syntax and incomplete-call label completion remain open.
 
 `scripts/test_rust_labels.py` executes five native programs and checks eight invalid
 programs preserve an existing output's bytes, permissions and modification time.

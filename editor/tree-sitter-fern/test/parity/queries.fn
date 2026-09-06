@@ -23,3 +23,5 @@ fn workflow() -> Result(Int, String):
     else
         Err(message) -> Err(message)
 fn following() -> Int: 1
+fn label_probe(external local:Int)->Int:local
+fn label_usage()->Int:7 |> label_probe(external:_)

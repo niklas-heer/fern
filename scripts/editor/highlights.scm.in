@@ -18,6 +18,8 @@
 ((type_identifier) @type.builtin (#match? @type.builtin "^(Int|Float|Bool|String|List|Map|Option|Result)$"))
 (function_definition name: (identifier) @function)
 (call_expression function: (expression (identifier) @function.call))
+(parameter label: (identifier) @variable.parameter)
+(labeled_argument label: (identifier) @variable.parameter)
 (parameter pattern: (pattern (identifier) @variable.parameter))
 (update_field name: (identifier) @property)
 (member_access member: (identifier) @property)

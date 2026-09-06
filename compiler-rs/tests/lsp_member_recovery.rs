@@ -393,3 +393,19 @@ fn recovered_receiver_retains_import_identity_when_its_canonical_root_is_local()
     ]);
     labels(&answer(&messages, "query"), &["value"]);
 }
+
+#[test]
+fn member_recovery_retains_required_labels_in_unaffected_source() {
+    let prefix = "type Box:\n    value:Int\nfn add(left:Int,right:Int)->Int:left+right\n";
+    for bad in [
+        "fn unrelated()->Int:add(1,2)\n",
+        "fn unrelated()->Int:1 |> add(right:2)\n",
+    ] {
+        let source = format!("{prefix}{bad}fn main():println(Box(1).§)\n");
+        let response = query(&source, "completion");
+        assert!(!response.contains("\"label\":\"value\""), "{response}");
+    }
+    let good =
+        format!("{prefix}fn unrelated()->Int:add(left:1,right:2)\nfn main():println(Box(1).§)\n");
+    labels(&query(&good, "completion"), &["value"]);
+}

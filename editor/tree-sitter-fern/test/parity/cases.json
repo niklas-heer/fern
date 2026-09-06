@@ -334,7 +334,7 @@
     },
     {
       "name": "control_arguments",
-      "source": "fn mark(n: Int) -> Int:\n    println(n)\n    n\nfn combine(a: Int, b: Int, c: Int) -> Int:\n    println(\"called\")\n    a + b + c\nfn early() -> Int:\n    defer println(\"cleanup\")\n    combine(mark(1), return 7, mark(3))\nfn literal() -> Int:\n    [mark(4), return 8, mark(6)]\nfn id(value: a) -> a: value\nfn generic() -> Int: id(return 9)\nfn main():\n    println(early())\n    println(literal())\n    println(generic())\n",
+      "source": "fn mark(n: Int) -> Int:\n    println(n)\n    n\nfn combine(a: Int, b: Int, c: Int) -> Int:\n    println(\"called\")\n    a + b + c\nfn early() -> Int:\n    defer println(\"cleanup\")\n    combine(a: mark(1), b: return 7, c: mark(3))\nfn literal() -> Int:\n    [mark(4), return 8, mark(6)]\nfn id(value: a) -> a: value\nfn generic() -> Int: id(return 9)\nfn main():\n    println(early())\n    println(literal())\n    println(generic())\n",
       "nodes": [
         "defer_statement",
         "return_statement"
@@ -344,7 +344,7 @@
     },
     {
       "name": "control_branches",
-      "source": "fn floating(flag: Bool) -> Float:\n    if flag: return 1.25\n    2.5\nfn both(flag: Bool) -> Int:\n    if flag: return 4294967296 else: return -4294967296\nfn matching(flag: Bool) -> String:\n    match flag:\n        true -> return \"yes\"\n        false -> return \"no\"\nfn short(flag: Bool) -> Int:\n    flag and (return 8)\n    9\nfn main():\n    println(floating(true))\n    println(floating(false))\n    println(both(true))\n    println(both(false))\n    println(matching(true))\n    println(matching(false))\n    println(short(true))\n    println(short(false))\n",
+      "source": "fn floating(flag: Bool) -> Float:\n    if flag: return 1.25\n    2.5\nfn both(flag: Bool) -> Int:\n    if flag: return 4294967296 else: return -4294967296\nfn matching(flag: Bool) -> String:\n    match flag:\n        true -> return \"yes\"\n        false -> return \"no\"\nfn short(flag: Bool) -> Int:\n    flag and (return 8)\n    9\nfn main():\n    println(floating(flag: true))\n    println(floating(flag: false))\n    println(both(flag: true))\n    println(both(flag: false))\n    println(matching(flag: true))\n    println(matching(flag: false))\n    println(short(flag: true))\n    println(short(flag: false))\n",
       "nodes": [
         "return_statement"
       ],
@@ -353,7 +353,7 @@
     },
     {
       "name": "control_conditions",
-      "source": "fn test(value: Int, limit: Int) -> Bool:\n    println(limit)\n    value < limit\nfn choose(value: Int) -> Int:\n    match:\n        test(value, 0) -> return -1\n        test(value, 10) -> 1\n        _ -> 2\nfn main():\n    println(choose(-5))\n    println(choose(5))\n    println(choose(50))\n",
+      "source": "fn test(value: Int, limit: Int) -> Bool:\n    println(limit)\n    value < limit\nfn choose(value: Int) -> Int:\n    match:\n        test(value: value, limit: 0) -> return -1\n        test(value: value, limit: 10) -> 1\n        _ -> 2\nfn main():\n    println(choose(-5))\n    println(choose(5))\n    println(choose(50))\n",
       "nodes": [
         "condition_match",
         "return_statement"
@@ -363,7 +363,7 @@
     },
     {
       "name": "control_defers",
-      "source": "fn work(early: Bool) -> Int:\n    let snapshot = 1\n    defer println(snapshot)\n    let snapshot = 2\n    defer println(snapshot)\n    if early:\n        defer println(\"conditional\")\n        println(\"body\")\n    println(\"after block\")\n    return 7 if early\n    9\nfn main():\n    println(work(true))\n    println(work(false))\n",
+      "source": "fn work(early: Bool) -> Int:\n    let snapshot = 1\n    defer println(snapshot)\n    let snapshot = 2\n    defer println(snapshot)\n    if early:\n        defer println(\"conditional\")\n        println(\"body\")\n    println(\"after block\")\n    return 7 if early\n    9\nfn main():\n    println(work(early: true))\n    println(work(early: false))\n",
       "nodes": [
         "defer_statement",
         "return_statement"
@@ -405,7 +405,7 @@
     },
     {
       "name": "control_return_value",
-      "source": "fn mark(value: String) -> String:\n    println(value)\n    value\nfn saved(early: Bool) -> String:\n    let text = \"cleanup\"\n    defer println(mark(text))\n    return mark(\"early\") if early\n    mark(\"implicit\")\nfn main():\n    println(saved(true))\n    println(saved(false))\n",
+      "source": "fn mark(value: String) -> String:\n    println(value)\n    value\nfn saved(early: Bool) -> String:\n    let text = \"cleanup\"\n    defer println(mark(text))\n    return mark(\"early\") if early\n    mark(\"implicit\")\nfn main():\n    println(saved(early: true))\n    println(saved(early: false))\n",
       "nodes": [
         "defer_statement",
         "return_statement"
@@ -528,7 +528,7 @@
     },
     {
       "name": "with_guards",
-      "source": "fn guard(value: Bool) -> Bool:\n    println(\"guard\")\n    value\nfn execute() -> Int:\n    with\n        value <- failure()\n    do\n        value\n    else\n        Err(error) if guard(false) -> error\n        Err(error) if guard(true) -> error + 1\n        _ -> 0\nfn failure() -> Result(Int, Int): Err(4)\nfn main(): println(execute())\n",
+      "source": "fn guard(value: Bool) -> Bool:\n    println(\"guard\")\n    value\nfn execute() -> Int:\n    with\n        value <- failure()\n    do\n        value\n    else\n        Err(error) if guard(value: false) -> error\n        Err(error) if guard(value: true) -> error + 1\n        _ -> 0\nfn failure() -> Result(Int, Int): Err(4)\nfn main(): println(execute())\n",
       "nodes": [
         "with_expression"
       ],
@@ -537,7 +537,7 @@
     },
     {
       "name": "with_heterogeneous",
-      "source": "type AuthFailure:\n    AuthError(message: String)\ntype LoadFailure:\n    LoadError(code: Int)\nfn auth(ok: Bool) -> Result(Int, AuthFailure):\n    println(\"auth\")\n    if ok: Ok(7) else: Err(AuthError(\"denied\"))\nfn load(id: Int, ok: Bool) -> Result(String, LoadFailure):\n    println(id)\n    if ok: Ok(\"done\") else: Err(LoadError(5))\nfn execute(auth_ok: Bool, load_ok: Bool) -> String:\n    with\n        id <- auth(auth_ok),\n        text <- load(id, load_ok)\n    do\n        text\n    else\n        Err(AuthError(message)) -> message\n        Err(LoadError(code)) -> \"failed {code}\"\nfn main():\n    println(execute(true, true))\n    println(execute(false, true))\n    println(execute(true, false))\n",
+      "source": "type AuthFailure:\n    AuthError(message: String)\ntype LoadFailure:\n    LoadError(code: Int)\nfn auth(ok: Bool) -> Result(Int, AuthFailure):\n    println(\"auth\")\n    if ok: Ok(7) else: Err(AuthError(\"denied\"))\nfn load(id: Int, ok: Bool) -> Result(String, LoadFailure):\n    println(id)\n    if ok: Ok(\"done\") else: Err(LoadError(5))\nfn execute(auth_ok: Bool, load_ok: Bool) -> String:\n    with\n        id <- auth(ok: auth_ok),\n        text <- load(id, ok: load_ok)\n    do\n        text\n    else\n        Err(AuthError(message)) -> message\n        Err(LoadError(code)) -> \"failed {code}\"\nfn main():\n    println(execute(auth_ok: true, load_ok: true))\n    println(execute(auth_ok: false, load_ok: true))\n    println(execute(auth_ok: true, load_ok: false))\n",
       "nodes": [
         "with_expression"
       ],
@@ -546,7 +546,7 @@
     },
     {
       "name": "with_payloads",
-      "source": "fn source(ok: Bool) -> Result(Float, Float):\n    if ok: Ok(1.25) else: Err(-2.5)\nfn choose(ok: Bool) -> Float:\n    with\n        value <- source(ok)\n    do\n        value * 2.0\n    else\n        Err(error) -> error\nfn main():\n    println(choose(true))\n    println(choose(false))\n",
+      "source": "fn source(ok: Bool) -> Result(Float, Float):\n    if ok: Ok(1.25) else: Err(-2.5)\nfn choose(ok: Bool) -> Float:\n    with\n        value <- source(ok: ok)\n    do\n        value * 2.0\n    else\n        Err(error) -> error\nfn main():\n    println(choose(ok: true))\n    println(choose(ok: false))\n",
       "nodes": [
         "with_expression"
       ],
@@ -618,7 +618,7 @@
     },
     {
       "name": "workflow_queries",
-      "source": "type Name = String\nnewtype Id = Id(Int)\nfn unwrap(Id(value): Id) -> Int: value\ntype Choice = Int | String\nfn size(value:Choice)->Int:\n    match value:\n        number:Int -> number\n        _:String -> 0\ntype Entry:\n    count: Int\nfn workflow() -> Result(Int, String):\n    defer println(\"done\")\n    let original = Entry(0)\n    let updated = %{original | count: 1}\n    let values = %{\"x\": updated.count}\n    for index in 0..=1:\n        continue if index == 0\n        break\n    with\n        value <- Ok(Map.len(values))\n    do\n        Ok(value)\n    else\n        Err(message) -> Err(message)\nfn following() -> Int: 1\n",
+      "source": "type Name = String\nnewtype Id = Id(Int)\nfn unwrap(Id(value): Id) -> Int: value\ntype Choice = Int | String\nfn size(value:Choice)->Int:\n    match value:\n        number:Int -> number\n        _:String -> 0\ntype Entry:\n    count: Int\nfn workflow() -> Result(Int, String):\n    defer println(\"done\")\n    let original = Entry(0)\n    let updated = %{original | count: 1}\n    let values = %{\"x\": updated.count}\n    for index in 0..=1:\n        continue if index == 0\n        break\n    with\n        value <- Ok(Map.len(values))\n    do\n        Ok(value)\n    else\n        Err(message) -> Err(message)\nfn following() -> Int: 1\nfn label_probe(external local:Int)->Int:local\nfn label_usage()->Int:7 |> label_probe(external:_)\n",
       "nodes": [
         "for_expression",
         "with_expression",
@@ -644,6 +644,102 @@
       "paths": [
         ".//binary_expression/expression/binary_expression/expression/unary_expression"
       ]
+    },
+    {
+      "name": "labels_native_clauses",
+      "source": "fn choose(enabled true:Bool)->Int:1\nfn choose(enabled false:Bool)->Int:0\nfn route(request Some(value):Option(Int))->Int:value\nfn route(request None:Option(Int))->Int:0\nfn main():\n    println(choose(enabled:true))\n    println(choose(enabled:false))\n    println(route(request:Some(42)))\n    println(route(request:None))\n",
+      "nodes": [
+        "labeled_argument"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/labels_native/clauses.fn"
+    },
+    {
+      "name": "labels_native_exit",
+      "source": "fn subtract(left:Int,right:Int)->Int:left-right\nfn mark()->Int:\n    println(\"unexpected\")\n    0\nfn early()->Int:\n    defer println(\"cleanup\")\n    subtract(right:return 9,left:mark())\nfn failure()->Result(Int,String):Err(\"stop\")\nfn run()->Result(Int,String):\n    defer println(\"result cleanup\")\n    Ok(subtract(right:failure()?,left:mark()))\nfn main():\n    println(early())\n    match run():\n        Ok(value)->println(value)\n        Err(error)->println(error)\n",
+      "nodes": [
+        "labeled_argument"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/labels_native/exit.fn"
+    },
+    {
+      "name": "labels_native_generic",
+      "source": "fn choose(first,second):first\nfn apply(value:a,action:(a)->b)->b:action(value)\nfn main():\n    println(choose(second:false,first:9223372036854775807))\n    println(apply(action:(x)->x+1,value:41))\n    println(apply(action:(x)->x,value:\"\ud83c\udf3f\"))\n",
+      "nodes": [
+        "labeled_argument"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/labels_native/generic.fn"
+    },
+    {
+      "name": "labels_native_order",
+      "source": "fn mark(name:String,value:Int)->Int:\n    println(name)\n    value\nfn subtract(left:Int,right:Int)->Int:left-right\nfn main():\n    println(subtract(right:mark(\"R\",2),left:mark(\"L\",9)))\n    println(mark(\"P\",9) |> subtract(right:mark(\"R\",2),left:_))\n",
+      "nodes": [
+        "labeled_argument"
+      ],
+      "complete": true,
+      "rust_fixture": "compiler-rs/tests/labels_native/order.fn"
+    },
+    {
+      "name": "labels_mixed_prefix",
+      "source": "fn total(first:String,second:Int,third:Int)->Int:String.len(first)+second+third\nfn main()->Int:total(\"1\",third:3,second:2)\n",
+      "nodes": [
+        "labeled_argument"
+      ],
+      "complete": true
+    },
+    {
+      "name": "labels_external_tuple",
+      "source": "fn first(pair (value,_):(Int,String))->Int:value\nfn main()->Int:first(pair:(7,\"x\"))\n",
+      "nodes": [
+        "labeled_argument",
+        "tuple_pattern"
+      ],
+      "complete": true
+    },
+    {
+      "name": "labels_multiline_callback",
+      "source": "fn apply(value:Int,action:(Int)->Int)->Int:action(value)\nfn main()->Int:\n    apply(\n        action:(x)->\n            x+1\n        ,value:41\n    )\n",
+      "nodes": [
+        "labeled_argument",
+        "lambda_expression"
+      ],
+      "complete": true
+    },
+    {
+      "name": "labels_pipe_hole",
+      "source": "fn subtract(left:Int,right:Int)->Int:left-right\nfn main()->Int:9 |> subtract(right:2,left:_)\n",
+      "nodes": [
+        "labeled_argument",
+        "binary_expression"
+      ],
+      "complete": true
+    },
+    {
+      "name": "labels_map_value",
+      "source": "fn read(values:Map(String,Int))->Int:Map.len(values)\nfn main()->Int:read(values:%{\"a\":1})\n",
+      "nodes": [
+        "labeled_argument",
+        "map_literal"
+      ],
+      "complete": true
+    },
+    {
+      "name": "labels_keyword_prefixes",
+      "source": "fn read(if_value:Int,after_value:String)->Int:if_value\nfn main()->Int:read(if_value:1,after_value:\"x\")\n",
+      "nodes": [
+        "labeled_argument"
+      ],
+      "complete": true
+    },
+    {
+      "name": "labels_uppercase_external",
+      "source": "fn read(External value:Int)->Int:value\nfn main()->Int:read(External:1)\n",
+      "nodes": [
+        "labeled_argument"
+      ],
+      "complete": true
     }
   ],
   "invalid": [
@@ -801,7 +897,7 @@
         [
           "ERROR",
           10,
-          36
+          41
         ],
         [
           "ERROR",
@@ -902,6 +998,83 @@
           "ERROR",
           29,
           35
+        ]
+      ]
+    },
+    {
+      "name": "label_missing_value",
+      "source": "fn bad(): f(value:)\nfn after(): ()\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          17,
+          18
+        ]
+      ]
+    },
+    {
+      "name": "label_double_colon",
+      "source": "fn bad(): f(value::1)\nfn after(): ()\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          18,
+          19
+        ]
+      ]
+    },
+    {
+      "name": "external_extra_name",
+      "source": "fn bad(label value extra:Int): ()\nfn after(): ()\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          19,
+          24
+        ]
+      ]
+    },
+    {
+      "name": "lambda_external_label",
+      "source": "fn bad(): (external value:Int)->value\nfn after(): ()\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          20,
+          25
+        ]
+      ]
+    },
+    {
+      "name": "external_keyword_label",
+      "source": "fn bad(if value:Int): ()\nfn after(): ()\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          7,
+          9
+        ]
+      ]
+    },
+    {
+      "name": "call_keyword_label",
+      "source": "fn bad(): f(if:1)\nfn after(): ()\n",
+      "error_ranges": [
+        [
+          "MISSING identifier",
+          14,
+          14
+        ]
+      ]
+    },
+    {
+      "name": "label_positional_after_named",
+      "source": "fn bad(): f(value:1,2)\nfn after(): ()\n",
+      "error_ranges": [
+        [
+          "ERROR",
+          19,
+          21
         ]
       ]
     }
@@ -1056,6 +1229,46 @@
       "new": "        4",
       "rust_check": true,
       "complete": false
+    },
+    {
+      "name": "label_argument_value",
+      "source": "fn read(external value:Int)->Int:value\nfn main()->Int:read(external:1)\n",
+      "old": "external:1",
+      "new": "external:2",
+      "rust_check": true,
+      "complete": true
+    },
+    {
+      "name": "label_parameter_binding",
+      "source": "fn read(external value:Int)->Int:value\nfn main()->Int:read(external:1)\n",
+      "old": "value:Int)->Int:value",
+      "new": "other:Int)->Int:other",
+      "rust_check": true,
+      "complete": true
+    },
+    {
+      "name": "label_add_external",
+      "source": "fn read(value:Int)->Int:value\nfn main()->Int:read(1)\n",
+      "old": "value:Int",
+      "new": "external value:Int",
+      "rust_check": true,
+      "complete": true
+    },
+    {
+      "name": "label_add_argument",
+      "source": "fn read(value:Int)->Int:value\nfn main()->Int:read(1)\n",
+      "old": "read(1)",
+      "new": "read(value:1)",
+      "rust_check": true,
+      "complete": true
+    },
+    {
+      "name": "label_pipe_placeholder",
+      "source": "fn subtract(left:Int,right:Int)->Int:left-right\nfn main()->Int:9 |> subtract(right:2,left:_)\n",
+      "old": "right:2,left:_",
+      "new": "left:2,right:_",
+      "rust_check": true,
+      "complete": true
     }
   ]
 }

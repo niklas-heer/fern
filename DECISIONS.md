@@ -30,7 +30,7 @@ This document tracks major architectural and technical decisions made during the
 * **Status**: Accepted; direct source labels and mandatory enforcement implemented
 * **Decision**: I will resolve direct source-call labels against original declaration interfaces, keeping external names distinct from pattern bindings and evaluating arguments once in written order. Reordered calls use typed local temporaries before parameter-order reads.
 * **Context**: Decision7 requires readable calls, but reordering source expressions changes side effects and error propagation. Clause normalization, module aliases and generic specialization must not substitute synthetic names or call-site types for the source interface.
-* **Consequences**: Positional arguments precede labeled arguments; duplicate, unknown, missing and multiply supplied positions are errors. Explicit external pattern names use `fn choose(enabled true: Bool)`. Structural function values, lambdas, runtime/compiler builtins and constructors retain positional interfaces and reject labels. Direct source calls require labels for exact Bool and repeated identical finalized declared scheme types; distinct generics/newtypes remain distinct. Classification follows whole-signature inference under a separate 400,000-unit work ceiling. Required pipe positions use labeled holes; inputs run first and once. Public metadata uses shared identifier/keyword rules and valid span ordering. Formatter/module/presentation metadata preserve source labels; label-token navigation and editor grammar parity remain open. See [the label contract](docs/LABELED_CALLS.md). The unavailable `/decision` skill is replaced by this established format.
+* **Consequences**: Positional arguments precede labeled arguments; duplicate, unknown, missing and multiply supplied positions are errors. Explicit external pattern names use `fn choose(enabled true: Bool)`. Structural function values, lambdas, runtime/compiler builtins and constructors retain positional interfaces and reject labels. Direct source calls require labels for exact Bool and repeated identical finalized declared scheme types; distinct generics/newtypes remain distinct. Classification follows whole-signature inference under a separate 400,000-unit work ceiling. Required pipe positions use labeled holes; inputs run first and once. Public metadata uses shared identifier/keyword rules and valid span ordering. Formatter/module/presentation metadata preserve source labels. Label-token definition/hover use current checked source interfaces and declared schemes; incomplete-member recovery retains label validation. Native/WASM grammar and highlights cover the bounded label corpus; incomplete-call completion and full syntax parity remain open. See [the label contract](docs/LABELED_CALLS.md). The unavailable `/decision` skill is replaced by this established format.
 
 ### 88 Complete file-text IO before publishing successful Results
 * **Date**: 2026-09-06
@@ -87,6 +87,13 @@ post-dedent separator and exact 1 MiB indentation boundary prevent cross-line
 calls and unbounded scanner work. Three named malformed inline for/with headers
 still absorb the following declaration; their exact error ranges remain tracked,
 without a full-recovery claim.
+
+The label follow-on verifies 80 accepted sources, 27 malformed inputs (24 recover
+and three retain their named gaps), and 27 incremental edits. External pattern/call
+labels have separate parameter captures; strict Rust checks all accepted and edited
+sources. Both WASM copies are 243,311 bytes, SHA256
+`69c118755c23ee56708e838fb6c1956a8214fb2d0b0c5760a715d92b1a46f88c`.
+The matching Zed grammar revision must be repinned after this grammar is committed.
 
 ### 83 Directional finite unions and typed narrowing
 * **Date**: 2026-09-06

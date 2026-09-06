@@ -25,6 +25,7 @@ pub(crate) fn analyze(source: &ast::Program, site: &HoleSite) -> Checked<editor:
     let graph = dependencies::analyze_with_work(source, expanded.work)?;
     independent_component(source, &graph, &selected.name, site)?;
     let (prepared, mut signatures, work) = whole::resolve(source, &registry, &graph)?;
+    labels::finalize(&prepared, &mut signatures)?;
     schemes::validate(&prepared, &registry, &mut signatures, work)?;
     for function in &prepared.functions {
         if function.name != selected.name && signatures[&function.name].generics.is_empty() {

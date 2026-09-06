@@ -878,7 +878,7 @@ This single command runs:
 ## Editor Support: Authored Inputs and Generated Artifacts
 
 The Rust compiler defines Fern syntax. The editor parser currently verifies the
-bounded aliases/newtypes/unions/function-clause/control/collection corpus in Decision84; it does not yet
+bounded aliases/newtypes/unions/function-clause/control/collection/label corpus in Decision84; it does not yet
 implement every Rust syntax form. Decision91 separately verifies local Zed
 component packaging and isolated actual-editor LSP startup; publication remains open.
 

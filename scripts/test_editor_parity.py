@@ -160,7 +160,7 @@ def main():
     args = options.parse_args()
     assert command([args.tree_sitter, "--version"]).stdout.strip() == "tree-sitter 0.26.12"
     cases = json.loads(CASES.read_text())
-    assert [len(cases[k]) for k in ["valid", "invalid", "edits"]] == [69, 20, 22]
+    assert [len(cases[k]) for k in ["valid", "invalid", "edits"]] == [80, 27, 27]
     assert all(len(case["source"].encode()) <= 1024 * 1024 for group in cases.values() for case in group)
     with tempfile.TemporaryDirectory(prefix="fern-editor-parity-") as temporary:
         directory = Path(temporary)
@@ -175,7 +175,7 @@ def main():
         valid_cases(args.tree_sitter, directory, cases["valid"], args.wasm)
         invalid_cases(args.tree_sitter, directory, cases["invalid"], args.wasm)
         edited_cases(args.tree_sitter, directory, cases["edits"], args.wasm)
-    print(f"Editor {'WASM' if args.wasm else 'native'}: 69 valid, 20 malformed (17 recovered, 3 known gaps), 22 incremental cases")
+    print(f"Editor {'WASM' if args.wasm else 'native'}: 80 valid, 27 malformed (24 recovered, 3 known gaps), 27 incremental cases")
 
 if __name__ == "__main__":
     main()

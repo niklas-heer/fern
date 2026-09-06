@@ -37,10 +37,14 @@ module.exports = grammar({
     _declaration: $ => choice($.function_definition, $.type_alias,
       $.type_definition, $.newtype_definition, $.import_statement, $.attribute, $.let_binding),
     _statement: $ => choice($.let_binding, $.expression_statement, $.defer_statement, $.attribute),
-    function_definition: $ => seq(optional("pub"), "fn", field("name", $.identifier),
-      field("parameters", $.parameter_list), optional(seq("if", field("guard", $.expression))),
+    function_definition: $ => seq(optional("pub"), "fn", field("name", alias($._declaration_name, $.identifier)),
+      field("parameters", alias($._function_parameter_list, $.parameter_list)), optional(seq("if", field("guard", $.expression))),
       choice(seq(optional(seq("->", field("return_type", $.type))), ":", field("body", $._body)),
         seq("->", field("body", $._body)))),
+    _function_parameter_list: $ => seq("(", optional(sep1(alias($._function_parameter, $.parameter), ",")), optional(","), ")"),
+    _function_parameter: $ => seq(optional(seq(field("label", choice($.identifier, alias($.type_identifier, $.identifier))),
+      token.immediate(/[ \t]+/))), field("pattern", $.pattern),
+      optional(seq(":", field("type", $.type)))),
     parameter_list: $ => seq("(", optional(sep1($.parameter, ",")), optional(","), ")"),
     parameter: $ => seq(field("pattern", $.pattern), optional(seq(":", field("type", $.type)))),
     _body: $ => choice($.expression, $.block, $.defer_statement),
@@ -95,7 +99,13 @@ module.exports = grammar({
     list_literal: $ => seq("[", optional(sep1($.expression, ",")), optional(","), "]"),
     tuple_literal: $ => seq("(", $.expression, ",", optional(sep1($.expression, ",")), optional(","), ")"),
     parenthesized_expression: $ => seq("(", $.expression, ")"),
-    argument_list: $ => seq("(", optional(sep1($.expression, ",")), optional(","), ")"),
+    argument_list: $ => seq("(", repeat($._newline), optional(seq(
+      choice(seq($.expression, repeat(seq($._argument_separator, $.expression)),
+          repeat(seq($._argument_separator, $.labeled_argument))),
+        sep1($.labeled_argument, $._argument_separator)),
+      optional(seq(repeat($._newline), ",")), repeat($._newline))), ")"),
+    _argument_separator: $ => seq(repeat($._newline), ",", repeat($._newline)),
+    labeled_argument: $ => seq(field("label", choice($.identifier, alias($.type_identifier, $.identifier))), ":", field("value", $.expression)),
     call_expression: $ => prec.left(14, seq(field("function", $.expression), field("arguments", $.argument_list))),
     member_access: $ => prec.left(15, seq(field("object", $.expression), ".",
       field("member", choice($.identifier, $.integer_literal)))),
@@ -142,7 +152,9 @@ module.exports = grammar({
     match_arm: $ => seq(field("pattern", choice($.pattern, $.typed_pattern)), optional(seq("if", field("guard", $.expression))),
       "->", field("body", $._body)),
     return_statement: $ => prec.right(0, seq("return", $.expression)),
-    identifier: $ => /[A-Za-z_][A-Za-z0-9_]*/,
+    // Keep declaration-name recovery contextual, as in the existing malformed corpus.
+    _declaration_name: $ => /[A-Za-z_][A-Za-z0-9_]*/,
+    identifier: $ => labelIdentifier(),
     type_identifier: $ => token(prec(1, /[A-Z][A-Za-z0-9_]*/)),
     module_path: $ => sep1($.identifier, "."),
     integer_literal: $ => /[0-9][0-9_]*/,
@@ -159,4 +171,23 @@ module.exports = grammar({
 // Keep comma-separated grammar sequences declarative and deterministic.
 function sep1(rule, separator) {
   return seq(rule, repeat(seq(separator, rule)));
+}
+
+// ABI14 has no reserved-word sets. Exclude exact binding keywords from labels.
+function labelIdentifier() {
+  const words = "fn let if else true false and or not pub type match return for in while import with trait impl actor receive spawn where do defer as module break continue derive newtype send after".split(" ");
+  const first = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_";
+  const tail = first + "0123456789";
+  const alternatives = [];
+  function visit(prefix, remaining) {
+    if (prefix && !remaining.includes("")) alternatives.push(prefix);
+    const edges = [...new Set(remaining.filter(Boolean).map(word => word[0]))];
+    const other = [...(prefix ? tail : first)].filter(c => !edges.includes(c));
+    if (other.length) alternatives.push(prefix + "[" + other.join("") + "][A-Za-z0-9_]*");
+    for (const edge of edges) {
+      visit(prefix + edge, remaining.filter(word => word.startsWith(edge)).map(word => word.slice(1)));
+    }
+  }
+  visit("", words);
+  return new RegExp("(" + alternatives.join("|") + ")");
 }

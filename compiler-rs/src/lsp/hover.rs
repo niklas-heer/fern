@@ -21,9 +21,11 @@ pub(super) fn hover(
     let Some(name) = source.get(local.start..local.end) else {
         return Json::Null;
     };
-    let Some((mut text, doc_target)) =
+    let Some((mut text, doc_target)) = (if let Some(label) = &index.label {
+        label_description(label, name, facts)
+    } else {
         description(program, index.target, index.symbol_name(), name, facts)
-    else {
+    }) else {
         return Json::Null;
     };
     if let Some(target) = doc_target {
@@ -45,6 +47,20 @@ pub(super) fn hover(
         ),
         ("range", super::navigation::source_range(source, local)),
     ])
+}
+
+/// Labels describe finalized declared parameter schemes, never a call-site substitution.
+fn label_description(
+    label: &index::LabelSelection,
+    name: &str,
+    facts: &Facts,
+) -> Option<(String, Option<Span>)> {
+    let function = facts.function.as_ref()?;
+    if function.name != label.function {
+        return None;
+    }
+    let ty = function.parameters.get(label.position)?;
+    Some((format!("{name}: {}", type_text(ty, facts).ok()?), None))
 }
 
 /// Distinguish reusable declaration signatures from instantiated source occurrence types.

@@ -15,9 +15,11 @@ function checkQueries(language, Query, parser) {
     const captures = query.captures(tree.rootNode);
     assert(captures.length > 0, name + ' must capture a representative source');
     if (name === 'outline') {
-      assert.deepEqual(captures.filter(c => c.name === 'name').map(c => c.node.text), ['Name', 'Id', 'unwrap', 'Choice', 'size', 'Entry', 'workflow', 'following']);
+      assert.deepEqual(captures.filter(c => c.name === 'name').map(c => c.node.text), ['Name', 'Id', 'unwrap', 'Choice', 'size', 'Entry', 'workflow', 'following', 'label_probe', 'label_usage']);
     }
     if (name === 'highlights') {
+      assert.equal(captures.filter(c => c.name === 'variable.parameter' && c.node.text === 'external').length, 2);
+
       assert(captures.some(c => c.node.text === 'unwrap' && c.name === 'function'));
       assert(captures.some(c => c.node.text === 'Id' && c.name.startsWith('type')));
       assert(captures.some(c => c.node.text === '|' && c.name === 'operator'));
@@ -101,6 +103,6 @@ async function main() {
   }
   checkQueries(language, Query, parser);
   parser.delete();
-  process.stdout.write(`Exact WASM artifact: ${cases.valid.length} accepted, ${cases.invalid.length} malformed (17 recovered, 3 known gaps), 4 executable queries\n`);
+  process.stdout.write(`Exact WASM artifact: ${cases.valid.length} accepted, ${cases.invalid.length} malformed (24 recovered, 3 known gaps), 4 executable queries\n`);
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

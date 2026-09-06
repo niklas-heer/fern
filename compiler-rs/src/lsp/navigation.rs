@@ -64,14 +64,15 @@ impl Server {
         index: Option<&Index<'_>>,
         program: Option<&ast::Program>,
     ) -> Result<Json> {
-        let facts =
-            if method == "textDocument/definition" && index.is_some_and(|i| i.target.is_some()) {
-                None
-            } else {
-                index
-                    .and_then(|i| i.query())
-                    .and_then(|query| program.and_then(|p| check::editor::analyze(p, query).ok()))
-            };
+        let facts = if method == "textDocument/definition"
+            && index.is_some_and(|i| i.target.is_some() && i.label.is_none())
+        {
+            None
+        } else {
+            index
+                .and_then(|i| i.query())
+                .and_then(|query| program.and_then(|p| check::editor::analyze(p, query).ok()))
+        };
         if method == "textDocument/hover" {
             return Ok(hover::hover(index, program, facts.as_ref()));
         }
@@ -79,6 +80,9 @@ impl Server {
             let Some(index) = index else {
                 return Ok(Json::Null);
             };
+            if index.label.is_some() && facts.as_ref().and_then(|f| f.function.as_ref()).is_none() {
+                return Ok(Json::Null);
+            }
             let Some(target) = index
                 .target
                 .or_else(|| hover::field_definition(index, facts.as_ref()))

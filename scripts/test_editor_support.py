@@ -80,6 +80,9 @@ def queries(tool, directory):
                                   ("operator", "<-"), ("operator", "..="), ("property", "count")]:
                 pattern = rf"- {capture},[^\n]*text: `{re.escape(text)}`"
                 assert re.search(pattern, result.stdout), (capture, text, result.stdout)
+        if name == "highlights":
+            labels = re.findall(r"- variable.parameter,[^\n]*text: `external`", result.stdout)
+            assert len(labels) == 2, "external declaration and argument labels must be captured"
         if name == "outline":
             assert "text: `Choice`" in result.stdout and "text: `size`" in result.stdout
 

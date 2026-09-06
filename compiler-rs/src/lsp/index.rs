@@ -2,6 +2,10 @@
 use super::{ast, modules, parse, Span};
 use std::{collections::BTreeMap, path::Path};
 
+#[path = "index/labels.rs"]
+mod labels;
+pub(super) use labels::LabelSelection;
+
 type Bindings = BTreeMap<String, Span>;
 #[derive(Clone)]
 pub(super) struct Symbol {
@@ -22,6 +26,8 @@ pub(super) struct Index<'a> {
     visible_values: BTreeMap<String, String>,
     pub globals: BTreeMap<String, Symbol>,
     types: BTreeMap<String, Symbol>,
+    interfaces: BTreeMap<String, Vec<Option<ast::ArgumentLabel>>>,
+    pub label: Option<LabelSelection>,
     type_context: bool,
     selector_context: bool,
     pub locals: Bindings,
@@ -125,6 +131,8 @@ impl<'a> Index<'a> {
             visible_values,
             globals: BTreeMap::new(),
             types: BTreeMap::new(),
+            interfaces: BTreeMap::new(),
+            label: None,
             type_context,
             selector_context,
             locals: Bindings::new(),
@@ -136,6 +144,7 @@ impl<'a> Index<'a> {
             blocked: false,
         };
         index.declarations(program);
+        index.interfaces(program)?;
         let extended = index.extended_function(program);
         for function in program
             .functions
@@ -147,13 +156,8 @@ impl<'a> Index<'a> {
             }
             let mut locals = Bindings::new();
             for param in &function.params {
-                if param
-                    .label
-                    .as_ref()
-                    .is_some_and(|label| index.contains(label.span))
-                {
-                    index.blocked = true;
-                    index.token = None;
+                if let Some(label) = &param.label {
+                    index.argument_label(label, Some(&function.name));
                 }
                 index.pattern(&param.pattern, &mut locals, 0)?;
             }
@@ -425,6 +429,13 @@ impl<'a> Index<'a> {
     /// Select exact current-source identities for optional finalized checker metadata.
     pub(super) fn query(&self) -> Option<crate::check::editor::Query> {
         let occurrence = self.token?;
+        if let Some(label) = &self.label {
+            return Some(crate::check::editor::Query {
+                occurrence,
+                binding: None,
+                function: Some(label.function.clone()),
+            });
+        }
         let function = self.target.and_then(|target| {
             self.globals
                 .iter()
@@ -658,11 +669,12 @@ impl<'a> Index<'a> {
             E::GlobalName { resolved, .. } => self.reference(resolved, expression.span, locals),
             E::GlobalCall { resolved, args, .. } => {
                 self.reference(resolved, expression.span, locals);
-                self.arguments(args, locals, depth)?;
+                self.arguments(args, Some(resolved), locals, depth)?;
             }
             E::Call { name, args } => {
                 self.reference(name, expression.span, locals);
-                self.arguments(args, locals, depth)?;
+                let callee = self.source_callee(name, locals);
+                self.arguments(args, callee.as_deref(), locals, depth)?;
             }
             E::Block(statements) => self.block(statements, locals, depth + 1)?,
             E::Match { value, arms } => {
@@ -699,18 +711,17 @@ impl<'a> Index<'a> {
         }
         Some(())
     }
-    /// Visit written arguments without interpreting labels as lexical names.
-    fn arguments(&mut self, args: &[ast::Argument], locals: &Bindings, depth: usize) -> Option<()> {
+    /// Visit argument values in lexical scope and labels in the selected source interface.
+    fn arguments(
+        &mut self,
+        args: &[ast::Argument],
+        callee: Option<&str>,
+        locals: &Bindings,
+        depth: usize,
+    ) -> Option<()> {
         for arg in args {
-            if arg
-                .label
-                .as_ref()
-                .is_some_and(|label| self.contains(label.span))
-            {
-                self.blocked = true;
-                self.target = None;
-                self.token = None;
-                return Some(());
+            if let Some(label) = &arg.label {
+                self.argument_label(label, callee);
             }
             self.expression(&arg.value, locals, depth + 1)?;
         }
@@ -888,7 +899,7 @@ impl<'a> Index<'a> {
             }
             E::Apply { callee, args } => {
                 self.expression(callee, locals, depth)?;
-                self.arguments(args, locals, depth)?;
+                self.arguments(args, None, locals, depth)?;
             }
             E::List(values) | E::Tuple(values) => self.values(values, locals, depth)?,
             E::Map(pairs) => {
@@ -903,11 +914,7 @@ impl<'a> Index<'a> {
                     self.expression(&field.value, locals, depth)?;
                 }
             }
-            E::Pipe { value, args, .. } | E::GlobalPipe { value, args, .. } => {
-                self.pipe_reference(expression, locals);
-                self.expression(value, locals, depth)?;
-                self.arguments(args, locals, depth)?;
-            }
+            E::Pipe { .. } | E::GlobalPipe { .. } => self.pipe(expression, locals, depth)?,
             E::If {
                 condition,
                 then_branch,

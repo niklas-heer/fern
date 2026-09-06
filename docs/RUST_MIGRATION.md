@@ -958,3 +958,16 @@ keep positional interfaces. Label navigation and full editor parity remain open.
 This checkpoint passes the full Rust and C gates on macOS arm64 and Linux arm64
 with Rust 1.75: 1063 Rust tests on macOS and 1064 on Linux. Native checker workflow
 parity remains green across all 66 cases under both frontends.
+
+## Source label tools — 2026-09-06
+
+Definition and hover on external argument labels now retain exact source parameter
+identity across clauses, aliases, reexports and current dependency overlays. Declared
+generic types remain generic in hover. Invalid current graphs publish no label
+facts; the member-recovery path also retains required-label checks. The checkpoint
+adds ten Rust tests, bringing coverage to 1073 on macOS and 1074 on Linux.
+
+The full editor gate verifies 80 valid sources, 27 malformed cases and 27 incremental
+edits across native and WASM parsers, four executable queries and strict Rust checks.
+Three named malformed-header recovery gaps and incomplete-call label completion
+remain open. The Zed revision is updated separately after committing the grammar.

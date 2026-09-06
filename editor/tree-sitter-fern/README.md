@@ -7,17 +7,21 @@ Never edit generated `grammar.js`, parser sources/headers, queries or WASM by ha
 Python generator detects drift without writing.
 
 Decision84 verifies aliases, newtypes, unions, typed narrowing, function clauses,
-control flow and collection expressions. The corpus contains 69 accepted sources,
-including 29 unchanged executable native fixtures, 20 malformed cases and 22
+control flow, collection expressions and source argument labels. The corpus contains
+80 accepted sources, including 29 executable native fixtures, 27 malformed cases and 27
 incremental edits. Every accepted source checks with the Rust compiler. Native
 and WASM trees agree on node structure and UTF-8 byte ranges. Four Zed queries
 execute against the same checked source fixture.
 
-Seventeen malformed cases retain the following declaration. Three named recovery
+Twenty-four malformed cases retain the following declaration. Three named recovery
 gaps still absorb it after a missing `in`, `<-` or `do` in an inline header. Their
 exact current ERROR ranges and surviving declarations remain executable oracles;
 they are not claimed as successful recovery. Post-dedent callback expressions,
 else/with nesting, map updates, ranges and operator precedence have explicit tests.
+
+External labels on source patterns, calls and pipe holes have separate parameter
+highlights. Call arguments preserve a positional prefix before labels. The Rust
+compiler enforces mandatory Bool/repeated-type labels; the grammar verifies syntax.
 
 This is a bounded editor checkpoint. Actor syntax, complete text/comment/Unicode
 behavior and other untested Rust forms remain open. Zed grammar registration and
