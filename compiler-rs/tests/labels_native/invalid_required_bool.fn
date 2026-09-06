@@ -1,0 +1,2 @@
+fn choose(enabled: Bool) -> Bool: enabled
+fn main(): println(choose(true))

@@ -14,9 +14,9 @@ fn main():
     match flatten():
         Ok(value) -> println(value)
         Err(error) -> println(error)
-    match choose(true):
+    match choose(flag: true):
         Ok(value) -> println(value)
         Err(error) -> println(error)
-    match choose(false):
+    match choose(flag: false):
         Ok(value) -> println(value)
         Err(error) -> println(error)

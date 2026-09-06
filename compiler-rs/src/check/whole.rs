@@ -165,6 +165,7 @@ fn signatures(
             function.name.clone(),
             Signature {
                 labels: labels::parameters(function),
+                required_labels: Vec::new(),
                 id: ir::FunctionId(index),
                 params,
                 result,

@@ -25,7 +25,7 @@ fn updates_and_branch_order_share_later_record_evidence() {
         "x.value\n    else:\n        consume(x)\n        0",
         "consume(x)\n        0\n    else:\n        x.value",
     ] {
-        checked(&format!("type Box:\n    value: Int\nfn consume(x: Box) -> Unit: ()\nfn read(x, test):\n    if test:\n        {arms}\nfn main(): println(read(Box(42), true))\n"));
+        checked(&format!("type Box:\n    value: Int\nfn consume(x: Box) -> Unit: ()\nfn read(x, test):\n    if test:\n        {arms}\nfn main(): println(read(Box(42), test: true))\n"));
     }
 }
 #[test]

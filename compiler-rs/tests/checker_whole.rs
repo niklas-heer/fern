@@ -33,9 +33,9 @@ fn application_and_higher_order_callbacks_infer_whole_signatures() {
 }
 #[test]
 fn overloaded_requirements_generalize_without_guessing_integer() {
-    checked("fn add(x, y) -> x + y\nfn double(x) -> x * 2\nfn show(x) -> println(x)\nfn main():\n    println(add(1, 2))\n    println(add(1.5, 2.5))\n    show(add(\"a\", \"b\"))\n    println(double(2))\n");
+    checked("fn add(x, y) -> x + y\nfn double(x) -> x * 2\nfn show(x) -> println(x)\nfn main():\n    println(add(x: 1, y: 2))\n    println(add(x: 1.5, y: 2.5))\n    show(add(x: \"a\", y: \"b\"))\n    println(double(2))\n");
     assert!(
-        rejected("fn add(x,y) -> x + y\nfn main(): println(add(true, false))\n")
+        rejected("fn add(x,y) -> x + y\nfn main(): println(add(x: true, y: false))\n")
             .contains("addition")
     );
     assert!(rejected(

@@ -5,7 +5,11 @@ fn maximum_parameter_dispatch_is_checked_and_emitted_without_false_nesting() {
         .map(|i| format!("x{i}: Int"))
         .collect::<Vec<_>>()
         .join(", ");
-    let args = vec!["1"; 255].join(", ");
+    let args = (0..254)
+        .map(|i| format!("x{i}: 1"))
+        .chain(["last: 1".into()])
+        .collect::<Vec<_>>()
+        .join(", ");
     let source=format!("fn wide({prefix}, 0: Int) -> Int: 0\nfn wide({prefix}, last: Int) -> Int: last\nfn main(): println(wide({args}))\n");
     let checked = check::check(&parse::parse(&source).unwrap()).unwrap();
     assert_eq!(checked.functions[0].params.len(), 255);

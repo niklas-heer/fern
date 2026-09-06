@@ -11,9 +11,9 @@ fn main():
     print_value(record.payload)
     let other = %{record | payload: 4294967297}
     print_value(other.payload)
-    match make(true):
+    match make(flag: true):
         Ok(x) -> print_value(x)
         Err(b) -> println(b)
-    match make(false):
+    match make(flag: false):
         Ok(x) -> print_value(x)
         Err(b) -> println(b)

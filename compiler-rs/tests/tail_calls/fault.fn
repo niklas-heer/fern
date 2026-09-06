@@ -3,7 +3,7 @@ fn argument(tag: String, value: Int) -> Int:
     value
 fn count(n: Int, value: Int) -> Int:
     if n == 0: value
-    else: count(argument("first", n / 0), argument("later", value))
+    else: count(n: argument("first", n / 0), value: argument("later", value))
 fn main():
     defer println("cleanup")
-    println(count(1, 2))
+    println(count(n: 1, value: 2))

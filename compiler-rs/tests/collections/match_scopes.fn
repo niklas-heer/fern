@@ -8,5 +8,5 @@ fn choose(present: Bool) -> String:
     String.concat(value, String.concat("/", selected))
 
 fn main():
-    println(choose(true))
-    println(choose(false))
+    println(choose(present: true))
+    println(choose(present: false))

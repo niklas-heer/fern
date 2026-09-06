@@ -1,7 +1,7 @@
 type Choice = Int | String
 fn same(x: a, y: a) -> a: x
-fn declared(x: Choice, y: Choice) -> Choice: same(x, y)
+fn declared(x: Choice, y: Choice) -> Choice: same(x: x, y: y)
 fn main():
-    match declared(4294967296, "unused"):
+    match declared(x: 4294967296, y: "unused"):
         n: Int -> println(n)
         s: String -> println(s)

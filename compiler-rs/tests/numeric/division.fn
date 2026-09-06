@@ -1,9 +1,9 @@
 fn divide(a: Int, b: Int) -> Int: a / b
 fn remainder(a: Int, b: Int) -> Int: a % b
 fn main():
-    println(divide(-7, 2))
-    println(remainder(-7, 2))
-    println(divide(7, -2))
-    println(remainder(7, -2))
-    println(divide(-9223372036854775808, -1))
-    println(remainder(-9223372036854775808, -1))
+    println(divide(a: -7, b: 2))
+    println(remainder(a: -7, b: 2))
+    println(divide(a: 7, b: -2))
+    println(remainder(a: 7, b: -2))
+    println(divide(a: -9223372036854775808, b: -1))
+    println(remainder(a: -9223372036854775808, b: -1))

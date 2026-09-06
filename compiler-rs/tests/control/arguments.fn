@@ -6,7 +6,7 @@ fn combine(a: Int, b: Int, c: Int) -> Int:
     a + b + c
 fn early() -> Int:
     defer println("cleanup")
-    combine(mark(1), return 7, mark(3))
+    combine(a: mark(1), b: return 7, c: mark(3))
 fn literal() -> Int:
     [mark(4), return 8, mark(6)]
 fn id(value: a) -> a: value

@@ -554,11 +554,7 @@ impl Budget {
     fn label(&mut self, label: &Option<ast::ArgumentLabel>) -> Checked<()> {
         if let Some(label) = label {
             self.charge(label.name.len(), label.span)?;
-            if label.name.is_empty()
-                || label.name.chars().any(|c| {
-                    c.is_ascii() && !(c.is_ascii_alphanumeric() || c == '_') || c.is_whitespace()
-                })
-            {
+            if !crate::parse::valid_label(&label.name) || label.span.start > label.span.end {
                 return Err(Diagnostic::new(label.span, "invalid argument label"));
             }
         }

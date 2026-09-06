@@ -17,11 +17,11 @@ fn deferred_cleanup_is_function_owned_dynamic_and_lifo() {
     let mut s = Session::default();
     s.evaluate("fn work(early: Bool) -> Int:\n    defer println(\"outer\")\n    if early:\n        defer println(\"inner\")\n        println(\"body\")\n    println(\"after block\")\n    return 7 if early\n    9").unwrap();
     assert_eq!(
-        s.evaluate("work(true)").unwrap(),
+        s.evaluate("work(early: true)").unwrap(),
         "body\nafter block\ninner\nouter\n7 : Int\n"
     );
     assert_eq!(
-        s.evaluate("work(false)").unwrap(),
+        s.evaluate("work(early: false)").unwrap(),
         "after block\nouter\n9 : Int\n"
     );
 }

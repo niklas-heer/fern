@@ -22,7 +22,7 @@ fn parameter(program: &ir::Program, name: &str) -> Type {
 
 #[test]
 fn scalar_patterns_anchor_private_recursive_and_boolean_parameters() {
-    let program = checked("fn fact(0) -> 1\nfn fact(n) -> n * fact(n - 1)\nfn choose(true) -> 1\nfn choose(false) -> 0\nfn main(): println(fact(5) + choose(true))\n");
+    let program = checked("fn fact(0) -> 1\nfn fact(n) -> n * fact(n - 1)\nfn choose(value true) -> 1\nfn choose(value false) -> 0\nfn main(): println(fact(5) + choose(value: true))\n");
     assert_eq!(parameter(&program, "fact"), Type::Int);
     assert_eq!(parameter(&program, "choose"), Type::Bool);
     checked("fn unit(()) -> 7\nfn string(\"yes\") -> true\nfn string(other) -> false\nfn main(): println(unit(()))\n");
@@ -135,8 +135,12 @@ fn inferred_clause_dispatch_retains_255_parameter_capacity() {
         .map(|index| format!("p{index}"))
         .collect::<Vec<_>>()
         .join(", ");
+    let args = (0..255)
+        .map(|i| format!("p{i}: 0"))
+        .collect::<Vec<_>>()
+        .join(", ");
     let source = format!(
-        "fn wide({anchors}) -> 0\nfn wide({names}) -> p254\nfn main(): println(wide({anchors}))\n"
+        "fn wide({anchors}) -> 0\nfn wide({names}) -> p254\nfn main(): println(wide({args}))\n"
     );
     assert_eq!(
         checked(&source)

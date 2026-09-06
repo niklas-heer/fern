@@ -51,7 +51,7 @@ fn wrapped_results_keep_handling_and_capture_obligations() {
 
 #[test]
 fn generic_intrinsic_requirements_follow_payloads_without_inheriting_arithmetic_or_show() {
-    valid("newtype Box(a) = Box(a)\nfn equal(a, b): a == b\nfn keyed(value): %{value: true}\nfn main():\n    println(equal(Box(1.25), Box(1.25)))\n    println(List.contains([Box(\"x\")], Box(\"x\")))\n    println(Map.len(keyed(Box(\"x\"))))\n    let nested: Box(Box(Int)) = Box(Box(7))\n    println(nested.0.0)\n");
+    valid("newtype Box(a) = Box(a)\nfn equal(a, b): a == b\nfn keyed(value): %{value: true}\nfn main():\n    println(equal(a: Box(1.25), b: Box(1.25)))\n    println(List.contains([Box(\"x\")], Box(\"x\")))\n    println(Map.len(keyed(Box(\"x\"))))\n    let nested: Box(Box(Int)) = Box(Box(7))\n    println(nested.0.0)\n");
     for body in [
         "println(Box(1))",
         "Box(1) - Box(2)",
@@ -120,8 +120,8 @@ fn unusable_key_types_fail_even_in_unused_payload_declarations() {
 
 #[test]
 fn delayed_projection_evidence_and_explicit_generic_capabilities_preserve_identity() {
-    valid("newtype Wrap(a) = Wrap(a)\nfn equal(x: Wrap(a), y: Wrap(a)) -> Bool: x == y\nfn project(value):\n    let raw = value.0\n    let anchor: Wrap(Float) = value\n    raw\nfn main():\n    println(equal(Wrap(1.25), Wrap(1.25)))\n    println(equal(Wrap(\"x\"), Wrap(\"x\")))\n    println(project(Wrap(2.5)))\n");
-    invalid("newtype Wrap(a) = Wrap(a)\nfn equal(x: Wrap(a), y: Wrap(a)) -> Bool: x == y\nfn main(): println(equal(Wrap([1]), Wrap([1])))\n");
+    valid("newtype Wrap(a) = Wrap(a)\nfn equal(x: Wrap(a), y: Wrap(a)) -> Bool: x == y\nfn project(value):\n    let raw = value.0\n    let anchor: Wrap(Float) = value\n    raw\nfn main():\n    println(equal(x: Wrap(1.25), y: Wrap(1.25)))\n    println(equal(x: Wrap(\"x\"), y: Wrap(\"x\")))\n    println(project(Wrap(2.5)))\n");
+    invalid("newtype Wrap(a) = Wrap(a)\nfn equal(x: Wrap(a), y: Wrap(a)) -> Bool: x == y\nfn main(): println(equal(x: Wrap([1]), y: Wrap([1])))\n");
 }
 
 #[test]

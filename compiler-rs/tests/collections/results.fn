@@ -7,8 +7,8 @@ fn describe(result: Result(String, String)) -> String:
         Err(error) -> String.concat("error: ", error)
 
 fn main():
-    println(describe(fetch(true)))
-    println(describe(fetch(false)))
-    println(Result.is_ok(fetch(true)))
-    println(Result.is_err(fetch(false)))
-    println(Result.unwrap_or(fetch(false), "fallback"))
+    println(describe(fetch(success: true)))
+    println(describe(fetch(success: false)))
+    println(Result.is_ok(fetch(success: true)))
+    println(Result.is_err(fetch(success: false)))
+    println(Result.unwrap_or(fetch(success: false), "fallback"))

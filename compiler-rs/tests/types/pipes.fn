@@ -7,6 +7,6 @@ fn config() -> Int:
 fn subtract(a: Int, b: Int) -> Int: a - b
 fn main():
     let result = input()
-        |> subtract(config(), _)
-        |> subtract(3)
+        |> subtract(a: config(), b: _)
+        |> subtract(a: _, b: 3)
     println(result)

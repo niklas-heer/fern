@@ -7,20 +7,20 @@ fn bool_to_int(b: Bool) -> Int:
 fn main():
     # Test String.starts_with and String.ends_with
     let filename = "document.txt"
-    println(bool_to_int(String.starts_with(filename, "doc")))
-    println(bool_to_int(String.ends_with(filename, ".txt")))
-    println(bool_to_int(String.ends_with(filename, ".pdf")))
+    println(bool_to_int(b: String.starts_with(filename, "doc")))
+    println(bool_to_int(b: String.ends_with(filename, ".txt")))
+    println(bool_to_int(b: String.ends_with(filename, ".pdf")))
 
     # Test String.contains
     let sentence = "The quick brown fox"
-    println(bool_to_int(String.contains(sentence, "quick")))
-    println(bool_to_int(String.contains(sentence, "slow")))
+    println(bool_to_int(b: String.contains(sentence, "quick")))
+    println(bool_to_int(b: String.contains(sentence, "slow")))
 
     # Test String.is_empty
     let empty = ""
     let nonempty = "hello"
-    println(bool_to_int(String.is_empty(empty)))
-    println(bool_to_int(String.is_empty(nonempty)))
+    println(bool_to_int(b: String.is_empty(empty)))
+    println(bool_to_int(b: String.is_empty(nonempty)))
 
     # Test String.slice - extract substring
     let text = "Hello, World!"

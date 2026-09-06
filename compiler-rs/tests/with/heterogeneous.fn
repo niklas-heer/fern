@@ -10,14 +10,14 @@ fn load(id: Int, ok: Bool) -> Result(String, LoadFailure):
     if ok: Ok("done") else: Err(LoadError(5))
 fn execute(auth_ok: Bool, load_ok: Bool) -> String:
     with
-        id <- auth(auth_ok),
-        text <- load(id, load_ok)
+        id <- auth(ok: auth_ok),
+        text <- load(id, ok: load_ok)
     do
         text
     else
         Err(AuthError(message)) -> message
         Err(LoadError(code)) -> "failed {code}"
 fn main():
-    println(execute(true, true))
-    println(execute(false, true))
-    println(execute(true, false))
+    println(execute(auth_ok: true, load_ok: true))
+    println(execute(auth_ok: false, load_ok: true))
+    println(execute(auth_ok: true, load_ok: false))

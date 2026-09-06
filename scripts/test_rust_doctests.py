@@ -13,9 +13,9 @@ def main():
     environment = dict(os.environ, FERN_QBE=str(ROOT / "bin/fern-qbe"),
                        FERN_RUNTIME_LIB=str(ROOT / "bin/libfern_runtime.a"))
     cases = [
-        ("private helpers", "let answer=add(2,3)\nanswer # => 5\nSome(answer) # => Some(_)",
+        ("private helpers", "let answer=add(a:2,b:3)\nanswer # => 5\nSome(answer) # => Some(_)",
          "fn add(a: Int,b: Int)->Int: a+b\nfn main()->Int:99", True, "1/1 passed"),
-        ("mismatch", "add(2,3) # => 6", "fn add(a: Int,b: Int)->Int: a+b", False, "example 1"),
+        ("mismatch", "add(a:2,b:3) # => 6", "fn add(a: Int,b: Int)->Int: a+b", False, "example 1"),
         ("timeout", "spin(0)", "fn spin(n: Int)->Int: spin(n+1)", False, "timed out"),
         ("output limit", "spam(0)", 'fn spam(n: Int)->Int:\n    println("Fern output")\n    spam(n+1)', False, "output limit"),
         ("original Unit entry", "main() # => ()", "fn main(): 42", True, "1/1 passed"),

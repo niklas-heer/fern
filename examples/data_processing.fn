@@ -50,5 +50,5 @@ fn main():
 
     # Check string predicates
     let filename = "report.csv"
-    println(bool_to_int(String.ends_with(filename, ".csv")))
-    println(bool_to_int(String.contains(filename, "report")))
+    println(bool_to_int(b: String.ends_with(filename, ".csv")))
+    println(bool_to_int(b: String.contains(filename, "report")))

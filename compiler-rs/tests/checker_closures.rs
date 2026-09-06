@@ -88,7 +88,7 @@ fn result_captures_are_explicitly_restricted_but_result_return_signatures_are_sa
 
 #[test]
 fn contextual_empty_lists_branch_lambdas_and_generic_bodies_are_concrete() {
-    let program = checked("fn select(flag: Bool) -> (Float) -> Float:\n    if flag: (x) -> x * 2.0 else: (x) -> x / 2.0\nfn empty() -> List(String): List.map([], (x: Int) -> \"x\")\nfn make(x: a) -> () -> a: () -> x\nfn main():\n    println(select(true)(2.0))\n    println(make(7)())\n    println(List.len(empty()))\n");
+    let program = checked("fn select(flag: Bool) -> (Float) -> Float:\n    if flag: (x) -> x * 2.0 else: (x) -> x / 2.0\nfn empty() -> List(String): List.map([], (x: Int) -> \"x\")\nfn make(x: a) -> () -> a: () -> x\nfn main():\n    println(select(flag: true)(2.0))\n    println(make(7)())\n    println(List.len(empty()))\n");
     fern_prototype::qbe::emit(&program).unwrap();
 }
 

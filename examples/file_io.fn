@@ -8,7 +8,7 @@ fn bool_to_int(b: Bool) -> Int:
 fn main():
     # Test fs.exists on non-existent file
     let exists_before = fs.exists("/tmp/fern_test_file.txt")
-    println(bool_to_int(exists_before))
+    println(bool_to_int(b: exists_before))
 
     # Write a file
     let write_result = fs.write("/tmp/fern_test_file.txt", "Hello from Fern!")
@@ -18,7 +18,7 @@ fn main():
 
     # Check file exists after writing
     let exists_after = fs.exists("/tmp/fern_test_file.txt")
-    println(bool_to_int(exists_after))
+    println(bool_to_int(b: exists_after))
 
     # Get file size
     let size_result = fs.size("/tmp/fern_test_file.txt")
@@ -52,7 +52,7 @@ fn main():
 
     # Verify file no longer exists
     let exists_deleted = fs.exists("/tmp/fern_test_file.txt")
-    println(bool_to_int(exists_deleted))
+    println(bool_to_int(b: exists_deleted))
 
     # Try to read non-existent file (should fail)
     let read_missing = fs.read("/tmp/nonexistent_file_12345.txt")

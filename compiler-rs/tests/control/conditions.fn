@@ -3,8 +3,8 @@ fn test(value: Int, limit: Int) -> Bool:
     value < limit
 fn choose(value: Int) -> Int:
     match:
-        test(value, 0) -> return -1
-        test(value, 10) -> 1
+        test(value: value, limit: 0) -> return -1
+        test(value: value, limit: 10) -> 1
         _ -> 2
 fn main():
     println(choose(-5))

@@ -9,7 +9,7 @@ fn rejected(source: &str) -> String {
 }
 #[test]
 fn power_and_bitwise_expressions_preserve_semantic_operand_types() {
-    let p=checked("fn integer(x: Int, y: Int) -> Int: (x ** y) + ((x &&& y) ||| (x ^^^ y)) + (x <<< y) + (x >>> y) + ~~~x\nfn real(x: Float, y: Float) -> Float: x ** y\nfn main():\n    println(integer(2, 3))\n    println(real(2.0, -1.0))\n");
+    let p=checked("fn integer(x: Int, y: Int) -> Int: (x ** y) + ((x &&& y) ||| (x ^^^ y)) + (x <<< y) + (x >>> y) + ~~~x\nfn real(x: Float, y: Float) -> Float: x ** y\nfn main():\n    println(integer(x: 2, y: 3))\n    println(real(x: 2.0, y: -1.0))\n");
     assert_eq!(
         p.functions
             .iter()

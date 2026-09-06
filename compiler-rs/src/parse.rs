@@ -528,6 +528,16 @@ pub(crate) fn identifier_char(c: char, initial: bool) -> bool {
         || (!c.is_ascii() && !c.is_whitespace())
 }
 
+/// Validate external label names with the same Unicode and keyword rules as source bindings.
+pub(crate) fn valid_label(name: &str) -> bool {
+    !name.is_empty()
+        && !reserved(name)
+        && name
+            .chars()
+            .enumerate()
+            .all(|(index, c)| identifier_char(c, index == 0))
+}
+
 /// Scan one expression token; embedded strings share the caller's token budget.
 fn lex_token(
     line: &str,
@@ -1654,6 +1664,9 @@ impl Parser {
         if matches!(next, Some(Kind::Left)) && name.chars().next().is_some_and(char::is_uppercase) {
             return Ok(None);
         }
+        if !valid_label(&name) {
+            return Err(self.error("invalid argument label"));
+        }
         let span = self.take().span;
         Ok(Some(ArgumentLabel { name, span }))
     }
@@ -2415,7 +2428,7 @@ impl Parser {
                 return Ok((args, self.take().span.end, depth));
             }
             let start = self.current().span.start;
-            let label = self.argument_label();
+            let label = self.argument_label()?;
             if label.is_none() && labeled {
                 return Err(self.error("positional arguments must precede labeled arguments"));
             }
@@ -2443,20 +2456,23 @@ impl Parser {
     }
 
     /// Consume a label only when an identifier is immediately followed by ':'.
-    fn argument_label(&mut self) -> Option<ArgumentLabel> {
+    fn argument_label(&mut self) -> ParseResult<Option<ArgumentLabel>> {
         let Kind::Name(name) = self.current().kind.clone() else {
-            return None;
+            return Ok(None);
         };
         if !self
             .tokens
             .get(self.position + 1)
             .is_some_and(|token| token.kind == Kind::Colon)
         {
-            return None;
+            return Ok(None);
+        }
+        if !valid_label(&name) {
+            return Err(self.error("invalid argument label"));
         }
         let span = self.take().span;
         self.take();
-        Some(ArgumentLabel { name, span })
+        Ok(Some(ArgumentLabel { name, span }))
     }
 
     /// Parse embedded expressions using the ordinary grammar and one shared depth bound.

@@ -39,6 +39,7 @@ type TypedKind = (ir::ExprKind, Type);
 
 struct Signature {
     labels: Vec<Option<ast::ArgumentLabel>>,
+    required_labels: Vec<bool>,
     id: ir::FunctionId,
     params: Vec<Type>,
     result: Type,
@@ -157,6 +158,7 @@ fn pipeline<T>(
     aliases::validate(source, &registry)?;
     let graph = dependencies::analyze_with_work(source, expanded.work)?;
     let (program, mut signatures, work) = whole::resolve(source, &registry, &graph)?;
+    labels::finalize(&program, &mut signatures)?;
     schemes::validate(&program, &registry, &mut signatures, work)?;
     let ir = specialize::run(&program, &registry, &signatures)?;
     ir::reject_probes(&ir)?;
@@ -214,6 +216,7 @@ fn signatures(
             function.name.clone(),
             Signature {
                 labels: labels::parameters(function),
+                required_labels: Vec::new(),
                 id: ir::FunctionId(index),
                 params: function
                     .params

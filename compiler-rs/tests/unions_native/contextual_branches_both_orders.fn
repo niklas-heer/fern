@@ -7,5 +7,5 @@ fn first(flag: Bool) -> Int | String:
 fn second(flag: Bool) -> Int | String:
     if flag: "fern" else: 7
 fn main():
-    println(describe(first(true)))
-    println(describe(second(true)))
+    println(describe(first(flag: true)))
+    println(describe(second(flag: true)))

@@ -1,8 +1,8 @@
 fn factorial(0) -> 1
 fn factorial(n) -> n * factorial(n - 1)
-fn flag(true) -> "yes"
-fn flag(false) -> "no"
+fn flag(value true) -> "yes"
+fn flag(value false) -> "no"
 fn main():
     println(factorial(6))
-    println(flag(true))
-    println(flag(false))
+    println(flag(value: true))
+    println(flag(value: false))

@@ -2,9 +2,9 @@ fn result(success: Bool) -> Result(Int, Int):
     if success: Ok(-9223372036854775808) else: Err(9223372036854775807)
 
 fn main():
-    match result(true):
+    match result(success: true):
         Ok(value) -> println(value)
         Err(error) -> println(error)
-    match result(false):
+    match result(success: false):
         Ok(value) -> println(value)
         Err(error) -> println(error)

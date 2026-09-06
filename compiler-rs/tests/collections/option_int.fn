@@ -2,10 +2,10 @@ fn number(present: Bool) -> Option(Int):
     if present: Some(-9223372036854775808) else: None
 
 fn main():
-    println(Option.unwrap_or(number(true), 9))
-    println(Option.unwrap_or(number(false), 9))
-    println(Option.is_some(number(true)))
-    println(Option.is_none(number(false)))
+    println(Option.unwrap_or(number(present: true), 9))
+    println(Option.unwrap_or(number(present: false), 9))
+    println(Option.is_some(number(present: true)))
+    println(Option.is_none(number(present: false)))
     match Some(9223372036854775807):
         Some(value) -> println(value)
         None -> println(0)

@@ -2,4 +2,4 @@ fn add(a: Int, b: Int) -> Int:
     a + b
 
 fn main() -> Int:
-    add(10, 32)
+    add(a: 10, b: 32)

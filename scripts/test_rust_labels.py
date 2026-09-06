@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise optional source-call labels through native execution and atomic rejection."""
+"""Exercise source-call label interfaces and mandatory calls through native execution and atomic rejection."""
 import argparse
 import os
 from pathlib import Path
@@ -51,7 +51,7 @@ def main():
             accepted(compiler, environment, directory, source)
         for source in negative:
             rejected(compiler, environment, directory, source)
-    print(f"Rust optional labels passed: {len(positive)} native programs, {len(negative)} atomic invalid programs")
+    print(f"Rust labels passed: {len(positive)} native programs, {len(negative)} atomic invalid programs")
 
 
 if __name__ == "__main__":

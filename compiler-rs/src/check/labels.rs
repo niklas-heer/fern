@@ -157,3 +157,68 @@ impl Checker<'_> {
         (ir::ExprKind::Block(statements), result)
     }
 }
+
+/// Publish call-site obligations only after all declared schemes have finished inference.
+pub(super) fn finalize(
+    program: &ast::Program,
+    signatures: &mut HashMap<String, Signature>,
+) -> Checked<()> {
+    let mut work = 0usize;
+    for function in &program.functions {
+        let signature = signatures
+            .get_mut(&function.name)
+            .ok_or_else(|| Diagnostic::new(function.span, "missing source label signature"))?;
+        let mut counts = HashMap::new();
+        for ty in &signature.params {
+            work = work.saturating_add(crate::unions::cost(ty, function.span)?);
+            if work > 400_000 {
+                return Err(Diagnostic::new(
+                    function.span,
+                    "argument-label scheme work limit exceeded",
+                ));
+            }
+            *counts.entry(ty).or_insert(0usize) += 1;
+        }
+        let required = signature
+            .params
+            .iter()
+            .map(|ty| *ty == Type::Bool || counts[ty] > 1)
+            .collect::<Vec<_>>();
+        for (index, needed) in required.iter().enumerate() {
+            if *needed
+                && signature
+                    .labels
+                    .get(index)
+                    .and_then(Option::as_ref)
+                    .is_none()
+            {
+                return Err(Diagnostic::new(
+                    function.params[index].span,
+                    format!("parameter {} requires a stable external label", index + 1),
+                ));
+            }
+        }
+        signature.required_labels = required;
+    }
+    Ok(())
+}
+
+/// Enforce the original scheme's interface without deriving obligations from concrete callers.
+pub(super) fn required(
+    args: &[ast::Argument],
+    signature: &Signature,
+    order: &[usize],
+) -> Checked<()> {
+    for (arg, slot) in args.iter().zip(order) {
+        if arg.label.is_none() && signature.required_labels.get(*slot) == Some(&true) {
+            let label = signature.labels[*slot]
+                .as_ref()
+                .expect("finalized required label");
+            return Err(Diagnostic::new(
+                arg.span,
+                format!("argument requires label '{}:'", label.name),
+            ));
+        }
+    }
+    Ok(())
+}

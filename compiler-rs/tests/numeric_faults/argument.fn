@@ -9,4 +9,4 @@ fn combine(a: Int, b: Int, c: Int) -> Int:
     a + b + c
 fn main():
     defer println("main")
-    println(combine(mark(1), fail(), mark(3)))
+    println(combine(a: mark(1), b: fail(), c: mark(3)))

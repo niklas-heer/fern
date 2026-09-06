@@ -24,5 +24,5 @@ fn main():
     let c = "other"
 
     # String.eq returns true for equal, false for not equal
-    println(bool_to_int(String.eq(a, b)))
-    println(bool_to_int(String.eq(a, c)))
+    println(bool_to_int(b: String.eq(a, b)))
+    println(bool_to_int(b: String.eq(a, c)))

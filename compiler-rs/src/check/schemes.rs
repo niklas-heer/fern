@@ -470,6 +470,7 @@ mod tests {
         };
         let signature = Signature {
             labels: Vec::new(),
+            required_labels: Vec::new(),
             id: ir::FunctionId(0),
             params: vec![],
             result: Type::Unit,

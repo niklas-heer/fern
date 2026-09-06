@@ -2,14 +2,14 @@ fn divide(a: Int, b: Int) -> Result(Int, String):
     if b == 0: Err("division by zero") else: Ok(a / b)
 
 fn describe(success: Bool) -> Result(String, String):
-    let number = divide(12, if success: 3 else: 0)?
+    let number = divide(a: 12, b: if success: 3 else: 0)?
     println("continued")
     Ok(if number == 4: "four" else: "other")
 
 fn main():
-    match describe(true):
+    match describe(success: true):
         Ok(value) -> println(value)
         Err(error) -> println(error)
-    match describe(false):
+    match describe(success: false):
         Ok(value) -> println(value)
         Err(error) -> println(error)

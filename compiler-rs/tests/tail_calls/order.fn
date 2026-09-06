@@ -3,5 +3,5 @@ fn argument(tag: String, value: Int) -> Int:
     value
 fn rotate(n: Int, a: Int, b: Int) -> Int:
     if n == 0: a * 10 + b
-    else: rotate(argument("n", n - 1), argument("a", b), argument("b", a))
-fn main(): println(rotate(1, 2, 3))
+    else: rotate(n: argument("n", n - 1), a: argument("a", b), b: argument("b", a))
+fn main(): println(rotate(n: 1, a: 2, b: 3))

@@ -2,10 +2,10 @@ fn add(left: Int, right: Int) -> Int: left + right
 fn then_value(effect: (), value: Int) -> Int: value
 fn load() -> Result(Int, String): Ok(4)
 fn main():
-    println(add(if true:
+    println(add(left: if true:
         10
     else:
-        20, 3))
+        20, right: 3))
     println(
         if false:
             0

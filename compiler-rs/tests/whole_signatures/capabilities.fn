@@ -4,9 +4,9 @@ fn describe(value) -> "value={value}"
 fn seen(value) -> List.contains([value], value)
 fn lookup(key, value) -> Map.get(%{key: value}, key)
 fn main():
-    println(add(20, 22))
-    println(add(1.25, 2.5))
-    println(add("Fer", "n"))
+    println(add(left: 20, right: 22))
+    println(add(left: 1.25, right: 2.5))
+    println(add(left: "Fer", right: "n"))
     println(square(3))
     println(square(2.0))
     println(describe(true))

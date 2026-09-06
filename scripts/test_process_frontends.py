@@ -76,7 +76,7 @@ def valid_cases(compiler, directory, environment, helper):
         ('signal', 1000, 4096, '107\n'),
     ]
     for mode, timeout, cap, expected in cases:
-        source = PREFIX + f'fn main(): inspect([System.arg(1), System.arg(2), System.arg(3)], {timeout}, {cap})\n'
+        source = PREFIX + f'fn main(): inspect([System.arg(1), System.arg(2), System.arg(3)], timeout: {timeout}, cap: {cap})\n'
         execute(compiler, source, [sys.executable, helper, mode], expected, directory, environment)
     return len(cases)
 
@@ -88,15 +88,15 @@ def invalid_limits(compiler, directory, environment):
                    '4294967296 + 1', 'wide()']
     for expr in expressions:
         source = PREFIX + 'fn wide() -> Int: 4294967297\nfn main():\n'
-        source += f'    let timeout = {expr}\n    inspect(["missing-fern-process-executable"], timeout, 0)\n'
+        source += f'    let timeout = {expr}\n    inspect(["missing-fern-process-executable"], timeout: timeout, cap: 0)\n'
         execute(compiler, source, [], '101\n', directory, environment)
     for expr in ['-1', '16777217', '4294967296', '-4294967296', '9223372036854775807']:
-        source = PREFIX + f'fn main(): inspect(["missing-fern-process-executable"], 1000, {expr})\n'
+        source = PREFIX + f'fn main(): inspect(["missing-fern-process-executable"], timeout: 1000, cap: {expr})\n'
         execute(compiler, source, [], '101\n', directory, environment)
     for args in ['[]', '[""]']:
-        source = PREFIX + f'fn main(): inspect({args}, 1000, 0)\n'
+        source = PREFIX + f'fn main(): inspect({args}, timeout: 1000, cap: 0)\n'
         execute(compiler, source, [], '101\n', directory, environment)
-    source = PREFIX + 'fn main(): inspect(["missing-fern-process-executable"], 1000, 0)\n'
+    source = PREFIX + 'fn main(): inspect(["missing-fern-process-executable"], timeout: 1000, cap: 0)\n'
     execute(compiler, source, [], '102\n', directory, environment)
     return len(expressions) + 8
 

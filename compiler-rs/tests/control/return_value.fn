@@ -7,5 +7,5 @@ fn saved(early: Bool) -> String:
     return mark("early") if early
     mark("implicit")
 fn main():
-    println(saved(true))
-    println(saved(false))
+    println(saved(early: true))
+    println(saved(early: false))

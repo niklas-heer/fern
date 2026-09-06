@@ -23,7 +23,7 @@ INVALID = {
     "guard_not_total": "fn main():\n    match true:\n        x if x -> println(1)\n",
     "duplicate_bindings": "type Pair:\n    P(Int, Int)\nfn main():\n    match P(1, 2):\n        P(x, x) -> println(x)\n",
     "unknown_type": "fn value(x: Missing) -> Missing: x\nfn main(): 0\n",
-    "generic_mismatch": "fn add(x: a, y: a) -> a: x\nfn main(): println(add(1, true))\n",
+    "generic_mismatch": "fn add(x: a, y: a) -> a: x\nfn main(): println(add(x: 1, y: true))\n",
     "nominal_mismatch": "type A:\n    value: Int\ntype B:\n    value: Int\nfn main():\n    let a: A = B(1)\n",
     "escaping_guard": "fn main():\n    match Some(1):\n        Some(x) if x > 0 -> println(x)\n        _ -> println(x)\n",
 }

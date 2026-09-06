@@ -24,10 +24,10 @@ fn main():
     println(abs(0 - 5))
 
     # Test max/min
-    println(max(10, 20))
-    println(min(10, 20))
+    println(max(a: 10, b: 20))
+    println(min(a: 10, b: 20))
 
     # Test clamp
-    println(clamp(5, 0, 10))
-    println(clamp(0 - 5, 0, 10))
-    println(clamp(15, 0, 10))
+    println(clamp(value: 5, lo: 0, hi: 10))
+    println(clamp(value: 0 - 5, lo: 0, hi: 10))
+    println(clamp(value: 15, lo: 0, hi: 10))

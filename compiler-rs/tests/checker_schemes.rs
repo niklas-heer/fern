@@ -36,7 +36,7 @@ fn universal_return_errors_do_not_depend_on_callers() {
 
 #[test]
 fn constrained_generic_operations_keep_existing_domains() {
-    accepted("fn square(x: a) -> a: x ** x\nfn add(x: a, y: a) -> a: x + y\nfn describe(x: a) -> String: \"value={x}\"\nfn main():\n    println(square(2))\n    println(square(2.0))\n    println(add(\"a\", \"b\"))\n    println(describe(true))\n");
+    accepted("fn square(x: a) -> a: x ** x\nfn add(x: a, y: a) -> a: x + y\nfn describe(x: a) -> String: \"value={x}\"\nfn main():\n    println(square(2))\n    println(square(2.0))\n    println(add(x: \"a\", y: \"b\"))\n    println(describe(true))\n");
 }
 
 #[test]
@@ -85,10 +85,12 @@ fn nested_coverage_and_known_result_obligations_are_checked_unused() {
 
 #[test]
 fn recursive_schemes_reach_a_bounded_requirement_fixed_point() {
-    let prefix = "fn first(x: a, stop: Bool) -> a: if stop: second(x, false) else: x\nfn second(x: b, stop: Bool) -> b: if stop: first(x, false) else: x ** x\n";
-    accepted(&format!("{prefix}fn main(): println(first(2, false))\n"));
+    let prefix = "fn first(x: a, stop: Bool) -> a: if stop: second(x, stop: false) else: x\nfn second(x: b, stop: Bool) -> b: if stop: first(x, stop: false) else: x ** x\n";
+    accepted(&format!(
+        "{prefix}fn main(): println(first(2, stop: false))\n"
+    ));
     rejected(&format!(
-        "{prefix}fn bad(x: c) -> Bool: first(true, true)\nfn main(): 0\n"
+        "{prefix}fn bad(x: c) -> Bool: first(true, stop: true)\nfn main(): 0\n"
     ));
 }
 

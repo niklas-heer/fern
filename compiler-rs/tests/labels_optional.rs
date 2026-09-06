@@ -23,10 +23,13 @@ fn labels_bind_parameters_independently_of_written_order() {
         "7 : Int\n"
     );
     assert_eq!(
-        session.evaluate("subtract(9, right: 2)").unwrap(),
+        session.evaluate("subtract(left: 9, right: 2)").unwrap(),
         "7 : Int\n"
     );
-    assert_eq!(session.evaluate("subtract(9, 2)").unwrap(), "7 : Int\n");
+    assert!(session
+        .evaluate("subtract(9, 2)")
+        .unwrap_err()
+        .contains("left:"));
 }
 
 #[test]

@@ -478,14 +478,39 @@ connect(
     retry: true
 )
 
-# Or call positionally (must be in order)
-connect("localhost", 8080, 5000, true)
+# The unique String parameter may remain positional
+connect("localhost", port: 8080, timeout: 5000, retry: true)
 
 # Mix positional and labeled (positional must come first)
-connect("localhost", 8080, timeout: 5000, retry: true)
+connect("localhost", port: 8080, timeout: 5000, retry: true)
 ```
 
 **When labels are required:**
+
+For a direct source-function call, an exact `Bool` parameter and every position
+whose type repeats in the finalized declared function scheme require labels.
+Distinct generic variables and distinct newtypes remain distinct even when a
+particular call uses the same representation or concrete type. Type aliases are
+expanded before this comparison. Structural function values, lambdas, runtime
+APIs, compiler builtins and constructors retain positional calling conventions;
+they reject labels rather than guessing parameter names.
+
+Simple binding parameters use their names as labels. Pattern clauses can declare
+an external name independently of local bindings, and every clause contributes to
+one consistent external interface:
+
+```fern
+fn choose(enabled true: Bool) -> Int: 1
+fn choose(enabled false: Bool) -> Int: 0
+choose(enabled: true)
+
+fn subtract(left: Int, right: Int) -> Int: left - right
+9 |> subtract(right: 2, left: _)
+```
+
+Labels may reorder parameter binding, but argument effects run once in written
+order. A pipe evaluates its left side first. Its placeholder must carry the
+required label. Positional arguments must precede labeled arguments.
 
 ```fern
 # Multiple parameters of same type - labels prevent confusion
@@ -3473,8 +3498,8 @@ fn connect(host: String, port: Int, timeout: Int):
 # Call with labels (any order)
 connect(host: "localhost", port: 8080, timeout: 5000)
 
-# Or positional (in order)
-connect("localhost", 8080, 5000)
+# The unique String parameter may remain positional
+connect("localhost", port: 8080, timeout: 5000)
 ```
 
 **Required labels:**

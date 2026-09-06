@@ -27,10 +27,10 @@ fn failed_parameter_inference_preserves_existing_bindings() {
         .is_err());
     assert_eq!(session.evaluate("previous").unwrap(), "42 : Int\n");
     session
-        .evaluate("fn incompatible(true) -> 1\nfn incompatible(false) -> 0")
+        .evaluate("fn incompatible(value true) -> 1\nfn incompatible(value false) -> 0")
         .unwrap();
     assert_eq!(
-        session.evaluate("incompatible(false)").unwrap(),
+        session.evaluate("incompatible(value: false)").unwrap(),
         "0 : Int\n"
     );
 }

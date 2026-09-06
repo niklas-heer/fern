@@ -13,17 +13,27 @@ fn main() -> Int:
 
 This returns 7. Positional arguments may form a prefix, followed by labels in any
 order. Unknown, duplicate, missing or already supplied positions are errors.
-In this initial checkpoint wholly positional source calls remain accepted.
-Decision7's mandatory Bool and repeated-type policy is the next enforcement phase.
+Exact Bool parameters and parameters sharing an identical declared scheme type
+require labels. The interface is fixed after declaration inference and alias/union
+normalization, before call-site specialization. Distinct generic variables and
+distinct newtypes remain distinct; a union merely containing Bool is not exact
+Bool. Repeated instances of the same generic parameter do require labels.
+
+For example, both parameters of `subtract` above require labels. A unique String
+parameter can still form a positional prefix before labeled Int/Bool parameters.
+The rule applies to direct source functions; erased and builtin interfaces are
+described below.
 
 A simple parameter binding supplies its external name. Pattern parameters can
 declare one explicitly, for example `fn choose(enabled true: Bool) -> Int: 1`.
 All clauses expose a stable agreed interface; literal/wildcard clauses may inherit
 it from another clause. Conflicting names need consistent explicit external names.
+Required positions without an agreed name must declare an explicit external label.
 External labels and local pattern bindings occupy distinct source roles.
 
 A pipe evaluates its input before the written call arguments. A labeled placeholder
 such as `9 |> subtract(right: 2, left: _)` chooses its parameter explicitly.
+When the selected parameter requires a label, the pipe must use a labeled hole.
 Reordering does not move side effects, returns or Result propagation across other
 arguments. Imported functions and reexports retain their original interfaces.
 
@@ -36,7 +46,9 @@ LSP label tokens deliberately have no navigation target in this checkpoint;
 ordinary local pattern-binding navigation remains available. Full label navigation
 and Tree-sitter grammar support remain open.
 
-`scripts/test_rust_labels.py` executes four native programs and checks four invalid
+`scripts/test_rust_labels.py` executes five native programs and checks eight invalid
 programs preserve an existing output's bytes, permissions and modification time.
 Rust tests cover modules, contextual callback types, source spans, formatting,
 presentation and hostile AST budgets.
+Public AST labels share the parser's identifier/keyword rules and reject reversed
+spans. Finalized scheme classification has a separate 400,000-unit work ceiling.

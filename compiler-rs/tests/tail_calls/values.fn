@@ -5,7 +5,7 @@ fn rotate(n: Int, a: Float, b: Float, flag: Bool, text: String, xs: List(Int), f
         println(f(List.head(xs)))
         a
     else:
-        rotate(n - 1, b, a, not flag, text, xs, f)
+        rotate(n - 1, a: b, b: a, flag: not flag, text: text, xs: xs, f: f)
 fn main():
     let base = 5
-    println(rotate(1000001, 1.25, 2.5, false, "retained", [9223372036854775807], (x: Int) -> x - base))
+    println(rotate(1000001, a: 1.25, b: 2.5, flag: false, text: "retained", xs: [9223372036854775807], f: (x: Int) -> x - base))

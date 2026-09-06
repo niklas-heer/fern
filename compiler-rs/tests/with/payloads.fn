@@ -2,11 +2,11 @@ fn source(ok: Bool) -> Result(Float, Float):
     if ok: Ok(1.25) else: Err(-2.5)
 fn choose(ok: Bool) -> Float:
     with
-        value <- source(ok)
+        value <- source(ok: ok)
     do
         value * 2.0
     else
         Err(error) -> error
 fn main():
-    println(choose(true))
-    println(choose(false))
+    println(choose(ok: true))
+    println(choose(ok: false))

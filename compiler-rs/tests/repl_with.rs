@@ -14,17 +14,19 @@ fn session() -> Session {
 #[test]
 fn with_uses_typed_handlers_for_distinct_error_types() {
     let mut s = session();
-    s.evaluate("fn execute(auth_ok: Bool, load_ok: Bool) -> String:\n    with\n        id <- auth(auth_ok),\n        text <- load(id, load_ok)\n    do\n        text\n    else\n        Err(AuthError(message)) -> message\n        Err(LoadError(code)) -> \"failed {code}\"").unwrap();
+    s.evaluate("fn execute(auth_ok: Bool, load_ok: Bool) -> String:\n    with\n        id <- auth(ok: auth_ok),\n        text <- load(id, ok: load_ok)\n    do\n        text\n    else\n        Err(AuthError(message)) -> message\n        Err(LoadError(code)) -> \"failed {code}\"").unwrap();
     assert_eq!(
-        s.evaluate("execute(true, true)").unwrap(),
+        s.evaluate("execute(auth_ok: true, load_ok: true)").unwrap(),
         "auth\n7\n\"done\" : String\n"
     );
     assert_eq!(
-        s.evaluate("execute(false, true)").unwrap(),
+        s.evaluate("execute(auth_ok: false, load_ok: true)")
+            .unwrap(),
         "auth\n\"denied\" : String\n"
     );
     assert_eq!(
-        s.evaluate("execute(true, false)").unwrap(),
+        s.evaluate("execute(auth_ok: true, load_ok: false)")
+            .unwrap(),
         "auth\n7\n\"failed 5\" : String\n"
     );
 }
@@ -32,13 +34,13 @@ fn with_uses_typed_handlers_for_distinct_error_types() {
 #[test]
 fn with_handler_returns_use_the_enclosing_function_cleanup() {
     let mut s = session();
-    s.evaluate("fn execute(ok: Bool) -> Int:\n    defer println(\"cleanup\")\n    with\n        id <- auth(ok)\n    do\n        id\n    else\n        Err(_) -> return 9").unwrap();
+    s.evaluate("fn execute(ok: Bool) -> Int:\n    defer println(\"cleanup\")\n    with\n        id <- auth(ok: ok)\n    do\n        id\n    else\n        Err(_) -> return 9").unwrap();
     assert_eq!(
-        s.evaluate("execute(false)").unwrap(),
+        s.evaluate("execute(ok: false)").unwrap(),
         "auth\ncleanup\n9 : Int\n"
     );
     assert_eq!(
-        s.evaluate("execute(true)").unwrap(),
+        s.evaluate("execute(ok: true)").unwrap(),
         "auth\ncleanup\n7 : Int\n"
     );
 }

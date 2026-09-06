@@ -3,5 +3,5 @@ fn observe(n: Int) -> Int:
     n
 fn select(x: Int | String, y: Int | String) -> Unit: ()
 fn exit() -> Int:
-    select(return observe(7), observe(99))
+    select(x: return observe(7), y: observe(99))
 fn main(): println(exit())

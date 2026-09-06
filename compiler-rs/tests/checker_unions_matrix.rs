@@ -62,8 +62,8 @@ fn first(flag: Bool) -> Int | String:
 fn second(flag: Bool) -> Int | String:
     if flag: "fern" else: 7
 fn main():
-    println(describe(first(true)))
-    println(describe(second(true)))
+    println(describe(first(flag: true)))
+    println(describe(second(flag: true)))
 "####;
     let syntax = parse::parse(source).unwrap();
     let result = check::check(&syntax);
@@ -218,7 +218,7 @@ fn source_order_injection_and_early_return() {
     n
 fn select(x: Int | String, y: Int | String) -> Unit: ()
 fn exit() -> Int:
-    select(return observe(7), observe(99))
+    select(x: return observe(7), y: observe(99))
 fn main(): println(exit())
 "####;
     let syntax = parse::parse(source).unwrap();

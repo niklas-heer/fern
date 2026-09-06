@@ -1,7 +1,7 @@
 use fern_prototype::{check, format, parse, qbe};
 #[test]
 fn standard_and_placeholder_pipes_lower_in_source_order() {
-    let source = "fn sub(x: Int, y: Int) -> Int: x - y\nfn main():\n    let value = 10\n        |> sub(3)\n        |> sub(20, _)\n    println(value)\n";
+    let source = "fn sub(x: Int, y: Int) -> Int: x - y\nfn main():\n    let value = 10\n        |> sub(x: _, y: 3)\n        |> sub(x: 20, y: _)\n    println(value)\n";
     let syntax = parse::parse(source).unwrap();
     let il = qbe::emit(&check::check(&syntax).unwrap()).unwrap();
     let formatted = format::format(source).unwrap();

@@ -9,7 +9,7 @@ fn rejected(source: &str) -> String {
 }
 #[test]
 fn early_returns_join_only_live_branches_and_infer_lambda_results() {
-    let p = checked("fn choose(flag: Bool) -> Float:\n    if flag: return 1.5\n    2.5\nfn both(flag: Bool) -> Int: if flag: return 1 else: return 2\nfn main():\n    let f = (x: Int) ->\n        return x\n    println(f(2))\n    println(choose(true))\n    println(both(false))\n");
+    let p = checked("fn choose(flag: Bool) -> Float:\n    if flag: return 1.5\n    2.5\nfn both(flag: Bool) -> Int: if flag: return 1 else: return 2\nfn main():\n    let f = (x: Int) ->\n        return x\n    println(f(2))\n    println(choose(flag: true))\n    println(both(flag: false))\n");
     assert!(p.functions.iter().any(|f| f.body.ty == Type::Never));
 }
 #[test]
@@ -66,7 +66,7 @@ fn returns_reject_wrong_types_and_unreachable_following_statements() {
 }
 #[test]
 fn return_operands_eliminate_unreachable_calls_without_inventing_payload_types() {
-    checked("fn id(x: a) -> a: x\nfn value() -> Int: id(return 7)\nfn list() -> Int: [return 8]\nfn both(flag: Bool) -> Int:\n    match flag:\n        true -> return 1\n        false -> return 2\nfn main(): println(value() + list() + both(true))\n");
+    checked("fn id(x: a) -> a: x\nfn value() -> Int: id(return 7)\nfn list() -> Int: [return 8]\nfn both(flag: Bool) -> Int:\n    match flag:\n        true -> return 1\n        false -> return 2\nfn main(): println(value() + list() + both(flag: true))\n");
 }
 #[test]
 fn deferred_nested_lambdas_have_separate_returns_and_plain_closures_still_restrict_results() {

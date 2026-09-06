@@ -18,7 +18,7 @@ fn adjacent_typed_clauses_form_one_recursive_function() {
 #[test]
 fn typed_pattern_parameters_and_guards_share_match_semantics() {
     checked("fn total((x, y): (Int, Int)) -> Int: x + y\nfn classify(x: Int) if x > 0 -> Int: 1\nfn classify(x: Int) if x < 0 -> Int: -1\nfn classify(_: Int) -> Int: 0\nfn main(): println(total((classify(3), 4)))\n");
-    assert!(rejected("fn f(true: Bool) -> Int: 1\nfn main(): 0\n").contains("exhaustive"));
+    assert!(rejected("fn f(value true: Bool) -> Int: 1\nfn main(): 0\n").contains("exhaustive"));
     assert!(rejected("fn f(x: Int) if x > 0 -> Int: 1\nfn main(): 0\n").contains("exhaustive"));
     assert!(
         rejected("fn f(x: Int) -> Int: x\nfn f(0: Int) -> Int: 0\nfn main(): 0\n")
@@ -40,7 +40,7 @@ fn clause_signatures_require_consistent_annotations_and_visibility() {
 }
 #[test]
 fn a_shared_return_annotation_satisfies_the_public_group_boundary() {
-    let p = checked("pub fn choose(false: Bool): 0\npub fn choose(true: Bool) -> Int: 1\nfn main(): println(choose(true))\n");
+    let p = checked("pub fn choose(value false: Bool): 0\npub fn choose(value true: Bool) -> Int: 1\nfn main(): println(choose(value: true))\n");
     assert_eq!(p.functions[0].return_type, Type::Int);
 }
 #[test]
@@ -75,7 +75,7 @@ fn hidden_dispatch_reads_do_not_handle_result_parameters() {
         .contains("Result"));
     }
     checked("fn handle(Ok(n): Result(Int, String)) -> Int: n\nfn handle(Err(_): Result(Int, String)) -> Int: 0\nfn main(): println(handle(Ok(3)))\n");
-    assert!(rejected("fn ignore(r: Result(Int, String), true: Bool) -> Unit: ()\nfn ignore(r: Result(Int, String), false: Bool) -> Unit: ()\nfn main(): 0\n").contains("Result"));
+    assert!(rejected("fn ignore(r: Result(Int, String), argument2 true: Bool) -> Unit: ()\nfn ignore(r: Result(Int, String), argument2 false: Bool) -> Unit: ()\nfn main(): 0\n").contains("Result"));
 }
 #[test]
 fn guards_and_clause_bindings_have_independent_scopes() {
@@ -90,7 +90,11 @@ fn guards_and_clause_bindings_have_independent_scopes() {
 fn dispatch_preserves_the_existing_255_parameter_limit() {
     let common: Vec<_> = (0..254).map(|i| format!("x{i}: Int")).collect();
     let params = common.join(", ");
-    let args = vec!["1"; 255].join(", ");
+    let args = (0..254)
+        .map(|i| format!("x{i}: 1"))
+        .chain(["last: 1".into()])
+        .collect::<Vec<_>>()
+        .join(", ");
     checked(&format!("fn wide({params}, 0: Int) -> Int: 0\nfn wide({params}, last: Int) -> Int: last\nfn main(): println(wide({args}))\n"));
 }
 

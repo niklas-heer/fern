@@ -943,3 +943,18 @@ The native checker's negative-path handling now matches Python 3.14's decimal
 prefix semantics, including supplementary Unicode digits and arbitrary suffixes.
 All 66 workflow cases pass under both frontends; the earlier executable known-gap
 case is closed. A native default launcher remains separate work.
+
+## Required source argument labels — 2026-09-06
+
+Direct calls now require labels for exact Bool and repeated identical finalized
+declared parameter types. Aliases normalize before classification; distinct
+generics and newtypes remain distinct. Required pipe positions use labeled holes.
+Source fixtures and checker helpers retain their written evaluation order after
+label insertion. Ten additional Rust regressions cover required interfaces and
+hostile label metadata; the native gate now has five programs and eight atomic
+rejections. Structural function values, lambdas, runtime APIs and constructors
+keep positional interfaces. Label navigation and full editor parity remain open.
+
+This checkpoint passes the full Rust and C gates on macOS arm64 and Linux arm64
+with Rust 1.75: 1063 Rust tests on macOS and 1064 on Linux. Native checker workflow
+parity remains green across all 66 cases under both frontends.

@@ -250,7 +250,9 @@ impl Checker<'_> {
         let (target, params, result) = self.resolve_callable(name, span)?;
         self.constrain_result(&result, expected, span)?;
         let order = if let Some(signature) = self.signatures.get(name) {
-            labels::order(args, &signature.labels, span)?
+            let order = labels::order(args, &signature.labels, span)?;
+            labels::required(args, signature, &order)?;
+            order
         } else {
             (0..args.len()).collect()
         };

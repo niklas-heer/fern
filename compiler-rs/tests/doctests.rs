@@ -5,7 +5,7 @@ fn source(code: &str) -> String {
 }
 #[test]
 fn expectations_use_patterns_and_keep_multiline_setup() {
-    let text = source("let result = add(\n    2,\n    3\n)\nresult # => 5\nSome(result) # => Some(_) # any Some\n\"# => literal\" # => \"# => literal\"");
+    let text = source("let result = add(\n    a: 2,\n    b: 3\n)\nresult # => 5\nSome(result) # => Some(_) # any Some\n\"# => literal\" # => \"# => literal\"");
     let examples = doctest::extract(&text).unwrap();
     assert_eq!(examples.len(), 1);
     let prepared = doctest::prepare(&text, &examples[0]).unwrap();
@@ -31,7 +31,7 @@ fn entry_selection_preserves_the_original_main_and_its_calls() {
         .iter()
         .any(|f| f.id == original && f.name != "main"));
     qbe::emit(&program).unwrap();
-    let text = source("add(1, 2) # => 3") + "fn main(): println(\"must not run\")\n";
+    let text = source("add(a: 1, b: 2) # => 3") + "fn main(): println(\"must not run\")\n";
     let prepared = doctest::prepare(&text, &doctest::extract(&text).unwrap()[0]).unwrap();
     let mut program = check::check_library(&parse::parse(&prepared.source).unwrap()).unwrap();
     doctest::select_entry(&mut program, &prepared.name).unwrap();
@@ -39,11 +39,11 @@ fn entry_selection_preserves_the_original_main_and_its_calls() {
 }
 #[test]
 fn documentation_markers_are_lexical_and_invalid_expectations_fail() {
-    let text = source("\"# => fake\"\n/* # => fake */\nadd(1, 2) # => 3");
+    let text = source("\"# => fake\"\n/* # => fake */\nadd(a: 1, b: 2) # => 3");
     let prepared = doctest::prepare(&text, &doctest::extract(&text).unwrap()[0]).unwrap();
     assert_eq!(prepared.expectations, 1);
     for code in [
-        "add(1, 2) # =>",
+        "add(a: 1, b: 2) # =>",
         "let x = 3 # => 3",
         "3 # => Some(",
         "# => 3",
