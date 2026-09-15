@@ -59,7 +59,7 @@ impl Block {
         }
     }
 }
-struct Heap {
+pub(crate) struct Heap {
     blocks: BTreeMap<usize, Block>,
     roots: BTreeMap<usize, (usize, usize)>,
     next_root: usize,
@@ -227,6 +227,14 @@ pub unsafe fn root_range(pointer: *const usize, words: usize) -> Root {
     assert!(!pointer.is_null() || words == 0);
     assert!(words <= isize::MAX as usize / 8);
     heaps::root(pointer, words)
+}
+
+/// Report any managed edge that leaves an actor payload heap for something other
+/// than invocation control storage. Seeded scenarios call this on every step.
+#[cfg(any(test, feature = "simulation"))]
+pub(crate) fn verify_heap_edges() -> Result<(), String> {
+    heaps::with_current(|domain| domain.verify_edges())
+        .map_err(|violation| format!("{violation:?}"))
 }
 
 /// Allocate zeroed stable storage in the active actor or invocation heap.

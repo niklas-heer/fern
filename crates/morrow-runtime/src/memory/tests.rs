@@ -1,3 +1,4 @@
+use super::heaps::{Domain, EdgeViolation};
 use super::*;
 
 #[test]
@@ -353,4 +354,133 @@ fn native_frames_read_updated_slots_and_do_not_root_foreign_heap_addresses() {
         morrow_gc_frame_leave(invocation_frame);
         retire_heap(actor);
     }
+}
+
+#[test]
+fn two_domains_allocate_into_independent_heaps() {
+    let mut first = Domain::new();
+    let mut second = Domain::new();
+    let a = first.with_mut(|heap| heap.allocate(64, false));
+    let b = second.with_mut(|heap| heap.allocate(32, false));
+    assert!(!a.is_null() && !b.is_null());
+    assert_eq!(first.with(|heap| heap.bytes), 64);
+    assert_eq!(second.with(|heap| heap.bytes), 32);
+}
+
+#[test]
+fn domain_roots_register_and_unregister_in_their_own_heap() {
+    let mut domain = Domain::new();
+    let block = domain.with_mut(|heap| heap.allocate(16, false));
+    let slot = block as usize;
+    let root = domain.root(&slot as *const usize, 1);
+    assert_eq!(domain.with(|heap| heap.roots.len()), 1);
+    let (heap, id) = (root.heap, root.id);
+    // Root::drop still targets the ambient thread domain until the cursor exists,
+    // so retire this token explicitly instead of through Drop.
+    std::mem::forget(root);
+    domain.remove_root(heap, id);
+    assert_eq!(domain.with(|heap| heap.roots.len()), 0);
+}
+
+#[test]
+fn domain_frames_are_scoped_to_their_domain() {
+    let mut first = Domain::new();
+    let mut second = Domain::new();
+    let words = [0usize; 4];
+    let token = first.frame_enter(words.as_ptr(), 4);
+    assert_eq!(token, 1);
+    assert_eq!(second.frame_enter(words.as_ptr(), 4), 1);
+    first.frame_leave(token);
+    assert_eq!(first.frame_count(), 0);
+    assert_eq!(second.frame_count(), 1);
+}
+
+#[test]
+fn actor_heaps_register_and_retire_their_invocation_control_root() {
+    let mut domain = Domain::new();
+    let control = domain.with_mut(|heap| heap.allocate(8, false));
+    let before = domain.with(|heap| heap.roots.len());
+    // SAFETY: control is a live one-word invocation-heap allocation owned by this
+    // domain, and is not freed or replaced before the matching retire below.
+    let id = unsafe { domain.create_actor_heap(control.cast::<usize>(), 1) };
+    assert_ne!(id, 0);
+    assert_eq!(domain.with(|heap| heap.roots.len()), before + 1);
+    assert!(!domain.owns(id, control.cast()));
+    domain.retire_heap(id);
+    assert_eq!(domain.with(|heap| heap.roots.len()), before);
+}
+
+#[test]
+fn invocation_collection_gathers_control_words_from_every_actor_heap() {
+    let mut domain = Domain::new();
+    let control = domain.with_mut(|heap| heap.allocate(8, false));
+    // SAFETY: control is a live one-word invocation-heap allocation owned by this
+    // domain, retired below and never freed or replaced before then.
+    let id = unsafe { domain.create_actor_heap(control.cast::<usize>(), 1) };
+    domain.with_mut(|heap| heap.allocate(64, false));
+    let retained = domain.collect_active(&[]);
+    assert_eq!(
+        (retained.objects, retained.bytes),
+        (1, 8),
+        "the actor control object survives while unreachable invocation payload does not"
+    );
+    assert_eq!(domain.stats().objects, 1);
+    domain.retire_heap(id);
+}
+
+#[test]
+fn a_domain_can_be_built_on_one_thread_and_used_on_another() {
+    let mut domain = Domain::new();
+    let bytes = domain.with_mut(|heap| heap.allocate(48, false));
+    assert!(!bytes.is_null());
+    let moved = std::thread::spawn(move || {
+        let mut domain = domain;
+        {
+            let _active = domain.activate();
+            // The ordinary public allocation path must land in the activated domain.
+            let more = alloc(16, false);
+            assert!(!more.is_null());
+        }
+        domain.with(|heap| heap.bytes)
+    })
+    .join()
+    .expect("moved domain thread");
+    assert_eq!(moved, 64);
+}
+
+#[test]
+fn domain_is_send_so_a_scheduler_can_own_one() {
+    fn assert_send<T: Send>() {}
+    assert_send::<Domain>();
+}
+
+#[test]
+fn only_control_edges_leave_an_actor_payload_heap() {
+    let mut domain = Domain::new();
+    let control = domain.with_mut(|heap| heap.allocate(8, false));
+    // SAFETY: control is a live one-word invocation-heap allocation of this domain.
+    let id = unsafe { domain.create_actor_heap(control.cast::<usize>(), 1) };
+    let pid = {
+        let _active = domain.activate();
+        let _scope = enter_heap(id);
+        let pid = alloc(16, false);
+        // SAFETY: pid is an allocation base in the active actor heap and control is
+        // a live invocation-heap allocation, exactly as the PID contract requires.
+        unsafe { control_edge(pid, control) };
+        pid as usize
+    };
+    assert_eq!(domain.verify_edges(), Ok(()));
+
+    // The oracle must be able to fail, or it proves nothing.
+    domain.force_control_edge(id, pid, 0xdead_0000);
+    assert_eq!(
+        domain.verify_edges(),
+        Err(EdgeViolation {
+            heap: id,
+            block: pid,
+            target: 0xdead_0000,
+        })
+    );
+    domain.force_control_edge(id, pid, control as usize);
+    domain.retire_heap(id);
 }

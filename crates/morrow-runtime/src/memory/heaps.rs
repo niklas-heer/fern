@@ -1,5 +1,7 @@
 //! Invocation control storage and independently collected actor payload heaps.
 use super::*;
+use std::cell::Cell;
+use std::ptr::null_mut;
 
 struct Slot {
     heap: Heap,
@@ -20,7 +22,7 @@ impl Slot {
         }
     }
 }
-struct Store {
+pub(crate) struct Domain {
     active: usize,
     next_heap: usize,
     slots: BTreeMap<usize, Slot>,
@@ -36,8 +38,8 @@ struct Frame {
     pointer: usize,
     words: usize,
 }
-impl Store {
-    fn new() -> Self {
+impl Domain {
+    pub(crate) fn new() -> Self {
         Self {
             active: 0,
             next_heap: 0,
@@ -46,6 +48,262 @@ impl Store {
             frames: Vec::new(),
             retired_collections: 0,
         }
+    }
+    /// Assert that the only edge leaving an actor payload heap is its control edge.
+    ///
+    /// Exactly three classes are permitted:
+    ///   1. payload to payload within one heap,
+    ///   2. payload to control storage in the invocation heap,
+    ///   3. invocation-internal.
+    #[cfg(any(test, feature = "simulation"))]
+    pub(crate) fn verify_edges(&self) -> Result<(), EdgeViolation> {
+        let invocation = &self.slots[&0].heap.blocks;
+        for (&id, slot) in &self.slots {
+            if id == 0 {
+                continue;
+            }
+            for (&block, metadata) in &slot.heap.blocks {
+                if metadata.control != 0 && !invocation.contains_key(&metadata.control) {
+                    return Err(EdgeViolation {
+                        heap: id,
+                        block,
+                        target: metadata.control,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+    /// Fabricate an edge the collector would never build, so the oracle above is
+    /// demonstrably able to fail.
+    #[cfg(test)]
+    pub(crate) fn force_control_edge(&mut self, id: usize, block: usize, control: usize) {
+        self.slots
+            .get_mut(&id)
+            .unwrap()
+            .heap
+            .blocks
+            .get_mut(&block)
+            .unwrap()
+            .control = control;
+    }
+    pub(crate) fn enter(&mut self, id: usize) -> Scope {
+        let previous = self.active;
+        let slot = self
+            .slots
+            .get_mut(&id)
+            .expect("heap identity must remain live");
+        assert!(!slot.retired, "cannot enter retired actor heap");
+        slot.scopes += 1;
+        self.active = id;
+        Scope {
+            previous,
+            entered: id,
+            _thread: PhantomData,
+        }
+    }
+    fn leave(&mut self, entered: usize, previous: usize) {
+        assert_eq!(self.active, entered, "heap scopes must unwind in order");
+        self.slots.get_mut(&entered).unwrap().scopes -= 1;
+        self.active = previous;
+        self.remove_retired(entered);
+    }
+    #[allow(dead_code)]
+    pub(crate) fn activate(&mut self) -> Activation<'_> {
+        let previous = CURRENT.with(|cell| cell.replace(self as *mut Domain));
+        Activation {
+            previous,
+            _domain: PhantomData,
+            _thread: PhantomData,
+        }
+    }
+    pub(crate) fn collect_active(&mut self, roots: &[usize]) -> Stats {
+        let active = self.active;
+        let mut controls = Vec::new();
+        if active == 0 {
+            // Foreign payload is never scanned. Metadata survives exactly as long
+            // as its wrapper allocation, including until that heap's next sweep.
+            controls.extend_from_slice(roots);
+            for (&id, slot) in &self.slots {
+                if id != 0 {
+                    controls.extend(
+                        slot.heap
+                            .blocks
+                            .values()
+                            .filter_map(|block| (block.control != 0).then_some(block.control)),
+                    );
+                }
+            }
+        }
+        let roots = if active == 0 { &controls } else { roots };
+        let Domain { slots, frames, .. } = self;
+        let heap = &mut slots.get_mut(&active).unwrap().heap;
+        if frames.is_empty() {
+            heap.trace(roots)
+        } else {
+            // Borrow registrations while tracing only their owning heap. Scan
+            // slots in place, without copying potentially large frame contents.
+            let ranges = frames
+                .iter()
+                .filter(|frame| frame.heap == active)
+                .map(|frame| (frame.pointer, frame.words));
+            heap.trace_ranges(roots, ranges)
+        }
+    }
+    pub(crate) fn stats(&self) -> Stats {
+        self.slots.values().fold(
+            Stats {
+                collections: self.retired_collections,
+                ..Stats::default()
+            },
+            |mut total, slot| {
+                let stats = slot.heap.stats();
+                total.bytes += stats.bytes;
+                total.objects += stats.objects;
+                total.collections += stats.collections;
+                total
+            },
+        )
+    }
+    pub(crate) fn shutdown(&mut self) {
+        assert_eq!(self.active, 0);
+        assert!(self.frames.is_empty());
+        // Persistent actor control registrations are owned by this store. Native
+        // callers must still retire their own stack/foreign-container Root tokens.
+        let controlled = self
+            .slots
+            .values()
+            .filter(|slot| slot.control_root.is_some())
+            .count();
+        assert_eq!(self.slots[&0].heap.roots.len(), controlled);
+        assert!(self.slots.values().all(|slot| slot.scopes == 0));
+        assert!(
+            self.slots
+                .iter()
+                .all(|(&id, slot)| id == 0 || slot.heap.roots.len() == 1)
+        );
+        *self = Domain::new();
+    }
+    /// Attach a PID's exact control edge without rooting another actor's payload.
+    /// # Safety
+    /// `pointer` is an allocation base in the active heap, and `control` is a live
+    /// invocation-owned Actor whose immutable identity the initialized PID retains.
+    pub(crate) unsafe fn control_edge(&mut self, pointer: *const u8, control: *const u8) {
+        let active = self.active;
+        assert!(self.slots[&0].heap.blocks.contains_key(&(control as usize)));
+        if active != 0 {
+            self.slots
+                .get_mut(&active)
+                .unwrap()
+                .heap
+                .blocks
+                .get_mut(&(pointer as usize))
+                .expect("PID allocation belongs to current heap")
+                .control = control as usize;
+        }
+    }
+    /// Create a payload heap whose external roots are the invocation-owned actor words.
+    /// # Safety
+    /// The control object must be an invocation-heap allocation, readable for `words`
+    /// words, and cannot be freed or replaced until this payload heap is retired.
+    pub(crate) unsafe fn create_actor_heap(
+        &mut self,
+        control: *const usize,
+        words: usize,
+    ) -> usize {
+        let control_word = Box::new(control as usize);
+        let control_root = register(&mut self.slots.get_mut(&0).unwrap().heap, &*control_word, 1);
+        let mut heap = Heap::new();
+        register(&mut heap, control, words);
+        self.next_heap = self
+            .next_heap
+            .checked_add(1)
+            .unwrap_or_else(|| std::process::abort());
+        let id = self.next_heap;
+        self.slots.insert(
+            id,
+            Slot {
+                heap,
+                _control: Some(control_word),
+                control_root: Some(control_root),
+                scopes: 0,
+                retired: false,
+            },
+        );
+        id
+    }
+    /// Retire payload storage once its final active callback/scope has returned.
+    pub(crate) fn retire_heap(&mut self, id: usize) {
+        if id == 0 {
+            return;
+        }
+        if let Some(slot) = self.slots.get_mut(&id) {
+            slot.retired = true;
+        }
+        self.remove_retired(id);
+    }
+    pub(crate) fn owns(&self, id: usize, pointer: *const std::ffi::c_void) -> bool {
+        let Some(slot) = self.slots.get(&id) else {
+            return false;
+        };
+        slot.heap
+            .blocks
+            .range(..=pointer as usize)
+            .next_back()
+            .is_some_and(|(&base, block)| pointer as usize - base < block.layout.size())
+    }
+    pub(crate) fn frame_enter(&mut self, slots: *const usize, words: usize) -> usize {
+        let heap = self.active;
+        self.next_frame = self
+            .next_frame
+            .checked_add(1)
+            .unwrap_or_else(|| std::process::abort());
+        let token = self.next_frame;
+        self.frames.push(Frame {
+            token,
+            heap,
+            pointer: slots as usize,
+            words,
+        });
+        token
+    }
+    pub(crate) fn frame_leave(&mut self, token: usize) {
+        if self.frames.last().is_some_and(|frame| frame.token == token) {
+            // Avoid even a zero-length memmove on the ordinary callback exit.
+            self.frames.pop();
+        } else if let Some(index) = self.frames.iter().rposition(|frame| frame.token == token) {
+            // Unusual cross-heap/out-of-order exits retain the remaining order.
+            self.frames.remove(index);
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn frame_count(&self) -> usize {
+        self.frames.len()
+    }
+    pub(crate) fn root(&mut self, pointer: *const usize, words: usize) -> Root {
+        let active = self.active;
+        let id = register(
+            &mut self.slots.get_mut(&active).unwrap().heap,
+            pointer,
+            words,
+        );
+        Root {
+            heap: active,
+            id,
+            _thread: PhantomData,
+        }
+    }
+    pub(crate) fn remove_root(&mut self, heap: usize, id: usize) {
+        if let Some(slot) = self.slots.get_mut(&heap) {
+            slot.heap.roots.remove(&id);
+        }
+    }
+    pub(crate) fn with<R>(&self, f: impl FnOnce(&Heap) -> R) -> R {
+        f(&self.slots[&self.active].heap)
+    }
+    pub(crate) fn with_mut<R>(&mut self, f: impl FnOnce(&mut Heap) -> R) -> R {
+        let active = self.active;
+        f(&mut self.slots.get_mut(&active).unwrap().heap)
     }
     fn remove_retired(&mut self, id: usize) {
         if id != 0
@@ -63,20 +321,75 @@ impl Store {
         }
     }
 }
-thread_local! { static STORE: RefCell<Store> = RefCell::new(Store::new()); }
+/// A managed edge that leaves an actor payload heap without landing in invocation
+/// control storage. Step 4 of the parallel actor work has to sever the permitted
+/// control edges; anything else must not exist in the first place.
+#[cfg(any(test, feature = "simulation"))]
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct EdgeViolation {
+    pub heap: usize,
+    pub block: usize,
+    pub target: usize,
+}
+
+// Owned fallback for programs and tests that never activate a domain explicitly.
+thread_local! { static DEFAULT: RefCell<Domain> = RefCell::new(Domain::new()); }
+// Borrowed cursor. It never owns a domain; Activation keeps the pointer valid.
+thread_local! { static CURRENT: Cell<*mut Domain> = const { Cell::new(null_mut()) }; }
+// Preserves, on the cursor path, the aliasing check RefCell gives the default.
+thread_local! { static BUSY: Cell<bool> = const { Cell::new(false) }; }
+
+/// Run `f` against the domain currently executing on this thread.
+pub(super) fn with_current<R>(f: impl FnOnce(&mut Domain) -> R) -> R {
+    let current = CURRENT.with(|cell| cell.get());
+    if current.is_null() {
+        return DEFAULT.with(|domain| f(&mut domain.borrow_mut()));
+    }
+    let _busy = Busy::acquire();
+    // SAFETY: Activation installed this pointer from a &mut Domain that outlives the
+    // guard and restores the previous value on drop, and Busy rejects aliasing here.
+    f(unsafe { &mut *current })
+}
+
+/// Rejects re-entering the activated domain, preserving the aliasing check that
+/// RefCell performs for the default domain. A finalizer that dropped a Root during
+/// collection would otherwise alias the &mut Domain the collection is holding.
+struct Busy;
+impl Busy {
+    fn acquire() -> Self {
+        assert!(
+            !BUSY.with(|busy| busy.replace(true)),
+            "the active heap domain cannot be entered re-entrantly"
+        );
+        Busy
+    }
+}
+impl Drop for Busy {
+    fn drop(&mut self) {
+        BUSY.with(|busy| busy.set(false));
+    }
+}
+
+/// Installs a domain as this thread's current domain until dropped.
+// Step 2 of the parallel actor work hands one Domain to each scheduler and
+// activates it there; until then only the tests construct one.
+#[allow(dead_code)]
+pub(crate) struct Activation<'a> {
+    previous: *mut Domain,
+    _domain: PhantomData<&'a mut Domain>,
+    _thread: PhantomData<Rc<()>>,
+}
+impl Drop for Activation<'_> {
+    fn drop(&mut self) {
+        CURRENT.with(|cell| cell.set(self.previous));
+    }
+}
 
 pub(super) fn with<R>(f: impl FnOnce(&Heap) -> R) -> R {
-    STORE.with(|store| {
-        let store = store.borrow();
-        f(&store.slots[&store.active].heap)
-    })
+    with_current(|domain| domain.with(f))
 }
 pub(super) fn with_mut<R>(f: impl FnOnce(&mut Heap) -> R) -> R {
-    STORE.with(|store| {
-        let mut store = store.borrow_mut();
-        let active = store.active;
-        f(&mut store.slots.get_mut(&active).unwrap().heap)
-    })
+    with_current(|domain| domain.with_mut(f))
 }
 
 /// Attach a PID's exact control edge without rooting another actor's payload.
@@ -84,64 +397,11 @@ pub(super) fn with_mut<R>(f: impl FnOnce(&mut Heap) -> R) -> R {
 /// `pointer` is an allocation base in the active heap, and `control` is a live
 /// invocation-owned Actor whose immutable identity the initialized PID retains.
 pub(crate) unsafe fn control_edge(pointer: *const u8, control: *const u8) {
-    STORE.with(|store| {
-        let mut store = store.borrow_mut();
-        let active = store.active;
-        assert!(
-            store.slots[&0]
-                .heap
-                .blocks
-                .contains_key(&(control as usize))
-        );
-        if active != 0 {
-            store
-                .slots
-                .get_mut(&active)
-                .unwrap()
-                .heap
-                .blocks
-                .get_mut(&(pointer as usize))
-                .expect("PID allocation belongs to current heap")
-                .control = control as usize;
-        }
-    });
+    with_current(|domain| unsafe { domain.control_edge(pointer, control) });
 }
 
 pub(super) fn collect(roots: &[usize]) -> Stats {
-    STORE.with(|store| {
-        let mut store = store.borrow_mut();
-        let active = store.active;
-        let mut controls = Vec::new();
-        if active == 0 {
-            // Foreign payload is never scanned. Metadata survives exactly as long
-            // as its wrapper allocation, including until that heap's next sweep.
-            controls.extend_from_slice(roots);
-            for (&id, slot) in &store.slots {
-                if id != 0 {
-                    controls.extend(
-                        slot.heap
-                            .blocks
-                            .values()
-                            .filter_map(|block| (block.control != 0).then_some(block.control)),
-                    );
-                }
-            }
-        }
-        let roots = if active == 0 { &controls } else { roots };
-        let Store { slots, frames, .. } = &mut *store;
-        let heap = &mut slots.get_mut(&active).unwrap().heap;
-        if frames.is_empty() {
-            heap.trace(roots)
-        } else {
-            // Borrow registrations while tracing only their owning heap. Scan
-            // slots in place, without copying potentially large frame contents.
-            let ranges = frames
-                .iter()
-                .filter(|frame| frame.heap == active)
-                .map(|frame| (frame.pointer, frame.words));
-            heap.trace_ranges(roots, ranges)
-        }
-    })
+    with_current(|domain| domain.collect_active(roots))
 }
 fn register(heap: &mut Heap, pointer: *const usize, words: usize) -> usize {
     heap.next_root = heap
@@ -152,27 +412,19 @@ fn register(heap: &mut Heap, pointer: *const usize, words: usize) -> usize {
     heap.next_root
 }
 pub(super) fn root(pointer: *const usize, words: usize) -> Root {
-    STORE.with(|store| {
-        let mut store = store.borrow_mut();
-        let active = store.active;
-        let id = register(
-            &mut store.slots.get_mut(&active).unwrap().heap,
-            pointer,
-            words,
-        );
-        Root {
-            heap: active,
-            id,
-            _thread: PhantomData,
-        }
-    })
+    with_current(|domain| domain.root(pointer, words))
 }
 pub(super) fn remove_root(heap: usize, id: usize) {
-    let _ = STORE.try_with(|store| {
-        if let Some(slot) = store.borrow_mut().slots.get_mut(&heap) {
-            slot.heap.roots.remove(&id);
-        }
-    });
+    // Root::drop can run while thread-local storage is being destroyed.
+    let current = CURRENT.try_with(|cell| cell.get()).unwrap_or(null_mut());
+    if !current.is_null() {
+        let _busy = Busy::acquire();
+        // SAFETY: as in with_current; Activation keeps this pointer live and Busy
+        // rejects a Root dropped by a finalizer inside an active collection.
+        unsafe { &mut *current }.remove_root(heap, id);
+        return;
+    }
+    let _ = DEFAULT.try_with(|domain| domain.borrow_mut().remove_root(heap, id));
 }
 
 /// An allocation/collection scope on this thread, restored before payload retirement.
@@ -183,35 +435,11 @@ pub(crate) struct Scope {
 }
 impl Drop for Scope {
     fn drop(&mut self) {
-        STORE.with(|store| {
-            let mut store = store.borrow_mut();
-            assert_eq!(
-                store.active, self.entered,
-                "heap scopes must unwind in order"
-            );
-            store.slots.get_mut(&self.entered).unwrap().scopes -= 1;
-            store.active = self.previous;
-            store.remove_retired(self.entered);
-        });
+        with_current(|domain| domain.leave(self.entered, self.previous));
     }
 }
 pub(crate) fn enter(id: usize) -> Scope {
-    STORE.with(|store| {
-        let mut store = store.borrow_mut();
-        let previous = store.active;
-        let slot = store
-            .slots
-            .get_mut(&id)
-            .expect("heap identity must remain live");
-        assert!(!slot.retired, "cannot enter retired actor heap");
-        slot.scopes += 1;
-        store.active = id;
-        Scope {
-            previous,
-            entered: id,
-            _thread: PhantomData,
-        }
-    })
+    with_current(|domain| domain.enter(id))
 }
 
 /// Create a payload heap whose external roots are the invocation-owned actor words.
@@ -219,100 +447,20 @@ pub(crate) fn enter(id: usize) -> Scope {
 /// The control object must be an invocation-heap allocation, readable for `words`
 /// words, and cannot be freed or replaced until this payload heap is retired.
 pub(crate) unsafe fn create(control: *const usize, words: usize) -> usize {
-    STORE.with(|store| {
-        let mut store = store.borrow_mut();
-        let control_word = Box::new(control as usize);
-        let control_root = register(
-            &mut store.slots.get_mut(&0).unwrap().heap,
-            &*control_word,
-            1,
-        );
-        let mut heap = Heap::new();
-        register(&mut heap, control, words);
-        store.next_heap = store
-            .next_heap
-            .checked_add(1)
-            .unwrap_or_else(|| std::process::abort());
-        let id = store.next_heap;
-        store.slots.insert(
-            id,
-            Slot {
-                heap,
-                _control: Some(control_word),
-                control_root: Some(control_root),
-                scopes: 0,
-                retired: false,
-            },
-        );
-        id
-    })
+    with_current(|domain| unsafe { domain.create_actor_heap(control, words) })
 }
 /// Retire payload storage once its final active callback/scope has returned.
 pub(crate) fn retire(id: usize) {
-    if id == 0 {
-        return;
-    }
-    STORE.with(|store| {
-        let mut store = store.borrow_mut();
-        if let Some(slot) = store.slots.get_mut(&id) {
-            slot.retired = true;
-        }
-        store.remove_retired(id);
-    });
+    with_current(|domain| domain.retire_heap(id));
 }
 pub(crate) fn owns(id: usize, pointer: *const std::ffi::c_void) -> bool {
-    STORE.with(|store| {
-        let store = store.borrow();
-        let Some(slot) = store.slots.get(&id) else {
-            return false;
-        };
-        slot.heap
-            .blocks
-            .range(..=pointer as usize)
-            .next_back()
-            .is_some_and(|(&base, block)| pointer as usize - base < block.layout.size())
-    })
+    with_current(|domain| domain.owns(id, pointer))
 }
 pub(super) fn stats() -> Stats {
-    STORE.with(|store| {
-        let store = store.borrow();
-        store.slots.values().fold(
-            Stats {
-                collections: store.retired_collections,
-                ..Stats::default()
-            },
-            |mut total, slot| {
-                let stats = slot.heap.stats();
-                total.bytes += stats.bytes;
-                total.objects += stats.objects;
-                total.collections += stats.collections;
-                total
-            },
-        )
-    })
+    with_current(|domain| domain.stats())
 }
 pub(super) fn shutdown() {
-    STORE.with(|store| {
-        let mut store = store.borrow_mut();
-        assert_eq!(store.active, 0);
-        assert!(store.frames.is_empty());
-        // Persistent actor control registrations are owned by this store. Native
-        // callers must still retire their own stack/foreign-container Root tokens.
-        let controlled = store
-            .slots
-            .values()
-            .filter(|slot| slot.control_root.is_some())
-            .count();
-        assert_eq!(store.slots[&0].heap.roots.len(), controlled);
-        assert!(store.slots.values().all(|slot| slot.scopes == 0));
-        assert!(
-            store
-                .slots
-                .iter()
-                .all(|(&id, slot)| id == 0 || slot.heap.roots.len() == 1)
-        );
-        *store = Store::new();
-    });
+    with_current(|domain| domain.shutdown());
 }
 
 /// Register zero-initialized native stack root words in the current heap; no GC.
@@ -323,38 +471,18 @@ pub(super) fn shutdown() {
 pub unsafe extern "C" fn morrow_gc_frame_enter(slots: *const usize, words: usize) -> usize {
     assert!(!slots.is_null() || words == 0);
     assert!(words <= 1_048_576);
-    STORE.with(|store| {
-        let mut store = store.borrow_mut();
-        let heap = store.active;
-        store.next_frame = store
-            .next_frame
-            .checked_add(1)
-            .unwrap_or_else(|| std::process::abort());
-        let token = store.next_frame;
-        store.frames.push(Frame {
-            token,
-            heap,
-            pointer: slots as usize,
-            words,
-        });
-        token
-    })
+    with_current(|domain| domain.frame_enter(slots, words))
 }
 /// Retire the exact frame's heap registration even after an allocation-scope switch.
 #[unsafe(no_mangle)]
 pub extern "C" fn morrow_gc_frame_leave(token: usize) {
-    STORE.with(|store| {
-        let mut store = store.borrow_mut();
-        if store
-            .frames
-            .last()
-            .is_some_and(|frame| frame.token == token)
-        {
-            // Avoid even a zero-length memmove on the ordinary callback exit.
-            store.frames.pop();
-        } else if let Some(index) = store.frames.iter().rposition(|frame| frame.token == token) {
-            // Unusual cross-heap/out-of-order exits retain the remaining order.
-            store.frames.remove(index);
-        }
-    });
+    with_current(|domain| domain.frame_leave(token));
 }
+
+// A Domain must remain movable between threads: step 2 of the parallel actor work
+// hands one to each scheduler. Root and Scope stay thread-bound by design and keep
+// their PhantomData<Rc<()>> markers.
+const _: fn() = || {
+    fn assert_send<T: Send>() {}
+    assert_send::<Domain>();
+};
